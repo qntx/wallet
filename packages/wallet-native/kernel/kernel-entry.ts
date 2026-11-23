@@ -6,6 +6,8 @@
 
 import { startKernel } from "../../wallet-kernel/src/kernel.ts";
 import type { KernelPlatform } from "../../wallet-kernel/src/platform.ts";
+import { bindNativeAnchor } from "./anchor.ts";
+import type { KernelAnchorNative } from "./anchor.ts";
 import { bindNativeKeystore } from "./keystore.ts";
 import type { KernelKeystoreNative } from "./keystore.ts";
 import { bindNativeNostr } from "./nostr.ts";
@@ -42,6 +44,7 @@ export type KernelGlobals = {
     callback: (result: Uint8Array | undefined, error: string | undefined) => void,
   ) => void;
   readonly file: KernelFile;
+  readonly anchor: KernelAnchorNative;
   readonly keystore: KernelKeystoreNative;
   readonly passkey: KernelPasskeyNative;
   readonly frames: KernelFramePipe;
@@ -92,6 +95,7 @@ const platform: KernelPlatform = {
       );
     }),
   store: createFileStore(__qntx.file),
+  anchor: bindNativeAnchor(__qntx.anchor),
   keystore: bindNativeKeystore(__qntx.keystore),
   passkey: bindNativePasskey(__qntx.passkey, (length) => __qntx.random(length)),
   // No foreground idle lock on native — the host locks on backgrounding after

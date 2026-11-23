@@ -175,10 +175,11 @@ const otherOverrides: OxlintOverride[] = [
     },
   },
   {
-    // The memory stores implement async store contracts synchronously; the async
-    // signature stays without an await.
+    // The memory stores and memory anchor implement async host contracts synchronously; the
+    // async signature stays without an await.
     files: [
       "packages/wallet-kernel/src/vault/memory.ts",
+      "packages/wallet-kernel/src/vault/anchor.ts",
       "packages/wallet-engine/src/store/memory.ts",
     ],
     rules: {

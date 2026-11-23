@@ -896,6 +896,9 @@ export type Rumor = {
     readonly content: string;
 };
 
+// @public
+export const SECRET_FIELDS: readonly ["password", "prf", "prfWallet", "prfBackup", "mnemonic", "passphrase", "secret", "answers"];
+
 // @public (undocumented)
 export type SessionInfo = {
     readonly address: string;

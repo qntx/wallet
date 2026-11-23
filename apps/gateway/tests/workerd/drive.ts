@@ -383,21 +383,23 @@ const s5 = async (base: string): Promise<void> => {
   expect(countStatus(statuses, 200) >= 29, "s5a: fewer than 29 successful TRON calls");
 
   for (const currency of ["eur", "usd"]) {
-    // oxlint-disable-next-line eslint/no-await-in-loop -- two requests in order
-    const res = await fetch(`${base}/v1/prices`, {
-      method: "POST",
-      headers: headers(ip),
-      body: JSON.stringify({
-        currency,
-        assets: ["eip155:56/slip44:714", "bip122:000000000019d6689c085ae165831e93/slip44:0"],
-      }),
-    });
-    // oxlint-disable-next-line eslint/no-await-in-loop -- body must be consumed
-    const body = await res.text();
-    console.log(
-      `S5b prices ${currency}: status=${String(res.status)} x-gateway-providers=${res.headers.get("x-gateway-providers") ?? "-"} body=${body.slice(0, 400)}`,
-    );
-    expect(res.status === 200, `s5b: prices ${currency} status ${String(res.status)}`);
+    for (const [family, assets] of [
+      ["evm", ["eip155:56/slip44:714"]],
+      ["bitcoin", ["bip122:000000000019d6689c085ae165831e93/slip44:0"]],
+    ] as const) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- requests in order
+      const res = await fetch(`${base}/v1/prices/${family}`, {
+        method: "POST",
+        headers: headers(ip),
+        body: JSON.stringify({ currency, assets }),
+      });
+      // oxlint-disable-next-line eslint/no-await-in-loop -- body must be consumed
+      const body = await res.text();
+      console.log(
+        `S5b prices ${currency}/${family}: status=${String(res.status)} x-gateway-providers=${res.headers.get("x-gateway-providers") ?? "-"} body=${body.slice(0, 400)}`,
+      );
+      expect(res.status === 200, `s5b: prices ${currency}/${family} status ${String(res.status)}`);
+    }
   }
 
   const jStatuses: number[] = [];

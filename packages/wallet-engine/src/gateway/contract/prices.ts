@@ -150,10 +150,43 @@ export const pricesResponse = z.object({
 });
 
 /**
- * `POST /v1/prices` — no address is sent, but the asset set describes a portfolio, so it travels in
- * the body: it stays out of URLs, logs and caches keyed by URL.
+ * The gateway scopes a price request is partitioned by: one per chain family, each sent under that
+ * family's own client id.
  */
-export const prices = endpoint("POST", "/v1/prices", pricesRequest, pricesResponse);
+export const PRICE_FAMILIES = ["evm", "solana", "bitcoin", "tron"] as const;
+
+export type PriceFamily = (typeof PRICE_FAMILIES)[number];
+
+export const priceFamily = z.enum(PRICE_FAMILIES);
+
+/**
+ * The family whose scope prices `asset`, by its CAIP-2 namespace (eip155, solana, bip122, tron);
+ * `undefined` for any other.
+ */
+export const priceAssetFamily = (asset: string): PriceFamily | undefined => {
+  switch (asset.slice(0, asset.indexOf(":"))) {
+    case "eip155":
+      return "evm";
+    case "solana":
+      return "solana";
+    case "bip122":
+      return "bitcoin";
+    case "tron":
+      return "tron";
+    default:
+      return undefined;
+  }
+};
+
+/**
+ * `POST /v1/prices/:family` — no address is sent, but the asset set describes a portfolio, so it
+ * travels in the body and per family scope: a request never names another family's assets, so the
+ * portfolio links no scopes beyond what each scope's own traffic already shows.
+ */
+export const prices = endpoint("POST", "/v1/prices/:family", pricesRequest, pricesResponse);
+
+/** The prices path for one family scope. */
+export const pricesPath = (family: PriceFamily): string => prices.path.replace(":family", family);
 
 export type PriceQuote = z.infer<typeof priceQuote>;
 export type PricesRequest = z.infer<typeof pricesRequest>;

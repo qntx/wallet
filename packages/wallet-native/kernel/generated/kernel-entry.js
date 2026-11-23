@@ -978,7 +978,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-B_olgDm6.mjs
+	// packages/wallet/dist/protocol-DC18CY4v.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1787,6 +1787,20 @@
 			result: approvalSummary
 		}
 	};
+	/**
+	* Param field names whose bytes are secrets: the kernel consumes and wipes them, so each must own
+	* its memory.
+	*/
+	var SECRET_FIELDS = [
+		"password",
+		"prf",
+		"prfWallet",
+		"prfBackup",
+		"mnemonic",
+		"passphrase",
+		"secret",
+		"answers"
+	];
 	/**
 	* Upper-bound byte weight of a protocol value: a string costs `length * 3` (worst-case UTF-8), a
 	* Uint8Array its `byteLength`, every scalar and every array element 8, and every object key
@@ -8166,6 +8180,114 @@
 			wipe(factorSk);
 		}
 	}
+	// packages/wallet-kernel/src/vault/anchor.ts
+	/**
+	* The vault anchor: a 21-byte record the kernel keeps outside the record store, so a writer who can
+	* only restore the store (an older sealed image put back wholesale, or the failure counters zeroed)
+	* cannot restore this with it. `revision` is the floor — the highest vault revision the kernel
+	* itself sealed or authenticated; a loaded image below it reads corrupted before any unlock.
+	* `failedAttempts`/`lastFailureAt` are the password backoff counters, moved here from the vault
+	* meta: the store no longer carries them at all.
+	*
+	* Record: `u8 version = 1 ‖ u64be revision ‖ u32be failedAttempts ‖ u64be lastFailureAt`. Hosts
+	* persist it as opaque bytes behind a compare-and-swap; fixed vectors live in
+	* vectors/vault-anchor.json.
+	*/
+	var ANCHOR_BYTES = 21;
+	var ANCHOR_VERSION = 1;
+	/** CAS retries before `updateAnchor`/`resetAnchor` give up with `conflict`. */
+	var MAX_ATTEMPTS = 8;
+	var ZERO$6 = {
+		revision: 0,
+		failedAttempts: 0,
+		lastFailureAt: 0
+	};
+	/** U64be as two u32 words — bare Hermes has no BigInt reliance here. */
+	function writeU64(view, offset, value) {
+		view.setUint32(offset, Math.floor(value / 4294967296));
+		view.setUint32(offset + 4, value % 4294967296);
+	}
+	function readU64(view, offset) {
+		const high = view.getUint32(offset);
+		if (high > 2097151) throw new KernelError("integrity", "invalid vault anchor");
+		return high * 4294967296 + view.getUint32(offset + 4);
+	}
+	function encodeAnchor(state) {
+		const out = new Uint8Array(ANCHOR_BYTES);
+		const view = new DataView(out.buffer);
+		view.setUint8(0, ANCHOR_VERSION);
+		writeU64(view, 1, state.revision);
+		view.setUint32(9, state.failedAttempts);
+		writeU64(view, 13, state.lastFailureAt);
+		return out;
+	}
+	function decodeAnchor(bytes) {
+		if (bytes.length !== ANCHOR_BYTES) throw new KernelError("integrity", "invalid vault anchor");
+		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+		if (view.getUint8(0) !== ANCHOR_VERSION) throw new KernelError("integrity", "invalid vault anchor");
+		return {
+			revision: readU64(view, 1),
+			failedAttempts: view.getUint32(9),
+			lastFailureAt: readU64(view, 13)
+		};
+	}
+	/** Host rejections that are not KernelError map to `unavailable` — same class as store I/O. */
+	function unavailable(error) {
+		if (error instanceof KernelError) return error;
+		return new KernelError("unavailable", `vault anchor: ${error instanceof Error ? error.message : "request failed"}`);
+	}
+	async function readRaw(anchor) {
+		try {
+			return await anchor.read();
+		} catch (error) {
+			throw unavailable(error);
+		}
+	}
+	async function replaceRaw(anchor, next, expected) {
+		try {
+			return await anchor.replace(next, expected);
+		} catch (error) {
+			throw unavailable(error);
+		}
+	}
+	/** Nothing stored reads as the zero state. */
+	async function readAnchor(anchor) {
+		const raw = await readRaw(anchor);
+		return raw === void 0 ? ZERO$6 : decodeAnchor(raw);
+	}
+	/**
+	* Read → change → CAS, retrying while another writer wins the race. Eight lost races in a row is
+	* `conflict` — like a store precondition that can never hold.
+	*/
+	async function updateAnchor(anchor, change) {
+		for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+			const raw = await readRaw(anchor);
+			const next = change(raw === void 0 ? ZERO$6 : decodeAnchor(raw));
+			if (await replaceRaw(anchor, encodeAnchor(next), raw)) return next;
+		}
+		throw new KernelError("conflict", "vault anchor changed underneath");
+	}
+	/**
+	* The reset path: raises the floor past the image just erased and zeroes the counters. A stored
+	* record that does not decode counts as base 0 — reset is the recovery path for a garbage anchor.
+	*/
+	async function resetAnchor(anchor) {
+		for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+			const raw = await readRaw(anchor);
+			let base = 0;
+			if (raw !== void 0) try {
+				base = decodeAnchor(raw).revision;
+			} catch (_unused) {
+				base = 0;
+			}
+			if (await replaceRaw(anchor, encodeAnchor({
+				revision: base + 1,
+				failedAttempts: 0,
+				lastFailureAt: 0
+			}), raw)) return;
+		}
+		throw new KernelError("conflict", "vault anchor changed underneath");
+	}
 	// packages/wallet-kernel/src/vault/memory.ts
 	init_objectSpread2();
 	function cloneRecord(record) {
@@ -8194,9 +8316,9 @@
 	/**
 	* In-memory RecordStore for the Node host and kernel tests. Loads and commits deep-copy every
 	* Uint8Array, so callers can never mutate stored state. `commit` applies ops to a clone and swaps
-	* atomically: a failing precondition (`init`, `expect-revision`, a counter op on an empty store)
-	* leaves the store untouched. Content ops bump `meta.revision` once per commit; an `init` commit
-	* writes its meta verbatim (revision stays as the initializer set it).
+	* atomically: a failing precondition (`init`, `expect-revision`) leaves the store untouched.
+	* Content ops bump `meta.revision` once per commit; an `init` commit writes its meta verbatim
+	* (revision stays as the initializer set it).
 	*/
 	/**
 	* Applies a commit's ops to a vault image and returns the next image — the single implementation of
@@ -8222,20 +8344,6 @@
 			case "set-key-id":
 				meta = _objectSpread2(_objectSpread2({}, requireMeta(meta)), {}, { keyId: op.keyId });
 				bump = true;
-				break;
-			case "record-failure": {
-				const current = requireMeta(meta);
-				meta = _objectSpread2(_objectSpread2({}, current), {}, {
-					failedAttempts: current.failedAttempts + 1,
-					lastFailureAt: op.at
-				});
-				break;
-			}
-			case "reset-failures":
-				meta = _objectSpread2(_objectSpread2({}, requireMeta(meta)), {}, {
-					failedAttempts: 0,
-					lastFailureAt: 0
-				});
 				break;
 			case "put-record":
 				records = [...records.filter((record) => !(record.kind === op.record.kind && record.id === op.record.id)), cloneRecord(op.record)];
@@ -8268,20 +8376,18 @@
 	// packages/wallet-kernel/src/vault/manifest.ts
 	/**
 	* The vault manifest: one record, sealed under the DEK, that commits to the vault's whole structure
-	* — the format, the keyId and every other record and factor row byte for byte. Every content commit
-	* rewrites it in the same transaction and every reload under a session checks it, so a store writer
-	* without the DEK can neither put back a row the vault dropped (a retired backup key, a disabled
-	* policy, a deleted wallet), nor delete, add or alter one, nor rewrite the format. The password
-	* failure counters stay outside it: they change without a session.
+	* — the format, the revision, the keyId and every other record and factor row byte for byte. Every
+	* content commit rewrites it in the same transaction and every reload under a session checks it, so
+	* a store writer without the DEK can neither put back a row the vault dropped (a retired backup
+	* key, a disabled policy, a deleted wallet), nor delete, add or alter one, nor rewrite the format,
+	* nor raise the revision the manifest binds. The floor catching an older committed image — still
+	* consistent, manifest and all — lives outside the store in the vault anchor (vault/anchor.ts).
 	*
-	* What it cannot see is the whole image put back to an earlier committed state — that is a
-	* consistent vault the DEK once sealed. Detecting it needs a monotonic counter outside the store.
-	*
-	* Digest = SHA-256(lp("qntx-wallet/vault/v1/manifest") ‖ u32be(format) ‖ lp(keyId) ‖
-	* u32be(#records) ‖ per record: lp(kind) ‖ lp(id) ‖ lp(header) ‖ lp(sealed) ‖ u32be(#factors) ‖ per
-	* factor: lp(kind) ‖ lp(id) ‖ lp(header) ‖ lp(sealed)), where lp(x) = u32be(byteLength(x)) ‖ x,
-	* strings are UTF-8, the manifest record itself is left out, records are ordered by (kind, id) and
-	* factors by id, both in UTF-16 code-unit order.
+	* Digest = SHA-256(lp("qntx-wallet/vault/v1/manifest") ‖ u32be(format) ‖ u64be(revision) ‖
+	* lp(keyId) ‖ u32be(#records) ‖ per record: lp(kind) ‖ lp(id) ‖ lp(header) ‖ lp(sealed) ‖
+	* u32be(#factors) ‖ per factor: lp(kind) ‖ lp(id) ‖ lp(header) ‖ lp(sealed)), where lp(x) =
+	* u32be(byteLength(x)) ‖ x, strings are UTF-8, the manifest record itself is left out, records are
+	* ordered by (kind, id) and factors by id, both in UTF-16 code-unit order.
 	*/
 	init_sha2();
 	init_utils$2();
@@ -8293,6 +8399,14 @@
 	function u32$4(value) {
 		const out = /* @__PURE__ */ new Uint8Array(4);
 		new DataView(out.buffer).setUint32(0, value);
+		return out;
+	}
+	/** U64be as two u32 words — bare Hermes has no BigInt reliance here. */
+	function u64(value) {
+		const out = /* @__PURE__ */ new Uint8Array(8);
+		const view = new DataView(out.buffer);
+		view.setUint32(0, Math.floor(value / 4294967296));
+		view.setUint32(4, value % 4294967296);
 		return out;
 	}
 	/** The structure digest of `image`, the manifest record itself excluded. */
@@ -8313,6 +8427,7 @@
 		};
 		lp(DOMAIN);
 		hash.update(u32$4(meta.format));
+		hash.update(u64(meta.revision));
 		lp(meta.keyId);
 		const records = image.records.filter((record) => !isManifestRecord(record)).sort((a, b) => byCodeUnits(a.kind, b.kind) || byCodeUnits(a.id, b.id));
 		hash.update(u32$4(records.length));
@@ -8382,6 +8497,7 @@
 	// packages/wallet-kernel/src/vault/vault.ts
 	init_utils$2();
 	init_base();
+	init_objectSpread2();
 	/** Consecutive password failures → enforced wait: 30 s, 60 s, then 300 s from the 5th failure. */
 	var BACKOFF_MS = [
 		3e4,
@@ -8398,12 +8514,12 @@
 		return failedAttempts >= FAILURES_BEFORE_BACKOFF ? (_BACKOFF_MS$Math$min = BACKOFF_MS[Math.min(failedAttempts - FAILURES_BEFORE_BACKOFF, BACKOFF_MS.length - 1)]) !== null && _BACKOFF_MS$Math$min !== void 0 ? _BACKOFF_MS$Math$min : 3e5 : 0;
 	}
 	/**
-	* The shared limiter for password attempts on the persisted counters: an attempt rejected while
+	* The shared limiter for password attempts on the anchor's counters: an attempt rejected while
 	* backoff is armed is `rate-limited` — it never ran PBKDF2 so it is not counted and cannot push the
 	* horizon forward.
 	*/
-	function assertPasswordAttemptAllowed(platform, meta) {
-		const retryAt = meta.lastFailureAt + backoffDelay(meta.failedAttempts);
+	function assertPasswordAttemptAllowed(platform, counters) {
+		const retryAt = counters.lastFailureAt + backoffDelay(counters.failedAttempts);
 		if (platform.now() < retryAt) throw new KernelError("rate-limited", "too many wrong passwords", retryAt);
 	}
 	var PASSWORD_FACTOR_ITERATIONS = 6e5;
@@ -8554,13 +8670,13 @@
 	* vault keyId for the session; record and factor authentication happens in the reconcile pass that
 	* follows (every row is "new" to an empty live state).
 	*
-	* Password attempts are rate-limited on the stored counters: with no password factor the attempt is
-	* `invalid-input` and never counted; an attempt rejected while backoff is armed is `rate-limited`
-	* and never counted; a real miss commits `record-failure` through the given `commit` (atomic
-	* against the shared store) and a success clears a nonzero counter with `reset-failures`. Passkey
-	* and hardware unlock are never gated or counted — the platform rate-limits its own prompt.
+	* Password attempts are rate-limited on the anchor's counters: with no password factor the attempt
+	* is `invalid-input` and never counted; an attempt rejected while backoff is armed is
+	* `rate-limited` and never counted; a real miss atomically increments `failedAttempts` in the
+	* anchor (a store writer cannot rewind it away) and a success clears a nonzero counter. Passkey and
+	* hardware unlock are never gated or counted — the platform rate-limits its own prompt.
 	*/
-	async function unlock(platform, image, factor, commit) {
+	async function unlock(platform, image, factor) {
 		const { meta } = image;
 		if (meta === void 0) throw new KernelError("invalid-input", "vault is not initialized");
 		assertFactorKindAvailable(platform, factor.kind);
@@ -8577,7 +8693,8 @@
 		} else if (factor.kind === "password") {
 			const passwords = image.factors.filter((stored) => stored.kind === "password");
 			if (passwords.length === 0) throw new KernelError("invalid-input", "no password factor exists");
-			assertPasswordAttemptAllowed(platform, meta);
+			const counters = await readAnchor(platform.anchor);
+			assertPasswordAttemptAllowed(platform, counters);
 			for (const stored of passwords) {
 				const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
 				try {
@@ -8590,13 +8707,17 @@
 				}
 			}
 			if (dek === void 0) {
-				await commit([{
-					op: "record-failure",
-					at: platform.now()
-				}]);
+				const at = platform.now();
+				await updateAnchor(platform.anchor, (state) => _objectSpread2(_objectSpread2({}, state), {}, {
+					failedAttempts: state.failedAttempts + 1,
+					lastFailureAt: at
+				}));
 				throw new KernelError("wrong-password", "password did not open the vault");
 			}
-			if (meta.failedAttempts !== 0) await commit([{ op: "reset-failures" }]);
+			if (counters.failedAttempts !== 0) await updateAnchor(platform.anchor, (state) => _objectSpread2(_objectSpread2({}, state), {}, {
+				failedAttempts: 0,
+				lastFailureAt: 0
+			}));
 		} else {
 			const wanted = base64urlnopad.encode(factor.credentialId);
 			const stored = image.factors.find((f) => f.kind === "passkey" && credentialIdOf(f) === wanted);
@@ -8631,8 +8752,8 @@
 	* password factor exists), `wrong-passkey`, or for hardware `not-found` (no hardware factor) /
 	* `integrity` (the keystore opened a KEK for another DEK). `prompt` renders the system verification
 	* text and runs only for hardware. Password re-verification shares `unlock`'s rate limiting: the
-	* same armed-backoff rejection, the same `record-failure` commit on a miss and the same
-	* `reset-failures` commit on a success.
+	* same armed-backoff rejection, the same atomic `failedAttempts` increment on a miss and the same
+	* clearing write on a success — all against the vault anchor, not the store.
 	*/
 	async function verifyFactor(platform, image, factor, dek, commit, prompt) {
 		if (factor.kind === "device") throw new KernelError("invalid-input", "the device factor cannot verify");
@@ -8641,10 +8762,11 @@
 			if (factor.kind !== stored.kind) return false;
 			return factor.kind !== "passkey" || credentialIdOf(stored) === base64urlnopad.encode(factor.credentialId);
 		});
+		let counters;
 		if (factor.kind === "password" && candidates.length > 0) {
-			const { meta } = image;
-			if (meta === void 0) throw new KernelError("invalid-input", "vault is not initialized");
-			assertPasswordAttemptAllowed(platform, meta);
+			if (image.meta === void 0) throw new KernelError("invalid-input", "vault is not initialized");
+			counters = await readAnchor(platform.anchor);
+			assertPasswordAttemptAllowed(platform, counters);
 		}
 		let verified = false;
 		for (const stored of candidates) {
@@ -8679,15 +8801,20 @@
 			}
 		}
 		if (verified) {
-			var _image$meta$failedAtt, _image$meta;
-			if (factor.kind === "password" && ((_image$meta$failedAtt = (_image$meta = image.meta) === null || _image$meta === void 0 ? void 0 : _image$meta.failedAttempts) !== null && _image$meta$failedAtt !== void 0 ? _image$meta$failedAtt : 0) !== 0) await commit([{ op: "reset-failures" }]);
+			if (counters !== void 0 && counters.failedAttempts !== 0) await updateAnchor(platform.anchor, (state) => _objectSpread2(_objectSpread2({}, state), {}, {
+				failedAttempts: 0,
+				lastFailureAt: 0
+			}));
 			return;
 		}
 		if (factor.kind === "password") {
-			if (candidates.length > 0) await commit([{
-				op: "record-failure",
-				at: platform.now()
-			}]);
+			if (candidates.length > 0) {
+				const at = platform.now();
+				await updateAnchor(platform.anchor, (state) => _objectSpread2(_objectSpread2({}, state), {}, {
+					failedAttempts: state.failedAttempts + 1,
+					lastFailureAt: at
+				}));
+			}
 			throw new KernelError(candidates.length > 0 ? "wrong-password" : "invalid-input", "password did not verify");
 		}
 		if (factor.kind === "hardware") throw candidates.length > 0 ? new KernelError("integrity", "hardware factor does not open this vault", void 0, true) : new KernelError("verification-unavailable", "no verifying factor exists");
@@ -8824,9 +8951,11 @@
 	}
 	/**
 	* Ops that establish the vault in one atomic `init` commit, rejected by `conflict` if the store is
-	* not empty. The caller keeps `keyId` for the session it opens afterwards.
+	* not empty. `revision` comes from the caller: the anchor's floor plus one, so a vault image sealed
+	* before an erase never outranks the vault that replaces it. The caller keeps `keyId` for the
+	* session it opens afterwards.
 	*/
-	function establishOps(platform, factors, records) {
+	function establishOps(platform, factors, records, revision) {
 		const keyId = bytesToHex$4(platform.random(16));
 		return {
 			keyId,
@@ -8834,11 +8963,9 @@
 				{
 					op: "init",
 					meta: {
-						format: 5,
-						revision: 1,
-						keyId,
-						failedAttempts: 0,
-						lastFailureAt: 0
+						format: 6,
+						revision,
+						keyId
 					}
 				},
 				...factors.map((factor) => ({
@@ -33551,12 +33678,12 @@ zoo`.split("\n"));
 		await ctx.reload();
 		if (ctx.health === "corrupted") throw new KernelError("integrity", "the vault is corrupted");
 		if (ctx.health === "unsupported") throw new KernelError("unsupported", "the vault needs a newer build");
-		const { dek, keyId } = await unlock(ctx.platform, ctx.image, params.factor, ctx.commit);
+		const { dek, keyId } = await unlock(ctx.platform, ctx.image, params.factor);
 		if (ctx.session.unlocked && ctx.session.current().keyId === keyId) {
 			dek.wipe();
 			return { session: ctx.session.current().id };
 		}
-		const session = openSession(ctx, dek, keyId);
+		const session = await openSession(ctx, dek, keyId);
 		await probeKeystoreFactor(ctx, params.factor.kind).catch(() => void 0);
 		return { session };
 	}
@@ -33582,14 +33709,16 @@ zoo`.split("\n"));
 	* Opens a session over `ctx.image` and rebuilds live state in one pass: every module drops stale
 	* state, then the whole image reconciles in from empty — the manifest vouches for the vault's
 	* structure, every record opens under the DEK and every factor binding verifies. A failure latches
-	* corrupted and invalidates the session it just opened. Shared by `vault.unlock` and the establish
-	* paths that open a session on commit.
+	* corrupted and invalidates the session it just opened. A session that survives authentication
+	* raises the vault anchor's floor to the image's revision. Shared by `vault.unlock` and the
+	* establish paths that open a session on commit.
 	*/
-	function openSession(ctx, dek, keyId) {
+	async function openSession(ctx, dek, keyId) {
 		for (const module of ctx.modules) module.lock();
 		const session = ctx.session.open(dek, keyId);
 		ctx.reconcile(EMPTY_IMAGE$1);
 		if (!ctx.session.unlocked) throw new KernelError("integrity", "vault contents failed authentication", void 0, true);
+		await ctx.raiseAnchor();
 		return session;
 	}
 	/**
@@ -33603,6 +33732,7 @@ zoo`.split("\n"));
 		const { keystore } = ctx.platform;
 		if (keystore !== void 0) await keystore.authenticate(corePromptFor(keystore, "reset")());
 		ctx.session.lock("user");
+		await resetAnchor(ctx.platform.anchor);
 		await ctx.commit([{ op: "clear" }]);
 		if (keystore !== void 0) await keystore.clear().catch(() => void 0);
 		return null;
@@ -34214,19 +34344,32 @@ zoo`.split("\n"));
 	* Establishes the vault in one `init` commit and opens the session; wipes `dek` on failure. On a
 	* keystore host the vault is uninitialized here and the kernel is the single writer, so every
 	* hardware key this app left behind (a reinstall keeps iOS keychain items, a failed establish) is
-	* cleared before the new key is sealed — and again if the establish fails after sealing.
+	* cleared before the new key is sealed — and again if the commit that seals it fails. A later
+	* failure (the anchor floor write) leaves the keys: the vault exists and stays openable.
 	*/
 	async function establishVault(ctx, dek, factorRowsFor, records) {
 		const { keystore } = ctx.platform;
 		let keyId;
+		let revision;
 		try {
 			await (keystore === null || keystore === void 0 ? void 0 : keystore.clear());
-			const established = establishOps(ctx.platform, await factorRowsFor(), records);
+			revision = (await readAnchor(ctx.platform.anchor)).revision + 1;
+			const established = establishOps(ctx.platform, await factorRowsFor(), records, revision);
 			({keyId} = established);
 			await ctx.commit(established.ops, { dek });
 		} catch (error) {
 			dek.wipe();
 			await (keystore === null || keystore === void 0 ? void 0 : keystore.clear().catch(() => void 0));
+			throw error;
+		}
+		try {
+			await updateAnchor(ctx.platform.anchor, (state) => ({
+				revision: Math.max(state.revision, revision),
+				failedAttempts: 0,
+				lastFailureAt: 0
+			}));
+		} catch (error) {
+			dek.wipe();
 			throw error;
 		}
 		return openSession(ctx, dek, keyId);
@@ -52644,14 +52787,72 @@ zoo`.split("\n"));
 			}
 		};
 	}
+	// packages/wallet-kernel/src/secret/ownership.ts
+	var SECRET_KEYS = new Set(SECRET_FIELDS);
+	/**
+	* A request's secret byte fields must own their memory: the kernel consumes and wipes each of them,
+	* so a secret sharing memory with another field — the same object or an overlapping view of one
+	* buffer, both preserved by structured clone — would zero that field between the prompt and the
+	* sign pass. `respond` runs this before any decode: a leaf is secret when the nearest key that
+	* holds it is in `SECRET_FIELDS` (array elements inherit the array's key). Within one buffer, a
+	* secret leaf's byte range may not intersect any other leaf's; disjoint views and sharing between
+	* public fields are allowed.
+	*/
+	function assertExclusiveSecrets(params) {
+		const groups = /* @__PURE__ */ new Map();
+		const stack = [{
+			value: params,
+			key: void 0
+		}];
+		while (stack.length > 0) {
+			const frame = stack.pop();
+			if (frame === void 0) continue;
+			const { value, key } = frame;
+			if (value instanceof Uint8Array) {
+				const leaf = {
+					buffer: value.buffer,
+					start: value.byteOffset,
+					end: value.byteOffset + value.byteLength,
+					secret: key !== void 0 && SECRET_KEYS.has(key)
+				};
+				const group = groups.get(leaf.buffer);
+				if (group === void 0) groups.set(leaf.buffer, [leaf]);
+				else group.push(leaf);
+				continue;
+			}
+			if (Array.isArray(value)) {
+				const elements = value;
+				for (const element of elements) stack.push({
+					value: element,
+					key
+				});
+				continue;
+			}
+			if (value !== null && typeof value === "object") for (const [childKey, child] of Object.entries(value)) stack.push({
+				value: child,
+				key: childKey
+			});
+		}
+		for (const group of groups.values()) {
+			if (!group.some((leaf) => leaf.secret)) continue;
+			let maxEndAll = 0;
+			let maxEndSecret = 0;
+			for (const leaf of [...group].sort((a, b) => a.start - b.start)) {
+				if (leaf.end <= leaf.start) continue;
+				if (leaf.secret && leaf.start < maxEndAll || !leaf.secret && leaf.start < maxEndSecret) throw new KernelError("invalid-input", "a secret field shares memory with another field");
+				if (leaf.end > maxEndAll) maxEndAll = leaf.end;
+				if (leaf.secret && leaf.end > maxEndSecret) maxEndSecret = leaf.end;
+			}
+		}
+	}
 	// packages/wallet-kernel/src/status.ts
 	init_objectSpread2();
 	function metaHealth(image) {
 		const { meta } = image;
 		if (meta === void 0) return image.records.length > 0 || image.factors.length > 0 ? "corrupted" : "ok";
 		if (!Number.isSafeInteger(meta.format)) return "corrupted";
-		if (meta.format !== 5) return "unsupported";
-		if (!Number.isSafeInteger(meta.revision) || meta.revision < 1 || typeof meta.keyId !== "string" || !/^[0-9a-f]{32}$/.test(meta.keyId) || !Number.isSafeInteger(meta.failedAttempts) || meta.failedAttempts < 0 || !Number.isSafeInteger(meta.lastFailureAt) || meta.lastFailureAt < 0) return "corrupted";
+		if (meta.format !== 6) return "unsupported";
+		if (!Number.isSafeInteger(meta.revision) || meta.revision < 1 || typeof meta.keyId !== "string" || !/^[0-9a-f]{32}$/.test(meta.keyId)) return "corrupted";
 	}
 	var FACTOR_KINDS = /* @__PURE__ */ new Set([
 		"device",
@@ -52788,14 +52989,10 @@ zoo`.split("\n"));
 	function isMethodName(method) {
 		return Object.hasOwn(METHODS, method);
 	}
-	/** Counter ops never fence: they fold into the store atomically against whatever is there. */
-	function isCounterOp(op) {
-		return op.op === "record-failure" || op.op === "reset-failures";
-	}
 	/** Whether the commit needs the `expect-revision` guard prepended (see KernelContext.commit). */
 	function needsGuard(ops) {
 		var _ops$;
-		return ((_ops$ = ops[0]) === null || _ops$ === void 0 ? void 0 : _ops$.op) !== "init" && !ops.some((op) => op.op === "clear") && !ops.every(isCounterOp) && !ops.some((op) => op.op === "expect-revision");
+		return ((_ops$ = ops[0]) === null || _ops$ === void 0 ? void 0 : _ops$.op) !== "init" && !ops.some((op) => op.op === "clear") && !ops.some((op) => op.op === "expect-revision");
 	}
 	function classifyLoadFailure(error) {
 		if (error instanceof KernelError) {
@@ -52887,11 +53084,12 @@ zoo`.split("\n"));
 		* session is unlocked the live module state reconciles against the new image — a corrupted or
 		* rotated vault locks it.
 		*/
-		const applyImage = (image) => {
+		const applyImage = (image, anchorState) => {
 			const prev = ctx.image;
 			ctx.image = image;
 			ctx.session.setInitialized(image.meta !== void 0);
 			if (image.meta === void 0) integrityFailure = false;
+			if (image.meta !== void 0 && image.meta.revision < anchorState.revision) integrityFailure = true;
 			const assessed = statusContents(image, ctx.modules, nostr).health;
 			setHealth(assessed === "ok" && integrityFailure ? "corrupted" : assessed);
 			reconcile(prev);
@@ -52921,14 +53119,27 @@ zoo`.split("\n"));
 			postStatus();
 		};
 		const reload = async () => {
+			let anchorState;
 			let image;
 			try {
+				anchorState = await readAnchor(platform.anchor);
 				image = await platform.store.load();
 			} catch (error) {
 				setHealth(classifyLoadFailure(error));
 				throw error instanceof KernelError ? error : new KernelError("unavailable", "vault store: load failed");
 			}
-			applyImage(image);
+			applyImage(image, anchorState);
+			await raiseAnchor(anchorState);
+		};
+		/**
+		* Moves the anchor floor to a revision the live session just sealed or authenticated. Never runs
+		* while locked — an unauthenticated image must not raise the floor, or a store writer could
+		* inflate it and brick the real vault.
+		*/
+		const raiseAnchor = async (known) => {
+			if (!ctx.session.unlocked || ctx.health !== "ok" || ctx.image.meta === void 0 || ctx.image.meta.revision <= known.revision) return;
+			const { revision } = ctx.image.meta;
+			await updateAnchor(platform.anchor, (state) => _objectSpread2(_objectSpread2({}, state), {}, { revision: Math.max(state.revision, revision) }));
 		};
 		/** The DEK a structural commit's image is sealed under (see KernelContext.commit). */
 		const sealingDek = (options) => {
@@ -52975,7 +53186,10 @@ zoo`.split("\n"));
 				await reload();
 			},
 			reload,
-			reconcile
+			reconcile,
+			raiseAnchor: async () => {
+				await raiseAnchor(await readAnchor(platform.anchor));
+			}
 		};
 		const dispatch = async (method, params, requestSession) => {
 			const parsed = METHODS[method].params(params);
@@ -53034,6 +53248,7 @@ zoo`.split("\n"));
 				if (!isProtocolValue(candidate)) throw new KernelError("integrity", "malformed params");
 				const params = candidate;
 				if (requestBytes(request) > 1048576) throw new KernelError("invalid-input", "request exceeds the size limit");
+				assertExclusiveSecrets(params);
 				if (ctx.health !== "ok" && method !== "status" && method !== "vault.reset") {
 					if (ctx.health === "unavailable") await reload();
 					if (ctx.health === "corrupted") throw new KernelError("integrity", "the vault is corrupted");
@@ -53077,6 +53292,17 @@ zoo`.split("\n"));
 			enqueue(async () => handle(message));
 		});
 		enqueue(reloadAndPost);
+	}
+	// packages/wallet-native/kernel/anchor.ts
+	function bindNativeAnchor(raw) {
+		return {
+			async read() {
+				return raw.read();
+			},
+			async replace(next, expected) {
+				return raw.replace(next, expected);
+			}
+		};
 	}
 	// packages/wallet-native/kernel/detail.ts
 	/**
@@ -55758,9 +55984,6 @@ zoo`.split("\n"));
 	function boundedString(value, max, what) {
 		if (typeof value !== "string" || value.length > max) throw bad(`${what} is not a string within ${max} chars`);
 	}
-	function safeNonNegative(value, what) {
-		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw bad(`${what} is not a safe non-negative integer`);
-	}
 	function sealedBytes(value) {
 		if (!(value instanceof Uint8Array) || value.byteLength < MIN_SEALED || value.byteLength > MAX_SEALED) throw bad("sealed is not a Uint8Array within sane bounds");
 	}
@@ -55778,12 +56001,10 @@ zoo`.split("\n"));
 			const metaRow = plainObject(meta);
 			const { format } = metaRow;
 			if (typeof format !== "number" || !Number.isSafeInteger(format)) throw bad("meta format is not a safe integer");
-			if (format !== 5) throw new KernelError("unsupported", "vault store: meta format is not this build's");
-			exactKeys(metaRow, "failedAttempts,format,keyId,lastFailureAt,revision");
+			if (format !== 6) throw new KernelError("unsupported", "vault store: meta format is not this build's");
+			exactKeys(metaRow, "format,keyId,revision");
 			if (typeof metaRow["keyId"] !== "string" || !HEX_32.test(metaRow["keyId"])) throw bad("meta keyId is not 32 lowercase hex");
 			if (typeof metaRow["revision"] !== "number" || !Number.isSafeInteger(metaRow["revision"]) || metaRow["revision"] < 1) throw bad("meta revision is not a safe integer ≥ 1");
-			safeNonNegative(metaRow["failedAttempts"], "meta failedAttempts");
-			safeNonNegative(metaRow["lastFailureAt"], "meta lastFailureAt");
 		}
 		if (!Array.isArray(records) || records.length > MAX_ROWS) throw bad("records is not a bounded array");
 		const seenRecords = /* @__PURE__ */ new Set();
@@ -56101,6 +56322,7 @@ zoo`.split("\n"));
 			});
 		}),
 		store: createFileStore(__qntx.file),
+		anchor: bindNativeAnchor(__qntx.anchor),
 		keystore: bindNativeKeystore(__qntx.keystore),
 		passkey: bindNativePasskey(__qntx.passkey, (length) => __qntx.random(length)),
 		policy: {

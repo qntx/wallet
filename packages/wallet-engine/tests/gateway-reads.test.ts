@@ -14,6 +14,7 @@ import {
   networkById,
   networksPath,
   phishingListPath,
+  pricesPath,
   rpcPath,
   solanaRpcRequest,
   swapQuote,
@@ -430,6 +431,11 @@ describe("gatewayScope", () => {
     [tokenListPath(DEVNET), "solana"],
     [tokenListPath(SIGNET), "bitcoin"],
     ["/v1/tokens/nope:0", "service"],
+    [pricesPath("evm"), "evm"],
+    [pricesPath("solana"), "solana"],
+    [pricesPath("bitcoin"), "bitcoin"],
+    [pricesPath("tron"), "tron"],
+    ["/v1/prices/nope", "service"],
     [`${esploraBasePath(SIGNET)}/block-height/0`, "bitcoin"],
     [`${esploraBasePath(SIGNET)}/tx`, "bitcoin"],
     [swapQuoteSolana.path, "solana"],
@@ -455,16 +461,18 @@ describe("gatewayScope", () => {
       `/base${rpcPath(SEPOLIA)}`,
       `/base${rpcPath(DEVNET)}`,
       `/base${esploraBasePath(SIGNET)}/block-height/0`,
+      `/base${pricesPath("tron")}`,
       `/base${networksPath}`,
     ];
     await Promise.all(paths.map(async (path) => wrapped(`${GATEWAY}${path}`)));
     const ids = [...seen.values()];
-    expect(new Set(ids).size).toBe(4);
+    expect(new Set(ids).size).toBe(5);
     expect(seen.get(`/base${rpcPath(SEPOLIA)}`)).toBe(gateway.clientIds.evm);
     expect(seen.get(`/base${rpcPath(DEVNET)}`)).toBe(gateway.clientIds.solana);
     expect(seen.get(`/base${esploraBasePath(SIGNET)}/block-height/0`)).toBe(
       gateway.clientIds.bitcoin,
     );
+    expect(seen.get(`/base${pricesPath("tron")}`)).toBe(gateway.clientIds.tron);
     expect(seen.get(`/base${networksPath}`)).toBe(gateway.clientIds.service);
   });
 });

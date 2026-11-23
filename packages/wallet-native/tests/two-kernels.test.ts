@@ -8,6 +8,8 @@ import { nostr } from "@qntx/wallet/nostr";
 
 import { startKernel } from "../../wallet-kernel/src/index.ts";
 import type { KernelPlatform, createMemoryStore } from "../../wallet-kernel/src/index.ts";
+import { bindNativeAnchor } from "../kernel/anchor.ts";
+import type { KernelAnchorNative } from "../kernel/anchor.ts";
 import { bindNativeKeystore } from "../kernel/keystore.ts";
 import type { KernelKeystoreNative } from "../kernel/keystore.ts";
 import { createFileStore } from "../kernel/store.ts";
@@ -201,10 +203,12 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
 function platform(
   store: ReturnType<typeof createMemoryStore>,
   keystore: KernelKeystoreNative,
+  anchor: KernelAnchorNative,
 ): KernelPlatform {
   return {
     random: (n) => crypto.getRandomValues(new Uint8Array(n)),
     keystore: bindNativeKeystore(keystore),
+    anchor: bindNativeAnchor(anchor),
     passkey: undefined,
     now: () => Date.now(),
     elapsed: () => performance.now(),
@@ -279,9 +283,32 @@ const fileStore = (bytes: { value: Uint8Array | undefined }) =>
     },
   });
 
-const boot = (store: ReturnType<typeof createMemoryStore>, keystore: KernelKeystoreNative) => {
+// An in-memory __qntx.anchor with the native compare-and-swap semantics — like the file, the
+// holder stands in for the platform keystore and outlives a crashed kernel.
+const nativeAnchor = (bytes: { value: Uint8Array | undefined }): KernelAnchorNative => ({
+  read: () => bytes.value,
+  replace: (next, expected) => {
+    const matches =
+      expected === undefined
+        ? bytes.value === undefined
+        : bytes.value !== undefined &&
+          bytes.value.length === expected.length &&
+          bytes.value.every((v, i) => v === expected[i]);
+    if (!matches) {
+      return false;
+    }
+    bytes.value = next;
+    return true;
+  },
+});
+
+const boot = (
+  store: ReturnType<typeof createMemoryStore>,
+  keystore: KernelKeystoreNative,
+  anchor: KernelAnchorNative,
+) => {
   const { host, pipe } = makePipe();
-  startKernel(platform(store, keystore), createKernelPort(pipe));
+  startKernel(platform(store, keystore, anchor), createKernelPort(pipe));
   return host;
 };
 
@@ -302,8 +329,9 @@ describe("two kernels over one vault file", () => {
     // keystore.clear(), which must not reach A's keys, so B gets its own namespace.
     const keystore = fakeNativeKeystore();
     const bytes = { value: undefined as Uint8Array | undefined };
-    const walletA = await connect(boot(fileStore(bytes), keystore.native));
-    const walletB = await connect(boot(fileStore(bytes), fakeNativeKeystore().native));
+    const anchor = nativeAnchor({ value: undefined });
+    const walletA = await connect(boot(fileStore(bytes), keystore.native, anchor));
+    const walletB = await connect(boot(fileStore(bytes), fakeNativeKeystore().native, anchor));
     expect(walletA.getSnapshot().vault).toBe("uninitialized");
     expect(walletB.getSnapshot().vault).toBe("uninitialized");
     try {
@@ -314,7 +342,7 @@ describe("two kernels over one vault file", () => {
         expect.objectContaining({ code: "conflict" }),
       );
       // A cold kernel reads the committed file: only A's vault exists.
-      const walletC = await connect(boot(fileStore(bytes), keystore.native));
+      const walletC = await connect(boot(fileStore(bytes), keystore.native, anchor));
       try {
         await walletC.vault.unlock();
         expect(walletC.getSnapshot().wallets.map((w) => w.walletId)).toStrictEqual([a.walletId]);
@@ -332,11 +360,12 @@ describe("two kernels over one vault file", () => {
     // keystore.clear), so A's sealed keys survive for B's unlock and C's cold read.
     const keystore = fakeNativeKeystore();
     const bytes = { value: undefined as Uint8Array | undefined };
-    const walletA = await connect(boot(fileStore(bytes), keystore.native));
+    const anchor = nativeAnchor({ value: undefined });
+    const walletA = await connect(boot(fileStore(bytes), keystore.native, anchor));
     try {
       const { walletId } = await walletA.wallets.importMnemonic({ mnemonic: M1 });
       // B boots after A initialized — its load sees the initialized vault.
-      const walletB = await connect(boot(fileStore(bytes), keystore.native));
+      const walletB = await connect(boot(fileStore(bytes), keystore.native, anchor));
       try {
         await walletA.vault.unlock();
         await walletB.vault.unlock();
@@ -350,7 +379,7 @@ describe("two kernels over one vault file", () => {
         void one;
 
         // A cold reader sees A's committed record — B's lost race dropped nothing.
-        const walletC = await connect(boot(fileStore(bytes), keystore.native));
+        const walletC = await connect(boot(fileStore(bytes), keystore.native, anchor));
         try {
           await walletC.vault.unlock();
           const indices = walletC.getSnapshot().nostr.keys.map((k) => k.ref.index);

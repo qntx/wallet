@@ -11,6 +11,7 @@ import {
 } from "../src/modules/nostr/record.ts";
 import { encodeSessionHeader, parseSessionHeader } from "../src/modules/sessions/record.ts";
 import type { KernelPlatform } from "../src/platform.ts";
+import { createMemoryAnchor } from "../src/vault/anchor.ts";
 import {
   encodeHeader,
   parseBackupKeyHeader,
@@ -121,6 +122,7 @@ describe("vault meta vector", () => {
       pbkdf2: subtlePbkdf2,
       argon2id: quickArgon2id,
       store: createMemoryStore(),
+      anchor: createMemoryAnchor(),
       policy: { maxSessionMs: 0, maxScryptLogN: 20, idle: { ms: 0, activity: "presence" } },
       keystore: undefined,
       passkey: undefined,
@@ -138,7 +140,7 @@ describe("vault meta vector", () => {
       header: "{}",
       sealed: new Uint8Array([0x02]),
     };
-    const { ops } = establishOps(platform, [factor], []);
+    const { ops } = establishOps(platform, [factor], [], 1);
     const meta = initMeta(ops);
     expect(meta).toStrictEqual(metaVector.input);
     expect(JSON.stringify(meta)).toBe(metaVector.text);

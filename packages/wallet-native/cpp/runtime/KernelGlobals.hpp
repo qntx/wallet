@@ -91,8 +91,8 @@ struct KernelGlobalsState {
 
 // Installs the kernel's capabilities on a fresh runtime:
 //   globalThis.__qntx   frozen { random, now, elapsed, setTimer, pbkdf2, file,
-//                              frames, backends, keystore, passkey, cardReader,
-//                              secureInput }
+//                              anchor, frames, backends, keystore, passkey,
+//                              cardReader, secureInput }
 //   globalThis.crypto   frozen { getRandomValues }
 //   globalThis.TextDecoder   the native Hermes decoder (260318099+), frozen
 //                            and rebound hidden

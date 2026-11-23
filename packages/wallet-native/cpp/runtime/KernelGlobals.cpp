@@ -1,6 +1,7 @@
 #include "KernelGlobals.hpp"
 
 #include "../host/KernelFile.hpp"
+#include "../host/VaultAnchor.hpp"
 
 #include "KernelBackends.hpp"
 #include "KernelCardReader.hpp"
@@ -522,6 +523,47 @@ void installKernelGlobals(
       }));
   intrinsics->freeze.call(rt, jsi::Value(rt, file));
   qntx.setProperty(rt, "file", jsi::Value(std::move(file)));
+
+  // __qntx.anchor — the vault anchor behind platform.anchor: a few bytes of
+  // kernel state held outside the vault file (platform keystore) so a host
+  // that restores an older vault image cannot restore the revision floor or
+  // the failure counters with it. read() -> Uint8Array | undefined;
+  // replace(next, expected?) is the compare-and-swap the C++ side serializes
+  // under one process-wide mutex. Platform failures throw so the kernel maps
+  // them to `unavailable` instead of silently degrading.
+  auto anchor = jsi::Object(rt);
+  anchor.setProperty(
+      rt,
+      "read",
+      hostFn(rt, "anchor.read", 0, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value*, size_t) -> jsi::Value {
+        const auto bytes = vaultAnchorRead();
+        if (!bytes.has_value()) {
+          return jsi::Value::undefined();
+        }
+        auto buffer = arrayBufferFromBytes(rt, bytes->data(), bytes->size());
+        return jsi::Value(rt, makeUint8Array(rt, *state->intrinsics, std::move(buffer)));
+      }));
+  anchor.setProperty(
+      rt,
+      "replace",
+      hostFn(rt, "anchor.replace", 2, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 1) {
+          throw jsi::JSError(rt, "__qntx.anchor.replace expects (next, expected?)");
+        }
+        const auto next =
+            byteViewFromValue(rt, args[0], "__qntx.anchor.replace next", *state->intrinsics);
+        std::optional<std::vector<uint8_t>> expected;
+        if (count >= 2 && !args[1].isUndefined()) {
+          const auto expectedView = byteViewFromValue(
+              rt, args[1], "__qntx.anchor.replace expected", *state->intrinsics);
+          expected =
+              std::vector<uint8_t>(expectedView.data, expectedView.data + expectedView.size);
+        }
+        return jsi::Value(
+            vaultAnchorReplace(next.data, next.size, expected));
+      }));
+  intrinsics->freeze.call(rt, jsi::Value(rt, anchor));
+  qntx.setProperty(rt, "anchor", jsi::Value(std::move(anchor)));
 
   installKernelBackends(rt, qntx, *intrinsics);
   installKernelKeystore(rt, qntx, state);

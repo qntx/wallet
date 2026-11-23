@@ -7,8 +7,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { npubEncode, verifyEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
 import type { Wallet } from "@qntx/wallet";
-import { KernelError, createMemoryStore } from "@qntx/wallet-kernel";
-import type { RecordStore } from "@qntx/wallet-kernel";
+import { KernelError, createMemoryAnchor, createMemoryStore } from "@qntx/wallet-kernel";
+import type { RecordStore, VaultAnchor } from "@qntx/wallet-kernel";
 import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
 
@@ -343,12 +343,15 @@ describe("worker init validation", () => {
 
 describe("store RPC", () => {
   /** A store client/server pair wired directly over a MessageChannel — no worker needed. */
-  function storePair(store: RecordStore): {
-    readonly client: RecordStore;
+  function storePair(
+    store: RecordStore,
+    anchor: VaultAnchor = createMemoryAnchor(),
+  ): {
+    readonly client: { store: RecordStore; anchor: VaultAnchor };
     readonly stop: () => void;
   } {
     const channel = new MessageChannel();
-    const stop = serveStore(store, channel.port1);
+    const stop = serveStore(store, anchor, channel.port1);
     const client = createStoreClient({
       post: (message) => {
         channel.port2.postMessage(message);
@@ -378,11 +381,11 @@ describe("store RPC", () => {
     try {
       // An expect-revision guard on an empty store cannot hold — the server replies "failed"
       // and the client rejects with the conflict code, never hangs.
-      await expect(client.commit([{ op: "expect-revision", revision: 7 }])).rejects.toSatisfy(
+      await expect(client.store.commit([{ op: "expect-revision", revision: 7 }])).rejects.toSatisfy(
         (e) => kernelErrorCode(e) === "conflict",
       );
       // The channel still works afterwards.
-      const image = await client.load();
+      const image = await client.store.load();
       expect(image.meta).toBeUndefined();
     } finally {
       stop();
@@ -397,10 +400,52 @@ describe("store RPC", () => {
     };
     const { client, stop } = storePair(failing);
     try {
-      await expect(client.load()).rejects.toSatisfy((e) => kernelErrorCode(e) === "unavailable");
-      await expect(client.commit([{ op: "clear" }])).rejects.toSatisfy(
+      await expect(client.store.load()).rejects.toSatisfy(
         (e) => kernelErrorCode(e) === "unavailable",
       );
+      await expect(client.store.commit([{ op: "clear" }])).rejects.toSatisfy(
+        (e) => kernelErrorCode(e) === "unavailable",
+      );
+    } finally {
+      stop();
+    }
+  });
+
+  it("anchor reads and compare-and-swap writes cross the channel", async () => {
+    const stored = createMemoryAnchor();
+    const { client, stop } = storePair(createMemoryStore(), stored);
+    try {
+      await expect(client.anchor.read()).resolves.toBeUndefined();
+      const record = new Uint8Array([1, 2, 3]);
+      await expect(client.anchor.replace(record, undefined)).resolves.toBe(true);
+      // The bytes land in the main-thread anchor, not a worker-side copy.
+      await expect(stored.read()).resolves.toStrictEqual(record);
+      await expect(client.anchor.read()).resolves.toStrictEqual(record);
+      // A CAS whose expected bytes do not match writes nothing and answers false.
+      await expect(client.anchor.replace(new Uint8Array([9]), new Uint8Array([7]))).resolves.toBe(
+        false,
+      );
+      await expect(stored.read()).resolves.toStrictEqual(record);
+    } finally {
+      stop();
+    }
+  });
+
+  it("a failed anchor request rejects instead of hanging", async () => {
+    const failing: VaultAnchor = {
+      read: async () => Promise.reject(new Error("disk gone")),
+      replace: async () => Promise.reject(new Error("disk gone")),
+    };
+    const { client, stop } = storePair(createMemoryStore(), failing);
+    try {
+      await expect(client.anchor.read()).rejects.toSatisfy(
+        (e) => kernelErrorCode(e) === "unavailable",
+      );
+      await expect(client.anchor.replace(new Uint8Array([1]), undefined)).rejects.toSatisfy(
+        (e) => kernelErrorCode(e) === "unavailable",
+      );
+      // The channel still works afterwards.
+      await expect(client.store.load()).resolves.toBeDefined();
     } finally {
       stop();
     }

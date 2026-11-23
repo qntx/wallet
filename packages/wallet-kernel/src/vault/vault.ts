@@ -10,6 +10,8 @@ import { assertFactorKindAvailable, requireKeystore } from "../platform.ts";
 import type { KernelPlatform, KeystorePrompt, KeyUse } from "../platform.ts";
 import { corePromptFor } from "../prompts.ts";
 import { Secret, wipe } from "../secret/secret.ts";
+import { readAnchor, updateAnchor } from "./anchor.ts";
+import type { AnchorState } from "./anchor.ts";
 import { open, recordContext, seal } from "./envelope.ts";
 import {
   assertPasswordPolicy,
@@ -49,12 +51,12 @@ function backoffDelay(failedAttempts: number): number {
 }
 
 /**
- * The shared limiter for password attempts on the persisted counters: an attempt rejected while
+ * The shared limiter for password attempts on the anchor's counters: an attempt rejected while
  * backoff is armed is `rate-limited` — it never ran PBKDF2 so it is not counted and cannot push the
  * horizon forward.
  */
-function assertPasswordAttemptAllowed(platform: KernelPlatform, meta: VaultMeta): void {
-  const retryAt = meta.lastFailureAt + backoffDelay(meta.failedAttempts);
+function assertPasswordAttemptAllowed(platform: KernelPlatform, counters: AnchorState): void {
+  const retryAt = counters.lastFailureAt + backoffDelay(counters.failedAttempts);
   if (platform.now() < retryAt) {
     throw new KernelError("rate-limited", "too many wrong passwords", retryAt);
   }
@@ -278,17 +280,16 @@ export type OpenedRecord = {
  * vault keyId for the session; record and factor authentication happens in the reconcile pass that
  * follows (every row is "new" to an empty live state).
  *
- * Password attempts are rate-limited on the stored counters: with no password factor the attempt is
- * `invalid-input` and never counted; an attempt rejected while backoff is armed is `rate-limited`
- * and never counted; a real miss commits `record-failure` through the given `commit` (atomic
- * against the shared store) and a success clears a nonzero counter with `reset-failures`. Passkey
- * and hardware unlock are never gated or counted — the platform rate-limits its own prompt.
+ * Password attempts are rate-limited on the anchor's counters: with no password factor the attempt
+ * is `invalid-input` and never counted; an attempt rejected while backoff is armed is
+ * `rate-limited` and never counted; a real miss atomically increments `failedAttempts` in the
+ * anchor (a store writer cannot rewind it away) and a success clears a nonzero counter. Passkey and
+ * hardware unlock are never gated or counted — the platform rate-limits its own prompt.
  */
 export async function unlock(
   platform: KernelPlatform,
   image: VaultImage,
   factor: Factor,
-  commit: (ops: ReadonlyArray<StoreOp>) => Promise<void>,
 ): Promise<{ dek: Secret; keyId: string }> {
   const { meta } = image;
   if (meta === undefined) {
@@ -313,7 +314,8 @@ export async function unlock(
     if (passwords.length === 0) {
       throw new KernelError("invalid-input", "no password factor exists");
     }
-    assertPasswordAttemptAllowed(platform, meta);
+    const counters = await readAnchor(platform.anchor);
+    assertPasswordAttemptAllowed(platform, counters);
     for (const stored of passwords) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- factors are tried sequentially, not in parallel
       const kek = await kekFor(
@@ -336,11 +338,20 @@ export async function unlock(
       }
     }
     if (dek === undefined) {
-      await commit([{ op: "record-failure", at: platform.now() }]);
+      const at = platform.now();
+      await updateAnchor(platform.anchor, (state) => ({
+        ...state,
+        failedAttempts: state.failedAttempts + 1,
+        lastFailureAt: at,
+      }));
       throw new KernelError("wrong-password", "password did not open the vault");
     }
-    if (meta.failedAttempts !== 0) {
-      await commit([{ op: "reset-failures" }]);
+    if (counters.failedAttempts !== 0) {
+      await updateAnchor(platform.anchor, (state) => ({
+        ...state,
+        failedAttempts: 0,
+        lastFailureAt: 0,
+      }));
     }
   } else {
     const wanted = base64urlnopad.encode(factor.credentialId);
@@ -376,8 +387,8 @@ function credentialIdOf(stored: StoredFactor): string | undefined {
  * password factor exists), `wrong-passkey`, or for hardware `not-found` (no hardware factor) /
  * `integrity` (the keystore opened a KEK for another DEK). `prompt` renders the system verification
  * text and runs only for hardware. Password re-verification shares `unlock`'s rate limiting: the
- * same armed-backoff rejection, the same `record-failure` commit on a miss and the same
- * `reset-failures` commit on a success.
+ * same armed-backoff rejection, the same atomic `failedAttempts` increment on a miss and the same
+ * clearing write on a success — all against the vault anchor, not the store.
  */
 export async function verifyFactor(
   platform: KernelPlatform,
@@ -402,12 +413,13 @@ export async function verifyFactor(
       credentialIdOf(stored) === base64urlnopad.encode(factor.credentialId)
     );
   });
+  let counters: AnchorState | undefined;
   if (factor.kind === "password" && candidates.length > 0) {
-    const { meta } = image;
-    if (meta === undefined) {
+    if (image.meta === undefined) {
       throw new KernelError("invalid-input", "vault is not initialized");
     }
-    assertPasswordAttemptAllowed(platform, meta);
+    counters = await readAnchor(platform.anchor);
+    assertPasswordAttemptAllowed(platform, counters);
   }
   let verified = false;
   for (const stored of candidates) {
@@ -460,14 +472,23 @@ export async function verifyFactor(
     }
   }
   if (verified) {
-    if (factor.kind === "password" && (image.meta?.failedAttempts ?? 0) !== 0) {
-      await commit([{ op: "reset-failures" }]);
+    if (counters !== undefined && counters.failedAttempts !== 0) {
+      await updateAnchor(platform.anchor, (state) => ({
+        ...state,
+        failedAttempts: 0,
+        lastFailureAt: 0,
+      }));
     }
     return;
   }
   if (factor.kind === "password") {
     if (candidates.length > 0) {
-      await commit([{ op: "record-failure", at: platform.now() }]);
+      const at = platform.now();
+      await updateAnchor(platform.anchor, (state) => ({
+        ...state,
+        failedAttempts: state.failedAttempts + 1,
+        lastFailureAt: at,
+      }));
     }
     throw new KernelError(
       candidates.length > 0 ? "wrong-password" : "invalid-input",
@@ -655,20 +676,21 @@ export function findRecord(image: VaultImage, kind: string, id: string): StoredR
 
 /**
  * Ops that establish the vault in one atomic `init` commit, rejected by `conflict` if the store is
- * not empty. The caller keeps `keyId` for the session it opens afterwards.
+ * not empty. `revision` comes from the caller: the anchor's floor plus one, so a vault image sealed
+ * before an erase never outranks the vault that replaces it. The caller keeps `keyId` for the
+ * session it opens afterwards.
  */
 export function establishOps(
   platform: KernelPlatform,
   factors: ReadonlyArray<StoredFactor>,
   records: ReadonlyArray<StoredRecord>,
+  revision: number,
 ): { ops: StoreOp[]; keyId: string } {
   const keyId = bytesToHex(platform.random(16));
   const meta: VaultMeta = {
     format: VAULT_FORMAT,
-    revision: 1,
+    revision,
     keyId,
-    failedAttempts: 0,
-    lastFailureAt: 0,
   };
   return {
     keyId,

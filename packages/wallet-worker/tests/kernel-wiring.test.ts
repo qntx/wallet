@@ -6,7 +6,7 @@ import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createMemoryStore } from "@qntx/wallet-kernel";
+import { createMemoryAnchor, createMemoryStore } from "@qntx/wallet-kernel";
 
 import { serveStore } from "../src/node/store-server.ts";
 import { startNodeKernel } from "../src/worker/node-kernel.ts";
@@ -106,7 +106,7 @@ describe("startNodeKernel", () => {
   it("serves the protocol over the parent port and the vault over the store port", async () => {
     const main = new MessageChannel();
     const storeChannel = new MessageChannel();
-    const stopStore = serveStore(createMemoryStore(), storeChannel.port1);
+    const stopStore = serveStore(createMemoryStore(), createMemoryAnchor(), storeChannel.port1);
     startNodeKernel(main.port2, { idleMinutes: 15, storePort: storeChannel.port2 }, readSparkWasm);
     const replies: unknown[] = [];
     main.port1.on("message", (message: unknown) => {

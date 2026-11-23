@@ -1,8 +1,8 @@
 /**
- * `POST /v1/prices` against recorded provider answers. Every fixture under `fixtures/prices/` is a
- * real response (its `url` and `fetchedAt` inside): CoinGecko's keyless `api.coingecko.com` (the
- * Pro API the gateway calls serves the same documented shape) and DefiLlama's keyless
- * `coins.llama.fi`.
+ * `POST /v1/prices/:family` against recorded provider answers. Every fixture under
+ * `fixtures/prices/` is a real response (its `url` and `fetchedAt` inside): CoinGecko's keyless
+ * `api.coingecko.com` (the Pro API the gateway calls serves the same documented shape) and
+ * DefiLlama's keyless `coins.llama.fi`.
  */
 import { describe, expect, it } from "vite-plus/test";
 
@@ -10,7 +10,8 @@ import {
   PROVIDERS_HEADER,
   nativeAssetId,
   parseWith,
-  prices,
+  priceAssetFamily,
+  pricesPath,
   pricesResponse,
   tokenAssetId,
 } from "@qntx/wallet-engine/gateway/contract";
@@ -107,7 +108,20 @@ const literal = (recorded: Recorded, key: string, field: string): string => {
   return match[1];
 };
 
-const request = (assets: ReadonlyArray<string>, currency = "usd") => post({ currency, assets });
+const init = (assets: ReadonlyArray<string>, currency = "usd") => post({ currency, assets });
+
+/**
+ * `[path, init]` for a family-homogeneous asset set — under `POST /v1/prices/:family` a body may
+ * name only the route family's assets, so a cross-family set here is a test bug, not a request.
+ */
+const request = (assets: ReadonlyArray<string>, currency = "usd") => {
+  const families = new Set(assets.map(priceAssetFamily));
+  const family = families.size === 0 ? "evm" : [...families][0];
+  if (families.size > 1 || family === undefined) {
+    throw new TypeError(`cross-family or unmappable asset set: ${assets.join(",")}`);
+  }
+  return [pricesPath(family), init(assets, currency)] as const;
+};
 
 const primary = (overrides: Record<string, Upstream> = {}) => ({
   [CG_SIMPLE]: replay(cgSimple),
@@ -145,7 +159,38 @@ const body = async (res: Response): Promise<PricesResponse> => {
   return parsed;
 };
 
-describe("POST /v1/prices request validation", () => {
+describe("POST /v1/prices/:family request validation", () => {
+  it.each<[string, string]>([
+    ["evm", ETH_NATIVE],
+    ["solana", SOL_NATIVE],
+    ["bitcoin", BTC_NATIVE],
+    ["tron", TRX_NATIVE],
+  ])("serves /v1/prices/%s", async (family, native) => {
+    const upstream = fakeFetch(primary());
+    const res = await app(upstream).request(pricesPath(family as "evm"), init([native]));
+    expect(res.status).toBe(200);
+  });
+
+  it("404s an unknown family and never calls a provider", async () => {
+    const upstream = fakeFetch(primary());
+    const res = await app(upstream).request("/v1/prices/cosmos", init([ETH_NATIVE]));
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toStrictEqual({ error: "not-found" });
+    expect(upstream.calls).toHaveLength(0);
+  });
+
+  it.each([
+    ["an evm asset on the solana route", "solana", [ETH_NATIVE]],
+    ["a bitcoin asset on the evm route", "evm", [BTC_NATIVE]],
+    ["one foreign asset among family ones", "evm", [ETH_NATIVE, TRX_NATIVE]],
+  ])("400s %s", async (_name, family, assets) => {
+    const upstream = fakeFetch(primary());
+    const res = await app(upstream).request(pricesPath(family as "evm"), init(assets));
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toStrictEqual({ error: "invalid-request" });
+    expect(upstream.calls).toHaveLength(0);
+  });
+
   it.each([
     ["no assets", { currency: "usd", assets: [] }],
     ["an unknown currency", { currency: "xau", assets: [ETH_NATIVE] }],
@@ -167,7 +212,7 @@ describe("POST /v1/prices request validation", () => {
     ],
   ])("rejects %s with 400 and never calls a provider", async (_name, payload) => {
     const upstream = fakeFetch({});
-    const res = await app(upstream).request(prices.path, request(payload.assets, payload.currency));
+    const res = await app(upstream).request(...request(payload.assets, payload.currency));
     expect(res.status).toBe(400);
     expect(upstream.calls).toHaveLength(0);
   });
@@ -175,7 +220,7 @@ describe("POST /v1/prices request validation", () => {
   it("413s a body above 16 KiB", async () => {
     const upstream = fakeFetch({});
     const res = await app(upstream).request(
-      prices.path,
+      pricesPath("evm"),
       post({ currency: "usd", assets: ["x".repeat(17_000)] }),
     );
     expect(res.status).toBe(413);
@@ -199,14 +244,14 @@ describe("POST /v1/prices request validation", () => {
       limiters: { ip: allowAll, rpc: allowAll, default: limiter, share },
       prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
     });
-    const res = await app.request(prices.path, request(assets));
+    const res = await app.request(...request(assets));
     expect(res.status).toBe(200);
     // The request's own unit, then one CoinGecko platform call and DefiLlama's two.
     expect(limiter.deltas).toStrictEqual([1]);
     expect(share.deltas).toStrictEqual([1, 1, 1]);
     expect(upstream.calls).toHaveLength(3);
 
-    const cached = await app.request(prices.path, request(assets));
+    const cached = await app.request(...request(assets));
     expect(cached.status).toBe(200);
     expect(limiter.deltas).toStrictEqual([1, 1]);
     expect(share.deltas).toStrictEqual([1, 1, 1]);
@@ -214,7 +259,7 @@ describe("POST /v1/prices request validation", () => {
   });
 });
 
-describe("POST /v1/prices fan-out accounting", () => {
+describe("POST /v1/prices/:family fan-out accounting", () => {
   const SOL = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
   const PLATFORMS = [
     "eip155:1",
@@ -227,13 +272,20 @@ describe("POST /v1/prices fan-out accounting", () => {
     "eip155:43114",
   ];
   const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  /** 100 distinct token ids over the nine token platforms; `seed` freshens them. */
-  const spread = (seed: number): string[] =>
-    Array.from({ length: 100 }, (_v, i) => {
+  /**
+   * 100 distinct token ids over the nine token platforms, per family — `POST /v1/prices/:family`
+   * names one family's assets, so the batch is sent as an evm request plus a solana one; `seed`
+   * freshens them.
+   */
+  const evmSpread = (seed: number): string[] =>
+    Array.from({ length: 89 }, (_v, i) => {
+      const n = seed * 100 + i * 9;
+      return `${PLATFORMS[i % 8] ?? ""}/erc20:0x${n.toString(16).padStart(40, "0")}`;
+    });
+  const solSpread = (seed: number): string[] =>
+    Array.from({ length: 11 }, (_v, i) => {
       const n = seed * 100 + i;
-      return i % 9 === 8
-        ? `${SOL}/token:${B58[n % 58] ?? ""}${B58[Math.floor(n / 58) % 58] ?? ""}${"1".repeat(30)}`
-        : `${PLATFORMS[i % 9] ?? ""}/erc20:0x${n.toString(16).padStart(40, "0")}`;
+      return `${SOL}/token:${B58[n % 58] ?? ""}${B58[Math.floor(n / 58) % 58] ?? ""}${"1".repeat(30)}`;
     });
   const answers = () =>
     fakeFetch({
@@ -256,32 +308,38 @@ describe("POST /v1/prices fan-out accounting", () => {
       [0, "eur"],
     ] as const) {
       const before = { units: limiter.deltas.length, calls: upstream.calls.length };
-      // oxlint-disable-next-line eslint/no-await-in-loop -- requests in order on purpose
-      const res = await app.request(prices.path, request(spread(seed), currency));
-      expect(res.status).toBe(200);
+      for (const assets of [evmSpread(seed), solSpread(seed)]) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- requests in order on purpose
+        const res = await app.request(...request(assets, currency));
+        expect(res.status).toBe(200);
+      }
       const units = limiter.deltas.slice(before.units).reduce((a, b) => a + b, 0);
       // One share unit per upstream call the request's cache misses fanned out to.
       expect(units).toBe(upstream.calls.length - before.calls);
     }
-    // 9 platform calls + 2 DefiLlama (usd), twice; 9 for eur, which DefiLlama does not serve.
-    expect(upstream.calls).toHaveLength(31);
+    // Per request: its platform calls + 2 DefiLlama (usd); eur, which DefiLlama does not serve.
+    expect(upstream.calls).toHaveLength(35);
   });
 
   it("refuses a batch whose fan-out the share limiter will not pay before any upstream call", async () => {
     // Every share charge is refused: each source is unavailable without a call spent.
     const upstream = answers();
-    const res = await gateway({
+    const app = gateway({
       fetch: upstream.fetch,
       now: () => NOW,
       limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: denyAll },
       prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
-    }).request(prices.path, request(spread(0)));
-    expect(res.status).toBe(429);
+    });
+    for (const assets of [evmSpread(0), solSpread(0)]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- requests in order on purpose
+      const res = await app.request(...request(assets));
+      expect(res.status).toBe(429);
+    }
     expect(upstream.calls).toHaveLength(0);
   });
 });
 
-describe("POST /v1/prices refused charges", () => {
+describe("POST /v1/prices/:family refused charges", () => {
   const TOKEN = `${ETH}/erc20:0x${"1".repeat(40)}`;
   const LLAMA_KEY = `ethereum:0x${"1".repeat(40)}`;
   const upstreams = () =>
@@ -316,7 +374,7 @@ describe("POST /v1/prices refused charges", () => {
       limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: llamaDenied },
       prices: { cache, coingecko: { apiKey: "k" } },
     });
-    const res = await limited.request(prices.path, request([ETH_NATIVE, TOKEN]));
+    const res = await limited.request(...request([ETH_NATIVE, TOKEN]));
     expect(res.status).toBe(200);
     const { prices: quoted, missing } = await body(res);
     expect(quoted.map((q) => q.asset)).toStrictEqual([ETH_NATIVE]);
@@ -330,7 +388,7 @@ describe("POST /v1/prices refused charges", () => {
     expect(cache.data.has(`usd/${TOKEN}`)).toBe(false);
 
     const open = app(upstream, { cache });
-    const second = await open.request(prices.path, request([ETH_NATIVE, TOKEN]));
+    const second = await open.request(...request([ETH_NATIVE, TOKEN]));
     expect(second.status).toBe(200);
     const secondBody = await body(second);
     expect(secondBody.missing).toStrictEqual([]);
@@ -345,34 +403,36 @@ describe("POST /v1/prices refused charges", () => {
       now: () => NOW,
       limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: denyAll },
       prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
-    }).request(prices.path, request([ETH_NATIVE]));
+    }).request(...request([ETH_NATIVE]));
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("60");
     expect(upstream.calls).toHaveLength(0);
   });
 });
 
-describe("POST /v1/prices from CoinGecko (recorded)", () => {
+describe("POST /v1/prices/:family from CoinGecko (recorded)", () => {
   it("prices natives and tokens as the provider's exact decimals, one call per platform", async () => {
     const upstream = fakeFetch(primary());
-    const assets = [
-      ETH_NATIVE,
-      BASE_NATIVE,
-      BTC_NATIVE,
-      SOL_NATIVE,
-      HYPE_NATIVE,
-      USDC_ETH,
-      USDC_HYPEREVM,
-      USDC_SOL,
-    ];
-    const res = await app(upstream).request(prices.path, request(assets));
-    expect(res.status).toBe(200);
-    expect(res.headers.get(PROVIDERS_HEADER)).toBe("coingecko");
-    expect(res.headers.get("cache-control")).toBe("no-store");
-    const { prices: quoted, missing, currency } = await body(res);
-    expect(currency).toBe("usd");
-    expect(missing).toStrictEqual([]);
-    expect(quoted.map((q) => q.asset)).toStrictEqual(assets);
+    const evmAssets = [ETH_NATIVE, BASE_NATIVE, HYPE_NATIVE, USDC_ETH, USDC_HYPEREVM];
+    const solanaAssets = [SOL_NATIVE, USDC_SOL];
+    const bitcoinAssets = [BTC_NATIVE];
+    const served = app(upstream);
+    const responses = await Promise.all(
+      [evmAssets, solanaAssets, bitcoinAssets].map(async (assets) =>
+        served.request(...request(assets)),
+      ),
+    );
+    for (const res of responses) {
+      expect(res.status).toBe(200);
+      expect(res.headers.get(PROVIDERS_HEADER)).toBe("coingecko");
+      expect(res.headers.get("cache-control")).toBe("no-store");
+    }
+    const quoted: PricesResponse["prices"] = [];
+    for (const body_ of await Promise.all(responses.map(async (res) => body(res)))) {
+      expect(body_.currency).toBe("usd");
+      expect(body_.missing).toStrictEqual([]);
+      quoted.push(...body_.prices);
+    }
     const byAsset = new Map(quoted.map((q) => [q.asset, q]));
     expect(byAsset.get(ETH_NATIVE)).toStrictEqual({
       asset: ETH_NATIVE,
@@ -397,7 +457,9 @@ describe("POST /v1/prices from CoinGecko (recorded)", () => {
         .toSorted(),
     ).toStrictEqual(
       [
-        `${CG_SIMPLE}?ids=ethereum,bitcoin,solana,hyperliquid&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full`,
+        `${CG_SIMPLE}?ids=ethereum,hyperliquid&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full`,
+        `${CG_SIMPLE}?ids=solana&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full`,
+        `${CG_SIMPLE}?ids=bitcoin&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full`,
         `${cgToken("ethereum")}?contract_addresses=0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full`,
         `${cgToken("hyperevm")}?contract_addresses=0xb88339cb7199b77e23db6e890353e22632ba630f&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full`,
         `${cgToken("solana")}?contract_addresses=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full`,
@@ -412,13 +474,13 @@ describe("POST /v1/prices from CoinGecko (recorded)", () => {
 
   it("quotes the requested currency", async () => {
     const upstream = fakeFetch(primary({ [CG_SIMPLE]: replay(cgEur) }));
-    const res = await app(upstream).request(prices.path, request([BTC_NATIVE, ETH_NATIVE], "eur"));
-    const { prices: quoted, currency } = await body(res);
-    expect(currency).toBe("eur");
-    expect(quoted.map((q) => q.price)).toStrictEqual([
-      literal(cgEur, "bitcoin", "eur"),
-      literal(cgEur, "ethereum", "eur"),
-    ]);
+    const served = app(upstream);
+    const btc = await body(await served.request(...request([BTC_NATIVE], "eur")));
+    const eth = await body(await served.request(...request([ETH_NATIVE], "eur")));
+    expect(btc.currency).toBe("eur");
+    expect(eth.currency).toBe("eur");
+    expect(btc.prices.map((q) => q.price)).toStrictEqual([literal(cgEur, "bitcoin", "eur")]);
+    expect(eth.prices.map((q) => q.price)).toStrictEqual([literal(cgEur, "ethereum", "eur")]);
     expect(upstream.calls[0]?.url).toContain("vs_currencies=eur");
   });
 
@@ -430,10 +492,11 @@ describe("POST /v1/prices from CoinGecko (recorded)", () => {
         [LLAMA_PERCENT]: () => Response.json({ coins: {} }),
       }),
     );
-    const res = await app(upstream).request(prices.path, request([BTC_NATIVE, DEAD]));
-    const { prices: quoted, missing } = await body(res);
-    expect(quoted.map((q) => q.asset)).toStrictEqual([BTC_NATIVE]);
-    expect(missing).toStrictEqual([DEAD]);
+    const served = app(upstream);
+    const btc = await body(await served.request(...request([BTC_NATIVE])));
+    const dead = await body(await served.request(...request([DEAD])));
+    expect(btc.prices.map((q) => q.asset)).toStrictEqual([BTC_NATIVE]);
+    expect(dead.missing).toStrictEqual([DEAD]);
     const llama = upstream.callsTo(DEFILLAMA_API).map((c) => c.url);
     expect(llama).toStrictEqual([
       `${LLAMA_CURRENT}ethereum:0x000000000000000000000000000000000000dead`,
@@ -444,8 +507,7 @@ describe("POST /v1/prices from CoinGecko (recorded)", () => {
   it("answers unsupported for assets no provider maps, without calling one", async () => {
     const upstream = fakeFetch({});
     const res = await app(upstream).request(
-      prices.path,
-      request([
+      ...request([
         "eip155:11155111/slip44:60",
         "eip155:11155111/erc20:0x1c7d4b196cb0c7b01d743fbc6116a902379c7238",
       ]),
@@ -467,8 +529,7 @@ describe("POST /v1/prices from CoinGecko (recorded)", () => {
       primary({ [CG_SIMPLE]: replay(cgTron), [cgToken("tron")]: replay(cgTronToken) }),
     );
     const res = await app(upstream, {}, () => TRON_NOW).request(
-      prices.path,
-      request([TRX_NATIVE, USDT_TRON]),
+      ...request([TRX_NATIVE, USDT_TRON]),
     );
     expect(res.status).toBe(200);
     const { prices: quoted, missing } = await body(res);
@@ -507,7 +568,7 @@ describe("POST /v1/prices from CoinGecko (recorded)", () => {
   });
 });
 
-describe("POST /v1/prices failover", () => {
+describe("POST /v1/prices/:family failover", () => {
   it.each([
     ["a 429", replay(cgRateLimited)],
     ["a 400 (the keyless batch limit)", replay(cgLimit400)],
@@ -515,11 +576,18 @@ describe("POST /v1/prices failover", () => {
     ["an unexpected shape", () => Response.json({ ethereum: { usd: "1800" } })],
   ])("serves USD from DefiLlama when CoinGecko answers %s", async (_name, failure) => {
     const upstream = fakeFetch(primary({ [CG_SIMPLE]: failure }));
-    const res = await app(upstream).request(prices.path, request([ETH_NATIVE, BTC_NATIVE]));
-    expect(res.status).toBe(200);
-    expect(res.headers.get(PROVIDERS_HEADER)).toBe("defillama");
-    const { prices: quoted, missing } = await body(res);
-    expect(missing).toStrictEqual([]);
+    const served = app(upstream);
+    const resEvm = await served.request(...request([ETH_NATIVE]));
+    const resBtc = await served.request(...request([BTC_NATIVE]));
+    for (const res of [resEvm, resBtc]) {
+      expect(res.status).toBe(200);
+      expect(res.headers.get(PROVIDERS_HEADER)).toBe("defillama");
+    }
+    const evm = await body(resEvm);
+    const btc = await body(resBtc);
+    expect(evm.missing).toStrictEqual([]);
+    expect(btc.missing).toStrictEqual([]);
+    const quoted = [...evm.prices, ...btc.prices];
     expect(quoted).toStrictEqual([
       {
         asset: ETH_NATIVE,
@@ -540,8 +608,13 @@ describe("POST /v1/prices failover", () => {
         updatedAt: Number(literal(llamaCurrent, "coingecko:bitcoin", "timestamp")) * 1000,
       },
     ]);
-    expect(upstream.callsTo(LLAMA_CURRENT)[0]?.url).toBe(
-      `${LLAMA_CURRENT}coingecko:ethereum,coingecko:bitcoin`,
+    expect(
+      upstream
+        .callsTo(LLAMA_CURRENT)
+        .map((c) => c.url)
+        .toSorted(),
+    ).toStrictEqual(
+      [`${LLAMA_CURRENT}coingecko:ethereum`, `${LLAMA_CURRENT}coingecko:bitcoin`].toSorted(),
     );
   });
 
@@ -557,7 +630,7 @@ describe("POST /v1/prices failover", () => {
       ["eip155:43114", "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e"],
       ["eip155:56", "0x55d398326f99059ff775485246999027b3197955"],
     ].map(([network = "", address = ""]) => asset(tokenAssetId(network, address)));
-    const res = await app(upstream, { coingecko: false }).request(prices.path, request(tokens));
+    const res = await app(upstream, { coingecko: false }).request(...request(tokens));
     const { prices: quoted, missing } = await body(res);
     expect(missing).toStrictEqual([]);
     expect(quoted.map((q) => q.change24h)).toStrictEqual(quoted.map(() => null));
@@ -570,8 +643,7 @@ describe("POST /v1/prices failover", () => {
       [LLAMA_PERCENT]: replay(llamaTronPercent),
     });
     const res = await app(upstream, { coingecko: false }, () => TRON_NOW).request(
-      prices.path,
-      request([TRX_NATIVE, USDT_TRON]),
+      ...request([TRX_NATIVE, USDT_TRON]),
     );
     const { prices: quoted, missing } = await body(res);
     expect(missing).toStrictEqual([]);
@@ -613,20 +685,14 @@ describe("POST /v1/prices failover", () => {
         }),
       [LLAMA_PERCENT]: () => Response.json({ coins: {} }),
     });
-    const res = await app(upstream, { coingecko: false }).request(
-      prices.path,
-      request([BTC_NATIVE]),
-    );
+    const res = await app(upstream, { coingecko: false }).request(...request([BTC_NATIVE]));
     const dropped = await body(res);
     expect(dropped.missing).toStrictEqual([BTC_NATIVE]);
   });
 
   it("serves the fallback alone when no CoinGecko key is configured", async () => {
     const upstream = fakeFetch(primary());
-    const res = await app(upstream, { coingecko: false }).request(
-      prices.path,
-      request([BTC_NATIVE]),
-    );
+    const res = await app(upstream, { coingecko: false }).request(...request([BTC_NATIVE]));
     expect(res.headers.get(PROVIDERS_HEADER)).toBe("defillama");
     expect(upstream.callsTo(COINGECKO_API)).toHaveLength(0);
   });
@@ -638,14 +704,14 @@ describe("POST /v1/prices failover", () => {
         [LLAMA_CURRENT]: () => new Response("down", { status: 502 }),
       }),
     );
-    const res = await app(upstream).request(prices.path, request([BTC_NATIVE]));
+    const res = await app(upstream).request(...request([BTC_NATIVE]));
     expect(res.status).toBe(503);
     expect(res.headers.get("retry-after")).toBe("30");
   });
 
   it("503s a non-USD request when the primary fails — the fallback quotes USD only", async () => {
     const upstream = fakeFetch(primary({ [CG_SIMPLE]: replay(cgRateLimited) }));
-    const res = await app(upstream).request(prices.path, request([BTC_NATIVE], "eur"));
+    const res = await app(upstream).request(...request([BTC_NATIVE], "eur"));
     expect(res.status).toBe(503);
     expect(upstream.callsTo(DEFILLAMA_API)).toHaveLength(0);
   });
@@ -657,16 +723,19 @@ describe("POST /v1/prices failover", () => {
         [LLAMA_CURRENT]: () => new Response("down", { status: 502 }),
       }),
     );
-    const res = await app(upstream).request(prices.path, request([BTC_NATIVE, DEAD]));
+    const served = app(upstream);
+    const res = await served.request(...request([BTC_NATIVE]));
     expect(res.status).toBe(200);
     expect(res.headers.get(PROVIDERS_HEADER)).toBe("coingecko");
-    const { prices: quoted, missing } = await body(res);
+    const { prices: quoted } = await body(res);
     expect(quoted.map((q) => q.asset)).toStrictEqual([BTC_NATIVE]);
-    expect(missing).toStrictEqual([DEAD]);
+    // The same provider failure on a request with nothing priced answers 503.
+    const dead = await served.request(...request([DEAD]));
+    expect(dead.status).toBe(503);
   });
 });
 
-describe("POST /v1/prices attempt cancellation", () => {
+describe("POST /v1/prices/:family attempt cancellation", () => {
   it("cancels a failed attempt's other in-flight calls", async () => {
     let solanaSignal: AbortSignal | undefined;
     const upstream = fakeFetch(
@@ -678,11 +747,15 @@ describe("POST /v1/prices attempt cancellation", () => {
         },
       }),
     );
-    const res = await app(upstream).request(prices.path, request([USDC_ETH, USDC_SOL]));
-    // CoinGecko's two platform calls ran together; ethereum's 400 fails only its own read —
-    // solana's paid answer is kept while DefiLlama prices what ethereum's call lost.
-    expect(res.status).toBe(200);
-    expect(res.headers.get(PROVIDERS_HEADER)).toBe("defillama,coingecko");
+    const served = app(upstream);
+    const resSol = await served.request(...request([USDC_SOL]));
+    const resEth = await served.request(...request([USDC_ETH]));
+    // Ethereum's 400 fails CoinGecko outright on the evm request — solana's paid answer is kept
+    // while DefiLlama alone prices what ethereum's call lost.
+    expect(resSol.status).toBe(200);
+    expect(resSol.headers.get(PROVIDERS_HEADER)).toBe("coingecko");
+    expect(resEth.status).toBe(200);
+    expect(resEth.headers.get(PROVIDERS_HEADER)).toBe("defillama");
     expect(solanaSignal?.aborted).toBe(false);
   });
 
@@ -700,9 +773,14 @@ describe("POST /v1/prices attempt cancellation", () => {
         [cgToken("solana")]: seen(replay(cgSolana)),
       }),
     );
-    const res = await app(upstream).request(prices.path, request([USDC_ETH, USDC_SOL]));
-    expect(res.status).toBe(200);
-    expect(res.headers.get(PROVIDERS_HEADER)).toBe("coingecko");
+    const served = app(upstream);
+    for (const res of [
+      await served.request(...request([USDC_ETH])),
+      await served.request(...request([USDC_SOL])),
+    ]) {
+      expect(res.status).toBe(200);
+      expect(res.headers.get(PROVIDERS_HEADER)).toBe("coingecko");
+    }
     expect(signals).toHaveLength(2);
     for (const signal of signals) {
       expect(signal.aborted).toBe(false);
@@ -710,25 +788,25 @@ describe("POST /v1/prices attempt cancellation", () => {
   });
 });
 
-describe("POST /v1/prices cache", () => {
+describe("POST /v1/prices/:family cache", () => {
   it("serves a cached asset for 30 s, then asks the provider again", async () => {
     const cache = memoryPriceCache();
     const upstream = fakeFetch(primary());
     let now = NOW;
     const served = app(upstream, { cache }, () => now);
-    await served.request(prices.path, request([BTC_NATIVE]));
+    await served.request(...request([BTC_NATIVE]));
     expect(cache.ttls).toStrictEqual([30]);
     expect([...cache.data.keys()]).toStrictEqual([`usd/${BTC_NATIVE}`]);
 
     now += 29_999;
-    const cached = await served.request(prices.path, request([BTC_NATIVE]));
+    const cached = await served.request(...request([BTC_NATIVE]));
     const cachedBody = await body(cached);
     expect(cachedBody.prices[0]?.price).toBe(literal(cgSimple, "bitcoin", "usd"));
     expect(cached.headers.get(PROVIDERS_HEADER)).toBe("coingecko");
     expect(upstream.calls).toHaveLength(1);
 
     now += 1;
-    await served.request(prices.path, request([BTC_NATIVE]));
+    await served.request(...request([BTC_NATIVE]));
     expect(upstream.calls).toHaveLength(2);
   });
 
@@ -736,11 +814,11 @@ describe("POST /v1/prices cache", () => {
     const cache = memoryPriceCache();
     const upstream = fakeFetch(primary({ [CG_SIMPLE]: replay(cgEur) }));
     const served = app(upstream, { cache });
-    await served.request(prices.path, {
-      ...request([BTC_NATIVE], "eur"),
+    await served.request(pricesPath("bitcoin"), {
+      ...init([BTC_NATIVE], "eur"),
       headers: headers({ "content-type": "application/json", "x-client-id": "f".repeat(32) }),
     });
-    await served.request(prices.path, request([BTC_NATIVE], "eur"));
+    await served.request(...request([BTC_NATIVE], "eur"));
     expect(upstream.calls).toHaveLength(1);
     expect([...cache.data.keys()]).toStrictEqual([`eur/${BTC_NATIVE}`]);
   });
@@ -754,18 +832,22 @@ describe("POST /v1/prices cache", () => {
         [LLAMA_PERCENT]: () => Response.json({ coins: {} }),
       }),
     );
-    await app(answered, { cache }).request(prices.path, request([DEAD]));
+    await app(answered, { cache }).request(...request([DEAD]));
     const storedDead = cache.data.get(`usd/${DEAD}`);
     expect(storedDead).toBeDefined();
     expect(JSON.parse(String(storedDead))).toMatchObject({ quote: null });
-    await app(answered, { cache }).request(prices.path, request([DEAD]));
+    await app(answered, { cache }).request(...request([DEAD]));
     expect(answered.calls).toHaveLength(3);
 
     const partial = memoryPriceCache();
     const failing = fakeFetch(primary({ [cgToken("ethereum")]: replay(cgRateLimited) }));
-    await app(failing, { cache: partial }).request(prices.path, request([DEAD, BTC_NATIVE]));
-    // CoinGecko's ethereum call 429s, but bitcoin's coin read is kept and DefiLlama prices DEAD.
-    expect([...partial.data.keys()]).toStrictEqual([`usd/${BTC_NATIVE}`, `usd/${DEAD}`]);
+    const served = app(failing, { cache: partial });
+    await served.request(...request([BTC_NATIVE]));
+    // The evm request's only CoinGecko read 429s outright, so DEAD stays unpriced and is NOT
+    // cached — a source that might have answered cannot be claimed to have answered missing.
+    const dead = await served.request(...request([DEAD]));
+    expect(dead.status).toBe(503);
+    expect([...partial.data.keys()]).toStrictEqual([`usd/${BTC_NATIVE}`]);
   });
 
   it("treats a failing or corrupt cache as a miss and still answers", async () => {
@@ -780,7 +862,7 @@ describe("POST /v1/prices cache", () => {
       now: () => NOW,
       log: (line) => lines.push(line),
       prices: { cache: broken, coingecko: { apiKey: "k" } },
-    }).request(prices.path, request([BTC_NATIVE]));
+    }).request(...request([BTC_NATIVE]));
     expect(res.status).toBe(200);
     expect(lines.filter((l) => l.includes("price-cache-failure"))).toStrictEqual([
       JSON.stringify({ event: "price-cache-failure", op: "get" }),
@@ -797,7 +879,7 @@ describe("POST /v1/prices cache", () => {
       }),
     );
     const fresh = fakeFetch(primary());
-    const again = await app(fresh, { cache: corrupt }).request(prices.path, request([BTC_NATIVE]));
+    const again = await app(fresh, { cache: corrupt }).request(...request([BTC_NATIVE]));
     const againBody = await body(again);
     expect(againBody.prices[0]?.price).toBe(literal(cgSimple, "bitcoin", "usd"));
     expect(fresh.calls).toHaveLength(1);
@@ -869,7 +951,7 @@ describe("price bounds", () => {
   });
 });
 
-describe("POST /v1/prices provider edge cases", () => {
+describe("POST /v1/prices/:family provider edge cases", () => {
   it("answers a null 24 h change when CoinGecko omits the field", async () => {
     const upstream = fakeFetch(
       primary({
@@ -877,7 +959,7 @@ describe("POST /v1/prices provider edge cases", () => {
           Response.json({ bitcoin: { usd: 64000.5, last_updated_at: NOW / 1000 } }),
       }),
     );
-    const res = await app(upstream).request(prices.path, request([BTC_NATIVE]));
+    const res = await app(upstream).request(...request([BTC_NATIVE]));
     expect(res.status).toBe(200);
     const { prices: quoted } = await body(res);
     expect(quoted).toStrictEqual([
@@ -893,10 +975,7 @@ describe("POST /v1/prices provider edge cases", () => {
         }),
       [LLAMA_PERCENT]: () => Response.json({ coins: {} }),
     });
-    const res = await app(upstream, { coingecko: false }).request(
-      prices.path,
-      request([BTC_NATIVE]),
-    );
+    const res = await app(upstream, { coingecko: false }).request(...request([BTC_NATIVE]));
     expect(res.status).toBe(200);
     const { missing } = await body(res);
     expect(missing).toStrictEqual([BTC_NATIVE]);
@@ -907,10 +986,7 @@ describe("POST /v1/prices provider edge cases", () => {
       [LLAMA_CURRENT]: () => Response.json({ unexpected: true }),
       [LLAMA_PERCENT]: () => Response.json({ coins: {} }),
     });
-    const res = await app(upstream, { coingecko: false }).request(
-      prices.path,
-      request([BTC_NATIVE]),
-    );
+    const res = await app(upstream, { coingecko: false }).request(...request([BTC_NATIVE]));
     expect(res.status).toBe(503);
   });
 });

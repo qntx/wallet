@@ -10,6 +10,7 @@ import { corePromptFor } from "../prompts.ts";
 import { wipe } from "../secret/secret.ts";
 import type { Secret } from "../secret/secret.ts";
 import { withSeed } from "../seed/seed.ts";
+import { resetAnchor } from "../vault/anchor.ts";
 import { BLIND_SIGNING, POLICY_KIND, policyRecord, sealPolicy } from "../vault/policy.ts";
 import type { StoredRecord, VaultImage } from "../vault/store.ts";
 import {
@@ -61,14 +62,14 @@ export async function unlockVault(
   if (ctx.health === "unsupported") {
     throw new KernelError("unsupported", "the vault needs a newer build");
   }
-  const { dek, keyId } = await unlock(ctx.platform, ctx.image, params.factor, ctx.commit);
+  const { dek, keyId } = await unlock(ctx.platform, ctx.image, params.factor);
   // Already unlocked on the same vault key: keep the live session — rotating it would orphan
   // every in-flight request the engine issued against the current id.
   if (ctx.session.unlocked && ctx.session.current().keyId === keyId) {
     dek.wipe();
     return { session: ctx.session.current().id };
   }
-  const session = openSession(ctx, dek, keyId);
+  const session = await openSession(ctx, dek, keyId);
   // Best-effort cleanup of a dead keystore key of the other kind: probe/commit failures never
   // break the session the unlock just opened.
   await probeKeystoreFactor(ctx, params.factor.kind).catch(() => undefined);
@@ -101,10 +102,11 @@ async function probeKeystoreFactor(ctx: KernelContext, unlockedKind: string): Pr
  * Opens a session over `ctx.image` and rebuilds live state in one pass: every module drops stale
  * state, then the whole image reconciles in from empty — the manifest vouches for the vault's
  * structure, every record opens under the DEK and every factor binding verifies. A failure latches
- * corrupted and invalidates the session it just opened. Shared by `vault.unlock` and the establish
- * paths that open a session on commit.
+ * corrupted and invalidates the session it just opened. A session that survives authentication
+ * raises the vault anchor's floor to the image's revision. Shared by `vault.unlock` and the
+ * establish paths that open a session on commit.
  */
-export function openSession(ctx: KernelContext, dek: Secret, keyId: string): string {
+export async function openSession(ctx: KernelContext, dek: Secret, keyId: string): Promise<string> {
   for (const module of ctx.modules) {
     module.lock();
   }
@@ -113,6 +115,7 @@ export function openSession(ctx: KernelContext, dek: Secret, keyId: string): str
   if (!ctx.session.unlocked) {
     throw new KernelError("integrity", "vault contents failed authentication", undefined, true);
   }
+  await ctx.raiseAnchor();
   return session;
 }
 
@@ -136,6 +139,11 @@ export async function resetVault(
   // A user-initiated reset locks with "user" before the commit drops the session to
   // uninitialized — an external wipe reaching setInitialized instead reports "invalidated".
   ctx.session.lock("user");
+  // Raise the floor before the erase: reset is the recovery path, so a vault the user is wiping
+  // loses nothing by reading corrupted if the clear then fails — the next reset finishes it. The
+  // opposite order is unrecoverable: the post-clear reload reads the anchor first, so a garbage
+  // anchor would fail reset before anything could repair it.
+  await resetAnchor(ctx.platform.anchor);
   await ctx.commit([{ op: "clear" }]);
   if (keystore !== undefined) {
     // Best effort: the data is already gone, and the next establish clears leftover keys first.

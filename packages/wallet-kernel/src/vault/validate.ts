@@ -44,12 +44,6 @@ function boundedString(value: unknown, max: number, what: string): void {
   }
 }
 
-function safeNonNegative(value: unknown, what: string): void {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
-    throw bad(`${what} is not a safe non-negative integer`);
-  }
-}
-
 function sealedBytes(value: unknown): void {
   if (
     !(value instanceof Uint8Array) ||
@@ -81,7 +75,7 @@ export function assertVaultImage(value: unknown): VaultImage {
     if (format !== VAULT_FORMAT) {
       throw new KernelError("unsupported", "vault store: meta format is not this build's");
     }
-    exactKeys(metaRow, "failedAttempts,format,keyId,lastFailureAt,revision");
+    exactKeys(metaRow, "format,keyId,revision");
     if (typeof metaRow["keyId"] !== "string" || !HEX_32.test(metaRow["keyId"])) {
       throw bad("meta keyId is not 32 lowercase hex");
     }
@@ -92,8 +86,6 @@ export function assertVaultImage(value: unknown): VaultImage {
     ) {
       throw bad("meta revision is not a safe integer ≥ 1");
     }
-    safeNonNegative(metaRow["failedAttempts"], "meta failedAttempts");
-    safeNonNegative(metaRow["lastFailureAt"], "meta lastFailureAt");
   }
   if (!Array.isArray(records) || records.length > MAX_ROWS) {
     throw bad("records is not a bounded array");

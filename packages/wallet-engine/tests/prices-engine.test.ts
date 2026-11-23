@@ -1,7 +1,7 @@
 /**
  * Fiat prices end to end over a REAL Node kernel: a mainnet balance read goes through the host RPC
- * (the gateway serves no networks), the balance update triggers a `POST /v1/prices` the fake
- * gateway answers, and `portfolio.group` values the group exactly. Lock clears the quotes.
+ * (the gateway serves no networks), the balance update triggers a `POST /v1/prices/:family` the
+ * fake gateway answers, and `portfolio.group` values the group exactly. Lock clears the quotes.
  */
 import { randomBytes } from "node:crypto";
 
@@ -17,10 +17,12 @@ import { MULTICALL3_ABI } from "../src/assets/evm.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import {
   CLIENT_ID_HEADER,
+  PRICE_FAMILIES,
   accepts,
   clientId,
   parseWith,
   prices,
+  pricesPath,
 } from "../src/gateway/contract/index.ts";
 import type { PricesRequest } from "../src/gateway/contract/index.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
@@ -78,24 +80,28 @@ const answerCall = (params: unknown): Hex => {
 
 const rpcResult = (result: unknown): Response => Response.json({ jsonrpc: "2.0", id: 1, result });
 
-/** Contract-checked fake gateway (/v1/networks serves nothing, /v1/prices) + fake mainnet node. */
+/**
+ * Contract-checked fake gateway (/v1/networks serves nothing, /v1/prices/:family) + fake mainnet
+ * node.
+ */
 function world() {
   const priceCalls: PricesRequest[] = [];
   const fetchImpl: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(
       typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
     );
-    if (url.origin === GATEWAY && url.pathname === prices.path) {
+    const priceFam = PRICE_FAMILIES.find((f) => url.pathname === pricesPath(f));
+    if (url.origin === GATEWAY && priceFam !== undefined) {
       if (init?.method !== prices.method) {
-        violations.push(`${prices.path}: ${init?.method ?? "GET"}`);
+        violations.push(`${url.pathname}: ${init?.method ?? "GET"}`);
       }
       const id = new Headers(init?.headers).get(CLIENT_ID_HEADER);
       if (id === null || !accepts(clientId, id)) {
-        violations.push(`${prices.path}: missing or malformed ${CLIENT_ID_HEADER}`);
+        violations.push(`${url.pathname}: missing or malformed ${CLIENT_ID_HEADER}`);
       }
       const request = parseWith(prices.request, JSON.parse(String(init?.body)));
       if (request === undefined) {
-        violations.push(`${prices.path}: body violates prices.request: ${String(init?.body)}`);
+        violations.push(`${url.pathname}: body violates prices.request: ${String(init?.body)}`);
         return Promise.resolve(new Response("{}", { status: 400 }));
       }
       priceCalls.push(request);

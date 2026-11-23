@@ -33,11 +33,30 @@ wallet.
 
 ## 1. Vault format and data reset
 
-The vault format is 5 and the host/kernel protocol version 3. Vaults of any other format are
+The vault format is 6 and the host/kernel protocol version 3. Vaults of any other format are
 reported as `vault: "unsupported"` and never opened; there is no migration. On the first launch
 after the upgrade, `unsupported` means the 0.13.0 vault: confirm with the user, reset, then
 restore. (Later, `unsupported` keeps its meaning — a newer build wrote the vault — and must not be
 reset.)
+
+Format 5 never shipped: it existed only in development builds between 0.13.0 and this release, and
+this release reports it `unsupported` like every other non-6 format — reset and restore, do not
+try to open it. What changed from the development format: the password failure counters left
+`meta` for the vault anchor (a host-held record the store writer cannot rewind), and the manifest
+now binds `meta.revision`.
+
+The vault anchor: a 21-byte record (`vectors/vault-anchor.json`) the kernel keeps outside the
+vault store holds the vault's revision floor and the password failure counters that used to live
+in `meta` (`record-failure` / `reset-failures` are gone from the store). A vault image whose
+revision is below the floor — an older committed vault put back — reads `vault: "corrupted"`
+before any unlock, and rewriting the vault store no longer resets the password backoff. Only a
+revision the kernel sealed or authenticated under a session raises the floor; a new vault starts
+above it and a reset raises it past the erased image. Nothing to wire: `@qntx/wallet-worker`
+(Cache Storage on the Web, the main thread on Node) and `@qntx/wallet-native` (iOS keychain item
+`qntx-wallet.anchor`, Android Keystore aliases `qntx-wallet.anchor.*`) supply it. Do not clear
+these items yourself, and do not restore the vault store from a copy: a restored older vault is
+`corrupted` by design — recover it with a reset and a restore from the mnemonic, passkey or cloud
+backup. SECURITY.md states what each host can and cannot detect.
 
 `vault.reset()` of an open, healthy vault now needs that vault's live session; a locked or
 unhealthy one resets without a session. On React Native the reset still asks for the device
@@ -83,7 +102,7 @@ export async function restoreAfterReset(
   per scope instead of `x-install-id`, and a gateway from this release refuses requests without it
   (`400 invalid-request`) — just as a 0.13.0 gateway refuses the new engine. Deploy the gateway
   from this release and the app together, or keep serving old app versions from the old gateway.
-- The prices (`POST /v1/prices`) and history (`POST /v1/history/:caip2`) features need that
+- The prices (`POST /v1/prices/:family`) and history (`POST /v1/history/:caip2`) features need that
   gateway; production needs the `COINGECKO_API_KEY` secret.
 - `engine.bridges.quote` requires `maxFeeBps`, the highest relay fee accepted, in basis points of
   the input amount.
@@ -663,6 +682,14 @@ export async function groupTotal(
 }
 ```
 
+Price requests are partitioned by chain family. `POST /v1/prices` is now
+`POST /v1/prices/:family` (`evm`, `solana`, `bitcoin`, `tron`), and a body naming another
+family's asset is `400 invalid-request`. The engine sends one request per family under that
+family's client id, so the held asset set no longer links the gateway scopes; assets no family
+covers are not sent and report `unsupported`. Deploy the gateway with the engine, and forward the
+four routes in any proxy or allow-list in front of it
+([`tests/migration/price-scopes.ts`](tests/migration/price-scopes.ts)).
+
 ## 10. History
 
 `engine.history` lists one account group's activity newest first, received transfers included,
@@ -1106,6 +1133,11 @@ export const ENGINE_INTEGRITY: EngineErrorCode = "integrity";
 - NIP-07 confirms every replaceable, addressable and ephemeral event kind, whatever the origin's
   policy.
 - Password re-verification is rate-limited like unlock (`rate-limited` with `retryAt`).
+- Secrets own their buffers: a request whose secret field (`SECRET_FIELDS` from
+  `@qntx/wallet/protocol`) shares memory with another field fails `invalid-input`.
+  `@qntx/wallet` already sends every secret in a fresh buffer; a host that posts kernel requests
+  through its own transport copies them the same way
+  ([`tests/migration/secret-buffers.ts`](tests/migration/secret-buffers.ts)).
 
 ## 16. Built-in networks and fee model
 
@@ -1472,7 +1504,9 @@ together with the apps (§2): the engine and gateway contracts are strict on bot
   `ANKR_API_KEY` (Arbitrum Nova, Taiko and Flare after dRPC) are required in production
   (`wrangler.jsonc` `secrets.required`; the deploy workflow checks them). Enable the new networks
   in the production Alchemy app and on the dRPC paid plan.
-- New routes: `POST /v1/prices`, `POST /v1/history/:caip2`, `GET /v1/tokens/:caip2`,
+- New routes: `POST /v1/prices/:family` (one route per chain family — `evm`, `solana`,
+  `bitcoin`, `tron`; a body naming another family's asset is `400 invalid-request`, an unknown
+  family `404`), `POST /v1/history/:caip2`, `GET /v1/tokens/:caip2`,
   `GET /v1/eligibility` and `POST /v1/tron/:caip2/*`. A served network with no coverage answers
   `404 unsupported` (never retry); a covered network whose token list is not built yet answers
   `503 unavailable` with `Retry-After`. `pricesResponse` lists every asset in exactly one of

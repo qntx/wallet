@@ -8,6 +8,7 @@ import {
   historyPath,
   phishingListPath,
   prices,
+  pricesPath,
   rpcPath,
   servedNetworks,
   swapQuote,
@@ -136,7 +137,7 @@ const ROUTES: Readonly<Record<string, Forwarded | null>> = {
     upstreams: ["https://app.across.to"],
   },
   [`POST ${prices.path}`]: {
-    request: [prices.path, post({ currency: "usd", assets: [`${ETH}/slip44:60`] })],
+    request: [pricesPath("evm"), post({ currency: "usd", assets: [`${ETH}/slip44:60`] })],
     upstreams: [COINGECKO_API, DEFILLAMA_API],
   },
   "POST /v1/tron/:caip2/*": {

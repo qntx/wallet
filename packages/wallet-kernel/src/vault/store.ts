@@ -26,17 +26,17 @@ export type StoredFactor = {
 };
 
 /**
- * The only vault format this build reads and writes: format 5 authenticates the vault's structure
- * under the DEK (vault/manifest.ts). Any other format is `unsupported` and left untouched.
+ * The only vault format this build reads and writes: format 6 authenticates the vault's structure —
+ * revision included — under the DEK (vault/manifest.ts) and moves the failure counters out of the
+ * image into the vault anchor (vault/anchor.ts). Any other format is `unsupported` and left
+ * untouched.
  */
-export const VAULT_FORMAT = 5;
+export const VAULT_FORMAT = 6;
 
 export type VaultMeta = {
   readonly format: number; // this build reads VAULT_FORMAT only
   readonly revision: number; // incremented once per content commit, inside the transaction
   readonly keyId: string; // 32 lowercase hex; changes on DEK rotation (public change signal)
-  readonly failedAttempts: number; // consecutive password failures
-  readonly lastFailureAt: number; // wall-clock ms of the last counted failure; 0 = none
 };
 
 export type VaultImage = {
@@ -49,8 +49,6 @@ export type StoreOp =
   | { readonly op: "init"; readonly meta: VaultMeta } // precondition: the store is fully empty
   | { readonly op: "expect-revision"; readonly revision: number } // precondition: meta.revision matches
   | { readonly op: "set-key-id"; readonly keyId: string }
-  | { readonly op: "record-failure"; readonly at: number } // failedAttempts += 1, lastFailureAt = at
-  | { readonly op: "reset-failures" } // failedAttempts = 0, lastFailureAt = 0
   | { readonly op: "put-record"; readonly record: StoredRecord }
   | { readonly op: "delete-record"; readonly kind: string; readonly id: string }
   | { readonly op: "put-factor"; readonly factor: StoredFactor }

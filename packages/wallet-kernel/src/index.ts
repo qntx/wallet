@@ -16,7 +16,9 @@ export type {
   Pbkdf2,
   Port,
   Random,
+  VaultAnchor,
 } from "./platform.ts";
+export { createMemoryAnchor } from "./vault/anchor.ts";
 export { applyStoreOps, cloneImage, createMemoryStore } from "./vault/memory.ts";
 export { isRecordKind, VAULT_FORMAT } from "./vault/store.ts";
 export type {

@@ -38,23 +38,28 @@ export function startNodeKernel(
 
   data.storePort.start();
 
+  // The vault image and its anchor both live in the main thread: destroying this worker on lock
+  // loses neither the ciphertext nor the rollback floor and failure counters.
+  const { store, anchor } = createStoreClient({
+    post: (message) => {
+      // oxlint-disable-next-line unicorn/require-post-message-target-origin -- worker_threads port, not window.postMessage
+      data.storePort.postMessage(message);
+    },
+    listen: (handler) => {
+      const listener = (message: unknown) => {
+        handler(message);
+      };
+      data.storePort.on("message", listener);
+      return () => {
+        data.storePort.off("message", listener);
+      };
+    },
+  });
+
   const platform: KernelPlatform = {
     ...basePlatform(),
-    store: createStoreClient({
-      post: (message) => {
-        // oxlint-disable-next-line unicorn/require-post-message-target-origin -- worker_threads port, not window.postMessage
-        data.storePort.postMessage(message);
-      },
-      listen: (handler) => {
-        const listener = (message: unknown) => {
-          handler(message);
-        };
-        data.storePort.on("message", listener);
-        return () => {
-          data.storePort.off("message", listener);
-        };
-      },
-    }),
+    store,
+    anchor,
     // Session limits are owned here, not by the host: idle from the validated workerData, the
     // fixed maximum, and the scrypt ceiling for this platform. There is no human presence on
     // Node: every successful request refreshes the idle timer.

@@ -8,6 +8,8 @@ import { nostr } from "@qntx/wallet/nostr";
 
 import { startKernel } from "../../wallet-kernel/src/index.ts";
 import type { KernelPlatform, createMemoryStore } from "../../wallet-kernel/src/index.ts";
+import { bindNativeAnchor } from "../kernel/anchor.ts";
+import type { KernelAnchorNative } from "../kernel/anchor.ts";
 import { bindNativeKeystore } from "../kernel/keystore.ts";
 import type { KernelKeystoreNative } from "../kernel/keystore.ts";
 import { createFileStore } from "../kernel/store.ts";
@@ -203,10 +205,12 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
 function platform(
   store: ReturnType<typeof createMemoryStore>,
   keystore: KernelKeystoreNative,
+  anchor: KernelAnchorNative,
 ): KernelPlatform {
   return {
     random: (n) => crypto.getRandomValues(new Uint8Array(n)),
     keystore: bindNativeKeystore(keystore),
+    anchor: bindNativeAnchor(anchor),
     passkey: undefined,
     now: () => Date.now(),
     elapsed: () => performance.now(),
@@ -279,9 +283,32 @@ const fileStore = (bytes: { value: Uint8Array | undefined }) =>
     },
   });
 
-const boot = (store: ReturnType<typeof createMemoryStore>, keystore: KernelKeystoreNative) => {
+// An in-memory __qntx.anchor with the native compare-and-swap semantics — like the file, the
+// holder stands in for the platform keystore and outlives a crashed kernel.
+const nativeAnchor = (bytes: { value: Uint8Array | undefined }): KernelAnchorNative => ({
+  read: () => bytes.value,
+  replace: (next, expected) => {
+    const matches =
+      expected === undefined
+        ? bytes.value === undefined
+        : bytes.value !== undefined &&
+          bytes.value.length === expected.length &&
+          bytes.value.every((v, i) => v === expected[i]);
+    if (!matches) {
+      return false;
+    }
+    bytes.value = next;
+    return true;
+  },
+});
+
+const boot = (
+  store: ReturnType<typeof createMemoryStore>,
+  keystore: KernelKeystoreNative,
+  anchor: KernelAnchorNative = nativeAnchor({ value: undefined }),
+) => {
   const { host, pipe } = makePipe();
-  startKernel(platform(store, keystore), createKernelPort(pipe));
+  startKernel(platform(store, keystore, anchor), createKernelPort(pipe));
   return host;
 };
 
@@ -316,7 +343,8 @@ describe("createNativeWallet", () => {
     expect(walletA.getSnapshot().factors.map((f) => f.kind)).toStrictEqual(["device", "hardware"]);
 
     const bytesB = { value: undefined as Uint8Array | undefined };
-    const host = boot(fileStore(bytesB), keystore.native);
+    const anchorB = nativeAnchor({ value: undefined });
+    const host = boot(fileStore(bytesB), keystore.native, anchorB);
     const wallet = await createNativeWallet({
       verifyEvent,
       passkey: PASSKEY,
@@ -346,7 +374,7 @@ describe("createNativeWallet", () => {
     await wallet.vault.lock();
 
     // Simulated host crash: the runtime dies; a fresh host+kernel on the same store recovers.
-    const host2 = boot(fileStore(bytesB), keystore.native);
+    const host2 = boot(fileStore(bytesB), keystore.native, anchorB);
     const wallet2 = await createNativeWallet({
       verifyEvent,
       passkey: PASSKEY,

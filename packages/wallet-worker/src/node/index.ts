@@ -8,7 +8,7 @@ import { MessageChannel, Worker } from "node:worker_threads";
 
 import { WalletError } from "@qntx/wallet";
 import type { Wallet, WalletOptions } from "@qntx/wallet";
-import { createMemoryStore } from "@qntx/wallet-kernel";
+import { createMemoryAnchor, createMemoryStore } from "@qntx/wallet-kernel";
 import { connectKernel } from "@qntx/wallet/host";
 import type { MainPort, PasskeyCeremony } from "@qntx/wallet/host";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
@@ -36,11 +36,14 @@ export async function createNodeWallet(options: NodeWalletOptions): Promise<Wall
   // The host sends only the idle choice; the worker owns the maximum session duration.
   const workerData = { idleMinutes: autoLock.idleMinutes };
   const store = createMemoryStore(); // ciphertext + public headers only — safe in the main thread
+  // The anchor lives beside it: the revision floor and failure counters must outlive a worker
+  // lock, and the store writer the anchor defends against is outside this process anyway.
+  const anchor = createMemoryAnchor();
   const kernelUrl = options.kernelUrl ?? new URL("kernel.node.js", import.meta.url);
 
   const spawn = (): MainPort => {
     const channel = new MessageChannel();
-    const stopStore = serveStore(store, channel.port1);
+    const stopStore = serveStore(store, anchor, channel.port1);
     const worker = new Worker(kernelUrl, {
       workerData: { ...workerData, storePort: channel.port2 } satisfies NodeWorkerData,
       transferList: [channel.port2],
