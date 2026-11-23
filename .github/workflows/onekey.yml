@@ -51,6 +51,11 @@ jobs:
       # fresh transcript (responses carry live answers); request bytes must equal the committed
       # ones — the check script fails on any drift.
       - run: bun scripts/vectors/onekey-emulator.ts --model ${{ matrix.model }} --out "$RUNNER_TEMP/onekey"
+      # The driver sessions start from an uninitialized device too: replace the seeded container.
+      - run: |
+          docker rm -f onekey-emu
+          docker run -d --name onekey-emu -p 127.0.0.1:54935:54935/udp -p 127.0.0.1:54936:54936/udp onekey-emu-${{ matrix.model }}
+          sleep 15
       - run: >-
           bun scripts/vectors/onekey-emulator.ts --driver
           --model ${{ matrix.model }} --out "$RUNNER_TEMP/onekey"
