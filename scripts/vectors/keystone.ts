@@ -18,6 +18,7 @@
  */
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 
 import {
   CryptoHDKey,
@@ -30,7 +31,89 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
-
+// The family packages' own dependency copies are CJS — require them so bun resolves their
+// `bc-ur-registry` the same way the published packages do.
+const require = createRequire(import.meta.url);
+const {
+  DataType: BtcDataType,
+  BtcSignRequest,
+  CryptoPSBT: BtcCryptoPSBT,
+  CryptoKeypath: BtcKeypath,
+  PathComponent: BtcPathComponent,
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the CJS package ships no usable types
+} = require("@keystonehq/bc-ur-registry-btc") as {
+  CryptoKeypath: typeof CryptoKeypath;
+  PathComponent: typeof PathComponent;
+  DataType: { message: number };
+  BtcSignRequest: new (args: {
+    requestId: Buffer;
+    signData: Buffer;
+    dataType: number;
+    derivationPaths: Array<InstanceType<typeof CryptoKeypath>>;
+    origin?: string;
+  }) => { toCBOR: () => Uint8Array };
+  CryptoPSBT: new (psbt: Buffer) => { toCBOR: () => Uint8Array };
+};
+const {
+  DataType: EthDataType,
+  EthSignRequest,
+  CryptoKeypath: EthKeypath,
+  PathComponent: EthPathComponent,
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the CJS package ships no usable types
+} = require("@keystonehq/bc-ur-registry-eth") as {
+  CryptoKeypath: typeof CryptoKeypath;
+  PathComponent: typeof PathComponent;
+  DataType: {
+    transaction: number;
+    typedTransaction: number;
+    personalMessage: number;
+    typedData: number;
+  };
+  EthSignRequest: new (args: {
+    requestId: Buffer;
+    signData: Buffer;
+    dataType: number;
+    chainId?: number;
+    derivationPath: InstanceType<typeof CryptoKeypath>;
+    origin?: string;
+  }) => { toCBOR: () => Uint8Array };
+};
+const {
+  SignType,
+  SolSignRequest,
+  CryptoKeypath: SolKeypath,
+  PathComponent: SolPathComponent,
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the CJS package ships no usable types
+} = require("@keystonehq/bc-ur-registry-sol") as {
+  CryptoKeypath: typeof CryptoKeypath;
+  PathComponent: typeof PathComponent;
+  SignType: { Transaction: number; Message: number };
+  SolSignRequest: new (args: {
+    requestId: Buffer;
+    signData: Buffer;
+    derivationPath: InstanceType<typeof CryptoKeypath>;
+    origin?: string;
+    signType: number;
+  }) => { toCBOR: () => Uint8Array };
+};
+const {
+  DataType: TronDataType,
+  TronSignRequest,
+  CryptoKeypath: TronKeypath,
+  PathComponent: TronPathComponent,
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the CJS package ships no usable types
+} = require("@keystonehq/bc-ur-registry-tron") as {
+  CryptoKeypath: typeof CryptoKeypath;
+  PathComponent: typeof PathComponent;
+  DataType: { transaction: number; personalMessage: number };
+  TronSignRequest: new (args: {
+    requestId: Buffer;
+    signData: Buffer;
+    dataType: number;
+    derivationPath: CryptoKeypath;
+    origin?: string;
+  }) => { toCBOR: () => Uint8Array };
+};
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const SEED = mnemonicToSeedSync(MNEMONIC);
@@ -254,3 +337,188 @@ const vectors = {
 
 writeFileSync("vectors/keystone/sync.json", `${JSON.stringify(vectors, null, 2)}\n`);
 console.log(`wrote vectors/keystone/sync.json (sync cbor ${vectors.sync.cbor.length / 2} bytes)`);
+
+// ── Sign-request vectors (vectors/keystone/sign.json) ────────────────────────
+
+/** Build a keypath with the _package's own_ classes — each family package vendors its registry. */
+const keypath = (
+  Keypath: typeof CryptoKeypath,
+  Component: typeof PathComponent,
+  path: string,
+): InstanceType<typeof CryptoKeypath> =>
+  new Keypath(
+    path.split("/").map(
+      (segment) =>
+        new Component({
+          index: Math.trunc(Number(segment.replace(/'$/, ""))),
+          hardened: segment.endsWith("'"),
+        }),
+    ),
+    mfpBytes(),
+  );
+
+const REQUEST_ID = Buffer.from("00112233445566778899aabbccddeeff", "hex");
+const SIGN_DATA = Buffer.from(
+  "02ef86010a840165536084016553608094deadbeefdeadbeefdeadbeefdeadbeefdeadbeef0180c0",
+  "hex",
+);
+const ORIGIN = "qntx";
+
+/** The independent encoders' byte output for one fixed request — the kernel must match it. */
+const cborOf = (item: { toCBOR: () => Uint8Array }): string => hex(item.toCBOR());
+
+const signVectors = {
+  requestId: REQUEST_ID.toString("hex"),
+  signData: SIGN_DATA.toString("hex"),
+  fingerprint: mfpBytes().toString("hex"),
+  origin: ORIGIN,
+  cases: [
+    {
+      name: "eth-legacy-transaction",
+      urType: "eth-sign-request",
+      dataType: 1,
+      chainId: 1,
+      path: "m/44'/60'/0'/0/0",
+      cbor: cborOf(
+        new EthSignRequest({
+          requestId: REQUEST_ID,
+          signData: SIGN_DATA,
+          dataType: EthDataType.transaction,
+          chainId: 1,
+          derivationPath: keypath(EthKeypath, EthPathComponent, "44'/60'/0'/0/0"),
+          origin: ORIGIN,
+        }),
+      ),
+    },
+    {
+      name: "eth-typed-transaction",
+      urType: "eth-sign-request",
+      dataType: 4,
+      chainId: 1,
+      path: "m/44'/60'/0'/0/0",
+      cbor: cborOf(
+        new EthSignRequest({
+          requestId: REQUEST_ID,
+          signData: SIGN_DATA,
+          dataType: EthDataType.typedTransaction,
+          chainId: 1,
+          derivationPath: keypath(EthKeypath, EthPathComponent, "44'/60'/0'/0/0"),
+          origin: ORIGIN,
+        }),
+      ),
+    },
+    {
+      name: "eth-personal-message",
+      urType: "eth-sign-request",
+      dataType: 3,
+      path: "m/44'/60'/0'/0/0",
+      cbor: cborOf(
+        new EthSignRequest({
+          requestId: REQUEST_ID,
+          signData: Buffer.from("hello qntx"),
+          dataType: EthDataType.personalMessage,
+          derivationPath: keypath(EthKeypath, EthPathComponent, "44'/60'/0'/0/0"),
+          origin: ORIGIN,
+        }),
+      ),
+    },
+    {
+      name: "eth-typed-data",
+      urType: "eth-sign-request",
+      dataType: 2,
+      path: "m/44'/60'/0'/0/0",
+      cbor: cborOf(
+        new EthSignRequest({
+          requestId: REQUEST_ID,
+          signData: Buffer.from('{"types":{"EIP712Domain":[]}}'),
+          dataType: EthDataType.typedData,
+          derivationPath: keypath(EthKeypath, EthPathComponent, "44'/60'/0'/0/0"),
+          origin: ORIGIN,
+        }),
+      ),
+    },
+    {
+      name: "tron-transaction",
+      urType: "tron-sign-request",
+      dataType: 1,
+      path: "m/44'/195'/0'/0/0",
+      cbor: cborOf(
+        new TronSignRequest({
+          requestId: REQUEST_ID,
+          signData: SIGN_DATA,
+          dataType: TronDataType.transaction,
+          derivationPath: keypath(TronKeypath, TronPathComponent, "44'/195'/0'/0/0"),
+          origin: ORIGIN,
+        }),
+      ),
+    },
+    {
+      name: "tron-message",
+      urType: "tron-sign-request",
+      dataType: 2,
+      path: "m/44'/195'/0'/0/0",
+      cbor: cborOf(
+        new TronSignRequest({
+          requestId: REQUEST_ID,
+          signData: Buffer.from("hello tron"),
+          dataType: TronDataType.personalMessage,
+          derivationPath: keypath(TronKeypath, TronPathComponent, "44'/195'/0'/0/0"),
+          origin: ORIGIN,
+        }),
+      ),
+    },
+    {
+      name: "solana-transaction",
+      urType: "sol-sign-request",
+      signType: 1,
+      path: "m/44'/501'/0'/0'",
+      cbor: cborOf(
+        new SolSignRequest({
+          requestId: REQUEST_ID,
+          signData: SIGN_DATA,
+          derivationPath: keypath(SolKeypath, SolPathComponent, "44'/501'/0'/0'"),
+          origin: ORIGIN,
+          signType: SignType.Transaction,
+        }),
+      ),
+    },
+    {
+      name: "solana-message",
+      urType: "sol-sign-request",
+      signType: 2,
+      path: "m/44'/501'/0'/0'",
+      cbor: cborOf(
+        new SolSignRequest({
+          requestId: REQUEST_ID,
+          signData: Buffer.from("hello solana"),
+          derivationPath: keypath(SolKeypath, SolPathComponent, "44'/501'/0'/0'"),
+          origin: ORIGIN,
+          signType: SignType.Message,
+        }),
+      ),
+    },
+    {
+      name: "bitcoin-message",
+      urType: "btc-sign-request",
+      dataType: 1,
+      path: "m/44'/0'/0'/0/0",
+      cbor: cborOf(
+        new BtcSignRequest({
+          requestId: REQUEST_ID,
+          signData: Buffer.from("hello bitcoin"),
+          dataType: BtcDataType.message,
+          derivationPaths: [keypath(BtcKeypath, BtcPathComponent, "44'/0'/0'/0/0")],
+          origin: ORIGIN,
+        }),
+      ),
+    },
+    {
+      name: "crypto-psbt",
+      urType: "crypto-psbt",
+      cbor: cborOf(new BtcCryptoPSBT(SIGN_DATA)),
+    },
+  ],
+};
+
+writeFileSync("vectors/keystone/sign.json", `${JSON.stringify(signVectors, null, 2)}\n`);
+console.log("wrote vectors/keystone/sign.json");

@@ -328,6 +328,25 @@ describe("malformed sync variants are integrity", () => {
     integrity(hexToBytes("a2011a01020304011a05060708"));
   });
 
+  it("rejects two pinnable keys claiming the same path", () => {
+    const first = derivedNode("m/44'/60'/0'");
+    const second = derivedNode("m/44'/0'/0'");
+    const both = [
+      [3, { kind: "bytes", value: first.key }],
+      [4, { kind: "bytes", value: first.chainCode }],
+    ] as const;
+    // Different material on the same claimed path is still an ambiguity, not a skip.
+    integrity(
+      syncWith([
+        hdkey("m/44'/60'/0'", [...both]),
+        hdkey("m/44'/60'/0'", [
+          [3, { kind: "bytes", value: second.key }],
+          [4, { kind: "bytes", value: second.chainCode }],
+        ]),
+      ]),
+    );
+  });
+
   it("rejects a sync whose only whitelisted keys are private or master", () => {
     const { key, chainCode } = derivedNode("m/44'/0'/0'");
     const asPrivate = hdkey("m/44'/0'/0'", [

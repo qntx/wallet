@@ -38,6 +38,10 @@
     "micro-key-producer": "0.10.2"
   },
   "devDependencies": {
+    "@keystonehq/bc-ur-registry-btc": "0.1.1",
+    "@keystonehq/bc-ur-registry-eth": "0.23.0",
+    "@keystonehq/bc-ur-registry-sol": "0.9.5",
+    "@keystonehq/bc-ur-registry-tron": "0.5.0",
     "@metamask/eth-sig-util": "9.0.0",
     "@qntx/tsconfig": "1.0.1",
     "@solana/kit": "8.5.0",

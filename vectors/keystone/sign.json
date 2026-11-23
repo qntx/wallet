@@ -1,0 +1,78 @@
+{
+  "requestId": "00112233445566778899aabbccddeeff",
+  "signData": "02ef86010a840165536084016553608094deadbeefdeadbeefdeadbeefdeadbeefdeadbeef0180c0",
+  "fingerprint": "73c5da0a",
+  "origin": "qntx",
+  "cases": [
+    {
+      "name": "eth-legacy-transaction",
+      "urType": "eth-sign-request",
+      "dataType": 1,
+      "chainId": 1,
+      "path": "m/44'/60'/0'/0/0",
+      "cbor": "a601d8255000112233445566778899aabbccddeeff02582802ef86010a840165536084016553608094deadbeefdeadbeefdeadbeefdeadbeefdeadbeef0180c00301040105d90130a2018a182cf5183cf500f500f400f4021a73c5da0a0764716e7478"
+    },
+    {
+      "name": "eth-typed-transaction",
+      "urType": "eth-sign-request",
+      "dataType": 4,
+      "chainId": 1,
+      "path": "m/44'/60'/0'/0/0",
+      "cbor": "a601d8255000112233445566778899aabbccddeeff02582802ef86010a840165536084016553608094deadbeefdeadbeefdeadbeefdeadbeefdeadbeef0180c00304040105d90130a2018a182cf5183cf500f500f400f4021a73c5da0a0764716e7478"
+    },
+    {
+      "name": "eth-personal-message",
+      "urType": "eth-sign-request",
+      "dataType": 3,
+      "path": "m/44'/60'/0'/0/0",
+      "cbor": "a501d8255000112233445566778899aabbccddeeff024a68656c6c6f20716e7478030305d90130a2018a182cf5183cf500f500f400f4021a73c5da0a0764716e7478"
+    },
+    {
+      "name": "eth-typed-data",
+      "urType": "eth-sign-request",
+      "dataType": 2,
+      "path": "m/44'/60'/0'/0/0",
+      "cbor": "a501d8255000112233445566778899aabbccddeeff02581d7b227479706573223a7b22454950373132446f6d61696e223a5b5d7d7d030205d90130a2018a182cf5183cf500f500f400f4021a73c5da0a0764716e7478"
+    },
+    {
+      "name": "tron-transaction",
+      "urType": "tron-sign-request",
+      "dataType": 1,
+      "path": "m/44'/195'/0'/0/0",
+      "cbor": "a501d8255000112233445566778899aabbccddeeff02582802ef86010a840165536084016553608094deadbeefdeadbeefdeadbeefdeadbeefdeadbeef0180c0030104d90130a2018a182cf518c3f500f500f400f4021a73c5da0a0664716e7478"
+    },
+    {
+      "name": "tron-message",
+      "urType": "tron-sign-request",
+      "dataType": 2,
+      "path": "m/44'/195'/0'/0/0",
+      "cbor": "a501d8255000112233445566778899aabbccddeeff024a68656c6c6f2074726f6e030204d90130a2018a182cf518c3f500f500f400f4021a73c5da0a0664716e7478"
+    },
+    {
+      "name": "solana-transaction",
+      "urType": "sol-sign-request",
+      "signType": 1,
+      "path": "m/44'/501'/0'/0'",
+      "cbor": "a501d8255000112233445566778899aabbccddeeff02582802ef86010a840165536084016553608094deadbeefdeadbeefdeadbeefdeadbeefdeadbeef0180c003d90130a20188182cf51901f5f500f500f5021a73c5da0a0564716e74780601"
+    },
+    {
+      "name": "solana-message",
+      "urType": "sol-sign-request",
+      "signType": 2,
+      "path": "m/44'/501'/0'/0'",
+      "cbor": "a501d8255000112233445566778899aabbccddeeff024c68656c6c6f20736f6c616e6103d90130a20188182cf51901f5f500f500f5021a73c5da0a0564716e74780602"
+    },
+    {
+      "name": "bitcoin-message",
+      "urType": "btc-sign-request",
+      "dataType": 1,
+      "path": "m/44'/0'/0'/0/0",
+      "cbor": "a501d8255000112233445566778899aabbccddeeff024d68656c6c6f20626974636f696e03010481d90130a2018a182cf500f500f500f400f4021a73c5da0a0664716e7478"
+    },
+    {
+      "name": "crypto-psbt",
+      "urType": "crypto-psbt",
+      "cbor": "582802ef86010a840165536084016553608094deadbeefdeadbeefdeadbeefdeadbeefdeadbeef0180c0"
+    }
+  ]
+}
