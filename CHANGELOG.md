@@ -631,6 +631,18 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   request-id binding, `samePsbtContent` on returned PSBTs. `vectors/keystone/` +
   `scripts/vectors/keystone.ts` pin sync, sign and hardware-call frames against the vendor
   encoders.
+- **OneKey Classic 1S / Pro over USB or BLE** (`modules/signers/onekey/`): `"onekey"` in
+  `HARDWARE_DEVICES` and a Protocol-V1 wire client with the driver over it. Pairing pins six
+  secp256k1 account nodes (BIP-44/49/84/86, EVM, TRON) and the SLIP-10 ed25519 Solana leaf with
+  root-fingerprint agreement and host-side address cross-checks; `sign` re-probes the pinned
+  account node and re-checks the live device display against the confirmed one before any
+  signing exchange. EVM legacy/EIP-1559/EIP-7702 (both stages)/personal/typed-data, Solana
+  transaction/message, TRON transaction/message, Bitcoin PSBT (streaming `SignTx`, incl.
+  taproot) and legacy/BIP-322 messages (BIP-322 on Pro ≥ 4.9.3). `@qntx/wallet/hardware` exports
+  `oneKeyAnswerLength` — the byte count of one device answer for USB report or BLE stream reads,
+  with the transport contract in its doc comment. `vectors/onekey/` pins emulator recordings at
+  protocol and driver level for Classic 1S 3.21.0 and Pro 4.21.0; `onekey.yml` re-records them
+  in CI.
 - `@qntx/wallet-chains/evm`: `evmSigningPreimage` — the unsigned EIP-155/EIP-2718 bytes whose
   keccak is the signer's digest; `@qntx/wallet-chains/bitcoin`: `legacyMessageHash`.
 
