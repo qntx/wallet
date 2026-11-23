@@ -318,16 +318,17 @@ export const reverted = (error: unknown): boolean =>
   error instanceof BaseError &&
   /* `walk` answers `null`, not `undefined`, when nothing in the chain is a revert — a transport
      failure must not read as "the contract reverted". */
-  error.walk((e) => e instanceof ContractFunctionRevertedError) != null;
+  error.walk((e) => e instanceof ContractFunctionRevertedError) !== null;
 
-/** `eth_estimateGas` surfaces a revert as a raw RPC error, not a wrapped contract error: EIP-1474
-   code 3, or the message on a node that wraps it in -32000. */
+/**
+ * `eth_estimateGas` surfaces a revert as a raw RPC error, not a wrapped contract error: EIP-1474
+ * code 3, or the message on a node that wraps it in -32000.
+ */
 export const estimateReverted = (error: unknown): boolean => {
   if (reverted(error)) {
     return true;
   }
-  const found =
-    error instanceof BaseError ? error.walk((e) => e instanceof RpcRequestError) : null;
+  const found = error instanceof BaseError ? error.walk((e) => e instanceof RpcRequestError) : null;
   return (
     found instanceof RpcRequestError &&
     (found.code === 3 || /execution reverted/i.test(found.details))

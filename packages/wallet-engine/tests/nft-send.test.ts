@@ -1,3 +1,4 @@
+// oxlint-disable vitest/no-conditional-in-test -- the mocked endpoints are inherently conditional
 import { readFileSync } from "node:fs";
 
 import { base64 } from "@scure/base";
@@ -129,7 +130,7 @@ const evmWorld = (o: {
       }
       if (data.startsWith("0x4e1273f4")) {
         const decoded = decodeFunctionData({ abi: CALL_ABI, data: data as `0x${string}` });
-        const ids = decoded.args[1];
+        const [, ids] = decoded.args;
         const balances = (host ? (o.hostBalances ?? o.balances) : o.balances) ?? [3n];
         return reply(
           `0x${word(32n).slice(2)}${word(BigInt(ids.length)).slice(2)}${ids
@@ -313,7 +314,7 @@ describe("evm-nft-send", () => {
       }>;
     };
     expect(display.summary).toBe("transfer");
-    expect(display.outflows.length).toBe(items.length);
+    expect(display.outflows).toHaveLength(items.length);
     for (const [i, it] of items.entries()) {
       const outflow = display.outflows[i];
       expect(outflow?.to.toLowerCase()).toBe(TO);
@@ -325,19 +326,22 @@ describe("evm-nft-send", () => {
   it("calldata equals viem's safeBatchTransferFrom encoding", async () => {
     const w = evmWorld({ supports1155: true, balances: [3n, 4n] });
     await w.start();
-    const prepared = await w.transactions.prepareEvmInternal({
-      method: "evm-nft-send",
-      account: ACCOUNT,
-      network: "eip155:1",
-      contract: CONTRACT,
-      items: [item(7n), item(9n, 2n)],
-      to: TO,
-      fee: "normal",
-    }, "req-calldata");
+    const prepared = await w.transactions.prepareEvmInternal(
+      {
+        method: "evm-nft-send",
+        account: ACCOUNT,
+        network: "eip155:1",
+        contract: CONTRACT,
+        items: [item(7n), item(9n, 2n)],
+        to: TO,
+        fee: "normal",
+      },
+      "req-calldata",
+    );
     const VERIFY = { kind: "password" as const, password: "pw" };
     const tx = await prepared.submit(VERIFY, () => undefined);
     expect(tx.state).toBe("submitted");
-    const request = w.signedRequests[0];
+    const [request] = w.signedRequests;
     expect(request?.tx.data).toBe(
       encodeFunctionData({
         abi: BATCH_ABI,
@@ -757,7 +761,7 @@ describe("solana-nft-send (SPL)", () => {
         verified: false,
       },
     ]);
-    const request = w.signedRequests[0];
+    const [request] = w.signedRequests;
     const compiled = parseCompiledMessage(request?.message ?? new Uint8Array());
     const programs = compiled.instructions.map(
       (ix) => compiled.staticAccounts[ix.programAddressIndex],
@@ -807,10 +811,7 @@ describe("solana-nft-send (SPL)", () => {
     const w = solanaWorld({
       payer: ACCOUNTS.owner,
       accounts: {
-        [ACCOUNTS.plain.mint.address]: solValue(
-          TOKEN_PROGRAM,
-          splMintBytes(1_000_000n, 6),
-        ),
+        [ACCOUNTS.plain.mint.address]: solValue(TOKEN_PROGRAM, splMintBytes(1_000_000n, 6)),
       },
     });
     await w.start();

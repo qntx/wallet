@@ -3,6 +3,7 @@
  * to the right /v1/nfts/* path, a schema-valid body), and every violation fails the test. Chain
  * reads come from fakes — the gateway is never asked to verify ownership. Timers are hand-driven.
  */
+// oxlint-disable vitest/no-conditional-in-test -- mocked responder dispatch is inherently conditional
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import type { BitcoinUtxoView } from "../src/assets/bitcoin.ts";
@@ -299,7 +300,7 @@ describe("refresh", () => {
 
   it("keeps pagination when a refresh page fails — loadMore still resumes", async () => {
     const answers: Responder = (_p, body) => {
-      const {cursor} = body;
+      const { cursor } = body;
       if (cursor === undefined) {
         // page 1: full answer while loading, a failure while refreshing (3rd call)
         return calls < 3
@@ -310,7 +311,7 @@ describe("refresh", () => {
     };
     let calls = 0;
     const r = rig({
-      answer: (path, body) => {
+      answer: async (path, body) => {
         calls += 1;
         return answers(path, body);
       },
@@ -335,7 +336,7 @@ describe("refresh", () => {
 
   it("keeps the cursor when a repeated load fails", async () => {
     const answers: Responder = (_p, body) => {
-      const {cursor} = body;
+      const { cursor } = body;
       if (cursor === undefined) {
         return first ? page([evmItem(CONTRACT, "1")], "c2") : new Response("x", { status: 500 });
       }
@@ -343,7 +344,7 @@ describe("refresh", () => {
     };
     let first = true;
     const r = rig({
-      answer: (path, body) => {
+      answer: async (path, body) => {
         const response = answers(path, body);
         first = false;
         return response;
@@ -530,8 +531,7 @@ const floorAnswer: Responder = (path) =>
 
 const deadEvmClient = {
   request: async (args: { method: string; params?: ReadonlyArray<unknown> }) => {
-    const data =
-      (args.params?.[0] as { data?: string } | undefined)?.data?.toLowerCase() ?? "";
+    const data = (args.params?.[0] as { data?: string } | undefined)?.data?.toLowerCase() ?? "";
     return Promise.resolve(
       data.startsWith("0x01ffc9a7")
         ? `0x${"0".repeat(63)}1`

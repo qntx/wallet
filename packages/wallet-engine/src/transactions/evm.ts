@@ -44,6 +44,8 @@ import {
   l1FeeBound,
 } from "../chains/evm.ts";
 import type { EvmUnsignedTransaction, L1FeeRead } from "../chains/evm.ts";
+import { evmNftBalances, evmNftOwner, evmNftStandard } from "../chains/nfts.ts";
+import { NftTransferError } from "../errors.ts";
 import { LIDO_CHUNK_MAX, LIDO_CHUNK_MIN, LIDO_QUEUE_ABI, LIDO_STETH_ABI } from "../lido/index.ts";
 import { resolveEns } from "../names/ens.ts";
 import {
@@ -54,6 +56,8 @@ import {
   mergeEvmQuote,
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
+import { mergeRisk } from "../requests/risk.ts";
+import type { RiskFinding } from "../requests/risk.ts";
 import { assertBridgeSimulation } from "../swaps/bridge.ts";
 import {
   ALLOWANCE_HOLDER_CODE_HASH,
@@ -73,14 +77,6 @@ import {
 } from "./broadcast.ts";
 import type { BroadcastVerdict } from "./broadcast.ts";
 import { EvmNonces } from "./evm-nonces.ts";
-import {
-  evmNftBalances,
-  evmNftOwner,
-  evmNftStandard,
-} from "../chains/nfts.ts";
-import { NftTransferError } from "../errors.ts";
-import { mergeRisk } from "../requests/risk.ts";
-import type { RiskFinding } from "../requests/risk.ts";
 import {
   accountAddressOf,
   awaitingFinality,
@@ -948,8 +944,10 @@ const prepareCctpIntent = (
   return { kind: "call", to: messenger, value: 0n, data };
 };
 
-/** A known NFT transfer's gas when estimation reverts — a contract recipient refusing the
-   receiver hook builds at this figure so its simulation can show the revert. */
+/**
+ * A known NFT transfer's gas when estimation reverts — a contract recipient refusing the receiver
+ * hook builds at this figure so its simulation can show the revert.
+ */
 const NFT_SEND_GAS_FLOOR = 100_000n;
 
 /* The built call must decode back to exactly the send: one NFT outflow to the recipient
@@ -1736,10 +1734,7 @@ export const createEvmRoute = (): EvmRoute => {
     if (standard === "erc721") {
       const [item] = items;
       if (item === undefined || items.length !== 1 || (item.amount ?? 1n) !== 1n) {
-        throw new ChainError(
-          "invalid-request",
-          "an ERC-721 send transfers exactly one token once",
-        );
+        throw new ChainError("invalid-request", "an ERC-721 send transfers exactly one token once");
       }
       const owner = await nftRead(
         ctx,
@@ -1882,10 +1877,10 @@ export const createEvmRoute = (): EvmRoute => {
     } else if (input.method === "evm-bridge") {
       intent = await prepareBridgeIntent(ctx, input, from, flags);
     } else if (input.method === "evm-nft-send") {
-      const nft = await prepareNftSend(ctx, input, from, flags);
-      intent = nft.intent;
-      nftName = nft.name;
-      nftRisk = nft.risk;
+      const { intent: nftIntent, name, risk } = await prepareNftSend(ctx, input, from, flags);
+      intent = nftIntent;
+      nftName = name;
+      nftRisk = risk;
     } else if (input.method === "evm-lido") {
       intent = await prepareLidoIntent(ctx, input, from, flags, async () =>
         delegationStateOrNone(ctx, network, from, flags),
@@ -1982,9 +1977,7 @@ export const createEvmRoute = (): EvmRoute => {
             }),
       },
       checks: [...new Set([...prepared.checks, ...collectChecks(flags)])],
-      ...(nftRisk.length === 0
-        ? {}
-        : { risk: mergeRisk(prepared.risk ?? [], nftRisk) }),
+      ...(nftRisk.length === 0 ? {} : { risk: mergeRisk(prepared.risk ?? [], nftRisk) }),
     };
   };
 

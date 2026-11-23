@@ -1,26 +1,23 @@
+// oxlint-disable vitest/no-conditional-in-test -- the fake gateway fetch is inherently conditional
+import { describe, expect, it } from "vite-plus/test";
+
 /**
- * The gateway is display-only and untrusted: an inventory it invents must never move value.
- * Every send it suggests goes through the request pipeline's own chain reads — agreeing with
- * an invented owner fails verification before anything is signed, and a gateway that is the
- * only configured endpoint answers with `reads-unverified`, never silently trusted.
+ * The gateway is display-only and untrusted: an inventory it invents must never move value. Every
+ * send it suggests goes through the request pipeline's own chain reads — agreeing with an invented
+ * owner fails verification before anything is signed, and a gateway that is the only configured
+ * endpoint answers with `reads-unverified`, never silently trusted.
  */
 import type { Wallet } from "@qntx/wallet";
 import type { chains } from "@qntx/wallet/chains";
-import { describe, expect, it } from "vite-plus/test";
 
+import { NftTransferError } from "../src/errors.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { NftController } from "../src/nfts/controller.ts";
-import { NftTransferError } from "../src/errors.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import {
-  bookDeps,
-  idleNetworkDeps,
-  simulateSolanaStub,
-  tokensStub,
-} from "./send-helpers.ts";
+import { bookDeps, idleNetworkDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 
 const logger = {
   debug: () => undefined,
@@ -38,7 +35,12 @@ const STRANGER = "0x9999999999999999999999999999999999999999";
 const CONTRACT = "0x3333333333333333333333333333333333333333";
 const TO = "0x4444444444444444444444444444444444444444";
 const MINT = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
-const ACCOUNT = { kind: "hd" as const, walletId: "w", groupIndex: 0, template: "evm.bip44" as const };
+const ACCOUNT = {
+  kind: "hd" as const,
+  walletId: "w",
+  groupIndex: 0,
+  template: "evm.bip44" as const,
+};
 const SOL_ACCOUNT = {
   kind: "hd" as const,
   walletId: "w",
@@ -85,8 +87,8 @@ type RpcFn = (method: string, params: ReadonlyArray<unknown> | undefined) => unk
 
 /** The chain answers every endpoint gives; `invented` items come only from the gateway page. */
 const world = (o: {
-  readonly rpc: Readonly<Record<string, readonly string[]>>;
-  readonly networks: readonly string[];
+  readonly rpc: Readonly<Record<string, ReadonlyArray<string>>>;
+  readonly networks: ReadonlyArray<string>;
   readonly page?: ReadonlyArray<Record<string, unknown>>;
   readonly answer: RpcFn;
 }) => {
@@ -185,9 +187,7 @@ const world = (o: {
 const evmAnswer = (owner: string): RpcFn => {
   return (method, params) => {
     if (method === "eth_call") {
-      const data = String(
-        (params?.[0] as { data?: string } | undefined)?.data ?? "",
-      ).toLowerCase();
+      const data = ((params?.[0] as { data?: string } | undefined)?.data ?? "").toLowerCase();
       if (data.startsWith("0x01ffc9a7")) {
         return word(data.slice(10, 18) === "80ac58cd" ? 1n : 0n);
       }
@@ -241,10 +241,7 @@ describe("a hostile gateway's invented inventory", () => {
       answer: (method) => (method === "getAccountInfo" ? { value: null } : null),
     });
     await w.start();
-    const inventory = await w.nfts.load(
-      "9Xx76WpEjfwhvuTcXiXBHgVPzXsJ8aAaSBTLjdFyf9DL",
-      SOL_NET,
-    );
+    const inventory = await w.nfts.load("9Xx76WpEjfwhvuTcXiXBHgVPzXsJ8aAaSBTLjdFyf9DL", SOL_NET);
     expect(inventory.items).toHaveLength(1);
     await expect(
       w.requests.prepare({

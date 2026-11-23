@@ -11,8 +11,8 @@ import { readContract } from "viem/actions";
 
 import { MPL_CORE_PROGRAM, PROGRAM_IDS, associatedTokenAddress } from "@qntx/wallet-chains/solana";
 
-import { reverted } from "./evm.ts";
 import type { SolanaRpc } from "../networks/controller.ts";
+import { reverted } from "./evm.ts";
 
 type ViemClient = Parameters<typeof readContract>[0];
 

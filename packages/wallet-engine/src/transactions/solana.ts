@@ -36,11 +36,9 @@ import {
   parseTokenAccount,
   solanaAccountBytes,
 } from "../chains/nfts.ts";
-import { NftTransferError } from "../errors.ts";
-import { mergeRisk } from "../requests/risk.ts";
-import type { RiskFinding } from "../requests/risk.ts";
 import { STAKE_ACCOUNT_BYTES, SolanaChainAdapter } from "../chains/solana.ts";
 import type { SolanaIntent, SolanaUnsignedTransaction } from "../chains/solana.ts";
+import { NftTransferError } from "../errors.ts";
 import { SOLANA_MAINNET } from "../gateway/contract/quotes.ts";
 import type { Independent, PinnedSolanaRpc, SolanaRpc } from "../networks/controller.ts";
 import type { NetworkInfo } from "../networks/registry.ts";
@@ -51,6 +49,8 @@ import {
   mergeSolanaQuote,
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
+import { mergeRisk } from "../requests/risk.ts";
+import type { RiskFinding } from "../requests/risk.ts";
 import { QUOTE_MAX_AGE_MS } from "../swaps/index.ts";
 import {
   assertJupiterIntent,
@@ -286,8 +286,10 @@ const lifetimeTokenOf = (raw: string): string | undefined => {
   }
 };
 
-/** The mint's Token-2022 extensions when it carries any — non-transferable and confidential
-   mints refuse outright, here and in the NFT send path. */
+/**
+ * The mint's Token-2022 extensions when it carries any — non-transferable and confidential mints
+ * refuse outright, here and in the NFT send path.
+ */
 const usableMintExtensions = async (
   rpc: SolanaRpc,
   raw: Uint8Array,
@@ -814,8 +816,10 @@ export const prepareSolanaStake = async (
 };
 
 /** Returns the terminal state, `dropped` on blockhash expiry, or `undefined` to keep polling. */
-/** An account read answered identically by both endpoints — bytes and owner compared
-   byte-for-byte; a failed independent read degrades to `reads-unverified`. */
+/**
+ * An account read answered identically by both endpoints — bytes and owner compared byte-for-byte;
+ * a failed independent read degrades to `reads-unverified`.
+ */
 const nftAccount = async (
   rpc: SolanaRpc,
   independent: Independent<SolanaRpc>,
@@ -950,16 +954,20 @@ const prepareSplNft = async (
   }
   /* Token-2022 mints carry extensions past the shared 82-byte base layout; the Token
      program's must be exactly 82. */
-  const parsed = parseMint(
-    mint.owner === PROGRAM_IDS.token ? mint.data : mint.data.slice(0, 82),
-  );
-  if (parsed === undefined || !parsed.initialized || parsed.decimals !== 0 || parsed.supply !== 1n) {
-    throw new NftTransferError("not-nft", "the mint does not look like an NFT (decimals 0, supply 1)");
+  const parsed = parseMint(mint.owner === PROGRAM_IDS.token ? mint.data : mint.data.slice(0, 82));
+  if (
+    parsed === undefined ||
+    !parsed.initialized ||
+    parsed.decimals !== 0 ||
+    parsed.supply !== 1n
+  ) {
+    throw new NftTransferError(
+      "not-nft",
+      "the mint does not look like an NFT (decimals 0, supply 1)",
+    );
   }
   const ext =
-    mint.owner === PROGRAM_IDS.token2022
-      ? await usableMintExtensions(rpc, mint.data)
-      : undefined;
+    mint.owner === PROGRAM_IDS.token2022 ? await usableMintExtensions(rpc, mint.data) : undefined;
   /* A Metaplex metadata PDA only speaks when the program owns it; a readable account that does
      not parse is as good a "this is not an NFT" signal as a fungible mint. */
   const pda = await metaplexMetadataAddress(asset);
