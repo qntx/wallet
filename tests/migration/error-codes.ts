@@ -26,6 +26,15 @@ export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   integrity: false,
   "blind-signing-disabled": true,
   "approval-required": false,
+  "card-required": true,
+  "card-not-genuine": true,
+  "card-id-mismatch": true,
+  "wrong-card": true,
+  "card-erased": true,
+  "card-locked": true,
+  "card-tampered": true,
+  "card-fault": true,
+  "card-unsupported": true,
   crashed: false,
 };
 

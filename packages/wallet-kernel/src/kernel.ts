@@ -22,6 +22,7 @@ import type { LockReason } from "@qntx/wallet/types";
 import type { CommitOptions, Handler, KernelContext } from "./commands/context.ts";
 import { CORE_HANDLERS } from "./commands/index.ts";
 import { KernelError } from "./errors.ts";
+import { createCardModule } from "./modules/card/index.ts";
 import { createChainsModule } from "./modules/chains/index.ts";
 import { createNostrModule } from "./modules/nostr/index.ts";
 import { createSessionsModule } from "./modules/sessions/index.ts";
@@ -133,12 +134,14 @@ export function startKernel(host: KernelPlatform, port: Port): void {
   // VaultHooks entry in ctx.modules and its status section; there is no registry — future modules
   // add a line here and a section in status.ts's composition.
   const nostr = createNostrModule(platform.backends.nostr);
+  const card = createCardModule(platform);
   const spark = createSparkModule();
-  const chains = createChainsModule();
+  const chains = createChainsModule(card.material);
   const sessions = createSessionsModule();
   const HANDLERS = {
     status: (ctx: KernelContext) => statusPayload(ctx, nostr),
     ...CORE_HANDLERS,
+    ...card.handlers,
     ...chains.handlers,
     ...nostr.handlers,
     ...spark.handlers,
@@ -315,7 +318,8 @@ export function startKernel(host: KernelPlatform, port: Port): void {
   const ctx: KernelContext = {
     platform,
     session: new Session(platform, onLock),
-    modules: [nostr.vault, spark.vault, chains.vault, sessions.vault],
+    modules: [nostr.vault, spark.vault, chains.vault, sessions.vault, card.vault],
+    cardMaterial: card.material,
     image: EMPTY_IMAGE,
     health: "ok",
     commit: async (ops: ReadonlyArray<StoreOp>, options?: CommitOptions) => {

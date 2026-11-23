@@ -1,5 +1,6 @@
 import type { MethodName, ParamsOf, ResultOf } from "@qntx/wallet/protocol";
 
+import type { PublicMaterial } from "../derive/material.ts";
 import type { KernelPlatform } from "../platform.ts";
 import type { Secret } from "../secret/secret.ts";
 import type { Session } from "../session/session.ts";
@@ -58,6 +59,8 @@ export type KernelContext = {
   readonly platform: KernelPlatform;
   readonly session: Session;
   readonly modules: ReadonlyArray<VaultHooks>;
+  /** Live card-wallet public material by walletId — `undefined` while locked or not a card wallet. */
+  readonly cardMaterial: (walletId: string) => PublicMaterial | undefined;
   image: VaultImage;
   /**
    * The kernel's read on the store: "corrupted" (authentication or structure), "unsupported" (data

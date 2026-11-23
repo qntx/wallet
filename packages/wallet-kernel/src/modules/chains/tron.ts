@@ -7,8 +7,8 @@ import {
   tronAddressFromPublicKey,
 } from "@qntx/wallet-chains/tron";
 
+import type { PublicMaterial } from "../../derive/material.ts";
 import { KernelError } from "../../errors.ts";
-import type { PublicMaterial } from "./keys.ts";
 import type { Prepared, TronRequest } from "./shared.ts";
 import { deepEqual, mapChainError } from "./shared.ts";
 

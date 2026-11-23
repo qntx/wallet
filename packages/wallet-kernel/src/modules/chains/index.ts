@@ -25,6 +25,7 @@ import type {
 
 import type { Handler, VaultHooks } from "../../commands/context.ts";
 import { withWalletSeed } from "../../commands/vault.ts";
+import type { PublicMaterial } from "../../derive/material.ts";
 import { KernelError } from "../../errors.ts";
 import { promptLocale } from "../../prompts.ts";
 import type { Secret } from "../../secret/secret.ts";
@@ -33,6 +34,7 @@ import { parseKeyHeader } from "../../vault/headers.ts";
 import { BLIND_SIGNING, policyEnabled } from "../../vault/policy.ts";
 import type { StoredRecord } from "../../vault/store.ts";
 import { openRecord, verifyFactor } from "../../vault/vault.ts";
+import { CARD_WALLET_KIND, isCardWallet } from "../card/record.ts";
 import { findSession, parseSessionHeader } from "../sessions/record.ts";
 import { prepareBitcoin } from "./bitcoin.ts";
 import { assertFiat24Deadline, prepareEvm } from "./evm.ts";
@@ -83,7 +85,7 @@ const checkNetwork = (template: string, network: string): void => {
   }
 };
 
-const accountFor = async (
+export const accountFor = async (
   material: KeySource["material"],
   template: ChainTemplate,
   network: string,
@@ -132,10 +134,12 @@ const walletAccounts = async (
   params: Parameters<Handler<"wallet.accounts">>[1],
   session: string | undefined,
   cache: AccountCache,
+  cardMaterial: (walletId: string) => PublicMaterial | undefined,
 ): Promise<ChainAccount> => {
   const { dek } = ctx.session.require(session);
   const record = ctx.image.records.find(
-    (entry) => entry.kind === "entropy" && entry.id === params.walletId,
+    (entry) =>
+      entry.id === params.walletId && (entry.kind === "entropy" || entry.kind === CARD_WALLET_KIND),
   );
   if (record === undefined) {
     throw new KernelError("not-found", "no such wallet");
@@ -146,14 +150,25 @@ const walletAccounts = async (
   if (known !== undefined) {
     return known;
   }
-  const account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
-    const keys = seedKeys(seed, ctx.platform.random);
-    try {
-      return await accountFor(keys.material, params.template, params.network, params.groupIndex);
-    } finally {
-      keys.wipe();
+  let account: ChainAccount;
+  if (record.kind === CARD_WALLET_KIND) {
+    const material = cardMaterial(params.walletId);
+    if (material === undefined) {
+      // The record exists but its body was never claimed — an unlock that opened records but
+      // skipped the card module should not be possible.
+      throw new KernelError("integrity", "card wallet material is not loaded");
     }
-  });
+    account = await accountFor(material, params.template, params.network, params.groupIndex);
+  } else {
+    account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+      const keys = seedKeys(seed, ctx.platform.random);
+      try {
+        return await accountFor(keys.material, params.template, params.network, params.groupIndex);
+      } finally {
+        keys.wipe();
+      }
+    });
+  }
   const accounts = cache.get(record) ?? new Map<string, ChainAccount>();
   accounts.set(key, account);
   cache.set(record, accounts);
@@ -205,6 +220,10 @@ const hdSource = (
     if (!("template" in account) || !expected.includes(account.template)) {
       throw new KernelError("invalid-input", "account template does not match the request family");
     }
+  }
+  if (isCardWallet(ctx.image, account.walletId)) {
+    // Card wallets sign through card.begin's sign operation, never through this pipeline.
+    throw new KernelError("card-required", "card wallets sign through card.begin");
   }
   const record = ctx.image.records.find(
     (entry) => entry.kind === "entropy" && entry.id === account.walletId,
@@ -369,7 +388,9 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   );
 };
 
-export function createChainsModule(): ChainsModule {
+export function createChainsModule(
+  cardMaterial: (walletId: string) => PublicMaterial | undefined,
+): ChainsModule {
   let accounts: AccountCache = new WeakMap();
   const vault: VaultHooks = {
     ownsRecord: () => false,
@@ -384,7 +405,7 @@ export function createChainsModule(): ChainsModule {
 
   const handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> } = {
     "wallet.accounts": async (ctx, params, session) =>
-      walletAccounts(ctx, params, session, accounts),
+      walletAccounts(ctx, params, session, accounts, cardMaterial),
     "chain.sign": chainSign,
   };
 

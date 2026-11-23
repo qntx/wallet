@@ -102,12 +102,57 @@ const keyInfoOf = (record: StoredRecord): ImportedKeyInfo => {
 };
 
 /**
- * Every address a mnemonic wallet can derive inside the first OWN_GROUP_BOUND groups — EVM bip44,
- * Solana bip44-change plus TRON bip44. A key matching one of them is a second handle on an account
- * the wallet already owns, so import refuses it.
+ * Every address a wallet can derive inside the first OWN_GROUP_BOUND groups — EVM bip44, Solana
+ * bip44-change plus TRON bip44. A key matching one of them is a second handle on an account the
+ * wallet already owns, so import refuses it. Card wallets answer from their cached public material;
+ * a path the record did not cache (`card-required`) is skipped — anything else throws.
  */
 async function ownAddresses(ctx: KernelContext, dek: Secret) {
   const addresses = new Set<string>();
+  const cardAddresses = async (record: StoredRecord): Promise<void> => {
+    // The card module claimed the sealed body at unlock; live material answers from its cache.
+    const material = ctx.cardMaterial(record.id);
+    if (material === undefined) {
+      return;
+    }
+    {
+      const h = 0x80000000; // hardened bit — the own paths match leafPath in modules/chains
+      const collect = (
+        settled: ReadonlyArray<PromiseSettledResult<Uint8Array>>,
+        toAddress: (key: Uint8Array) => string,
+      ): void => {
+        for (const result of settled) {
+          if (result.status === "fulfilled") {
+            addresses.add(toAddress(result.value));
+          } else if (
+            !(result.reason instanceof KernelError && result.reason.code === "card-required")
+          ) {
+            throw result.reason instanceof Error ? result.reason : new Error("derivation failed");
+          }
+        }
+      };
+      const groups = Array.from({ length: OWN_GROUP_BOUND }, (_, group) => group);
+      const [evm, tron, solana] = await Promise.all([
+        Promise.allSettled(
+          groups.map(async (group) => material.secp256k1([44 + h, 60 + h, h, 0, group])),
+        ),
+        Promise.allSettled(
+          groups.map(async (group) => material.secp256k1([44 + h, 195 + h, h, 0, group])),
+        ),
+        Promise.allSettled(
+          groups.map(async (group) => material.ed25519([44 + h, 501 + h, group + h, h])),
+        ),
+      ]);
+      collect(evm, (key) => evmAddressFromPublicKey(key).toLowerCase());
+      collect(tron, tronAddressFromPublicKey);
+      collect(solana, solanaAddressFromPublicKey);
+    }
+  };
+  await Promise.all(
+    ctx.image.records
+      .filter((r) => r.kind !== "entropy")
+      .map(async (record) => cardAddresses(record)),
+  );
   const entropyRecords = ctx.image.records.filter((r) => r.kind === "entropy");
   await Promise.all(
     entropyRecords.map(async (record) =>

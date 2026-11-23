@@ -206,6 +206,7 @@ function platform(
     random: (n) => crypto.getRandomValues(new Uint8Array(n)),
     keystore: bindNativeKeystore(keystore),
     passkey: undefined,
+    card: undefined,
     now: () => Date.now(),
     elapsed: () => performance.now(),
     setTimer: (ms, fn) => {

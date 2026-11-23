@@ -130,6 +130,159 @@ export const bool: Validator<boolean>;
 export function bytes(min: number, max?: number): Validator<Uint8Array>;
 
 // @public (undocumented)
+export const CARD_METHODS: {
+    readonly "card.begin": MethodSpec<CardBeginParams, {
+        opId: string;
+        step: CardStep;
+    }>;
+    readonly "card.step": MethodSpec<CardStepParams, CardStep>;
+    readonly "card.cancel": MethodSpec<CardStepParams, NullValue>;
+};
+
+// @public (undocumented)
+export type CardBeginParams = {
+    readonly op: CardOperation;
+    readonly verify?: VerifyFactor;
+};
+
+// @public (undocumented)
+type CardInfo = {
+    readonly cardId: string;
+    readonly shortId?: string;
+    readonly state: "ready" | "unknown" | "pending";
+    readonly tries?: number;
+    readonly verifiedAt?: number;
+};
+
+// @public (undocumented)
+export type CardInputPurpose = "access-code" | "new-access-code" | "confirm-access-code" | "short-id";
+
+// @public (undocumented)
+export type CardOperation = {
+    readonly kind: "status";
+} | {
+    readonly kind: "add";
+    readonly groups?: number;
+} | {
+    readonly kind: "accounts";
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly templates: ReadonlyArray<ChainTemplate>;
+    readonly network: string;
+} | {
+    readonly kind: "health";
+    readonly walletId: string;
+} | {
+    readonly kind: "change-access";
+    readonly walletId: string;
+    readonly remember?: true;
+} | {
+    readonly kind: "erase";
+    readonly walletId: string;
+    readonly card: string;
+    readonly last?: true;
+} | {
+    readonly kind: "create";
+    readonly cards: number;
+    readonly source: {
+        readonly kind: "generate";
+    } | {
+        readonly kind: "wallet";
+        readonly walletId: string;
+    };
+    readonly groups?: number;
+    readonly remember?: true;
+} | {
+    readonly kind: "transfer";
+    readonly walletId: string;
+} | {
+    readonly kind: "reseal";
+    readonly walletId: string;
+    readonly card: string;
+    readonly member?: string;
+} | {
+    readonly kind: "sign";
+    readonly request: ChainSignRequest;
+    readonly remember?: true;
+} | {
+    readonly kind: "forget-access";
+    readonly walletId: string;
+};
+
+// @public (undocumented)
+export type CardOpResult = {
+    readonly kind: "status";
+    readonly life: "blank" | "loaded";
+    readonly tries: number;
+    readonly walletId?: string;
+} | {
+    readonly kind: "sign";
+    readonly result: ChainSignResult;
+} | {
+    readonly kind: "accounts";
+    readonly accounts: ReadonlyArray<ChainAccount>;
+} | {
+    readonly kind: "add";
+    readonly walletId: string;
+} | {
+    readonly kind: "health";
+    readonly walletId: string;
+} | {
+    readonly kind: "change-access";
+    readonly walletId: string;
+} | {
+    readonly kind: "erase";
+    readonly walletId: string;
+} | {
+    readonly kind: "create";
+    readonly walletId: string;
+} | {
+    readonly kind: "transfer";
+    readonly walletId: string;
+} | {
+    readonly kind: "reseal";
+    readonly walletId: string;
+} | {
+    readonly kind: "forget-access";
+    readonly walletId: string;
+};
+
+// @public
+export type CardStep = {
+    readonly kind: "input";
+    readonly purpose: CardInputPurpose;
+    readonly card?: string;
+    readonly remaining?: number;
+} | {
+    readonly kind: "tap";
+    readonly reason: CardTapReason;
+    readonly card?: string;
+    readonly hold?: true;
+} | {
+    readonly kind: "done";
+    readonly result: CardOpResult;
+};
+
+// @public (undocumented)
+export type CardStepParams = {
+    readonly opId: string;
+};
+
+// @public (undocumented)
+export type CardTapReason = "any" | "source" | "target" | "member" | "retry";
+
+// @public
+type CardWalletInfo = {
+    readonly custody: "card";
+    readonly walletId: string;
+    readonly origin: "card-generated" | "card-imported";
+    readonly backup: "cards";
+    readonly createdAt: number;
+    readonly members: number;
+    readonly cards: ReadonlyArray<CardInfo>;
+};
+
+// @public (undocumented)
 export type ChainAccount = {
     readonly template: "evm.bip44";
     readonly network: string;
@@ -643,7 +796,7 @@ export type MethodName = keyof typeof METHODS;
 // @public (undocumented)
 export const METHODS: {
     readonly status: MethodSpec<NullValue, StatusPayload>;
-} & typeof CORE_METHODS & typeof NOSTR_METHODS & typeof CHAINS_METHODS & typeof SPARK_METHODS & typeof SESSIONS_METHODS;
+} & typeof CORE_METHODS & typeof CARD_METHODS & typeof NOSTR_METHODS & typeof CHAINS_METHODS & typeof SPARK_METHODS & typeof SESSIONS_METHODS;
 
 // @public (undocumented)
 export type MethodSpec<P, R> = {
@@ -654,7 +807,7 @@ export type MethodSpec<P, R> = {
 };
 
 // @public (undocumented)
-export type MethodTablesDisjoint = [AssertNever<keyof typeof CORE_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof CORE_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof NOSTR_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CORE_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CHAINS_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof SPARK_METHODS>];
+export type MethodTablesDisjoint = [AssertNever<keyof typeof CORE_METHODS & keyof typeof CARD_METHODS>, AssertNever<keyof typeof CORE_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof CORE_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof CARD_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof CARD_METHODS & keyof typeof CHAINS_METHODS>, AssertNever<keyof typeof CARD_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof CARD_METHODS & keyof typeof SESSIONS_METHODS>, AssertNever<keyof typeof NOSTR_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CORE_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CHAINS_METHODS>, AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof SPARK_METHODS>];
 
 // @public (undocumented)
 export const NOSTR_METHODS: {
@@ -1191,6 +1344,17 @@ export type Validator<T> = (value: unknown) => T;
 // @public
 type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
 
+// @public
+type VaultWalletInfo = {
+    readonly custody: "vault";
+    readonly walletId: string;
+    readonly origin: "passkey" | "mnemonic";
+    readonly words: 12 | 15 | 18 | 21 | 24;
+    readonly backup: "none" | "passkey" | "mnemonic";
+    readonly passphrase: boolean;
+    readonly createdAt: number;
+};
+
 // @public (undocumented)
 export const verifier: Validator<VerifyFactor>;
 
@@ -1200,20 +1364,13 @@ export type VerifyFactor = Exclude<Factor, {
 }>;
 
 // @public (undocumented)
-export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "crashed";
+export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "card-required" | "card-not-genuine" | "card-id-mismatch" | "wrong-card" | "card-erased" | "card-locked" | "card-tampered" | "card-fault" | "card-unsupported" | "crashed";
 
 // @public (undocumented)
 export const walletErrorCode: Validator<WalletErrorCode>;
 
 // @public (undocumented)
-type WalletInfo = {
-    readonly walletId: string;
-    readonly origin: "passkey" | "mnemonic";
-    readonly words: 12 | 15 | 18 | 21 | 24;
-    readonly backup: "none" | "passkey" | "mnemonic";
-    readonly passphrase: boolean;
-    readonly createdAt: number;
-};
+type WalletInfo = VaultWalletInfo | CardWalletInfo;
 
 // (No @packageDocumentation comment for this package)
 

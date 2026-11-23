@@ -4,6 +4,7 @@ import type { FactorInfo, NostrKeyInfo, StatusPayload, WalletInfo } from "@qntx/
 
 import type { KernelContext, VaultHooks } from "./commands/context.ts";
 import { KernelError } from "./errors.ts";
+import { CARD_WALLET_KIND, cardWalletInfo, parseCardWalletHeader } from "./modules/card/record.ts";
 import type { NostrModule } from "./modules/nostr/index.ts";
 import {
   parseBackupKeyHeader,
@@ -120,6 +121,8 @@ export function statusContents(
       } else if (record.kind === "key") {
         const header = parseKeyHeader(record.header);
         importedKeys.push({ keyId: record.id, ...header });
+      } else if (record.kind === CARD_WALLET_KIND) {
+        wallets.push(cardWalletInfo(parseCardWalletHeader(record.header)));
       } else if (record.kind === "backup-key") {
         // The backup key is a single fixed record — a stray id is malformed.
         if (record.id === "default") {

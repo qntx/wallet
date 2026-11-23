@@ -5,6 +5,7 @@ import type { WalletErrorCode } from "@qntx/wallet/types";
 import { startKernel } from "../src/kernel.ts";
 import type {
   Argon2id,
+  CardPlatform,
   KernelPlatform,
   Keystore,
   PasskeyAuthenticator,
@@ -146,6 +147,8 @@ export function createHarness(opts?: {
   keystore?: Keystore;
   /** A platform passkey authenticator: the kernel runs WebAuthn ceremonies itself (React Native). */
   passkey?: PasskeyAuthenticator;
+  /** The card reader/secure-input/anchor bundle (default undefined — a no-NFC host). */
+  card?: CardPlatform;
   /** Overrides the WebCrypto PBKDF2 (spies observing seed derivation). */
   pbkdf2?: Pbkdf2;
   /** The real cost, for the vector tests; every other test stretches at a token cost. */
@@ -229,6 +232,7 @@ export function createHarness(opts?: {
     },
     keystore: opts?.keystore,
     passkey: opts?.passkey,
+    card: opts?.card,
     backends: opts?.backends ?? {
       spark: async () => {
         await Promise.resolve();

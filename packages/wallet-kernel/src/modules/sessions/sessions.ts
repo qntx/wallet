@@ -18,7 +18,7 @@ import { KernelError } from "../../errors.ts";
 import type { KernelPlatform } from "../../platform.ts";
 import { wipe } from "../../secret/secret.ts";
 import type { StoredRecord } from "../../vault/store.ts";
-import { findRecord, openRecord, sealRecord } from "../../vault/vault.ts";
+import { findRecord, findSeedWallet, openRecord, sealRecord } from "../../vault/vault.ts";
 import { encodeSessionHeader, findSession, parseSessionHeader, SESSION_KIND } from "./record.ts";
 import { isSchemeId, schemeOf } from "./schemes/index.ts";
 
@@ -80,7 +80,7 @@ export const createSession: Handler<"sessions.create"> = async (ctx, params, ses
   ) {
     throw new KernelError("conflict", "session limit reached");
   }
-  const entropy = findRecord(ctx.image, "entropy", params.owner.walletId);
+  const entropy = findSeedWallet(ctx.image, params.owner.walletId);
   const owner = await withWalletSeed(ctx.platform.pbkdf2, dek, entropy, (seed) => {
     const master = HDKey.fromMasterSeed(seed);
     try {

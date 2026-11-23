@@ -20,7 +20,11 @@ export type FactorInfo =
     }
   | { readonly kind: "password"; readonly id: string; readonly createdAt: number };
 
-export type WalletInfo = {
+export type WalletInfo = VaultWalletInfo | CardWalletInfo;
+
+/** A wallet whose seed lives sealed in this vault (an `entropy` record). */
+export type VaultWalletInfo = {
+  readonly custody: "vault";
   readonly walletId: string;
   readonly origin: "passkey" | "mnemonic";
   readonly words: 12 | 15 | 18 | 21 | 24;
@@ -34,6 +38,32 @@ export type WalletInfo = {
   /** The wallet derives from its mnemonic plus a BIP-39 passphrase; only mnemonic wallets can. */
   readonly passphrase: boolean;
   readonly createdAt: number;
+};
+
+/**
+ * A wallet whose seed lives only on qntx cards (a `card-wallet` record): the vault caches the
+ * public material a tap fetched, never the seed. `members` is the card count k (1–3).
+ */
+export type CardWalletInfo = {
+  readonly custody: "card";
+  readonly walletId: string;
+  readonly origin: "card-generated" | "card-imported";
+  readonly backup: "cards";
+  readonly createdAt: number;
+  readonly members: number;
+  readonly cards: ReadonlyArray<CardInfo>;
+};
+
+export type CardInfo = {
+  /** `ID(A)`: 32 lowercase hex identifying the card's identity key. */
+  readonly cardId: string;
+  /** `XXXX-XXXX` display id — only when the record pins this card's certificate. */
+  readonly shortId?: string;
+  /** `pending` never finished its IMPORT; `unknown` this kernel has not checked it yet. */
+  readonly state: "ready" | "unknown" | "pending";
+  /** Remaining access-code tries this kernel recorded (0..10). */
+  readonly tries?: number;
+  readonly verifiedAt?: number;
 };
 
 export type NostrKeyRef = {
@@ -70,6 +100,15 @@ export type WalletErrorCode =
   | "integrity"
   | "blind-signing-disabled"
   | "approval-required"
+  | "card-required"
+  | "card-not-genuine"
+  | "card-id-mismatch"
+  | "wrong-card"
+  | "card-erased"
+  | "card-locked"
+  | "card-tampered"
+  | "card-fault"
+  | "card-unsupported"
   | "crashed";
 
 /**

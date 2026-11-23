@@ -44,6 +44,8 @@ export const publicKey: Validator<string> = str(64, /^[0-9a-f]{64}$/);
 export const credentialId: Validator<string> = str(1364, /^[A-Za-z0-9_-]+$/);
 export const safeTime: Validator<number> = int(0, Number.MAX_SAFE_INTEGER);
 export const groupIndex: Validator<number> = int(0, 0x7fffffff);
+/** A card's `ID(A)`: 16 bytes as 32 lowercase hex. */
+export const cardId: Validator<string> = str(32, /^[0-9a-f]{32}$/);
 export const keyInfo: Validator<{
   readonly keyId: string;
   readonly family: "evm" | "solana" | "bitcoin" | "tron";
@@ -237,14 +239,36 @@ export const backupUnlockFactor: Validator<BackupUnlockFactor> = union(
   }),
 );
 
-export const walletInfo: Validator<WalletInfo> = obj({
-  walletId,
-  origin: union(literal("passkey"), literal("mnemonic")),
-  words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
-  backup: union(literal("none"), literal("passkey"), literal("mnemonic")),
-  passphrase: bool,
-  createdAt: safeTime,
-});
+export const walletInfo: Validator<WalletInfo> = union(
+  obj({
+    custody: literal("vault"),
+    walletId,
+    origin: union(literal("passkey"), literal("mnemonic")),
+    words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
+    backup: union(literal("none"), literal("passkey"), literal("mnemonic")),
+    passphrase: bool,
+    createdAt: safeTime,
+  }),
+  obj({
+    custody: literal("card"),
+    walletId,
+    origin: union(literal("card-generated"), literal("card-imported")),
+    backup: literal("cards"),
+    createdAt: safeTime,
+    members: int(1, 3),
+    cards: arr(
+      obj({
+        cardId,
+        shortId: opt(str(9, /^[0-9A-F]{4}-[0-9A-F]{4}$/)),
+        state: union(literal("ready"), literal("unknown"), literal("pending")),
+        tries: opt(int(0, 10)),
+        verifiedAt: opt(safeTime),
+      }),
+      3,
+      1,
+    ),
+  }),
+);
 
 /** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
 const passphraseBytes: Validator<Uint8Array> = bytes(1, 1024);
@@ -268,6 +292,15 @@ export const walletErrorCode: Validator<WalletErrorCode> = union(
   literal("unavailable"),
   literal("integrity"),
   literal("approval-required"),
+  literal("card-required"),
+  literal("card-not-genuine"),
+  literal("card-id-mismatch"),
+  literal("wrong-card"),
+  literal("card-erased"),
+  literal("card-locked"),
+  literal("card-tampered"),
+  literal("card-fault"),
+  literal("card-unsupported"),
   literal("crashed"),
 );
 

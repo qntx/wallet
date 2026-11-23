@@ -6,6 +6,7 @@ import { KernelError } from "./errors.ts";
  * Platform capabilities injected by the host packages. The kernel holds no ambient singletons and
  * imports no platform APIs; every capability arrives through these types.
  */
+import type { Anchor } from "./modules/card/protocol/identity.ts";
 import type { NostrBackend } from "./modules/nostr/backend.ts";
 import type { RecordStore } from "./vault/store.ts";
 
@@ -87,6 +88,8 @@ export type KernelPlatform = {
    * the host runs the ceremony and hands over the evidence.
    */
   readonly passkey: PasskeyAuthenticator | undefined;
+  /** The card reader + secure input + trust anchors; `undefined` on hosts without NFC. */
+  readonly card: CardPlatform | undefined;
   /**
    * Heavy cryptographic backends the host supplies lazily. `spark` loads and verifies the wasm (or
    * native) SparkCrypto instance; the kernel calls it only when a spark.* method runs, so a
@@ -351,4 +354,15 @@ export type SecureInputResult =
 export type SecureInput = {
   readonly request: (kind: SecureInputKind, label: string) => Promise<SecureInputResult>;
   readonly cancel: () => void;
+};
+
+/**
+ * The card capability bundle: reader session, access-code input and the CA anchors the kernel
+ * trusts. Present only on hosts with an NFC card surface — `undefined` on web/node, where every
+ * `card.*` method and every card-wallet seed lookup answers `unsupported`.
+ */
+export type CardPlatform = {
+  readonly reader: CardReader;
+  readonly secureInput: SecureInput;
+  readonly anchors: ReadonlyArray<Anchor>;
 };

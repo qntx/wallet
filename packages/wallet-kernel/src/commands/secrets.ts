@@ -5,7 +5,7 @@ import { wipe } from "../secret/secret.ts";
 import { mnemonicBytes } from "../seed/mnemonic.ts";
 import { encodeHeader, parseEntropyHeader } from "../vault/headers.ts";
 import {
-  findRecord,
+  findSeedWallet,
   openRecord,
   openWalletSecret,
   sealRecord,
@@ -32,7 +32,7 @@ export async function exportMnemonic(
     ctx.commit,
     corePromptFor(ctx.platform.keystore, "export-mnemonic"),
   );
-  const record = findRecord(ctx.image, "entropy", params.walletId);
+  const record = findSeedWallet(ctx.image, params.walletId);
   const header = parseEntropyHeader(record.header);
   const { entropy, passphrase } = openWalletSecret(dek, record);
   try {

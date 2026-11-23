@@ -43,6 +43,26 @@ export type BackupInfo = {
 };
 
 // @public (undocumented)
+export type CardInfo = {
+    readonly cardId: string;
+    readonly shortId?: string;
+    readonly state: "ready" | "unknown" | "pending";
+    readonly tries?: number;
+    readonly verifiedAt?: number;
+};
+
+// @public
+export type CardWalletInfo = {
+    readonly custody: "card";
+    readonly walletId: string;
+    readonly origin: "card-generated" | "card-imported";
+    readonly backup: "cards";
+    readonly createdAt: number;
+    readonly members: number;
+    readonly cards: ReadonlyArray<CardInfo>;
+};
+
+// @public (undocumented)
 export type DataKeyApi = {
     readonly get: (purpose: string) => Promise<Uint8Array>;
 };
@@ -195,6 +215,17 @@ export type VaultApi = {
 export type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
 
 // @public
+export type VaultWalletInfo = {
+    readonly custody: "vault";
+    readonly walletId: string;
+    readonly origin: "passkey" | "mnemonic";
+    readonly words: 12 | 15 | 18 | 21 | 24;
+    readonly backup: "none" | "passkey" | "mnemonic";
+    readonly passphrase: boolean;
+    readonly createdAt: number;
+};
+
+// @public
 export type VerifyFactor = Exclude<UnlockFactor, {
     readonly kind: "device";
 }>;
@@ -222,17 +253,10 @@ export class WalletError extends Error {
 }
 
 // @public (undocumented)
-export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "crashed";
+export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "card-required" | "card-not-genuine" | "card-id-mismatch" | "wrong-card" | "card-erased" | "card-locked" | "card-tampered" | "card-fault" | "card-unsupported" | "crashed";
 
 // @public (undocumented)
-export type WalletInfo = {
-    readonly walletId: string;
-    readonly origin: "passkey" | "mnemonic";
-    readonly words: 12 | 15 | 18 | 21 | 24;
-    readonly backup: "none" | "passkey" | "mnemonic";
-    readonly passphrase: boolean;
-    readonly createdAt: number;
-};
+export type WalletInfo = VaultWalletInfo | CardWalletInfo;
 
 // @public (undocumented)
 export type WalletsApi = {

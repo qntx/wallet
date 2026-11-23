@@ -10,11 +10,11 @@
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { HDKey } from "@scure/bip32";
-import type { Versions } from "@scure/bip32";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 
 import type { KeyPath, SignTask } from "@qntx/wallet-chains";
 
+import type { PublicMaterial } from "../../derive/material.ts";
 import { KernelError } from "../../errors.ts";
 import { wipe } from "../../secret/secret.ts";
 
@@ -23,16 +23,6 @@ const HARDENED = 0x80000000;
 /** `m/…` notation of a task path — hardened indices print with `'`. */
 export const pathString = (path: KeyPath): string =>
   `m${path.map((i) => (i >= HARDENED ? `/${i - HARDENED}'` : `/${i}`)).join("")}`;
-
-/** Public-key and xpub access the kernel's checks need — never private key material. */
-export type PublicMaterial = {
-  /** The 33-byte compressed secp256k1 key at the path; `[]` is the master (or imported) key. */
-  readonly secp256k1: (path: KeyPath) => Promise<Uint8Array>;
-  /** The 32-byte SLIP-10 ed25519 key at the path. */
-  readonly ed25519: (path: KeyPath) => Promise<Uint8Array>;
-  /** The base58 account xpub at the path under the network's version bytes. HD only. */
-  readonly extendedPublicKey: (path: KeyPath, versions: Versions) => Promise<string>;
-};
 
 /** Supplies one 64-byte signature per task — the local seed backend today, a card later. */
 export type SigningBackend = {

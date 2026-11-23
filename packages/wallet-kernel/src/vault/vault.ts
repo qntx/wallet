@@ -3,7 +3,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import { base64urlnopad } from "@scure/base";
 
 import type { Factor } from "@qntx/wallet/protocol";
-import type { FactorInfo, WalletInfo } from "@qntx/wallet/types";
+import type { FactorInfo, VaultWalletInfo } from "@qntx/wallet/types";
 
 import { KernelError } from "../errors.ts";
 import { assertFactorKindAvailable, requireKeystore } from "../platform.ts";
@@ -654,6 +654,18 @@ export function findRecord(image: VaultImage, kind: string, id: string): StoredR
 }
 
 /**
+ * The entropy record behind `walletId` — for every caller that needs a seed on this device. A
+ * `card-wallet` record of the same id wins: its seed lives only on the cards, so the lookup answers
+ * `unsupported` rather than falling through to a missing entropy record.
+ */
+export function findSeedWallet(image: VaultImage, walletId: string): StoredRecord {
+  if (image.records.some((r) => r.kind === "card-wallet" && r.id === walletId)) {
+    throw new KernelError("unsupported", "card wallets hold no seed on this device");
+  }
+  return findRecord(image, "entropy", walletId);
+}
+
+/**
  * Ops that establish the vault in one atomic `init` commit, rejected by `conflict` if the store is
  * not empty. The caller keeps `keyId` for the session it opens afterwards.
  */
@@ -706,8 +718,9 @@ export function factorInfo(stored: StoredFactor): FactorInfo {
 }
 
 /** The `WalletInfo` an entropy record's public header reports. */
-export function walletInfo(header: EntropyHeader): WalletInfo {
+export function walletInfo(header: EntropyHeader): VaultWalletInfo {
   return {
+    custody: "vault",
     walletId: header.walletId,
     origin: header.origin,
     words: header.words,

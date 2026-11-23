@@ -46,6 +46,26 @@ type BackupInfo = {
 };
 
 // @public (undocumented)
+type CardInfo = {
+    readonly cardId: string;
+    readonly shortId?: string;
+    readonly state: "ready" | "unknown" | "pending";
+    readonly tries?: number;
+    readonly verifiedAt?: number;
+};
+
+// @public
+type CardWalletInfo = {
+    readonly custody: "card";
+    readonly walletId: string;
+    readonly origin: "card-generated" | "card-imported";
+    readonly backup: "cards";
+    readonly createdAt: number;
+    readonly members: number;
+    readonly cards: ReadonlyArray<CardInfo>;
+};
+
+// @public (undocumented)
 export type ChainAccount = {
     readonly template: "evm.bip44";
     readonly network: string;
@@ -343,6 +363,17 @@ type VaultApi = {
 type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
 
 // @public
+type VaultWalletInfo = {
+    readonly custody: "vault";
+    readonly walletId: string;
+    readonly origin: "passkey" | "mnemonic";
+    readonly words: 12 | 15 | 18 | 21 | 24;
+    readonly backup: "none" | "passkey" | "mnemonic";
+    readonly passphrase: boolean;
+    readonly createdAt: number;
+};
+
+// @public
 type VerifyFactor = Exclude<UnlockFactor, {
     readonly kind: "device";
 }>;
@@ -360,14 +391,7 @@ type Wallet = {
 };
 
 // @public (undocumented)
-type WalletInfo = {
-    readonly walletId: string;
-    readonly origin: "passkey" | "mnemonic";
-    readonly words: 12 | 15 | 18 | 21 | 24;
-    readonly backup: "none" | "passkey" | "mnemonic";
-    readonly passphrase: boolean;
-    readonly createdAt: number;
-};
+type WalletInfo = VaultWalletInfo | CardWalletInfo;
 
 // @public (undocumented)
 type WalletsApi = {

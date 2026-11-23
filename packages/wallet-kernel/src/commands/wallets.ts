@@ -8,7 +8,7 @@ import type {
   NullValue,
   RestoreWithPasskeyParams,
 } from "@qntx/wallet/protocol";
-import type { WalletInfo } from "@qntx/wallet/types";
+import type { VaultWalletInfo, WalletInfo } from "@qntx/wallet/types";
 
 import { masterKey } from "../derive/hd.ts";
 import { walletIdOf } from "../derive/wallet-id.ts";
@@ -49,7 +49,10 @@ async function deriveWalletMaterial(
 ): Promise<{ master: HDKey; walletId: string }> {
   return withSeed(platform.pbkdf2, entropy, passphraseText(passphrase), (seed) => {
     const master = masterKey(seed);
-    return { master, walletId: walletIdOf(master) };
+    if (master.publicKey === null) {
+      throw new KernelError("integrity", "master key has no compressed public key");
+    }
+    return { master, walletId: walletIdOf(master.publicKey) };
   });
 }
 
@@ -80,9 +83,9 @@ export async function walletMaterial(
 
 export function walletInfoOf(
   material: WalletMaterial,
-  backup: WalletInfo["backup"],
+  backup: VaultWalletInfo["backup"],
   createdAt: number,
-): WalletInfo {
+): VaultWalletInfo {
   return walletInfo({
     walletId: material.walletId,
     origin: material.origin,
@@ -106,7 +109,7 @@ export function walletRecord(
   ctx: KernelContext,
   dek: Secret,
   material: WalletMaterial,
-  backup: WalletInfo["backup"],
+  backup: VaultWalletInfo["backup"],
   createdAt: number,
 ): StoredRecord {
   const header = encodeHeader({
@@ -237,7 +240,13 @@ async function establishVault(
 }
 
 function ensureNewWallet(ctx: KernelContext, material: WalletMaterial): void {
-  if (ctx.image.records.some((r) => r.kind === "entropy" && r.id === material.walletId)) {
+  if (
+    ctx.image.records.some(
+      (r) =>
+        r.id === material.walletId &&
+        (r.kind === "entropy" || ctx.modules.some((m) => m.ownsRecord(r.kind))),
+    )
+  ) {
     throw new KernelError("already-exists", "wallet already exists");
   }
 }
@@ -587,12 +596,18 @@ export async function deleteWallet(
     ctx.commit,
     corePromptFor(ctx.platform.keystore, "delete-wallet"),
   );
-  findRecord(ctx.image, "entropy", params.walletId);
-  // The entropy row and every module record derived from this wallet go in ONE commit —
-  // a partial deletion can never land. Reconciliation forgets the evicted live state.
+  // The wallet row (entropy or card-wallet) and every module record derived from this wallet go
+  // in ONE commit — a partial deletion can never land. Reconciliation forgets the evicted live
+  // state. Deleting a card wallet never touches the cards themselves.
+  const record = ctx.image.records.find((r) => r.id === params.walletId);
+  const kind =
+    record !== undefined && ctx.modules.some((m) => m.ownsRecord(record.kind))
+      ? record.kind
+      : "entropy";
+  findRecord(ctx.image, kind, params.walletId);
   const extras = ctx.modules.flatMap((module) =>
     module.walletDeleteOps(ctx.image, params.walletId),
   );
-  await ctx.commit([{ op: "delete-record", kind: "entropy", id: params.walletId }, ...extras]);
+  await ctx.commit([{ op: "delete-record", kind, id: params.walletId }, ...extras]);
   return null;
 }
