@@ -33,10 +33,14 @@ describe("eligibility", () => {
     expect(Object.keys(body.apps).toSorted()).toStrictEqual(Object.keys(ELIGIBILITY).toSorted());
   });
 
-  it("answers blocked for the US (Hyperliquid) and close-only for Polymarket", async () => {
+  it("answers blocked for the US (Hyperliquid) and close-only for Fiat24 and Polymarket", async () => {
     const body = (await expectContract(await at({ country: "US" }), eligibility.response)) as Apps;
     expect(body.country).toBe("US");
-    expect(body.apps).toStrictEqual({ hyperliquid: "blocked", polymarket: "close-only" });
+    expect(body.apps).toStrictEqual({
+      fiat24: "close-only",
+      hyperliquid: "blocked",
+      polymarket: "close-only",
+    });
   });
 
   it("resolves subdivisions before the country: CA-ON vs CA-BC", async () => {
@@ -44,17 +48,29 @@ describe("eligibility", () => {
       await at({ country: "CA", regionCode: "ON" }),
       eligibility.response,
     )) as Apps;
-    expect(on.apps).toStrictEqual({ hyperliquid: "blocked", polymarket: "close-only" });
+    expect(on.apps).toStrictEqual({
+      fiat24: "available",
+      hyperliquid: "blocked",
+      polymarket: "close-only",
+    });
     const bc = (await expectContract(
       await at({ country: "CA", regionCode: "BC" }),
       eligibility.response,
     )) as Apps;
-    expect(bc.apps).toStrictEqual({ hyperliquid: "available", polymarket: "close-only" });
+    expect(bc.apps).toStrictEqual({
+      fiat24: "available",
+      hyperliquid: "available",
+      polymarket: "close-only",
+    });
   });
 
   it("a bare CA is available for Hyperliquid and unlisted for Polymarket", async () => {
     const body = (await expectContract(await at({ country: "CA" }), eligibility.response)) as Apps;
-    expect(body.apps).toStrictEqual({ hyperliquid: "available", polymarket: "available" });
+    expect(body.apps).toStrictEqual({
+      fiat24: "available",
+      hyperliquid: "available",
+      polymarket: "available",
+    });
   });
 
   it("sanctioned subdivisions block both apps while the rest of the country stays open", async () => {
@@ -62,35 +78,59 @@ describe("eligibility", () => {
       await at({ country: "UA", regionCode: "43" }),
       eligibility.response,
     )) as Apps;
-    expect(crimea.apps).toStrictEqual({ hyperliquid: "blocked", polymarket: "blocked" });
+    expect(crimea.apps).toStrictEqual({
+      fiat24: "blocked",
+      hyperliquid: "blocked",
+      polymarket: "blocked",
+    });
     const elsewhere = (await expectContract(
       await at({ country: "UA", regionCode: "80" }),
       eligibility.response,
     )) as Apps;
-    expect(elsewhere.apps).toStrictEqual({ hyperliquid: "available", polymarket: "available" });
+    expect(elsewhere.apps).toStrictEqual({
+      fiat24: "available",
+      hyperliquid: "available",
+      polymarket: "available",
+    });
   });
 
   it("GB is available for Hyperliquid and close-only for Polymarket", async () => {
     const body = (await expectContract(await at({ country: "GB" }), eligibility.response)) as Apps;
-    expect(body.apps).toStrictEqual({ hyperliquid: "available", polymarket: "close-only" });
+    expect(body.apps).toStrictEqual({
+      fiat24: "available",
+      hyperliquid: "available",
+      polymarket: "close-only",
+    });
   });
 
   it("KP is blocked for both apps even though it also appears in the close-only table", async () => {
     const body = (await expectContract(await at({ country: "KP" }), eligibility.response)) as Apps;
-    expect(body.apps).toStrictEqual({ hyperliquid: "blocked", polymarket: "blocked" });
+    expect(body.apps).toStrictEqual({
+      fiat24: "blocked",
+      hyperliquid: "blocked",
+      polymarket: "blocked",
+    });
   });
 
   it.each(["XX", "T1"])("fails closed for %s", async (country) => {
     const body = (await expectContract(await at({ country }), eligibility.response)) as Apps;
     expect(body.country).toBe(country);
-    expect(body.apps).toStrictEqual({ hyperliquid: "blocked", polymarket: "blocked" });
+    expect(body.apps).toStrictEqual({
+      fiat24: "blocked",
+      hyperliquid: "blocked",
+      polymarket: "blocked",
+    });
   });
 
   it("fails closed when the edge provides no cf properties", async () => {
     const body = (await expectContract(await at(), eligibility.response)) as Apps;
     expect(body.country).toBeNull();
     expect(body.region).toBeNull();
-    expect(body.apps).toStrictEqual({ hyperliquid: "blocked", polymarket: "blocked" });
+    expect(body.apps).toStrictEqual({
+      fiat24: "blocked",
+      hyperliquid: "blocked",
+      polymarket: "blocked",
+    });
   });
 
   it("is private and uncached — the answer depends on the caller IP", async () => {

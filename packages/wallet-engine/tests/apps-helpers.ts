@@ -15,6 +15,8 @@ import { chains } from "@qntx/wallet/chains";
 import { sessions } from "@qntx/wallet/sessions";
 import type { SessionInfo } from "@qntx/wallet/sessions";
 
+import { fiat24 as fiat24App } from "../src/apps/fiat24/app.ts";
+import type { Fiat24App } from "../src/apps/fiat24/app.ts";
 import { hyperliquid as hyperliquidApp } from "../src/apps/hyperliquid/app.ts";
 import type { AppsHyperliquidConfig } from "../src/apps/hyperliquid/app.ts";
 import type { HyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
@@ -32,6 +34,7 @@ import {
   expectedPolymarketWalletRuntime,
 } from "../src/apps/polymarket/wallets.ts";
 import { createAppStorage } from "../src/apps/storage.ts";
+import type { AppGroupState } from "../src/apps/types.ts";
 import type { EngineLogger } from "../src/events.ts";
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
 import { NetworkController } from "../src/networks/controller.ts";
@@ -182,7 +185,11 @@ export const hlFetch =
           ? {
               country: "US",
               region: null,
-              apps: { hyperliquid: "available", polymarket: "available" },
+              apps: {
+                fiat24: "available",
+                hyperliquid: "available",
+                polymarket: "available",
+              },
             }
           : hl.eligibility();
       return Response.json(answer, { headers });
@@ -409,6 +416,22 @@ export const untilPresent = async <T>(
   throw new Error("read never produced a value");
 };
 
+/** Poll an async read until it goes away — the mirror of `untilPresent` for deleted records. */
+export const untilGone = async <T>(
+  read: () => Promise<T | undefined>,
+  tries = 50,
+): Promise<void> => {
+  for (let i = 0; i < tries; i++) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- sequential polls.
+    if ((await read()) === undefined) {
+      return;
+    }
+    // oxlint-disable-next-line eslint/no-await-in-loop -- sequential polls.
+    await tick();
+  }
+  throw new Error("read never went away");
+};
+
 /** Pump manual timers until `cond` — for flows whose timers drive a verify window. */
 export const pumpUntil = async (
   timers: ReturnType<typeof manualTimer>,
@@ -460,17 +483,23 @@ export const nodeWallet = async (): Promise<{ wallet: Wallet; walletId: string }
   return shared;
 };
 
-/** The group map a world builds — its two app lanes' provider-owned group states. */
+/** The group map a world builds — its app lanes' provider-owned group states. */
 type WorldGroups = {
+  readonly fiat24: AppGroupState;
   readonly hyperliquid: HyperliquidGroupState;
   readonly polymarket: PolymarketGroupState;
 };
+
+/** A JSON-RPC answer source for `eip155:42161` — the fiat24 lane's chain reads replay through it. */
+export type Arb1Rpc = (body: { readonly method: string; readonly params?: unknown }) => unknown;
 
 export type World = {
   wallet: Wallet;
   provider: HyperliquidProvider;
   /** The configured Polymarket provider — `undefined` unless `options.polymarket` was set. */
   pm: PolymarketProvider | undefined;
+  /** The configured Fiat24 api — the getter throws unless `options.fiat24` was set. */
+  readonly f24: Fiat24App;
   /** The Polygon chain facts `locate` reads — set `code` to mirror the relayer feed's claims. */
   poly: PolyChain;
   walletId: string;
@@ -491,6 +520,8 @@ export type World = {
   state: () => HyperliquidGroupState | undefined;
   /** The group's `polymarket` app state — undefined until a flow or reconcile writes it. */
   pmState: () => PolymarketGroupState | undefined;
+  /** The group's `fiat24` app state — undefined until a flow or reconcile writes it. */
+  f24State: () => AppGroupState | undefined;
   approve: (id: string) => Promise<void>;
 };
 
@@ -508,6 +539,13 @@ export const world = async (
     polyCode?: PolyChain["code"];
     /** `false` omits the Hyperliquid lane entirely (Polymarket-only worlds). */
     hyperliquid?: AppsHyperliquidConfig | false;
+    /** Register the Fiat24 lane (definition takes no config). */
+    fiat24?: boolean;
+    /**
+     * JSON-RPC answers for `eip155:42161` — required when the Fiat24 lane reads the chain; without
+     * it any Arbitrum One call throws in the fetch shim.
+     */
+    arb1?: Arb1Rpc;
     /**
      * Replaces `hlFetch` for the apps composition — the Polymarket tests script every host
      * (relayer, CLOB, Data API, eligibility) themselves.
@@ -543,10 +581,23 @@ export const world = async (
       if (url === "https://arb-sepolia.test/rpc") {
         return arbRpc(init, hl);
       }
+      if (url === "https://arbitrum-one.test/rpc") {
+        const body = bodyJson(init);
+        if (options.arb1 === undefined) {
+          throw new Error("no arb1 rpc answers configured");
+        }
+        const method = typeof body["method"] === "string" ? body["method"] : "";
+        return Response.json({
+          jsonrpc: "2.0",
+          id: 1,
+          result: await options.arb1({ method, params: body["params"] }),
+        });
+      }
       return url === "https://polygon.test/rpc" ? polyRpc(init, poly) : fetch(input, init);
     },
     rpc: {
       "eip155:421614": ["https://arb-sepolia.test/rpc"],
+      "eip155:42161": ["https://arbitrum-one.test/rpc"],
       "eip155:137": ["https://polygon.test/rpc"],
     },
     openStore: async () => {
@@ -658,6 +709,7 @@ export const world = async (
           ),
         ]),
     ...(options.polymarket === undefined ? [] : [polymarketApp(options.polymarket)]),
+    ...(options.fiat24 === true ? [fiat24App()] : []),
   ];
   const created = createApps({
     wallet,
@@ -694,6 +746,7 @@ export const world = async (
      `hyperliquid: false` still lacks `hyperliquid` at runtime. */
   const provider: HyperliquidProvider | undefined = created.hyperliquid;
   const polymarket: PolymarketProvider | undefined = created.polymarket;
+  const fiat24: Fiat24App | undefined = created.fiat24;
   await networks.init();
   await transactions.init();
   await requests.init();
@@ -706,6 +759,7 @@ export const world = async (
     controller.getState().groups[gkey]?.["hyperliquid"];
   const pmState = (): PolymarketGroupState | undefined =>
     controller.getState().groups[gkey]?.["polymarket"];
+  const f24State = (): AppGroupState | undefined => controller.getState().groups[gkey]?.["fiat24"];
   const approve = async (id: string): Promise<void> => {
     try {
       await requests.approve(id, "evm-sign", { verify: VERIFY });
@@ -732,6 +786,14 @@ export const world = async (
       return provider;
     },
     pm: polymarket,
+    /* `f24` is `undefined` for worlds built without `fiat24: true` — they never read it, and the
+       getter makes that misuse loud rather than a silent undefined. */
+    get f24(): Fiat24App {
+      if (fiat24 === undefined) {
+        throw new Error("the world was built without fiat24: true");
+      }
+      return fiat24;
+    },
     poly,
     apps: controller,
     destroy,
@@ -746,6 +808,7 @@ export const world = async (
     warns,
     state,
     pmState,
+    f24State,
     approve,
   };
 };

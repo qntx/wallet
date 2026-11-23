@@ -48,6 +48,11 @@
       "import": "./dist/walletconnect.mjs",
       "default": "./dist/walletconnect.mjs"
     },
+    "./apps/fiat24": {
+      "types": "./dist/apps-fiat24.d.mts",
+      "import": "./dist/apps-fiat24.mjs",
+      "default": "./dist/apps-fiat24.mjs"
+    },
     "./apps/hyperliquid": {
       "types": "./dist/apps-hyperliquid.d.mts",
       "import": "./dist/apps-hyperliquid.mjs",
@@ -76,6 +81,7 @@
     "@nktkas/hyperliquid": "0.33.3",
     "@noble/ciphers": "2.4.0",
     "@noble/hashes": "2.4.0",
+    "@qntx/fiat24": "0.1.0",
     "@qntx/siwx": "0.8.0",
     "@reown/walletkit": "1.6.0",
     "@scure/base": "2.4.0",
