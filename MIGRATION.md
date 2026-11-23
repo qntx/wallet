@@ -1732,13 +1732,13 @@ Compiled snippet: `tests/migration/fiat24.ts`. Changes affect `@qntx/wallet-chai
 
 An exhaustive `switch` in host code needs a case for each of these:
 
-| Union                                                                               | New members                                                                                                                                                                                                                |
-| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SignRequest` (`@qntx/wallet-chains`), `ChainSignRequest` (`@qntx/wallet/protocol`) | `{ kind: "evm.fiat24-session"; network; account; tokenId: string; deadline: number }`                                                                                                                                      |
-| `ChainSignResult`                                                                   | `kind: "evm.fiat24-session"` (65-byte `signature`)                                                                                                                                                                         |
-| `IntentSummary`                                                                     | `"payout"`                                                                                                                                                                                                                 |
-| `BlindReason`                                                                       | `"fiat24-function"`, `"fiat24-session-grant"`                                                                                                                                                                              |
-| `IntentWarningKind`                                                                 | `fiat24-internal-account`, `fiat24-card-pull`, `fiat24-unlimited-approval`, `fiat24-issuer-rate`, `fiat24-exact-out-unbounded`, `fiat24-payee-offchain`, `fiat24-swap-quote`, `fiat24-account-link`, `fiat24-account-move` |
+| Union                                                                               | New members                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SignRequest` (`@qntx/wallet-chains`), `ChainSignRequest` (`@qntx/wallet/protocol`) | `{ kind: "evm.fiat24-session"; network; account; tokenId: string; deadline: number }`                                                                                                                                                             |
+| `ChainSignResult`                                                                   | `kind: "evm.fiat24-session"` (65-byte `signature`)                                                                                                                                                                                                |
+| `IntentSummary`                                                                     | `"payout"`                                                                                                                                                                                                                                        |
+| `BlindReason`                                                                       | `"fiat24-function"`, `"fiat24-session-grant"`                                                                                                                                                                                                     |
+| `IntentWarningKind`                                                                 | `fiat24-internal-account`, `fiat24-card-pull`, `fiat24-unlimited-approval`, `fiat24-issuer-rate`, `fiat24-exact-out-unbounded`, `fiat24-payee-offchain`, `fiat24-swap-quote`, `fiat24-account-link`, `fiat24-account-move`, `fiat24-account-burn` |
 
 A host that renders `DisplayIntent` itself should also render the new optional fields:
 
@@ -1790,8 +1790,9 @@ await chains(wallet).sign({
 - `deadline` is in Unix seconds. The kernel refuses with `invalid-input` unless
   `0 < deadline − now ≤ 1200`. A prompt left open past the deadline is refused when it would sign.
 - The signed text is `"I agree to access my profile. " + keccak256(label + deadline)`, where
-  `label = "fiat24-session-v1:" + chainId + ":" + tokenId + ":" + deadline`. Send that `label` as
-  the `hash` header. `fiat24SessionMessage` from `@qntx/wallet-chains/evm` rebuilds the text.
+  `label = "fiat24-session-v1:" + chainId + ":" + tokenId + ":" + deadline + ";"`. Send that
+  `label` as the `hash` header. The grant is a bearer token for the signing address's Fiat24
+  account until `deadline`: the server binds neither the chain nor the account inside `label`. `fiat24SessionMessage` from `@qntx/wallet-chains/evm` rebuilds the text.
 - Only Arbitrum One is accepted: `normalizeEvm` throws `ChainError` `unsupported` on another
   network, and `chain.sign` reports the refusal as `invalid-input`.
 - The engine does not submit this kind yet: its dApp path refuses it. Apps keep the existing rule
@@ -1988,3 +1989,31 @@ are unchanged. Additions a host app may need to act on:
 4. **Card reader transport.** APDUs flow between the kernel runtime and the native reader
    directly. A host app neither opens NFC sessions for the card nor relays APDUs; it only drives
    the tap cadence once the card module is wired in.
+
+## 39. Solana dApp cluster binding, custom RPC corroboration, Polymarket partial cancels
+
+Compiled snippets: `tests/migration/solana-binding.ts`, `tests/migration/polymarket-outcome.ts`.
+Changes affect `@qntx/wallet-engine` hosts and gateway operators. Nothing changes in the vault or
+the kernel protocol.
+
+1. **Solana dApp transactions are bound to the cluster.** A `solana-sign` transaction request
+   (Wallet Standard or WalletConnect) now reads the selected cluster before the prompt and can fail
+   with `SolanaClusterBindingError`. Show its `reason` (see `bindingRefusal` in the snippet); never
+   offer to sign anyway. A dApp that builds devnet transactions with a mainnet blockhash, or a
+   testnet session without a host endpoint, is refused. The connector rejects the dApp's call with
+   an error.
+2. **Custom RPC endpoints are cross-checked.** A network with a user-set custom RPC is now
+   corroborated by the host endpoints in `EngineOptions.rpc`, else by the gateway. Configure a host
+   endpoint for every testnet you let users point at a custom RPC: without one and without the
+   gateway, TRON and Solana testnet sends are refused like gateway-only ones. A host that reads
+   `NetworkController` cross-check clients itself sees the new `source` field on `available`.
+3. **Polymarket `canceled` carries `making`.** Read it before offering to place the order again:
+   a value above `"0"` is a partial fill taken before the cancel, so only the unfilled remainder may
+   be placed again. `unknown` with `cancel.kind === "canceled"` does not mean nothing filled — wait
+   for the correction.
+4. **Solana `dropped` can take longer on nodes without history.** A blockhash transaction stays
+   `submitted` until a node whose history reaches back before the submission proves the drop.
+   Gateways must be deployed with `getFirstAvailableBlock` in the Solana allow-list; an older
+   gateway refuses the method and drops are then never proven through it.
+5. **Gateway pins on fixed provider sets are refused.** `x-gateway-provider` on a TRON indexer path
+   or the Esplora route is a `400`. The engine never sends it there; only custom clients notice.
