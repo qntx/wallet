@@ -48,6 +48,11 @@
       "import": "./dist/walletconnect.mjs",
       "default": "./dist/walletconnect.mjs"
     },
+    "./apps/fiat24": {
+      "types": "./dist/apps-fiat24.d.mts",
+      "import": "./dist/apps-fiat24.mjs",
+      "default": "./dist/apps-fiat24.mjs"
+    },
     "./apps/hyperliquid": {
       "types": "./dist/apps-hyperliquid.d.mts",
       "import": "./dist/apps-hyperliquid.mjs",
@@ -70,12 +75,14 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p src/idb/tsconfig.json && tsc --noEmit -p src/connect/inject/tsconfig.json",
     "check:pkg": "vp pack && bun ../../scripts/check-dist-deps.ts . && bun ../../scripts/check-api.ts . && publint && attw --pack . --profile esm-only",
     "connect:provider": "bun ../../scripts/build-provider.ts",
-    "test:browser": "playwright test --config tests/browser/playwright.config.ts"
+    "test:browser": "playwright test --config tests/browser/playwright.config.ts",
+    "smoke:hermes": "bun scripts/hermes-smoke.ts"
   },
   "dependencies": {
     "@nktkas/hyperliquid": "0.33.3",
     "@noble/ciphers": "2.4.0",
     "@noble/hashes": "2.4.0",
+    "@qntx/fiat24": "0.1.0",
     "@qntx/siwx": "0.8.0",
     "@reown/walletkit": "1.6.0",
     "@scure/base": "2.4.0",

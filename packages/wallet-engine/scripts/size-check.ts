@@ -6,11 +6,11 @@
  *   engine's own code — what a host that never touches apps pays. The bundle must also stay free of
  *   apps markers (the Hyperliquid base URL and the `@nktkas/hyperliquid` specifier survive
  *   minification), proving the apps entry never leaks into the main one.
- * - `apps`, `apps-hyperliquid`, `apps-polymarket`: the `@qntx/wallet-engine/apps` core entry and the
- *   two provider sub-entries, each with `@qntx/*` workspace packages external (they are the host's
- *   peer deps). The core must stay free of both venues' markers — providers only reach a bundle
- *   through their own sub-entry — and of every provider dir name under src/apps, read from the
- *   filesystem at run time and matched case-insensitively like the other markers.
+ * - `apps`, `apps-fiat24`, `apps-hyperliquid`, `apps-polymarket`: the `@qntx/wallet-engine/apps` core
+ *   entry and the three provider sub-entries, each with `@qntx/*` workspace packages external (they
+ *   are the host's peer deps). The core must stay free of every venue's markers — providers only
+ *   reach a bundle through their own sub-entry — and of every provider dir name under src/apps,
+ *   read from the filesystem at run time and matched case-insensitively like the other markers.
  * - `walletconnect`: the `@qntx/wallet-engine/walletconnect` entry with the same `@qntx/*` and
  *   engine-dependency externals, but the WalletKit/WalletConnect SDK bundled — the entry's own
  *   incremental cost (our glue + the SDK). The index bundle must stay free of its markers.
@@ -81,6 +81,8 @@ const ENTRIES: ReadonlyArray<Entry> = [
       "@nktkas/hyperliquid",
       "api.hyperliquid",
       "polymarket.com",
+      "@qntx/fiat24",
+      "api.fiat24",
       "@walletconnect/",
       "@reown/",
       "relay.walletconnect",
@@ -94,7 +96,25 @@ const ENTRIES: ReadonlyArray<Entry> = [
        (a record keyed by app id) and the per-definition AppRequests stamping. */
     budget: 10 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
-    forbidden: [...PROVIDER_DIRS, "@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
+    forbidden: [
+      ...PROVIDER_DIRS,
+      "@nktkas/hyperliquid",
+      "api.hyperliquid",
+      "polymarket.com",
+      "@qntx/fiat24",
+      "api.fiat24",
+    ],
+  },
+  {
+    name: "apps-fiat24",
+    source: "src/apps/fiat24/index.ts",
+    /* Measured 115557 B: the bundled @qntx/fiat24 SDK (read actions, flows state machines, the
+       REST/session client, deployments, zod schemas) + the viem client core, plus the provider
+       itself — errors, the corroborating rpc transport, owner/account reads, the live view, the
+       enablement record machine, the signer bridge, flows and sessions. */
+    budget: 118 * 1024,
+    external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
+    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
   },
   {
     name: "apps-hyperliquid",
@@ -104,7 +124,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
        provider (incl. the CCTP deposit reads through the injected networks client). */
     budget: 20 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
-    forbidden: ["polymarket.com"],
+    forbidden: ["polymarket.com", "@qntx/fiat24", "api.fiat24"],
   },
   {
     name: "apps-polymarket",
@@ -115,7 +135,7 @@ const ENTRIES: ReadonlyArray<Entry> = [
        verification. */
     budget: 40 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
-    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid"],
+    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "@qntx/fiat24", "api.fiat24"],
   },
   {
     name: "walletconnect",

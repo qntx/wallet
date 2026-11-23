@@ -1474,7 +1474,9 @@ dApp request input accept a WalletConnect origin. An exhaustive `switch` over `o
   site. New `danger` risk codes `verify-mismatch` and `verify-threat`; `requiredAcknowledgement`
   includes them.
 - `app`: a request an in-engine app opened (`@qntx/wallet-engine/apps`, §23). Show the app as the
-  requester; it is not a web origin.
+  requester; it is not a web origin. Every app origin can prepare `evm.transaction` and
+  `evm.fiat24-session` requests, so the host approval UI must render transactions for app origins,
+  not only typed data (§29).
 
 Related changes:
 
@@ -1511,6 +1513,8 @@ together with the apps (§2): the engine and gateway contracts are strict on bot
   `404 unsupported` (never retry); a covered network whose token list is not built yet answers
   `503 unavailable` with `Retry-After`. `pricesResponse` lists every asset in exactly one of
   `prices`, `missing` and `unsupported`.
+- `/v1/eligibility` answers the `fiat24` row: `blocked` in the sanctioned set, `close-only` where
+  Fiat24's `/countries` bans the nationality (US and territories, RU).
 - A deployed gateway requires `cf-connecting-ip` (Cloudflare and `wrangler dev` set it); in-process
   embeddings pass `clientAddress: "optional"` to `createGateway`. `GatewayOptions` requires `auth`
   and `prices: { cache, coingecko? }`.
@@ -1537,9 +1541,83 @@ nothing new. Each has a compiled example and a README section.
 | App providers (`AppDefinition`)                                     | [`app-provider.ts`](tests/migration/app-provider.ts)                                                                                                                                                                                               | Engine README "Writing an app provider".                                                                                                                                                                                                                                                                                        |
 | `@qntx/wallet/sessions`                                             | [`sessions.ts`](tests/migration/sessions.ts)                                                                                                                                                                                                       | Kernel-held session keys (`session-key` vault records), never in a backup. Once one exists, a 0.13.0 build reports the vault `unsupported`: delete sessions before downgrading. `sessions(wallet).sign` rejects `integrity` unless the signature is the session key's. `EligibilityResponse["apps"]`: an absent app is unknown. |
 | Fiat24 session grants (`evm.fiat24-session`)                        | [`fiat24.ts`](tests/migration/fiat24.ts)                                                                                                                                                                                                           | Build the grant as this structured request; never sign the text yourself. Arbitrum One only, `0 < deadline − now ≤ 1200` s. The engine's dApp path refuses this kind.                                                                                                                                                           |
+| `@qntx/wallet-engine/apps/fiat24`                                 | [`fiat24-app.ts`](tests/migration/fiat24-app.ts)                                                                                                                                                                                                   | The Fiat24 app (§29): resumable flows, session and API reads; every write is one app-attributed request. Its REST API needs an injected `fetch` (no CORS). |
 | Signing plans (`plan*` / `assemble*`, `*/sign` task signers)        | [`signing-plans.ts`](tests/migration/signing-plans.ts)                                                                                                                                                                                             | For hosts driving an external digest signer. Software-wallet signatures are byte-identical.                                                                                                                                                                                                                                     |
 
-## 24. Card wallet native surfaces (experimental)
+## 29. Fiat24 app
+
+Compiled snippet: [`tests/migration/fiat24-app.ts`](tests/migration/fiat24-app.ts).
+
+### Adding the Fiat24 app
+
+```ts
+import { createApps } from "@qntx/wallet-engine/apps";
+import { fiat24 } from "@qntx/wallet-engine/apps/fiat24";
+
+const apps = createApps({ ...options, apps: [fiat24({ fetch: fiat24Fetch })] });
+await apps.controller.acknowledgeTerms(group, "fiat24");
+await apps.controller.enable(group, "fiat24");
+
+const account = await apps.fiat24.account(group); // "no-account" | AccountStatus | "stale" | "contract-changed"
+let flow = await apps.fiat24.flows.start(group, {
+  flow: "transfer",
+  currency: "EUR24",
+  amount: 1000n,
+  to: { tokenId: 469709n },
+});
+flow = await apps.fiat24.flows.advance(group, flow.id); // opens one request; approve it as usual
+```
+
+- Enabling needs the terms flag and an eligibility answer of `available` or `close-only`. The
+  gateway answers `fiat24` once it runs this release; until then `enable` fails closed.
+- Call `advance` again until the flow is terminal (`confirmed`, `failed`, `not-sent`, or the
+  flow's own end states). Pace it on a flow whose last transaction is `sending`/`unknown`
+  (for example every 15 s): the app also reconciles such flows itself after unlock and every 15 s
+  while `setVisible(true)`, and never sends while doing so.
+- `refusal` on the returned flow says why nothing was sent (`rejected`, `expired`,
+  `invalidated`, `failed-before-signing`, `nonce-conflict`, `prepare-failed`, `invalid-call`);
+  advancing again prompts again.
+- `start` refuses (`flow-unresolved`) while another flow of the group has a `sending` or `unknown`
+  transaction, or a stored state that no longer decodes. `list` reports the latter as
+  `{ id, invalid: true }`; only `discard` removes it — have the user check the account's activity
+  first, because it can never be reconciled.
+
+### The Fiat24 REST API needs an injected `fetch`
+
+`api.fiat24.com` sends no CORS headers, so a browser cannot call it directly and the gateway does
+not proxy it. Pass `fiat24({ fetch })`:
+
+- React Native: the platform `fetch`, uninstrumented (exclude `api.fiat24.com` from Sentry,
+  Flipper and logging interceptors; disable its HTTP cache). React Native's `fetch` follows
+  redirects whatever `redirect` says; inject one that does not if that matters to you.
+- Web: a fetch that sends the request to your own proxy for `https://api.fiat24.com`. The proxy
+  sees the session grant headers, which are a bearer credential for the account until their
+  deadline.
+- Without `fetch`, the chain flows (transfer, exchange, top-up, payouts to a saved contact,
+  onboarding up to KYC) still work. Secured reads, the public API reads, and advancing a bank or
+  Swiss QR payout draft, a card flow's API step or onboarding's KYC step throw `Fiat24AppError`
+  `api-unavailable`.
+
+### Engine request changes
+
+- `EvmSignInput.nonce` (app `evm.transaction` only) pins the nonce; `prepare` throws
+  `NonceConflictError` before anything is shown when the sender's next free nonce differs, and a
+  plain error when `nonce` is set anywhere else.
+- `new RequestEndedError(stage, message, signed)`: the third argument is required. Read
+  `error.signed` to tell whether anything may have been broadcast.
+- `AppStorage` has `list(group)`; a custom `AppStorage` implementation must provide it.
+
+### New risk codes
+
+`RiskFinding.code` gains `fiat24-unlimited-approval`, `fiat24-account-move` (danger) and
+`fiat24-internal-account`, `fiat24-card-pull`, `fiat24-exact-out-unbounded`,
+`fiat24-payee-offchain`, `fiat24-account-burn` (warning). They come from the decoder's intent
+warnings, for every origin, so an exhaustive `switch` over `RiskFinding["code"]` needs these cases.
+`requiredAcknowledgement` asks for the danger-level findings only (in `risk`, plus every request
+check in `checks`): an `approve` must echo those back exactly, while warning-level findings never
+require acknowledgement.
+
+## 30. Card wallet native surfaces (experimental)
 
 The qntx card wallet is not usable in this release: the card protocol client is private to the
 kernel and no kernel command, `@qntx/wallet` API or engine API reaches it. What ships is the

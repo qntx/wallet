@@ -1086,6 +1086,7 @@ export type EvmSignInput = {
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;
+    readonly nonce?: number;
 };
 
 // @public
@@ -1493,6 +1494,13 @@ export type Nip07Request = {
     readonly method: string;
     readonly params?: unknown;
 };
+
+// @public
+export class NonceConflictError extends Error {
+    constructor(expected: number, next: number);
+    readonly expected: number;
+    readonly next: number;
+}
 
 // @public
 export type NostrDisplay = {
@@ -2049,7 +2057,8 @@ export type RequestControllerState = {
 
 // @public
 export class RequestEndedError extends Error {
-    constructor(stage: RequestEndedError["stage"], message: string | undefined);
+    constructor(stage: RequestEndedError["stage"], message: string | undefined, signed: boolean);
+    readonly signed: boolean;
     // (undocumented)
     readonly stage: "rejected" | "failed" | "expired" | "invalidated";
 }
@@ -2087,7 +2096,7 @@ export function resolvePayment(input: string, options: ResolveOptions): Promise<
 
 // @public
 export type RiskFinding = {
-    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat";
+    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-account-move" | "fiat24-account-burn";
     readonly level: "warning" | "danger";
 };
 
@@ -2116,7 +2125,7 @@ export type SetTimer = (ms: number, fn: () => unknown) => () => void;
 
 // @public (undocumented)
 export type SignatureResult = {
-    readonly kind: "evm.personal-message" | "evm.typed-data" | "tron.message" | "tron.typed-data";
+    readonly kind: "evm.personal-message" | "evm.fiat24-session" | "evm.typed-data" | "tron.message" | "tron.typed-data";
     readonly signature: Uint8Array;
 };
 
@@ -2208,7 +2217,7 @@ export type SolanaDisplay = {
     readonly kind: "solana.sign";
     readonly send: boolean;
     readonly count: number;
-    readonly transactions: ReadonlyArray<unknown>;
+    readonly transactions: ReadonlyArray<DisplayIntent>;
     readonly message?: MessageContent;
     readonly signIn?: SignInFields;
 };
@@ -2698,7 +2707,9 @@ export class TransactionController extends Controller<TransactionControllerState
     lock(): void;
     markDepositClaimed(id: string): Promise<void>;
     nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
-    prepareDapp(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
+    prepareDapp(account: AccountRef, request: SignRequest, options?: {
+        readonly nonce?: number;
+    }): Promise<PreparedRequest | PreparedMessage>;
     prepareDappTron(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
         method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";

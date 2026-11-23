@@ -16,6 +16,7 @@
         "../../packages/wallet-engine/src/walletconnect/index.ts"
       ],
       "@qntx/wallet-engine/apps": ["../../packages/wallet-engine/src/apps/index.ts"],
+      "@qntx/wallet-engine/apps/fiat24": ["../../packages/wallet-engine/src/apps/fiat24/index.ts"],
       "@qntx/wallet-engine/apps/hyperliquid": [
         "../../packages/wallet-engine/src/apps/hyperliquid/index.ts"
       ],

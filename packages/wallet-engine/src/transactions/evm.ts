@@ -54,6 +54,7 @@ import {
   mergeEvmQuote,
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
+import { NonceConflictError } from "../requests/types.ts";
 import { assertBridgeSimulation } from "../swaps/bridge.ts";
 import {
   ALLOWANCE_HOLDER_CODE_HASH,
@@ -211,6 +212,7 @@ export type EvmRoute = {
         readonly gas: string;
       };
     },
+    expectedNonce?: number,
   ) => Promise<PreparedRequest>;
   readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxPoll | undefined>;
   readonly prepareReplace: (
@@ -1130,6 +1132,12 @@ export const createEvmRoute = (): EvmRoute => {
     readonly fee: PrepareParams["fee"];
     /** Native value moved; the worst-case fee reaching it is flagged. */
     readonly nativeValue: bigint | undefined;
+    /**
+     * App-pinned nonce: the transaction must carry exactly it. Refused before anything is built
+     * when the sender's next free nonce differs — a signature at another nonce would broadcast a
+     * transaction the caller cannot reconcile.
+     */
+    readonly expectedNonce?: number;
   };
 
   /** What the network's fee model charges beyond `gasUsed × effectiveGasPrice`, if anything. */
@@ -1175,6 +1183,9 @@ export const createEvmRoute = (): EvmRoute => {
       }
     }
     const nonce = nonces.next(network, from, chain);
+    if (spec.expectedNonce !== undefined && nonce !== spec.expectedNonce) {
+      throw new NonceConflictError(spec.expectedNonce, nonce);
+    }
     const unsigned = await evm.build(client, network, from, spec.intent, nonce);
     const pricing = info.feeModel?.pricing ?? "eip1559";
     const quotes = await evm.estimateFee(client, pricing);
@@ -1974,6 +1985,7 @@ export const createEvmRoute = (): EvmRoute => {
         readonly gas: string;
       };
     },
+    expectedNonce?: number,
   ): Promise<PreparedRequest> => {
     const { tx } = request;
     if (tx.to === undefined) {
@@ -1994,6 +2006,7 @@ export const createEvmRoute = (): EvmRoute => {
       fee: "normal",
       intent: { kind: "call", to: tx.to, value, data: tx.data, minGas: BigInt(tx.gas) },
       nativeValue: value > 0n ? value : undefined,
+      ...(expectedNonce === undefined ? {} : { expectedNonce }),
     });
   };
 

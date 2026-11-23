@@ -65,6 +65,7 @@ import {
   assessSignIn,
   assessRecipients,
   assessIntentRecipients,
+  assessWarnings,
   comparable,
   assessSimulation,
   impersonatesBuiltIn,
@@ -105,6 +106,7 @@ import type {
 
 export {
   InvalidTokenError,
+  NonceConflictError,
   OriginBusyError,
   RequestEndedError,
   SignInOriginError,
@@ -150,6 +152,13 @@ export type EvmSignInput = {
   readonly account: AccountRef;
   readonly network: string;
   readonly request: SignRequest;
+  /**
+   * App requests with an `evm.transaction` only: the nonce the transaction must carry. `prepare`
+   * refuses with a `NonceConflictError` before anything is shown when the sender's next free nonce
+   * differs, and rejects with a plain validation error when `nonce` is set on any other request
+   * kind, on a request with a dApp or no app origin, or is not a safe non-negative integer.
+   */
+  readonly nonce?: number;
 };
 
 /**
@@ -311,7 +320,7 @@ export type SolanaDisplay = {
   readonly kind: "solana.sign";
   readonly send: boolean;
   readonly count: number;
-  readonly transactions: ReadonlyArray<unknown>;
+  readonly transactions: ReadonlyArray<DisplayIntent>;
   /** A message request's content — text, or raw bytes when it is not UTF-8. */
   readonly message?: MessageContent;
   readonly signIn?: SignInFields;
@@ -680,6 +689,24 @@ type Entry = {
 
 const originKey = (origin: DappOrigin): string => `origin:${origin.origin}`;
 
+/**
+ * The decoded intents a display carries: a solana batch's per-transaction decodes, a bitcoin
+ * batch's per-PSBT decodes, the single intent of every other decoded display — none for the
+ * non-intent displays (spark, nostr, invoice, token watch).
+ */
+const displayIntents = (display: Built["display"]): ReadonlyArray<DisplayIntent> => {
+  if ("warnings" in display) {
+    return [display];
+  }
+  if (display.kind === "solana.sign") {
+    return display.transactions;
+  }
+  if (display.kind === "bitcoin.sign") {
+    return display.psbts ?? [];
+  }
+  return [];
+};
+
 /** A message request's content: its UTF-8 text with any sign-in parse, else the raw bytes. */
 const messageContent = (message: Uint8Array, signIn: SignInParse | undefined): MessageContent => {
   const text = utf8Text(message);
@@ -894,6 +921,20 @@ export class RequestController extends Controller<RequestControllerState> {
     if (app !== undefined && origin !== undefined) {
       throw new Error("an app request cannot carry a dApp origin");
     }
+    /* A pinned nonce only makes sense on an app's transaction: it pins what its signer must
+       broadcast — refusing before any claim keeps a dApp or internal caller from pinning one. */
+    if ("nonce" in input && input.nonce !== undefined) {
+      if (!Number.isSafeInteger(input.nonce) || input.nonce < 0) {
+        throw new Error("a request nonce is a safe non-negative integer");
+      }
+      if (
+        app === undefined ||
+        input.method !== "evm-sign" ||
+        input.request.kind !== "evm.transaction"
+      ) {
+        throw new Error("a pinned nonce is only valid on an app request for an EVM transaction");
+      }
+    }
     const originStatus =
       origin === undefined ? "clear" : this.options.phishing.check(dappUrl(origin));
     if (originStatus === "blocked") {
@@ -916,7 +957,7 @@ export class RequestController extends Controller<RequestControllerState> {
     this.preparing.set(id, preparing);
     let built: Built;
     try {
-      built = await this.build(input, id);
+      built = await this.build(input, id, app);
     } catch (error) {
       this.unclaim(id);
       throw error;
@@ -929,6 +970,7 @@ export class RequestController extends Controller<RequestControllerState> {
       throw new RequestEndedError(
         "invalidated",
         "the request was invalidated while it was being prepared",
+        false,
       );
     }
     const { checks } = built;
@@ -937,6 +979,8 @@ export class RequestController extends Controller<RequestControllerState> {
       origin?.kind === "walletconnect"
         ? [...originRisk(originStatus), ...verifyRisk(origin.verify)]
         : originRisk(originStatus);
+    /* Decoder warnings become risk findings for every origin — internal, dApp and app alike. */
+    const warningFindings = assessWarnings(displayIntents(built.display));
     const request: PendingRequest = {
       id,
       origin: origin ?? app ?? { kind: "internal" },
@@ -948,7 +992,7 @@ export class RequestController extends Controller<RequestControllerState> {
       display: built.display,
       verification: checks.length > 0 ? "unverifiable" : "verified",
       checks,
-      risk: mergeRisk(built.risk, originFindings),
+      risk: mergeRisk(mergeRisk(built.risk, originFindings), warningFindings),
       ...(built.simulation === undefined
         ? {}
         : { simulation: built.simulation, simulatedAt: createdAt }),
@@ -966,7 +1010,7 @@ export class RequestController extends Controller<RequestControllerState> {
         ? undefined
         : {
             ...built.resimulation,
-            risk: mergeRisk(built.resimulation.risk, originFindings),
+            risk: mergeRisk(mergeRisk(built.resimulation.risk, originFindings), warningFindings),
           };
     this.entries.set(id, {
       prepared: built.run,
@@ -1054,7 +1098,7 @@ export class RequestController extends Controller<RequestControllerState> {
     }
   }
 
-  private async build(input: RequestInput, id: string): Promise<Built> {
+  private async build(input: RequestInput, id: string, app?: AppOrigin): Promise<Built> {
     if (input.method === "pay" || input.method === "zap") {
       const action: PreparedSparkAction =
         input.method === "pay"
@@ -1126,10 +1170,26 @@ export class RequestController extends Controller<RequestControllerState> {
       return this.sparkBuilt(input.account, action, address);
     }
     if (input.method === "evm-sign") {
-      if (input.origin === undefined && input.request.kind !== "evm.typed-data") {
+      const { kind } = input.request;
+      if (input.origin !== undefined && kind === "evm.fiat24-session") {
+        throw new Error("a dApp cannot sign a fiat24 session");
+      }
+      if (app !== undefined) {
+        if (
+          kind !== "evm.transaction" &&
+          kind !== "evm.typed-data" &&
+          kind !== "evm.fiat24-session"
+        ) {
+          throw new Error("an app request cannot sign that kind");
+        }
+      } else if (input.origin === undefined && kind !== "evm.typed-data") {
         throw new Error("an internal request can only sign typed data");
       }
-      const prepared = await this.options.transactions.prepareDapp(input.account, input.request);
+      const prepared = await this.options.transactions.prepareDapp(
+        input.account,
+        input.request,
+        input.nonce === undefined ? undefined : { nonce: input.nonce },
+      );
       const isTransaction = input.request.kind === "evm.transaction";
       const signInRisk =
         input.origin !== undefined &&
@@ -1754,7 +1814,14 @@ export class RequestController extends Controller<RequestControllerState> {
     };
     this.put(ended);
     this.record(ended, END_OUTCOMES[event], error);
-    this.settle(id, new RequestEndedError(END_OUTCOMES[event], error));
+    this.settle(
+      id,
+      new RequestEndedError(
+        END_OUTCOMES[event],
+        error,
+        request.stage === "signed" || request.stage === "submitted",
+      ),
+    );
     return true;
   }
 
@@ -1780,6 +1847,7 @@ export class RequestController extends Controller<RequestControllerState> {
     throw new RequestEndedError(
       endedStage(request),
       `request ${id} is ${request?.stage ?? "gone"}`,
+      request?.stage === "signed" || request?.stage === "submitted",
     );
   }
 
@@ -1793,6 +1861,7 @@ export class RequestController extends Controller<RequestControllerState> {
       throw new RequestEndedError(
         endedStage(request),
         `request ${id} is ${request?.stage ?? "gone"}`,
+        request?.stage === "signed" || request?.stage === "submitted",
       );
     }
   }

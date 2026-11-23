@@ -22,6 +22,7 @@ import { UNIVERSAL_RESOLVER } from "../src/names/ens.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import {
   BlindSigningDisabledError,
+  NonceConflictError,
   REQUEST_TTL_MS,
   RequestController,
 } from "../src/requests/controller.ts";
@@ -1508,7 +1509,7 @@ describe("app origins", () => {
     ).rejects.toThrow("an app request needs a well-formed app id");
   });
 
-  it("an app request may only sign typed data, like an internal one", async () => {
+  it("an app request cannot sign a bare personal message", async () => {
     const w = evmWorld({});
     await w.start();
     await expect(
@@ -1526,7 +1527,7 @@ describe("app origins", () => {
         },
         APP,
       ),
-    ).rejects.toThrow("an internal request can only sign typed data");
+    ).rejects.toThrow("an app request cannot sign that kind");
   });
 
   it("a page invalidating its origin leaves an app request live", async () => {
@@ -1567,5 +1568,186 @@ describe("app origins", () => {
     expect(isRequestOrigin({ kind: "app", id: "Hyperliquid" })).toBe(false);
     expect(isRequestOrigin({ kind: "app", id: "x" })).toBe(false);
     expect(isRequestOrigin({ kind: "app", id: 42 })).toBe(false);
+  });
+});
+
+const F24_NET = "eip155:42161";
+const sessionRequest = (deadline: number): SignRequest => ({
+  kind: "evm.fiat24-session",
+  network: F24_NET,
+  account: ACCOUNT,
+  tokenId: "469709",
+  deadline,
+});
+const evmTxRequest: SignRequest = {
+  kind: "evm.transaction",
+  network: SEPOLIA,
+  account: ACCOUNT,
+  tx: {
+    type: "eip1559",
+    chainId: 11155111,
+    nonce: 0,
+    gas: "0x0",
+    to: PARAMS.to,
+    value: "0x0",
+    data: "0x",
+    accessList: [],
+    maxFeePerGas: "0x0",
+    maxPriorityFeePerGas: "0x0",
+  },
+};
+const typedDataRequest: SignRequest = {
+  kind: "evm.typed-data",
+  network: SEPOLIA,
+  account: ACCOUNT,
+  typedData: TYPED_DATA,
+};
+const evmSign = (request: SignRequest, nonce?: number) => ({
+  method: "evm-sign" as const,
+  account: ACCOUNT,
+  network: request.network,
+  request,
+  ...(nonce === undefined ? {} : { nonce }),
+});
+
+describe("app sign kinds and the pinned nonce", () => {
+  it("an app may prepare an evm.transaction — it builds like a dApp one", async () => {
+    const w = evmWorld({});
+    await w.start();
+    const request = await w.requests.prepare(evmSign(evmTxRequest), APP);
+    expect(request).toMatchObject({
+      method: "evm-sign",
+      origin: APP,
+      stage: "awaiting-approval",
+      display: { summary: "transfer" },
+    });
+    const tx = await w.requests.approve(request.id, "evm-sign", approval(request, VERIFY));
+    expect(tx).toMatchObject({ state: "submitted" });
+  });
+
+  it("an app may prepare an evm.fiat24-session — a decoded grant with no risk pass", async () => {
+    const w = evmWorld({});
+    await w.start();
+    const request = await w.requests.prepare(evmSign(sessionRequest(2_000_000_000)), APP);
+    expect(request).toMatchObject({
+      method: "evm-sign",
+      origin: APP,
+      stage: "awaiting-approval",
+      checks: [],
+      risk: [],
+      display: {
+        summary: "message",
+        fiat24: { kind: "session-grant", account: "469709", deadline: 2_000_000_000 },
+      },
+    });
+  });
+
+  it("an internal request may still sign typed data only", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await expect(w.requests.prepare(evmSign(evmTxRequest))).rejects.toThrow(
+      "an internal request can only sign typed data",
+    );
+    await expect(w.requests.prepare(evmSign(sessionRequest(2_000_000_000)))).rejects.toThrow(
+      "an internal request can only sign typed data",
+    );
+    const request = await w.requests.prepare(evmSign(typedDataRequest));
+    expect(request.origin).toStrictEqual({ kind: "internal" });
+  });
+
+  it("a dApp origin still cannot open a fiat24 session request", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await expect(
+      w.requests.prepare({
+        ...evmSign(sessionRequest(2_000_000_000)),
+        origin: { kind: "browser", origin: SITE },
+      }),
+    ).rejects.toThrow("a dApp cannot sign a fiat24 session");
+    expect(w.requests.getState().requests).toStrictEqual({});
+  });
+
+  it("a pinned nonce is refused on a dApp request, a non-evm-sign method and typed data", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await expect(
+      w.requests.prepare({
+        ...evmSign(evmTxRequest, 0),
+        origin: { kind: "browser", origin: SITE },
+      }),
+    ).rejects.toThrow("a pinned nonce is only valid on an app request for an EVM transaction");
+    const sendWithNonce = { ...PARAMS, nonce: 0 };
+    await expect(w.requests.prepare(sendWithNonce, APP)).rejects.toThrow(
+      "a pinned nonce is only valid on an app request for an EVM transaction",
+    );
+    await expect(w.requests.prepare(evmSign(typedDataRequest, 0), APP)).rejects.toThrow(
+      "a pinned nonce is only valid on an app request for an EVM transaction",
+    );
+    await expect(w.requests.prepare(evmSign(evmTxRequest, 0))).rejects.toThrow(
+      "a pinned nonce is only valid on an app request for an EVM transaction",
+    );
+    expect(w.requests.getState().requests).toStrictEqual({});
+  });
+
+  it("a pinned nonce must be a safe non-negative integer", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await Promise.all(
+      [-1, 1.5, Number.MAX_SAFE_INTEGER + 1].map(async (nonce) =>
+        expect(w.requests.prepare(evmSign(evmTxRequest, nonce), APP)).rejects.toThrow(
+          "a request nonce is a safe non-negative integer",
+        ),
+      ),
+    );
+    expect(w.requests.getState().requests).toStrictEqual({});
+  });
+
+  it("a pinned nonce that differs from the next free nonce fails before a request exists", async () => {
+    const w = evmWorld({});
+    await w.start();
+    const error = await w.requests
+      .prepare(evmSign(evmTxRequest, 7), APP)
+      .catch((error_: unknown) => error_);
+    expect(error).toBeInstanceOf(NonceConflictError);
+    expect(error).toMatchObject({ expected: 7, next: 0 });
+    expect((error as Error).message).toBe(
+      "the transaction must carry a nonce the sender cannot sign next",
+    );
+    expect(w.requests.getState().requests).toStrictEqual({});
+    const ok = await w.requests.prepare(evmSign(evmTxRequest, 0), APP);
+    expect(ok.stage).toBe("awaiting-approval");
+  });
+
+  it("an in-flight transaction holding the nonce makes the next pinned nonce conflict", async () => {
+    const w = evmWorld({});
+    await w.start();
+    const first = await w.requests.prepare(evmSign(evmTxRequest), APP);
+    await w.requests.approve(first.id, "evm-sign", approval(first, VERIFY));
+    /* The broadcast sits in the pool: the in-flight row holds nonce 0, so `next` moves to 1. */
+    const error = await w.requests
+      .prepare(evmSign(evmTxRequest, 0), APP)
+      .catch((error_: unknown) => error_);
+    expect(error).toMatchObject({ expected: 0, next: 1 });
+    const next = await w.requests.prepare(evmSign(evmTxRequest, 1), APP);
+    expect(next.stage).toBe("awaiting-approval");
+  });
+
+  it("RequestEndedError.signed is false before and true after the signed stage", async () => {
+    const refused = evmWorld({});
+    await refused.start();
+    const early = await refused.requests.prepare(PARAMS);
+    const ended = refused.requests.outcome(early.id);
+    refused.requests.reject(early.id);
+    await expect(ended).rejects.toMatchObject({ name: "RequestEndedError", signed: false });
+
+    const locked = evmWorld({ lockDuringSign: true });
+    await locked.start();
+    const request = await locked.requests.prepare(PARAMS);
+    const outcome = locked.requests.outcome(request.id);
+    await expect(
+      locked.requests.approve(request.id, "send", approval(request, VERIFY)),
+    ).rejects.toThrow("transactions require an unlocked vault");
+    await expect(outcome).rejects.toMatchObject({ name: "RequestEndedError", signed: true });
+    expect(locked.calls.map((c) => c.method)).not.toContain("eth_sendRawTransaction");
   });
 });

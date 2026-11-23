@@ -1,0 +1,32 @@
+{
+  "source": "synthetic",
+  "doc": "Part 2 §9 QR Payment case 1 (hostile)",
+  "body": {
+    "type": "QRCH",
+    "account": "CH9300762011623852957",
+    "amount": "1949.75",
+    "currency": "CHF",
+    "reference": "21 00000 00003 13947 14300 09017",
+    "creditor": {
+      "name": "PII-SENTINEL-60",
+      "street": "PII-SENTINEL-61",
+      "city": "PII-SENTINEL-62",
+      "zip": "PII-SENTINEL-63",
+      "country": "LI"
+    },
+    "ultimateDebtor": {
+      "name": "PII-SENTINEL-64",
+      "street": "PII-SENTINEL-65",
+      "city": "PII-SENTINEL-66",
+      "zip": "PII-SENTINEL-67",
+      "country": "LI"
+    },
+    "clientPayoutRefParams": {
+      "currency": "CHF24",
+      "amount": 194975,
+      "contactId": "QRCH",
+      "purposeId": 101,
+      "ref": "690333-50fb0941-4f59-4a89-8735-dd78ba7d53a3\u0000\u0000"
+    }
+  }
+}

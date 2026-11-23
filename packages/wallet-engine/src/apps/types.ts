@@ -196,6 +196,8 @@ export type AppStorage = {
   readonly get: (group: AppGroup, name: string) => Promise<Uint8Array | undefined>;
   readonly put: (group: AppGroup, name: string, bytes: Uint8Array) => Promise<void>;
   readonly delete: (group: AppGroup, name: string) => Promise<void>;
+  /** The group's own record names — the `name` part of every key it owns. */
+  readonly list: (group: AppGroup) => Promise<ReadonlyArray<string>>;
   /** The groups with at least one record — deduplicated. */
   readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
 };

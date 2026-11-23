@@ -1,5 +1,5 @@
 /**
- * §24 Card wallet native surfaces: card access codes and printed short IDs are collected only
+ * §30 Card wallet native surfaces: card access codes and printed short IDs are collected only
  * through the trusted `SecureInput` view — never a JS `TextInput`. The main runtime observes just
  * `idle | empty | filled | submitted` on `onStateChange`, which Nitro requires wrapped in
  * `callback`. Compiled only.
@@ -20,7 +20,7 @@ export function secureInputText(state: SecureInputState): string {
       return "Code entered — confirm it";
     case "submitted":
       return "Checking the code against the card";
-    // oxlint-disable-next-line typescript/switch-exhaustiveness-check -- §24 wants the never default as the exhaustiveness proof
+    // oxlint-disable-next-line typescript/switch-exhaustiveness-check -- §30 wants the never default as the exhaustiveness proof
     default: {
       const exhaustive: never = state;
       return exhaustive;
