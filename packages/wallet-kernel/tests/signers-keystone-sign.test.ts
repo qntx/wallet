@@ -882,9 +882,12 @@ describe("keystone accounts over qr-hardware-call", () => {
 
     const btc = await walletAccounts(h, session, hwId, "btc.bip84", BTC_NETWORK, 1);
     const node = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/1'");
-    const [account] = done.ok as ProtocolValue[];
+    const [account] = ok(done) as ProtocolValue[];
+    if (account === undefined) {
+      throw new Error("accounts op returned no row");
+    }
     expect(strField(account, "xpub")).toBe(node.publicExtendedKey);
-    expect(strField(btc.ok, "xpub")).toBe(node.publicExtendedKey);
+    expect(strField(ok(btc), "xpub")).toBe(node.publicExtendedKey);
   });
 
   it("derives the solana group-1 leaf and refuses hostile answers", async () => {
@@ -910,7 +913,7 @@ describe("keystone accounts over qr-hardware-call", () => {
       1,
     );
     const leaf = Slip10.fromMasterSeed(SEED).derive("m/44'/501'/1'/0'").publicKey;
-    expect(strField(account.ok, "address")).toBe(base58.encode(leaf.subarray(1)));
+    expect(strField(ok(account), "address")).toBe(base58.encode(leaf.subarray(1)));
 
     // Hostile variants against a fresh wallet each miss the same gap and must fail closed.
     const hostile = async (mutant: DeviceMutant) => {

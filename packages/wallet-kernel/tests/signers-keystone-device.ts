@@ -370,7 +370,7 @@ export const keystoneDevice = (
         });
       }
       const node = root.derive(rendered);
-      if (node.publicKey === null) {
+      if (node.publicKey === null || node.chainCode === null) {
         throw new Error(`device: no public key at ${rendered}`);
       }
       const parent = Buffer.alloc(4);
