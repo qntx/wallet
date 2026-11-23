@@ -95,7 +95,7 @@ mkdir -p "$CLASSES"
 
 cat >"$LAUNCHER" <<EOF
 #!/usr/bin/env bash
-exec "$JAVA_HOME/bin/java" -javaagent:"$AGENT" -cp "$AGENT:$CLASSES:$CP" Bridge
+exec "$JAVA_HOME/bin/java" -javaagent:"$AGENT" -cp "$AGENT:$CLASSES:$CP" Bridge "\$@"
 EOF
 chmod +x "$LAUNCHER"
 printf '%s' "$BRIDGE_HASH" >"$STAMP"

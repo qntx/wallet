@@ -1,10 +1,15 @@
+// oxlint-disable eslint/no-await-in-loop, vitest/no-conditional-in-test -- the connect retry and branch assertions are sequential and conditional by design
 /**
  * Bridge-harness behaviours of the card simulator (`QNTX_CARD_SIM` = `card:sim` launcher; skipped
  * without it): independent cards, power-cycle semantics and the armed tear point. Protocol layer
  * (session, commands) is covered by card-simulator.test.ts; here the bridge contract itself is what
  * is under test.
  */
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { createConnection } from "node:net";
+import type { Socket } from "node:net";
+import { createInterface } from "node:readline";
 
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
@@ -40,6 +45,23 @@ const open = async (card: SimCard): Promise<Session> => {
 const status = async (card: SimCard, session: Session): Promise<unknown> => {
   const rapdu = await transmit(card, session.wrap(cmd.status()));
   return decode.status(result(cmd.status(), session.unwrap(rapdu)));
+};
+
+/** Polls until the bridge's TCP listener accepts — the JVM needs a moment to bind. */
+const waitForListener = async (port: number): Promise<Socket> => {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const socket: Socket = createConnection({ host: "127.0.0.1", port });
+    const opened = await new Promise<boolean>((resolve) => {
+      socket.once("connect", () => resolve(true));
+      socket.once("error", () => resolve(false));
+    });
+    if (opened) {
+      return socket;
+    }
+    socket.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error("bridge never listened");
 };
 
 describe.skipIf(SIM_LAUNCHER === undefined)("card sim bridge", () => {
@@ -113,4 +135,37 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card sim bridge", () => {
     const reopened = await open(card);
     await expect(status(card, reopened)).resolves.toStrictEqual({ life: "blank", tries: 0 });
   });
+
+  it("serves the same line protocol over TCP (--tcp)", async () => {
+    expect.hasAssertions();
+    const port = 19000 + Math.floor(Math.random() * 1000);
+    const proc = spawn(SIM_LAUNCHER!, ["--tcp", String(port)], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let socket: Socket | undefined;
+    try {
+      socket = await waitForListener(port);
+      const lines = createInterface({ input: socket });
+      const reader = lines[Symbol.asyncIterator]();
+      const ask = async (line: string): Promise<string> => {
+        socket?.write(`${line}\n`);
+        const next = await reader.next();
+        if (next.done === true) {
+          throw new Error("bridge closed");
+        }
+        return next.value;
+      };
+      const banner = await reader.next();
+      expect(banner.value).toBe("READY");
+      const created = await ask("new");
+      expect(created).toMatch(/^CARD 0 [0-9a-f]+$/);
+      await expect(ask("apdu 0 00a4040007f0716e7478010100")).resolves.toBe("R 9000");
+      await expect(ask("reset 0")).resolves.toBe("OK");
+      await expect(ask("bogus")).resolves.toMatch(/^ERR /);
+      socket.end();
+    } finally {
+      socket?.destroy();
+      proc.kill();
+    }
+  }, 120_000);
 });

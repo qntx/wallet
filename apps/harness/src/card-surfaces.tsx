@@ -93,6 +93,25 @@ export const CardSurfacesPage = (): React.JSX.Element => {
       result["deviceTap"] = await send({ cmd: "device-tap" });
       closeKernel();
 
+      // Set EXPO_PUBLIC_CARD_SIM=host:port to add a full status+create round
+      // against the real applet in the card-sim bridge (SimCardReader over TCP).
+      const simEndpoint = process.env.EXPO_PUBLIC_CARD_SIM;
+      if (simEndpoint !== undefined && simEndpoint !== "") {
+        setStatus(`opening kernel (card sim ${simEndpoint})`);
+        await openKernel(`card-surfaces-sim@${simEndpoint}`, "source");
+        // The probe posts progress frames; drain until the final {ok} one.
+        const sim: unknown[] = [];
+        for (let frame = 0; frame < 40; frame += 1) {
+          const posted = (await send({ cmd: "run" })) as { ok?: boolean };
+          sim.push(posted);
+          if (posted !== null && typeof posted === "object" && posted.ok !== undefined) {
+            break;
+          }
+        }
+        result["sim"] = sim;
+        closeKernel();
+      }
+
       say(`CARD_SURFACES_RESULT ${JSON.stringify(result)}`);
       say("CARD_SURFACES_DONE");
       setStatus("done");

@@ -26,6 +26,8 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.math.BigInteger;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -64,6 +66,30 @@ public final class Bridge {
         System.setOut(new PrintStream(OutputStream.nullOutputStream()));
 
         Bridge bridge = new Bridge(out);
+        if (args.length == 2 && args[0].equals("--tcp")) {
+            // Same protocol over one TCP connection — one client; disconnecting exits.
+            try (ServerSocket server = new ServerSocket(Integer.parseInt(args[1]));
+                    Socket socket = server.accept();
+                    PrintStream remote =
+                            new PrintStream(socket.getOutputStream(), true, StandardCharsets.UTF_8);
+                    BufferedReader in =
+                            new BufferedReader(
+                                    new InputStreamReader(
+                                            socket.getInputStream(), StandardCharsets.UTF_8))) {
+                remote.println("READY");
+                String line;
+                while ((line = in.readLine()) != null) {
+                    remote.println(bridge.answer(line.trim()));
+                }
+            }
+            return;
+        }
+        if (args.length != 0) {
+            out.println("ERR usage: Bridge [--tcp <port>]");
+            out.flush();
+            return;
+        }
+
         out.println("READY");
         out.flush();
 
