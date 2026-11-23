@@ -3781,6 +3781,7 @@ describe("requester text lines cannot imitate kernel lines", () => {
     unverifiedEffects: [],
     externalInputs: [],
     solanaPrograms: ["prog"],
+    solanaLookupTable: [],
     solanaProgramsWarning: [],
     programAuthority: ["prog", true],
     programAuthorityAccounts: ["prog", ["acct"]],

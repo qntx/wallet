@@ -7,11 +7,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
 import type { SignRequest } from "@qntx/wallet-chains";
-import {
-  decodeSolana,
-  namedTableAccounts,
-  parseCompiledMessage,
-} from "@qntx/wallet-chains/solana";
+import { decodeSolana, namedTableAccounts, parseCompiledMessage } from "@qntx/wallet-chains/solana";
 import type { chains } from "@qntx/wallet/chains";
 
 import { NetworkController } from "../src/networks/controller.ts";
@@ -361,7 +357,7 @@ describe("solana-swap through requests.prepare", () => {
     /* The fixture's mints and destination ATA are inside the declared tables — compression would
        load them, so the build must have pinned them back to static keys. */
     const parsed = parseCompiledMessage(request.message);
-    expect(parsed.staticAccounts).toEqual(expect.arrayContaining([USDC, USDC_ATA]));
+    expect(parsed.staticAccounts).toStrictEqual(expect.arrayContaining([USDC, USDC_ATA]));
     expect(namedTableAccounts(parsed, request.lookupTables)).toStrictEqual([]);
     const intent = decodeSolana(request, PAYER);
     expect(intent.blind).toBeUndefined();
