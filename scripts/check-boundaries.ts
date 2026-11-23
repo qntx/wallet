@@ -323,14 +323,6 @@ export const RULES: ReadonlyArray<Rule> = [
     check: (edge) => {
       const target = fileTarget(edge);
       const pkg = packageTarget(edge);
-      if (within(edge.from, `${GATEWAY}/tests`)) {
-        /* Tests are not the shipped Worker: they may drive the wallet engine's declared exports
-           (the push e2e opens deliveries with `openPush` and runs NotificationsController) —
-           never by a relative path into its src, which `relative-packages` still forbids. */
-        return target !== undefined && !within(target, GATEWAY, CONTRACT, ENGINE)
-          ? "apps/gateway may only import @qntx/wallet-engine/gateway/contract from the workspace"
-          : undefined;
-      }
       return within(edge.from, GATEWAY) &&
         ((target !== undefined && !within(target, GATEWAY, CONTRACT)) ||
           pkg?.name.startsWith("@qntx/") === true)
