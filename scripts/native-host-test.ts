@@ -16,6 +16,8 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { HERMES_FLAGS } from "./kernel-build-config.ts";
+
 declare const Bun: {
   spawnSync: (
     cmd: ReadonlyArray<string>,
@@ -229,7 +231,7 @@ writeFileSync(
   const proc = Bun.spawnSync(
     [
       hermesc,
-      "-Xes6-block-scoping",
+      ...HERMES_FLAGS,
       "-emit-binary",
       "-emit-async-break-check",
       "-out",

@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "vite";
 
+import { HERMES_FLAGS } from "../../../scripts/kernel-build-config.ts";
+
 // The repo does not depend on @types/bun; declare the used surface.
 declare const Bun: {
   write: (path: string, data: unknown) => Promise<unknown>;
@@ -46,7 +48,7 @@ const runOne = async (hermes: string, name: "card" | "ledger", marker: string): 
     },
   });
 
-  const proc = Bun.spawnSync([hermes, "-Xes6-block-scoping", outfile], {
+  const proc = Bun.spawnSync([hermes, ...HERMES_FLAGS, outfile], {
     stdout: "pipe",
     stderr: "pipe",
   });

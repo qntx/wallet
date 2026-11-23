@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "vite";
 
-import { probeBuildConfig } from "./kernel-build-config.ts";
+import { HERMES_FLAGS, probeBuildConfig } from "./kernel-build-config.ts";
 
 // The repo does not depend on @types/bun; declare the used surface (same as
 // packages/wallet-worker/scripts/hermes-smoke.ts).
@@ -88,7 +88,7 @@ const provenance = (() => {
   const nitroVersion = packageVersion(require, "react-native-nitro-modules");
   const hermescVersion = packageVersion(require, "hermes-compiler");
   const hermescBanner =
-    run([hermesc, "-version"])
+    run([hermesc, "-version", ...HERMES_FLAGS])
       .split("\n")
       .map((line) => line.trim())
       .find((line) => line.startsWith("Hermes")) ?? "unknown";
@@ -146,15 +146,7 @@ const compileBytecode = (source: string, workDir: string): Uint8Array => {
   // via IHermes::asyncTriggerTimeout; without it bytecode busy-loops cannot be
   // stopped (supported since hermesc 250829098).
   const proc = Bun.spawnSync(
-    [
-      hermesc,
-      "-Xes6-block-scoping",
-      "-emit-binary",
-      "-emit-async-break-check",
-      "-out",
-      hbcPath,
-      jsPath,
-    ],
+    [hermesc, ...HERMES_FLAGS, "-emit-binary", "-emit-async-break-check", "-out", hbcPath, jsPath],
     {
       stdout: "pipe",
       stderr: "pipe",

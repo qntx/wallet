@@ -18,6 +18,17 @@ export const KERNEL_BUILD_CONDITIONS: ReadonlyArray<string> = [
 ];
 
 /**
+ * Flags every Hermes invocation in the repo must pass, at compile time (hermesc) and at run time
+ * (the bare `hermes` CLI) alike. Without `-Xes6-block-scoping` — off by default — loop-scoped
+ * `let`/`const` share one binding across iterations and closures capture the last iteration's
+ * value; a single call site missing it silently runs different semantics from everything else. The
+ * kernel also fails closed at start (`startKernel` in packages/wallet-kernel/src/kernel.ts) and
+ * scripts/check-hermes-flags.test.ts pins every call site to this list. The shipped
+ * compile-kernel.mjs cannot import repo scripts, so it keeps its own literal of the same flag.
+ */
+export const HERMES_FLAGS: ReadonlyArray<string> = ["-Xes6-block-scoping"];
+
+/**
  * The build() options of one classic-script kernel bundle. Nothing may stay external: the bytecode
  * runs in a bare Hermes runtime with no module loader, so deps and peers are inlined. `target:
  * "es2017"` is not cosmetic — rolldown lowers `async function*` (ES2018) to helpers, and hermesc

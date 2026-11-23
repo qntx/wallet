@@ -3,6 +3,8 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { HERMES_FLAGS } from "../../../scripts/kernel-build-config.ts";
+
 type BunBuildOutput = {
   success: boolean;
   logs: ReadonlyArray<{ toString: () => string }>;
@@ -60,7 +62,7 @@ async function main(): Promise<number> {
     `${await shim.text()}
 ${await bundle.text()}`,
   );
-  const run = Bun.spawnSync([hermes, "-Xes6-block-scoping", outfile], {
+  const run = Bun.spawnSync([hermes, ...HERMES_FLAGS, outfile], {
     stdout: "pipe",
     stderr: "pipe",
   });
