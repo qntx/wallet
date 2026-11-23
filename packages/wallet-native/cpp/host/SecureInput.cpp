@@ -9,6 +9,50 @@ namespace {
 
 // The kind contract the platform views are asked to enforce; rechecked here
 // so a buggy view cannot feed the kernel out-of-shape bytes.
+// Strict UTF-8 (RFC 3629): well-formed sequences only, no overlong forms,
+// no surrogates, nothing past U+10FFFF.
+bool validUtf8(const SecretBytes& value) {
+  size_t i = 0;
+  while (i < value.size()) {
+    const uint8_t b = value.data()[i];
+    size_t extra;
+    uint32_t min;
+    if (b < 0x80) {
+      i += 1;
+      continue;
+    } else if ((b & 0xE0) == 0xC0) {
+      extra = 1;
+      min = 0x80;
+      if (b < 0xC2) return false;
+    } else if ((b & 0xF0) == 0xE0) {
+      extra = 2;
+      min = 0x800;
+    } else if ((b & 0xF8) == 0xF0) {
+      extra = 3;
+      min = 0x10000;
+      if (b > 0xF4) return false;
+    } else {
+      return false;
+    }
+    if (i + extra >= value.size()) {
+      return false;
+    }
+    uint32_t cp = b & (0x7F >> (extra + 1));
+    for (size_t j = 1; j <= extra; j++) {
+      const uint8_t c = value.data()[i + j];
+      if ((c & 0xC0) != 0x80) {
+        return false;
+      }
+      cp = (cp << 6) | (c & 0x3F);
+    }
+    if (cp < min || (cp >= 0xD800 && cp <= 0xDFFF)) {
+      return false;
+    }
+    i += extra + 1;
+  }
+  return true;
+}
+
 bool validFor(SecureInputKind kind, const SecretBytes& value) {
   switch (kind) {
     case SecureInputKind::accessCode: {
@@ -34,6 +78,9 @@ bool validFor(SecureInputKind kind, const SecretBytes& value) {
         }
       }
       return true;
+    }
+    case SecureInputKind::backupPassword: {
+      return value.size() >= 1 && value.size() <= 1024 && validUtf8(value);
     }
   }
   return false;

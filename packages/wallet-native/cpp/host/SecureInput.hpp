@@ -23,9 +23,10 @@ namespace qntx {
 // bytes, each 0x20..0x7E (protocol.md §7.1 — the 6/8 minimums are the card
 // module's policy, not this seam's); shortId is exactly 8 bytes of [0-9A-F]
 // (protocol.md §1 short ID — the view already uppercases and drops typed
-// dashes, this is the recheck).
+// dashes, this is the recheck); backupPassword is 1..1024 bytes of valid
+// UTF-8 (the cloud-backup password — the wire's own bound).
 
-enum class SecureInputKind { accessCode, shortId };
+enum class SecureInputKind { accessCode, shortId, backupPassword };
 
 // What every registered view shows: a pending request's prompt, or nothing
 // (cleared, not editable).

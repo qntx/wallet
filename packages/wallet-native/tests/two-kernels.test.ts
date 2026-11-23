@@ -211,6 +211,7 @@ function platform(
     keystore: bindNativeKeystore(keystore),
     anchor: bindNativeAnchor(anchor),
     passkey: undefined,
+    secureInput: undefined,
     now: () => Date.now(),
     elapsed: () => performance.now(),
     setTimer: (ms, fn) => {

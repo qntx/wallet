@@ -1613,6 +1613,18 @@ int secureInputHubCase() {
       "secure-input-hub: valid short id refused");
   CHECK(calls == 2 && !lastFailure.has_value() && lastValue.size() == 8,
       "secure-input-hub: a valid short id did not complete");
+  CHECK(arm(ownerA, qntx::SecureInputKind::backupPassword) == qntx::SecureInputArm::armed,
+      "secure-input-hub: backup-password request not armed");
+  CHECK(!trySubmit({}), "secure-input-hub: empty backup password accepted");
+  CHECK(!trySubmit(std::vector<uint8_t>(1025, 'a')),
+      "secure-input-hub: 1025-byte backup password accepted");
+  CHECK(!trySubmit({0xC0, 0xAF}), "secure-input-hub: overlong UTF-8 accepted");
+  CHECK(!trySubmit({0xED, 0xA0, 0x80}), "secure-input-hub: a UTF-16 surrogate accepted");
+  // "pässwörd" — multi-byte UTF-8 throughout.
+  CHECK(trySubmit({0x70, 0xC3, 0xA4, 0x73, 0x73, 0x77, 0xC3, 0xB6, 0x72, 0x64}),
+      "secure-input-hub: UTF-8 backup password refused");
+  CHECK(calls == 3 && !lastFailure.has_value() && lastValue.size() == 10,
+      "secure-input-hub: a valid backup password did not complete");
   CHECK(arm(ownerA, qntx::SecureInputKind::accessCode) == qntx::SecureInputArm::armed,
       "secure-input-hub: third request not armed");
   hub.cancel(ownerB);

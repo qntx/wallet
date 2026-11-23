@@ -69,9 +69,9 @@
   HybridView because it exposes no content: the main runtime can mount and size it and receives
   only `idle | empty | filled | submitted` — no characters, no length, no hash. Reading the code
   stays a kernel-only host object (`__qntx.secureInput`), never registered with Nitro.
-- The access-code and short-ID fields are editable only while a kernel `secureInput.request` is
-  pending, and take focus and raise the keyboard on that request (the most recently mounted view
-  first).
+- The access-code, short-ID and backup-password fields are editable only while a kernel
+  `secureInput.request` is pending, and take focus and raise the keyboard on that request (the
+  most recently mounted view first).
 
 `design/` is local-only and never committed.
 

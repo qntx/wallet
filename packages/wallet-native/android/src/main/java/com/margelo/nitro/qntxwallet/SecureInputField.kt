@@ -26,6 +26,7 @@ import com.facebook.proguard.annotations.DoNotStrip
 // SecureInputKind ordinals shared with cpp/host/SecureInput.hpp.
 private const val KIND_ACCESS_CODE = 0
 private const val KIND_SHORT_ID = 1
+private const val KIND_BACKUP_PASSWORD = 2
 
 /**
  * The Android half of the trusted input surface: a label the kernel sets
@@ -43,7 +44,7 @@ class SecureInputField(context: Context) : LinearLayout(context) {
   private val field = Field(context)
 
   private var hubId = 0L
-  private var accessCode = true
+  private var kind = KIND_ACCESS_CODE
   private var justSubmitted = false
   private var state = SecureInputState.IDLE
   private var secureSet = false
@@ -102,7 +103,7 @@ class SecureInputField(context: Context) : LinearLayout(context) {
       return
     }
     justSubmitted = false
-    accessCode = kind == KIND_ACCESS_CODE
+    this.kind = kind
     label.text = labelText
     arm()
   }
@@ -112,20 +113,25 @@ class SecureInputField(context: Context) : LinearLayout(context) {
     field.isEnabled = true
     field.inputType =
       InputType.TYPE_CLASS_TEXT or
-        if (accessCode) {
-          InputType.TYPE_TEXT_VARIATION_PASSWORD
-        } else {
+        if (kind == KIND_SHORT_ID) {
           InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
             InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+        } else {
+          InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
     // Never reveal characters: PasswordTransformationMethod shows the last
     // typed char when the system setting is on — mask every char ourselves.
-    field.transformationMethod = if (accessCode) MaskTransformation else null
+    field.transformationMethod =
+      if (kind == KIND_SHORT_ID) null else MaskTransformation
     field.filters =
-      if (accessCode) arrayOf(accessCodeFilter) else arrayOf(shortIdFilter)
+      when (kind) {
+        KIND_ACCESS_CODE -> arrayOf(accessCodeFilter)
+        KIND_BACKUP_PASSWORD -> arrayOf(backupPasswordFilter)
+        else -> arrayOf(shortIdFilter)
+      }
     field.typeface =
-      if (accessCode) Typeface.DEFAULT else Typeface.MONOSPACE
-    if (accessCode && !secureSet) {
+      if (kind == KIND_SHORT_ID) Typeface.MONOSPACE else Typeface.DEFAULT
+    if (kind != KIND_SHORT_ID && !secureSet) {
       activityWindow()?.let { window ->
         hadSecureFlag =
           window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
@@ -191,13 +197,16 @@ class SecureInputField(context: Context) : LinearLayout(context) {
 
   private fun submit() {
     val text = field.text
-    val ready = if (accessCode) text.isNotEmpty() else text.length == 8
+    val ready = if (kind == KIND_SHORT_ID) text.length == 8 else text.isNotEmpty()
     if (!ready) return
-    // Every accepted character is ASCII, so one char is one byte.
-    val bytes = ByteArray(text.length)
-    for (i in 0 until text.length) {
-      bytes[i] = text[i].code.toByte()
-    }
+    // The card kinds are ASCII-only, one char per byte; a backup password is
+    // arbitrary Unicode, handed over as real UTF-8.
+    val bytes =
+      if (kind == KIND_BACKUP_PASSWORD) {
+        text.toString().toByteArray(Charsets.UTF_8)
+      } else {
+        ByteArray(text.length) { i -> text[i].code.toByte() }
+      }
     justSubmitted = nativeSubmit(hubId, bytes)
     if (!justSubmitted) {
       // The hub refused it; drop the local copy now too — its own clear
@@ -332,6 +341,23 @@ class SecureInputField(context: Context) : LinearLayout(context) {
           }
         }
         if (allowed) null else refuse(dest, dstart, dend)
+      }
+
+    // Any characters, bounded by 1024 UTF-8 bytes — the wire's own limit;
+    // the hub rechecks validity on submit.
+    val backupPasswordFilter =
+      InputFilter { source, start, end, dest, dstart, dend ->
+        val next =
+          StringBuilder(dest).replace(
+            dstart,
+            dend,
+            source.subSequence(start, end).toString(),
+          )
+        if (next.toString().toByteArray(Charsets.UTF_8).size <= 1024) {
+          null
+        } else {
+          refuse(dest, dstart, dend)
+        }
       }
 
     val shortIdFilter =
