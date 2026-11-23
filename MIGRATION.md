@@ -89,7 +89,7 @@ export async function restoreAfterReset(
   per scope instead of `x-install-id`, and a gateway from this release refuses requests without it
   (`400 invalid-request`) — just as a 0.13.0 gateway refuses the new engine. Deploy the gateway
   from this release and the app together, or keep serving old app versions from the old gateway.
-- The prices (`POST /v1/prices`) and history (`POST /v1/history/:caip2`) features need that
+- The prices (`POST /v1/prices/:family`) and history (`POST /v1/history/:caip2`) features need that
   gateway; production needs the `COINGECKO_API_KEY` secret.
 - `engine.bridges.quote` requires `maxFeeBps`, the highest relay fee accepted, in basis points of
   the input amount.
@@ -1231,7 +1231,7 @@ never serve this resource for this network or asset — do not retry.**
 - `GET /v1/tokens/:caip2`: a served network no configured token source covers → `404`
   `{"error":"unsupported"}`; a covered network whose stored list is absent → `503`
   `{"error":"unavailable"}` with `Retry-After` (the hourly build has not landed).
-- `POST /v1/prices` responses carry a third list `unsupported` — every requested asset is in
+- `POST /v1/prices/:family` responses carry a third list `unsupported` — every requested asset is in
   exactly one of `prices`, `missing` (no price now; may change) or `unsupported` (no provider maps
   it; never sent upstream, never cached). `pricesResponse` requires the field: deploy gateway and
   engine together.
@@ -2023,3 +2023,26 @@ the kernel protocol.
    gateway refuses the method and drops are then never proven through it.
 5. **Gateway pins on fixed provider sets are refused.** `x-gateway-provider` on a TRON indexer path
    or the Esplora route is a `400`. The engine never sends it there; only custom clients notice.
+
+## 40. Vault anchor, secret buffers, per-family price requests
+
+Compiled snippets: `tests/migration/price-scopes.ts`, `tests/migration/secret-buffers.ts`.
+Changes affect every host's vault (format 6, §1), custom kernel transports, and gateway operators.
+
+1. **Vault format 6 and the vault anchor.** The kernel keeps the vault's revision floor and the
+   password failure counters outside the vault store; a vault image older than the floor reads
+   `vault: "corrupted"` before any unlock. Nothing to wire: `@qntx/wallet-worker` (Cache Storage
+   on the Web, the main thread on Node) and `@qntx/wallet-native` (iOS keychain item
+   `qntx-wallet.anchor`, Android Keystore aliases `qntx-wallet.anchor.*`) supply it. Do not clear
+   these items yourself, and do not restore the vault store from a copy: a restored older vault is
+   `corrupted` by design — recover it with a reset and a restore from the mnemonic, passkey or
+   cloud backup. Development builds' format 5 vaults read `unsupported` (§1).
+2. **Secrets own their buffers.** A request whose secret field (`SECRET_FIELDS` from
+   `@qntx/wallet/protocol`) shares memory with another field fails `invalid-input`.
+   `@qntx/wallet` already sends every secret in a fresh buffer; a host that posts kernel requests
+   through its own transport copies them the same way (`ownSecretBuffers` in the snippet).
+3. **Price requests per family.** `POST /v1/prices` is now `POST /v1/prices/:family` (`evm`,
+   `solana`, `bitcoin`, `tron`), and a body naming another family's asset is
+   `400 invalid-request`. The engine sends one request per family under that family's client id.
+   Deploy the gateway with the engine, and forward the four routes in any proxy or allow-list in
+   front of it (`priceRoutes` in the snippet).

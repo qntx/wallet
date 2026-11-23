@@ -132,8 +132,8 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   `eth_getLogs` bounds (`LOGS_*`, `logsFilterViolation`); Esplora `/scripthash/:h/txs/chain/:txid`.
 - `@qntx/gateway`: production environment (eight EVM mainnets and Solana through Alchemy then
   dRPC, Bitcoin through Blockstream Enterprise), keyed upstream auth in headers, `scripts/smoke.ts`.
-- `@qntx/gateway`: `POST /v1/prices` — spot price and 24 h change for up to 100 CAIP-19 assets in
-  one fiat currency (`usd`, `eur`, `gbp`, `jpy`, `cny`, `krw`, `hkd`, `sgd`, `cad`, `aud`, `chf`);
+- `@qntx/gateway`: `POST /v1/prices/:family` — spot price and 24 h change for up to 100 CAIP-19
+  assets of one chain family in one fiat currency (`usd`, `eur`, `gbp`, `jpy`, `cny`, `krw`, `hkd`, `sgd`, `cad`, `aud`, `chf`);
   CoinGecko Pro primary (`COINGECKO_API_KEY`), DefiLlama fallback;
   answers cached per asset and currency for 30 s, converted to bounded decimal strings without
   float arithmetic, `no-store`.
@@ -610,12 +610,29 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 
 ### Changed
 
-- **BREAKING:** vault format 5 and protocol version 3. A `manifest/default` record, rewritten in
-  every structural commit, commits under the DEK to the format, the keyId and every other record
-  and factor row; a replayed, dropped, added or altered row, or a rewritten format, latches the
-  vault `corrupted`. Vaults of any other format, including every 0.13.0 vault (format 3), are
+- **BREAKING:** vault format 6 and protocol version 3. A `manifest/default` record, rewritten in
+  every structural commit, commits under the DEK to the format, the revision, the keyId and every
+  other record and factor row; a replayed, dropped, added or altered row, or a rewritten format or
+  revision, latches the vault `corrupted`. Vaults of any other format, including every 0.13.0 vault (format 3), are
   `unsupported` and must be reset; there is no upgrade path. Vault images with duplicate keys are
   `corrupted`.
+- **BREAKING:** the vault anchor. A 21-byte record the kernel keeps outside the vault store holds
+  the revision floor and the password failure counters (`vectors/vault-anchor.json`): React Native
+  keeps it in the platform credential store (an iOS keychain item, `WhenUnlockedThisDeviceOnly`;
+  Android Keystore entry aliases), the Web in Cache Storage beside the IndexedDB vault, Node in the
+  main thread beside the in-memory store. An image whose revision is below the floor — an older
+  committed vault put back — reads `corrupted` before any unlock; only a revision the kernel sealed
+  or authenticated under a session raises the floor; a new vault starts above it and a reset raises
+  it past the erased image. The failure counters left the vault meta (`record-failure` /
+  `reset-failures` are gone from the store), so rewriting the vault store no longer resets the
+  password backoff. SECURITY.md states what each host can and cannot detect.
+- **BREAKING:** `@qntx/gateway` / `@qntx/wallet-engine`: price requests are partitioned by chain
+  family. The route is `POST /v1/prices/:family` (`evm`, `solana`, `bitcoin`, `tron`); its body may
+  name only that family's assets (else `400 invalid-request`; an unknown family is `404`), and the
+  engine sends one request per family under that family's client id, so the held asset set no
+  longer links the gateway scopes. `@qntx/wallet-engine/gateway/contract` adds `PRICE_FAMILIES`,
+  `PriceFamily`, `priceFamily`, `priceAssetFamily` and `pricesPath`. Deploy the gateway with the
+  engine.
 - **BREAKING:** the cloud-backup password is stretched with Argon2id (RFC 9106 second recommended
   option: 64 MiB, 3 passes, 4 lanes) instead of PBKDF2-SHA256 and must have at least 12
   characters. Backup envelope version 3 (its payload tag also authenticates the factor list, so a
@@ -1364,6 +1381,19 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 
 ### Security
 
+- `@qntx/wallet-kernel`: a request whose secret field (`password`, `prf`, `prfWallet`,
+  `prfBackup`, `mnemonic`, `passphrase`, `secret`, `answers` — now exported as `SECRET_FIELDS` from
+  `@qntx/wallet/protocol`) shares memory with another field fails `invalid-input` before anything
+  runs. Structured clone keeps shared objects and views of one buffer, and the kernel wipes a
+  secret in place once it is consumed: a verification password aliasing a `chain.sign` message
+  zeroed the message between the prompt and the sign pass, so the kernel signed zeros while the
+  prompt had shown the original bytes; a mnemonic aliasing its passphrase derived another wallet.
+- `@qntx/wallet-kernel`: a whole vault image put back to an earlier committed state (a deleted
+  wallet or retired backup key restored, blind signing re-enabled) and a zeroed password failure
+  counter are detected through the vault anchor above, within the limits SECURITY.md lists per
+  host.
+- `@qntx/wallet-engine`: the price request no longer carries every family's assets under the
+  `service` client id, which let the gateway link a wallet's per-family scopes by its asset set.
 - `@qntx/wallet`: `chains(wallet).sign` refuses a kernel result whose kind differs from the request's for every request kind (a Solana request previously accepted any result kind unchecked).
 - `@qntx/wallet-chains`: an undecoded Solana program that receives the signer is described only with an exposure statement leading the prompt — it can move all SOL of the account and act with its authority on every listed writable account (the signer's ATAs for listed mints are named). Writable lookup-table accounts or more than 12 such accounts make the request blind with the new reason `program-authority`.
 - `@qntx/wallet-chains`: an undecoded typed-data document with any hash or raw-bytes leaf (non-empty `bytes`, `bytesN`, or a string encoding ≥ 32 bytes / > 40 hex digits) is blind `typed-data-commitment`; a readable decoy leaf no longer makes it described.
