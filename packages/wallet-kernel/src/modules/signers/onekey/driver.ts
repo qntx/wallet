@@ -565,13 +565,13 @@ const display: Driver["display"] = (request, plan, identity) => {
   return displayFor(request, plan, info);
 };
 
-/** The plan's stored stage-1 authorization: 65-byte r‖s‖v where v is the yParity. */
+/** The plan's stored stage-1 authorization: 65-byte r‖s‖v with v = 27 + yParity. */
 const yParityOf = (authorization: Uint8Array): 0 | 1 => {
   const v = authorization.at(-1);
-  if (authorization.length !== 65 || (v !== 0 && v !== 1)) {
+  if (authorization.length !== 65 || (v !== 27 && v !== 28)) {
     integrity("the planned authorization signature is not 65-byte r‖s‖v");
   }
-  return v;
+  return v === 27 ? 0 : 1;
 };
 
 /**

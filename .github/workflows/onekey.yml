@@ -50,6 +50,9 @@ jobs:
       # fresh transcript (responses carry live answers); request bytes must equal the committed
       # ones — the check script fails on any drift.
       - run: bun scripts/vectors/onekey-emulator.ts --model ${{ matrix.model }} --out "$RUNNER_TEMP/onekey"
+      - run: >-
+          bun scripts/vectors/onekey-emulator.ts --driver
+          --model ${{ matrix.model }} --out "$RUNNER_TEMP/onekey"
       - run: ONEKEY_TRANSCRIPTS="$RUNNER_TEMP/onekey" bunx vitest run tests/onekey-*.test.ts
         working-directory: packages/wallet-kernel
       - run: bun scripts/vectors/onekey-check.ts --model ${{ matrix.model }} --fresh "$RUNNER_TEMP/onekey"

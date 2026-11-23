@@ -58,15 +58,19 @@ export type Transcript = {
 };
 
 /**
- * The emulator transcript for `model` from ONEKEY_TRANSCRIPTS when set (CI's fresh recordings),
- * otherwise the committed vectors/onekey directory.
+ * The transcript for `model` from ONEKEY_TRANSCRIPTS when set (CI's fresh recordings), otherwise
+ * the committed vectors/onekey directory. `name` selects the file: protocol sessions live in
+ * `emulator-<model>.json`, driver-level sessions in `driver-<model>.json`.
  */
-export function loadTranscript(model: "classic1s" | "pro"): Transcript {
+export function loadTranscript(
+  model: "classic1s" | "pro",
+  name: "emulator" | "driver" = "emulator",
+): Transcript {
   const dir = process.env["ONEKEY_TRANSCRIPTS"];
   const path =
     dir === undefined || dir === ""
-      ? join(import.meta.dirname, `../../../../vectors/onekey/emulator-${model}.json`)
-      : join(dir, `emulator-${model}.json`);
+      ? join(import.meta.dirname, `../../../../vectors/onekey/${name}-${model}.json`)
+      : join(dir, `${name}-${model}.json`);
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the JSON transcript is untyped
   return JSON.parse(readFileSync(path, "utf8")) as Transcript;
 }
