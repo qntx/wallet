@@ -155,7 +155,9 @@ enum CloudKitEnvelopeStore {
         .managedAccountRestricted:
         return .typed(CloudStoreFailure(code: "unavailable", detail: "icloud \(code)"))
       case .permissionFailure:
-        return .typed(CloudStoreFailure(code: "auth-required", detail: "icloud permission"))
+        // iOS offers no interactive consent flow for the app to surface, so this is
+        // a hard failure rather than auth-required.
+        return .typed(CloudStoreFailure(code: "failed", detail: "icloud permission"))
       default:
         return .typed(CloudStoreFailure(code: "failed", detail: "icloud \(code)"))
       }

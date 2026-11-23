@@ -78,19 +78,21 @@ class HybridGoogleDriveAuth : HybridGoogleDriveAuthSpec() {
     val sender = result.pendingIntent?.intentSender
       ?: throw cloudError("failed", "not-configured")
     val granted: ActivityResult = suspendCoroutine { cont ->
-      val registry = activity.activityResultRegistry
       val key = "qntx-drive-auth-${UUID.randomUUID()}"
-      var launcher: ActivityResultLauncher<IntentSenderRequest>? = null
-      launcher =
-        registry.register(key, ActivityResultContracts.StartIntentSenderForResult()) { outcome ->
-          launcher?.unregister()
-          cont.resume(outcome)
-        }
+      // Registry access belongs on the main thread, so register and launch together there.
       activity.runOnUiThread {
+        var launcher: ActivityResultLauncher<IntentSenderRequest>? = null
         try {
+          launcher =
+            activity.activityResultRegistry.register(
+              key, ActivityResultContracts.StartIntentSenderForResult()
+            ) { outcome ->
+              launcher?.unregister()
+              cont.resume(outcome)
+            }
           launcher.launch(IntentSenderRequest.Builder(sender).build())
         } catch (e: Exception) {
-          launcher.unregister()
+          launcher?.unregister()
           cont.resumeWithException(cloudError("unavailable", "no-activity"))
         }
       }

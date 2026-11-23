@@ -77,12 +77,17 @@ export function createICloudStore(options: {
   let registered = false;
   const register = async (): Promise<void> => {
     registered = true;
-    const native = await store();
-    native.setAccountListener(() => {
-      for (const listener of listeners) {
-        listener();
-      }
-    });
+    try {
+      const native = await store();
+      native.setAccountListener(() => {
+        for (const listener of listeners) {
+          listener();
+        }
+      });
+    } catch {
+      // Fire-and-forget: nobody awaits this — just let the next onAccountChange retry.
+      registered = false;
+    }
   };
   const callNative = async <T>(op: (native: CloudKitStoreLike) => Promise<T>): Promise<T> =>
     call(async () => {

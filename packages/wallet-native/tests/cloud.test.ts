@@ -167,6 +167,23 @@ describe("createICloudStore", () => {
     expect(hits).toStrictEqual([1, 2, 1, 2, 2]);
   });
 
+  it("retries the native account listener registration after a failure", async () => {
+    const setAccountListener = vi
+      .fn<(listener: () => void) => void>()
+      .mockImplementationOnce(() => {
+        throw new Error("registration broke");
+      });
+    const store = createICloudStore({
+      container: "iCloud.org.qntx.test",
+      native: { ...fakeCloudKit(), setAccountListener },
+    });
+    store.onAccountChange(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve));
+    store.onAccountChange(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(setAccountListener).toHaveBeenCalledTimes(2);
+  });
+
   it("creates the Nitro hybrid lazily on first use", async () => {
     const native = fakeCloudKit();
     createHybridObject.mockReturnValue(native);

@@ -18,12 +18,14 @@ private final class PrivateCloudDatabase: CloudKitDatabase {
     )
   }
 
-  private func configure(_ operation: CKDatabaseOperation) {
+  /// The async CKDatabase APIs run under this configuration; unlike the callback
+  /// operations they always resume the awaiting task, failure or not.
+  private func configured<R>(_ body: (CKDatabase) async throws -> R) async rethrows -> R {
     let configuration = CKOperation.Configuration()
     configuration.timeoutIntervalForRequest = 60
     configuration.timeoutIntervalForResource = 120
     configuration.qualityOfService = .userInitiated
-    operation.configuration = configuration
+    return try await database.configuredWith(configuration: configuration, body: body)
   }
 
   func recordNames() async throws -> [String] {
@@ -32,8 +34,10 @@ private final class PrivateCloudDatabase: CloudKitDatabase {
     var token: CKServerChangeToken? = nil
     var moreComing = true
     while moreComing {
-      let page = try await database.recordZoneChanges(
-        inZoneWith: zoneID, since: token, desiredKeys: [])
+      let page = try await configured { database in
+        try await database.recordZoneChanges(
+          inZoneWith: zoneID, since: token, desiredKeys: [])
+      }
       token = page.changeToken
       moreComing = page.moreComing
       for (id, result) in page.modificationResultsByID {
@@ -46,67 +50,46 @@ private final class PrivateCloudDatabase: CloudKitDatabase {
   }
 
   func record(withID id: CKRecord.ID) async throws -> CKRecord {
-    try await withCheckedThrowingContinuation { continuation in
-      let operation = CKFetchRecordsOperation(recordIDs: [id])
-      configure(operation)
-      operation.desiredKeys = [CloudKitEnvelopeStore.field]
-      operation.perRecordResultBlock = { _, result in
-        switch result {
-        case .success(let record):
-          continuation.resume(returning: record)
-        case .failure(let error):
-          continuation.resume(throwing: error)
-        }
-      }
-      database.add(operation)
+    let results = try await configured { database in
+      try await database.records(for: [id], desiredKeys: [CloudKitEnvelopeStore.field])
     }
+    guard let result = results[id] else {
+      throw CKError(.unknownItem)
+    }
+    return try result.get()
   }
 
   func save(_ record: CKRecord) async throws -> CKRecord {
-    try await modify(recordsToSave: [record], recordIDsToDelete: nil)
+    let outcome = try await configured { database in
+      try await database.modifyRecords(
+        saving: [record], deleting: [], savePolicy: .allKeys, atomically: true)
+    }
+    guard let result = outcome.saveResults[record.recordID] else {
+      throw CKError(.unknownItem)
+    }
+    _ = try result.get()
     return record
   }
 
   func deleteRecord(withID id: CKRecord.ID) async throws {
-    _ = try await modify(recordsToSave: nil, recordIDsToDelete: [id])
+    let outcome = try await configured { database in
+      try await database.modifyRecords(
+        saving: [], deleting: [id], savePolicy: .allKeys, atomically: true)
+    }
+    guard let result = outcome.deleteResults[id] else {
+      throw CKError(.unknownItem)
+    }
+    try result.get()
   }
 
   func saveZone(_ zone: CKRecordZone) async throws {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      let operation = CKModifyRecordZonesOperation(
-        recordZonesToSave: [zone], recordZoneIDsToDelete: nil)
-      configure(operation)
-      operation.modifyRecordZonesResultBlock = { result in
-        switch result {
-        case .success:
-          continuation.resume()
-        case .failure(let error):
-          continuation.resume(throwing: error)
-        }
-      }
-      database.add(operation)
+    let outcome = try await configured { database in
+      try await database.modifyRecordZones(saving: [zone], deleting: [])
     }
-  }
-
-  private func modify(recordsToSave: [CKRecord]?, recordIDsToDelete: [CKRecord.ID]?) async throws
-    -> Void
-  {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      let operation = CKModifyRecordsOperation(
-        recordsToSave: recordsToSave, recordIDsToDelete: recordIDsToDelete)
-      configure(operation)
-      operation.savePolicy = .allKeys
-      operation.isAtomic = true
-      operation.modifyRecordsResultBlock = { result in
-        switch result {
-        case .success:
-          continuation.resume()
-        case .failure(let error):
-          continuation.resume(throwing: error)
-        }
-      }
-      database.add(operation)
+    guard let result = outcome.saveResults[zone.zoneID] else {
+      throw CKError(.unknownItem)
     }
+    _ = try result.get()
   }
 }
 
@@ -114,11 +97,14 @@ private final class PrivateCloudDatabase: CloudKitDatabase {
 /// `CKAccountChanged` observer that fans out to the registered JS listener. All payload
 /// interpretation lives in `CloudKitEnvelopeStore` — this class only forwards.
 class HybridCloudKitStore: HybridCloudKitStoreSpec {
+  private let databasesLock = NSLock()
   private var databases: [String: PrivateCloudDatabase] = [:]
   private var accountObserver: NSObjectProtocol?
   private var accountListener: (() -> Void)?
 
   private func database(for container: String) -> PrivateCloudDatabase {
+    databasesLock.lock()
+    defer { databasesLock.unlock() }
     if let cached = databases[container] {
       return cached
     }

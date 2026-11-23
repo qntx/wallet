@@ -153,7 +153,7 @@ final class CloudKitEnvelopeStoreTests: XCTestCase {
   func testErrorCodeMapping() async {
     let cases: [(CKError.Code, String)] = [
       (.quotaExceeded, "quota"),
-      (.permissionFailure, "auth-required"),
+      (.permissionFailure, "failed"),
       (.notAuthenticated, "unavailable"),
       (.accountTemporarilyUnavailable, "unavailable"),
       (.networkUnavailable, "unavailable"),
