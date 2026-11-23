@@ -31,6 +31,7 @@ import type {
   HardwareResult,
   QrPayload,
 } from "../protocol/hardware.ts";
+import type { ResultOf } from "../protocol/index.ts";
 import { WalletError } from "../types.ts";
 import type { VerifyFactor, Wallet, WalletInfo } from "../types.ts";
 
@@ -115,12 +116,15 @@ const run = async (
     if (aborted(io)) {
       throw cancelled();
     }
-    const begin = await internals.secretCall("hardware.begin", async (wire) => ({
-      op,
-      ...(verify === undefined
-        ? {}
-        : { verify: await internals.resolveVerifyFactor(verify, wire) }),
-    }));
+    const beginCall = (): Promise<ResultOf<"hardware.begin">> =>
+      internals.secretCall("hardware.begin", async (wire) => ({
+        op,
+        ...(verify === undefined
+          ? {}
+          : { verify: await internals.resolveVerifyFactor(verify, wire) }),
+      }));
+    // The user verification lives inside begin; the QR exchange that follows is not part of it.
+    const begin = verify === undefined ? await beginCall() : await internals.withVerifying(beginCall);
     ({ opId } = begin);
     let { step } = begin;
     while (step.kind === "exchange") {
@@ -169,20 +173,19 @@ function createHardwareApi(internals: WalletInternals): HardwareApi {
       }
       return result.accounts;
     },
-    sign: async (params, io) =>
-      internals.withVerifying(async () => {
-        const result = await run(
-          internals,
-          { kind: "sign", request: params.request },
-          io,
-          params.verify,
-        );
-        if (result.kind !== "sign") {
-          throw integrity("operation result does not match the operation");
-        }
-        await checkSignResult(internals, params.request, result.result);
-        return result.result;
-      }),
+    sign: async (params, io) => {
+      const result = await run(
+        internals,
+        { kind: "sign", request: params.request },
+        io,
+        params.verify,
+      );
+      if (result.kind !== "sign") {
+        throw integrity("operation result does not match the operation");
+      }
+      await checkSignResult(internals, params.request, result.result);
+      return result.result;
+    },
     verifyAddress: async (params, io) => {
       const result = await run(internals, { kind: "verify-address", ...params }, io);
       if (result.kind !== "verify-address") {

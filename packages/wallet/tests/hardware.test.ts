@@ -200,6 +200,39 @@ describe("hardware(wallet)", () => {
       ),
     ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
   });
+
+  it("marks verifying only while begin runs, not while the device exchange waits", async () => {
+    const signature = signEvmPersonalMessage(MESSAGE, PRIV);
+    const kernel = new FakeKernel(unlockedStatus());
+    const duringBegin: boolean[] = [];
+    const duringExchange: boolean[] = [];
+    let wallet: Awaited<ReturnType<typeof connect>>;
+    kernel.handlers.set("hardware.begin", () => {
+      duringBegin.push(wallet.getSnapshot().verifying);
+      return { ok: { opId: OP_ID, step: exchangeStep } };
+    });
+    kernel.handlers.set("hardware.step", () => ({
+      ok: doneStep({ kind: "sign", result: { kind: "evm.personal-message", signature } }),
+    }));
+    kernel.handlers.set("wallet.accounts", () => ({
+      ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS },
+    }));
+    wallet = await connect(kernel);
+    await hardware(wallet).sign(
+      { request: signRequest, verify: { kind: "password", password: "test password" } },
+      responding({
+        exchange: async () => {
+          duringExchange.push(wallet.getSnapshot().verifying);
+          return Promise.resolve({
+            kind: "qr",
+            ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
+          } as DeviceResponse);
+        },
+      }),
+    );
+    expect(duringBegin).toStrictEqual([true]);
+    expect(duringExchange).toStrictEqual([false]);
+  });
 });
 
 describe("qrParts / qrReader", () => {
