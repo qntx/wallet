@@ -28,6 +28,16 @@ export function createAppStorage(id: AppId, store: () => EngineStore | undefined
     get: async (group, name) => collection().get(key(group, name)),
     put: async (group, name, bytes) => collection().put(key(group, name), bytes),
     delete: async (group, name) => collection().delete(key(group, name)),
+    list: async (group) => {
+      const prefix = `${group.walletId}/${group.groupIndex}/`;
+      const names: string[] = [];
+      for (const stored of await collection().list()) {
+        if (stored.startsWith(prefix)) {
+          names.push(stored.slice(prefix.length));
+        }
+      }
+      return names;
+    },
     groups: async () => {
       const seen = new Map<string, AppGroup>();
       for (const stored of await collection().list()) {

@@ -5,15 +5,27 @@
  * verbatim. No `cause` is ever attached: nothing an SDK error was built from — requests, results,
  * grants or signatures — may ride along.
  */
-import { isFiat24Error } from "@qntx/fiat24";
-import type { Fiat24ErrorCode } from "@qntx/fiat24";
+import { isFiat24Error } from "@qntx/fiat24/core";
+import type { Fiat24ErrorCode } from "@qntx/fiat24/core";
 
 /** Fiat24 provider error categories — never carry request payloads or secrets. */
 export type Fiat24AppErrorCategory =
   /** The vault is locked — the group address cannot be resolved; nothing was read. */
   | "unlock-required"
+  /** The group's app status is not `enabled`. */
+  | "not-enabled"
+  /** The call needs the group's owned live Fiat24 account and it has none. */
+  | "no-account"
+  /** No `api.fiat24.com` fetch was injected — API-backed features are off. */
+  | "api-unavailable"
   /** An enablement flow is already running for the group — wait or cancel it. */
   | "busy"
+  /** The jurisdiction allows only winding positions down — no new exposure. */
+  | "close-only"
+  /** A flow's transaction is still `sending`/`submitted`/`unknown` — no start or discard. */
+  | "flow-unresolved"
+  /** The flow id is neither persisted nor an in-memory draft. */
+  | "unknown-flow"
   /** The read could not be completed (endpoint down, malformed answer) — a retry may succeed. */
   | "unavailable"
   /** A caller input fails validation before any request. */

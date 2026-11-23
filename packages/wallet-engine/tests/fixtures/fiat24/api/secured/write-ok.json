@@ -1,0 +1,8 @@
+{
+  "source": "synthetic",
+  "doc": "Part 2 §5-§8 write OK",
+  "body": {
+    "status": 200,
+    "data": "Card created correctly"
+  }
+}

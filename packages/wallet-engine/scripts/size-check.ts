@@ -108,10 +108,11 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "apps-fiat24",
     source: "src/apps/fiat24/index.ts",
-    /* Measured 59603 B: the bundled @qntx/fiat24 SDK (read actions, deployments, zod schemas) +
-       the viem client core, plus the provider itself — errors, the corroborating rpc transport,
-       owner/account reads, the live view and the enablement record machine. */
-    budget: 61.25 * 1024,
+    /* Measured 115243 B: the bundled @qntx/fiat24 SDK (read actions, flows state machines, the
+       REST/session client, deployments, zod schemas) + the viem client core, plus the provider
+       itself — errors, the corroborating rpc transport, owner/account reads, the live view, the
+       enablement record machine, the signer bridge, flows and sessions. */
+    budget: 118 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
     forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com"],
   },

@@ -6,12 +6,24 @@
 
 import { AccountStatus } from '@qntx/fiat24';
 import { AccountView } from '@qntx/fiat24/flows';
+import { Bank } from '@qntx/fiat24/api';
+import { Banks } from '@qntx/fiat24/api';
 import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
+import { Card } from '@qntx/fiat24/api';
+import { CardCurrency } from '@qntx/fiat24/flows';
+import { CardOperation } from '@qntx/fiat24/flows';
+import { CardState } from '@qntx/fiat24/flows';
 import { chains } from '@qntx/wallet/chains';
 import { CooperativeExitResult } from '@qntx/spark';
+import { Countries } from '@qntx/fiat24/api';
+import { CountryCities } from '@qntx/fiat24/api';
+import { Currency } from '@qntx/fiat24';
 import { decodeEvm } from '@qntx/wallet-chains/evm';
 import { Event as Event_2 } from '@qntx/nostr';
+import { ExchangeState } from '@qntx/fiat24/flows';
 import { Fiat24ErrorCode } from '@qntx/fiat24';
+import { FlowState } from '@qntx/fiat24/flows';
+import { KycStatus } from '@qntx/fiat24/api';
 import { LightningInvoice } from '@qntx/spark';
 import { LightningPayment } from '@qntx/spark';
 import { LightningSendStatus } from '@qntx/spark';
@@ -20,7 +32,18 @@ import { LnurlWithdrawRequest } from '@qntx/spark/lnurl';
 import { MessageContent } from '@qntx/wallet-chains';
 import { NetworkMeta } from '@qntx/wallet-chains/networks';
 import { NostrKeyRef } from '@qntx/wallet';
+import { OnboardingState } from '@qntx/fiat24/flows';
+import { PaymentPurpose } from '@qntx/fiat24/api';
+import { PayoutCurrency } from '@qntx/fiat24';
+import { PayoutDraft } from '@qntx/fiat24/flows';
+import { PayoutSettlement } from '@qntx/fiat24';
+import { PayoutState } from '@qntx/fiat24/flows';
+import { PayoutTarget } from '@qntx/fiat24/flows';
+import { Profile } from '@qntx/fiat24/api';
 import { PublicClient } from 'viem';
+import { Rate } from '@qntx/fiat24/api';
+import { RatePair } from '@qntx/fiat24/api';
+import { Recipient } from '@qntx/fiat24';
 import { SignRequest } from '@qntx/wallet-chains';
 import { SparkAccountRef } from '@qntx/wallet/protocol';
 import { SparkApproveIntent } from '@qntx/wallet/protocol';
@@ -31,6 +54,13 @@ import { SparkSigner } from '@qntx/wallet/spark';
 import { SparkStore } from '@qntx/spark';
 import { SparkTransfer } from '@qntx/spark';
 import { StoreApi } from 'zustand/vanilla';
+import { TopUpState } from '@qntx/fiat24/flows';
+import { TransactionPage } from '@qntx/fiat24/api';
+import { TransactionQuery } from '@qntx/fiat24/api';
+import { TransferState } from '@qntx/fiat24/flows';
+import { TxMismatch } from '@qntx/fiat24/flows';
+import { TxPhase } from '@qntx/fiat24/flows';
+import { TxRecord } from '@qntx/fiat24/flows';
 import { UnsignedEvent } from '@qntx/nostr';
 import { VerifyFactor } from '@qntx/wallet';
 import { Wallet } from '@qntx/wallet';
@@ -262,6 +292,7 @@ type AppStorage = {
     readonly get: (group: AppGroup, name: string) => Promise<Uint8Array | undefined>;
     readonly put: (group: AppGroup, name: string, bytes: Uint8Array) => Promise<void>;
     readonly delete: (group: AppGroup, name: string) => Promise<void>;
+    readonly list: (group: AppGroup) => Promise<ReadonlyArray<string>>;
     readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
 };
 
@@ -273,6 +304,10 @@ type AssetChange = {
     readonly symbol?: string;
     readonly verified: boolean;
 };
+
+export { Bank }
+
+export { Banks }
 
 // @public
 type BatchRecord = {
@@ -362,6 +397,14 @@ type BrowserOrigin = {
     readonly kind: "browser";
     readonly origin: string;
 };
+
+export { Card }
+
+export { CardCurrency }
+
+export { CardOperation }
+
+export { CardState }
 
 // @public (undocumented)
 type ChainApis = ReturnType<typeof chains>;
@@ -546,6 +589,12 @@ type ControllerOptions<S> = {
     readonly defaultState: () => S;
 };
 
+export { Countries }
+
+export { CountryCities }
+
+export { Currency }
+
 // @public (undocumented)
 type DappOrigin = BrowserOrigin | WalletConnectOrigin;
 
@@ -600,6 +649,8 @@ type EvmSignInput = {
     readonly nonce?: number;
 };
 
+export { ExchangeState }
+
 // @public
 type FeeModel =
 /** Nothing beyond gas: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
@@ -621,7 +672,7 @@ type FeeModel =
 };
 
 // @public (undocumented)
-export function fiat24(): AppDefinition<"fiat24", Fiat24App>;
+export function fiat24(config?: Fiat24Config): AppDefinition<"fiat24", Fiat24App>;
 
 // @public
 export const FIAT24_POLL_MS = 15000;
@@ -646,6 +697,9 @@ export type Fiat24App = {
     readonly account: (group: AppGroup) => Promise<Fiat24AccountState>;
     readonly live: (group: AppGroup) => Fiat24LiveView;
     readonly setVisible: (visible: boolean) => void;
+    readonly flows: Fiat24Flows;
+    readonly session: (group: AppGroup) => Fiat24SecuredReads;
+    readonly api: Fiat24PublicReads;
 };
 
 // @public (undocumented)
@@ -662,8 +716,20 @@ export class Fiat24AppError extends Error {
 export type Fiat24AppErrorCategory =
 /** The vault is locked — the group address cannot be resolved; nothing was read. */
 "unlock-required" |
+/** The group's app status is not `enabled`. */
+"not-enabled" |
+/** The call needs the group's owned live Fiat24 account and it has none. */
+"no-account" |
+/** No `api.fiat24.com` fetch was injected — API-backed features are off. */
+"api-unavailable" |
 /** An enablement flow is already running for the group — wait or cancel it. */
 "busy" |
+/** The jurisdiction allows only winding positions down — no new exposure. */
+"close-only" |
+/** A flow's transaction is still `sending`/`submitted`/`unknown` — no start or discard. */
+"flow-unresolved" |
+/** The flow id is neither persisted nor an in-memory draft. */
+"unknown-flow" |
 /** The read could not be completed (endpoint down, malformed answer) — a retry may succeed. */
 "unavailable" |
 /** A caller input fails validation before any request. */
@@ -674,7 +740,66 @@ export type Fiat24AppErrorCategory =
 */
 "protocol";
 
+// @public
+export type Fiat24Config = {
+    readonly fetch?: typeof globalThis.fetch;
+};
+
 export { Fiat24ErrorCode }
+
+// @public (undocumented)
+export type Fiat24Flow = {
+    readonly id: string;
+    readonly state: FlowState | PayoutDraft;
+    readonly refusal?: Fiat24Refusal;
+};
+
+// @public (undocumented)
+export type Fiat24FlowInput = {
+    readonly flow: "transfer";
+    readonly currency: Currency;
+    readonly amount: bigint;
+    readonly to: Recipient;
+} | {
+    readonly flow: "exchange";
+    readonly side: "exact-in" | "exact-out";
+    readonly from: Currency;
+    readonly to: Currency;
+    readonly amount: bigint;
+} | {
+    readonly flow: "payout";
+    readonly currency: PayoutCurrency;
+    readonly amount: bigint;
+    readonly target: PayoutTarget;
+} | {
+    readonly flow: "top-up";
+    readonly output: Currency;
+    readonly usdcAmount: bigint;
+} | {
+    readonly flow: "onboarding";
+    readonly tokenId: bigint;
+    readonly payment: "f24" | "eth";
+} | {
+    readonly flow: "card-setup";
+    readonly cap: {
+        readonly currency: Currency;
+        readonly amount: bigint;
+    };
+} | {
+    readonly flow: "card";
+    readonly operation: CardOperation;
+};
+
+// @public (undocumented)
+export type Fiat24Flows = {
+    readonly list: (group: AppGroup) => Promise<ReadonlyArray<Fiat24Flow>>;
+    readonly start: (group: AppGroup, input: Fiat24FlowInput) => Promise<Fiat24Flow>;
+    readonly advance: (group: AppGroup, id: string) => Promise<Fiat24Flow>;
+    readonly discard: (group: AppGroup, id: string) => Promise<void>;
+    readonly payoutSettlement: (group: AppGroup, id: string) => Promise<PayoutSettlement & {
+        readonly txid: string;
+    }>;
+};
 
 // @public
 export type Fiat24LiveState = {
@@ -693,6 +818,45 @@ export type Fiat24LiveView = {
     readonly subscribe: (listener: (state: Fiat24LiveState) => void) => () => void;
     readonly close: () => Promise<void>;
 };
+
+// @public
+export type Fiat24PublicReads = {
+    readonly rates: () => Promise<Readonly<Partial<Record<RatePair, Rate>>>>;
+    readonly paymentPurposes: () => Promise<ReadonlyArray<PaymentPurpose>>;
+    readonly countries: () => Promise<Countries>;
+    readonly countryCities: () => Promise<CountryCities>;
+    readonly banks: () => Promise<Banks>;
+    readonly bankByIban: (iban: string) => Promise<Bank>;
+    readonly kycUrl: (walletProviderId?: bigint) => string;
+};
+
+// @public
+export type Fiat24Refusal =
+/** The user rejected the request. */
+"rejected" |
+/** The request's TTL elapsed before approval. */
+"expired" |
+/** The vault locked or the account group changed while the request was open. */
+"invalidated" |
+/** The request failed before the `signed` stage — nothing was broadcast. */
+"failed-before-signing" |
+/** The sender's next free nonce differs from the nonce the SDK chose. */
+"nonce-conflict" |
+/** `prepare` threw for another reason — nothing was shown. */
+"prepare-failed" |
+/** The call itself fails validation — no request was opened. */
+"invalid-call";
+
+// @public
+export type Fiat24SecuredReads = {
+    readonly profile: () => Promise<Profile>;
+    readonly cards: () => Promise<ReadonlyArray<Card>>;
+    readonly cardDisplayToken: (externalId: string) => Promise<string>;
+    readonly transactions: (query: TransactionQuery) => Promise<TransactionPage>;
+    readonly end: () => void;
+};
+
+export { FlowState }
 
 // @public
 type GasPricing =
@@ -751,6 +915,8 @@ type JupiterSwapQuote = {
     readonly lookupTables: ReadonlyArray<string>;
     readonly fetchedAt: number;
 };
+
+export { KycStatus }
 
 // @public
 type LightningInvoiceDisplay = {
@@ -828,6 +994,8 @@ type NostrSignResult = {
     readonly event: Event_2;
 };
 
+export { OnboardingState }
+
 // @public (undocumented)
 type Options$1 = {
     readonly fetch: typeof globalThis.fetch;
@@ -896,6 +1064,18 @@ type PaymentOption = {
     readonly kind: "bitcoin";
     readonly address: string;
 };
+
+export { PaymentPurpose }
+
+export { PayoutCurrency }
+
+export { PayoutDraft }
+
+export { PayoutSettlement }
+
+export { PayoutState }
+
+export { PayoutTarget }
 
 // @public (undocumented)
 type PayParams = {
@@ -1036,11 +1216,19 @@ type PreparedZap = {
 // @public (undocumented)
 type PrepareParams = Omit<SendParams, "verify">;
 
+export { Profile }
+
 // @public
 type PublicStore = {
     readonly get: (key: string) => Promise<Uint8Array | undefined>;
     readonly put: (key: string, bytes: Uint8Array) => Promise<void>;
 };
+
+export { Rate }
+
+export { RatePair }
+
+export { Recipient }
 
 // @public
 type RequestAcknowledgement = {
@@ -1551,6 +1739,8 @@ type TokenWatchResult = {
     readonly kind: "token.watch";
 };
 
+export { TopUpState }
+
 // @public (undocumented)
 type TrackedTransaction = {
     readonly id: string;
@@ -1667,6 +1857,12 @@ class TransactionController extends Controller<TransactionControllerState> {
 type TransactionControllerState = {
     readonly txs: Record<string, TrackedTransaction>;
 };
+
+export { TransactionPage }
+
+export { TransactionQuery }
+
+export { TransferState }
 
 // @public
 const TRON_INDEXER_PATHS: {
@@ -2057,6 +2253,12 @@ type TxBlock = {
     readonly hash?: string;
     readonly height: number;
 };
+
+export { TxMismatch }
+
+export { TxPhase }
+
+export { TxRecord }
 
 // @public (undocumented)
 type TxState = "draft" | "signed" | "submitted" | "pending" | "confirmed" | "failed" | "rejected" | "dropped" | "replaced";

@@ -1,4 +1,4 @@
-import type { Fiat24ErrorCode } from "@qntx/fiat24";
+import type { Fiat24ErrorCode } from "@qntx/fiat24/core";
 /**
  * Live Fiat24 account views: one poller per open view re-reads `account(group)` every
  * {@link FIAT24_POLL_MS} on the injected one-shot timer — the next run arms only after the read

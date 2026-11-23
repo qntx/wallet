@@ -31,7 +31,16 @@ const guard = async (flow: AppFlow, body: () => Promise<void>): Promise<void> =>
   }
 };
 
-export function createFiat24Enable(options: { readonly storage: AppStorage }): AppProvider {
+export function createFiat24Enable(options: {
+  readonly storage: AppStorage;
+  /** Disable cleanup — ends the group's session, drops its drafts, rejects its open requests. */
+  readonly onDisable: (group: AppGroup) => void;
+  /**
+   * The group's reconcile pass — `reconcile` runs per group only after init opened the store, so
+   * this is the earliest point persisted flows can be read.
+   */
+  readonly onEnabled: (group: AppGroup) => void;
+}): AppProvider {
   const enabled = async (group: AppGroup): Promise<boolean> =>
     (await options.storage.get(group, RECORD)) !== undefined;
 
@@ -61,6 +70,9 @@ export function createFiat24Enable(options: { readonly storage: AppStorage }): A
         throw error;
       }
       flow.write({ status: hasRecord ? "enabled" : "disabled", error: undefined });
+      if (hasRecord) {
+        options.onEnabled(group);
+      }
     },
     enable: async (group, flow) => guard(flow, async () => enable(group, flow)),
     /* There is nothing to rotate — `renew` is exactly `enable`. */
@@ -68,6 +80,7 @@ export function createFiat24Enable(options: { readonly storage: AppStorage }): A
     disable: async (group, _options, flow) =>
       guard(flow, async () => {
         await options.storage.delete(group, RECORD);
+        options.onDisable(group);
         flow.write({ status: "disabled", error: undefined });
       }),
     cancel: async (_group, flow) => {

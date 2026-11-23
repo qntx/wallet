@@ -12,13 +12,13 @@
  * data, hashes, grants or signatures ever enter an error message, `opened`/`refused` or the
  * returned values beyond what the SDK contract itself returns.
  */
-import { bytesToHex } from "@noble/hashes/utils.js";
-import { isAddressEqual, isHash } from "viem";
+import { bytesToHex, isAddressEqual, isHash } from "viem";
 import type { Address, Hash, Hex } from "viem";
 
-import { Fiat24Error, arbitrum } from "@qntx/fiat24";
-import type { Fiat24SessionGrant, Fiat24Signer, Fiat24TransactionRequest } from "@qntx/fiat24";
 import { sessionLabel, sessionMessage } from "@qntx/fiat24/api";
+import { Fiat24Error } from "@qntx/fiat24/core";
+import type { Fiat24SessionGrant, Fiat24Signer, Fiat24TransactionRequest } from "@qntx/fiat24/core";
+import { arbitrum } from "@qntx/fiat24/deployments";
 import { fiat24SessionMessage } from "@qntx/wallet-chains/evm";
 
 import { NonceConflictError, RequestEndedError } from "../spi.ts";
@@ -229,7 +229,7 @@ export const createFiat24Signer = (options: {
       throw error;
     }
     if (isSessionOutcome(outcome)) {
-      return `0x${bytesToHex(outcome.signature)}`;
+      return bytesToHex(outcome.signature);
     }
     throw new Error("the request ended without a signature");
   };

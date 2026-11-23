@@ -305,4 +305,29 @@ describe("fiat24 rpc corroboration", () => {
     expect(text).not.toContain("0xaaaa");
     expect(text).not.toContain("0xbbbb");
   });
+
+  it("refuses a non-quantity count answer as malformed, not a disagreement", async () => {
+    const { client } = rig(value("not-hex"), value("0x9"));
+    await expect(
+      request(client, { method: "eth_getTransactionCount", params: ["0x1", "pending"] }),
+    ).rejects.toThrow("malformed result");
+  });
+
+  it("eth_getLogs refuses a non-array answer and disagrees on a non-object entry", async () => {
+    const call = {
+      method: "eth_getLogs",
+      params: [{ fromBlock: "0x60", toBlock: BLOCK, topics: ["0xaa"] }],
+    };
+    const junk = rig(value("junk"), value("junk"));
+    await expect(request(junk.client, call)).rejects.toThrow("malformed result");
+    const notObject = rig(value([log()]), value(["0xdead"]));
+    await expect(request(notObject.client, call)).rejects.toThrow("disagree");
+  });
+
+  it("eth_getTransactionByHash disagrees on a hex-field difference", async () => {
+    const { client } = rig(value(tx()), value(tx({ hash: "0xde" })));
+    await expect(
+      request(client, { method: "eth_getTransactionByHash", params: ["0xcd"] }),
+    ).rejects.toThrow("disagree");
+  });
 });

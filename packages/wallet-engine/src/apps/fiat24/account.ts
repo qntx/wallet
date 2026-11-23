@@ -7,8 +7,8 @@ import type { Client } from "viem";
  * error: writes must fail closed while the deployment disagrees with the pin. Every other SDK
  * failure maps through `fromSdk` — fixed messages, no `cause`, the closed `code` carried.
  */
-import { isFiat24Error } from "@qntx/fiat24";
-import type { AccountStatus } from "@qntx/fiat24";
+import { isFiat24Error } from "@qntx/fiat24/core";
+import type { AccountStatus } from "@qntx/fiat24/core";
 import { loadAccount } from "@qntx/fiat24/flows";
 import type { AccountView } from "@qntx/fiat24/flows";
 

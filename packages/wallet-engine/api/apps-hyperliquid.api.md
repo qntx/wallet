@@ -313,6 +313,7 @@ type AppStorage = {
     readonly get: (group: AppGroup, name: string) => Promise<Uint8Array | undefined>;
     readonly put: (group: AppGroup, name: string, bytes: Uint8Array) => Promise<void>;
     readonly delete: (group: AppGroup, name: string) => Promise<void>;
+    readonly list: (group: AppGroup) => Promise<ReadonlyArray<string>>;
     readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
 };
 

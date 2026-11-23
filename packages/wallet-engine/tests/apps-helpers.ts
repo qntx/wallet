@@ -494,8 +494,8 @@ type WorldGroups = {
 export type Arb1Rpc = (body: { readonly method: string; readonly params?: unknown }) => unknown;
 
 /** A JSON-RPC error answer — `arb1Error(…)` makes the endpoint refuse the call instead of answering. */
-export const arb1Error = (code: number, message: string) =>
-  ({ rpcError: { code, message } }) as const;
+export const arb1Error = (code: number, message: string, data?: string) =>
+  ({ rpcError: { code, message, ...(data === undefined ? {} : { data }) } }) as const;
 
 const isArb1Error = (answer: unknown): answer is ReturnType<typeof arb1Error> =>
   typeof answer === "object" && answer !== null && "rpcError" in answer;
@@ -546,8 +546,8 @@ export const world = async (
     polyCode?: PolyChain["code"];
     /** `false` omits the Hyperliquid lane entirely (Polymarket-only worlds). */
     hyperliquid?: AppsHyperliquidConfig | false;
-    /** Register the Fiat24 lane (definition takes no config). */
-    fiat24?: boolean;
+    /** Register the Fiat24 lane — `true` for no api fetch, or the `fiat24()` config. */
+    fiat24?: boolean | Parameters<typeof fiat24App>[0];
     /**
      * JSON-RPC answers for `eip155:42161` — required when the Fiat24 lane reads the chain; without
      * it any Arbitrum One call throws in the fetch shim.
@@ -560,6 +560,8 @@ export const world = async (
     fetch?: typeof globalThis.fetch;
     /** A caller-anchored clock — Polymarket's kernel-signed L2 ops need real-time alignment. */
     timers?: ReturnType<typeof manualTimer>;
+    /** Request/record ids — a counter source when a test must tell two requests apart. */
+    random?: (length: number) => Uint8Array;
     /**
      * Wraps the real `requests` handed to `createApps` — a capture shim for the typed-data
      * documents the flows prepare (approvals still go through `w.requests`).
@@ -621,7 +623,7 @@ export const world = async (
       await Promise.resolve();
       return createMemoryEngineStore();
     },
-    random: RANDOM,
+    random: options.random ?? RANDOM,
     setTimer: timers.setTimer,
     now: () => timers.time,
     logger,
@@ -657,7 +659,7 @@ export const world = async (
       throw new Error("unused");
     },
     fetch,
-    random: RANDOM,
+    random: options.random ?? RANDOM,
     now: () => timers.time,
     setTimer: timers.setTimer,
     logger,
@@ -717,7 +719,9 @@ export const world = async (
           ),
         ]),
     ...(options.polymarket === undefined ? [] : [polymarketApp(options.polymarket)]),
-    ...(options.fiat24 === true ? [fiat24App()] : []),
+    ...(options.fiat24 === undefined || options.fiat24 === false
+      ? []
+      : [fiat24App(options.fiat24 === true ? {} : options.fiat24)]),
   ];
   const created = createApps({
     wallet,
@@ -731,7 +735,7 @@ export const world = async (
       return timers.time;
     },
     setTimer: timers.setTimer,
-    random: RANDOM,
+    random: options.random ?? RANDOM,
     logger,
     openStore,
     /* A socket that never opens — these tests exercise HTTP flows; live views are covered in

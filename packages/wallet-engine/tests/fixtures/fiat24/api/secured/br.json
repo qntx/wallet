@@ -1,0 +1,75 @@
+{
+  "source": "synthetic",
+  "doc": "Part 2 §1 Get Client Profile",
+  "body": {
+    "tokenId": 690333,
+    "br": "PII-SENTINEL-1",
+    "iban": "PII-SENTINEL-2",
+    "email": "PII-SENTINEL-3",
+    "mobile": "PII-SENTINEL-4",
+    "debitCard": "MSTD",
+    "isCardEligible": true,
+    "cards": [],
+    "cardActivation": {
+      "amount": 10,
+      "currency": "EUR"
+    },
+    "street": "PII-SENTINEL-5",
+    "postalCode": "PII-SENTINEL-6",
+    "city": "PII-SENTINEL-7",
+    "country": "ESP",
+    "limits": {
+      "restartDate": "16.09.2023 - 9:04",
+      "restartDateMs": 1725523620885,
+      "used": 27.88,
+      "available": 99972.12,
+      "max": 100000.0
+    },
+    "contacts": {
+      "CHF": [
+        {
+          "id": "EC-0000001",
+          "name": "PII-SENTINEL-8",
+          "account": "•••• 0001",
+          "fullAccount": "PII-SENTINEL-9",
+          "bank": "PostFinance",
+          "country": "CH",
+          "lastPaymentDate": 1700093537000
+        }
+      ],
+      "EUR": [
+        {
+          "id": "EC-0000002",
+          "name": "PII-SENTINEL-10",
+          "account": "•••• 1234",
+          "fullAccount": "PII-SENTINEL-11",
+          "bank": "PostFinance",
+          "country": "ES",
+          "lastPaymentDate": 1700093537000
+        }
+      ]
+    },
+    "depositBank": {
+      "CHF": {
+        "account": "PII-SENTINEL-12",
+        "bank": "SR Saphirstein AG",
+        "BIC": "SAHHCHZ2",
+        "payee": "PII-SENTINEL-13",
+        "city": "PII-SENTINEL-14",
+        "street": "PII-SENTINEL-15",
+        "postalCode": "PII-SENTINEL-16",
+        "country": "ESP"
+      },
+      "EUR": {
+        "account": "PII-SENTINEL-17",
+        "bank": "SR Saphirstein AG",
+        "BIC": "SAHHCHZ2",
+        "payee": "PII-SENTINEL-18",
+        "city": "PII-SENTINEL-19",
+        "street": "PII-SENTINEL-20",
+        "postalCode": "PII-SENTINEL-21",
+        "country": "ESP"
+      }
+    }
+  }
+}
