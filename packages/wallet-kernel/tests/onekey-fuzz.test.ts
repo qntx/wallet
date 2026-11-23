@@ -9,7 +9,13 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
 import { decodeMessage, encodeMessage } from "../src/modules/onekey/protocol/frame.ts";
-import { ButtonRequest, Failure, Features } from "../src/modules/onekey/protocol/messages.ts";
+import {
+  ButtonRequest,
+  Failure,
+  Features,
+  PublicKey,
+  SolanaAddress,
+} from "../src/modules/onekey/protocol/messages.ts";
 import { decode, encode } from "../src/modules/onekey/protocol/proto.ts";
 import type { MessageDef } from "../src/modules/onekey/protocol/proto.ts";
 
@@ -65,6 +71,8 @@ const DECODERS: ReadonlyArray<readonly [string, MessageDef]> = [
   ["Features", Features],
   ["Failure", Failure],
   ["ButtonRequest", ButtonRequest],
+  ["PublicKey", PublicKey],
+  ["SolanaAddress", SolanaAddress],
 ];
 
 /** Complements the byte at `at % length` — every bit flip must change the decode. */

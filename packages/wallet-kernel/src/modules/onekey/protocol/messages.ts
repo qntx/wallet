@@ -101,8 +101,9 @@ export const BixinPinInputOnDevice: MessageDef<BixinPinInputOnDeviceFields> = de
   {},
 );
 
-// firmware-pro/classic1s common/protob/messages-common.proto PassphraseRequest — the client
-// decodes existsAttachPinUser so a request it cannot satisfy is a device-fault, not a silent ack.
+// firmware-pro/classic1s common/protob/messages-common.proto PassphraseRequest — decoded (not
+// skipped) so a structurally malformed request is still a device-fault; attach-pin requests get
+// the same on-device ack as any other.
 export type PassphraseRequestFields = {
   existsAttachPinUser: Field<"bool", 8000, "optional">;
 };
@@ -115,4 +116,162 @@ export const PassphraseRequest: MessageDef<PassphraseRequestFields> = defineMess
 export type PassphraseAckFields = { onDevice: Field<"bool", 3, "optional"> };
 export const PassphraseAck: MessageDef<PassphraseAckFields> = defineMessage(42, {
   onDevice: { no: 3, kind: "bool", rule: "optional" },
+});
+
+type MsgField<N extends number, R extends string, M extends MessageDef> = {
+  readonly no: N;
+  readonly kind: "message";
+  readonly rule: R;
+  readonly message: M;
+};
+
+// firmware-pro/classic1s common/protob/messages-common.proto HDNodeType — a nested BIP-32 node,
+// not a wire message; the -1 type id is a sentinel that is never serialized.
+export type HDNodeFields = {
+  depth: Field<"uint32", 1, "required">;
+  fingerprint: Field<"uint32", 2, "required">;
+  childNum: Field<"uint32", 3, "required">;
+  chainCode: Field<"bytes", 4, "required">;
+  privateKey: Field<"bytes", 5, "optional">;
+  publicKey: Field<"bytes", 6, "required">;
+};
+export const HDNodeType: MessageDef<HDNodeFields> = {
+  typeId: -1,
+  fields: {
+    depth: { no: 1, kind: "uint32", rule: "required" },
+    fingerprint: { no: 2, kind: "uint32", rule: "required" },
+    childNum: { no: 3, kind: "uint32", rule: "required" },
+    chainCode: { no: 4, kind: "bytes", rule: "required" },
+    privateKey: { no: 5, kind: "bytes", rule: "optional" },
+    publicKey: { no: 6, kind: "bytes", rule: "required" },
+  },
+};
+
+// firmware-pro/classic1s common/protob/messages-bitcoin.proto GetPublicKey
+export type GetPublicKeyFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  showDisplay: Field<"bool", 3, "optional">;
+  coinName: Field<"string", 4, "optional">;
+  scriptType: Field<"enum", 5, "optional">;
+};
+export const GetPublicKey: MessageDef<GetPublicKeyFields> = defineMessage(11, {
+  addressN: { no: 1, kind: "uint32", rule: "repeated" },
+  showDisplay: { no: 3, kind: "bool", rule: "optional" },
+  coinName: { no: 4, kind: "string", rule: "optional" },
+  scriptType: { no: 5, kind: "enum", rule: "optional" },
+});
+
+// firmware-pro/classic1s common/protob/messages-bitcoin.proto PublicKey
+export type PublicKeyFields = {
+  node: MsgField<1, "required", typeof HDNodeType>;
+  xpub: Field<"string", 2, "required">;
+  rootFingerprint: Field<"uint32", 3, "optional">;
+};
+export const PublicKey: MessageDef<PublicKeyFields> = defineMessage(12, {
+  node: { no: 1, kind: "message", rule: "required", message: HDNodeType },
+  xpub: { no: 2, kind: "string", rule: "required" },
+  rootFingerprint: { no: 3, kind: "uint32", rule: "optional" },
+});
+
+// firmware-pro/classic1s common/protob/messages-bitcoin.proto GetAddress
+export type GetAddressFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  coinName: Field<"string", 2, "optional">;
+  showDisplay: Field<"bool", 3, "optional">;
+  scriptType: Field<"enum", 5, "optional">;
+};
+export const GetAddress: MessageDef<GetAddressFields> = defineMessage(29, {
+  addressN: { no: 1, kind: "uint32", rule: "repeated" },
+  coinName: { no: 2, kind: "string", rule: "optional" },
+  showDisplay: { no: 3, kind: "bool", rule: "optional" },
+  scriptType: { no: 5, kind: "enum", rule: "optional" },
+});
+
+// firmware-pro/classic1s common/protob/messages-bitcoin.proto Address
+export type AddressFields = { address: Field<"string", 1, "required"> };
+export const Address: MessageDef<AddressFields> = defineMessage(30, {
+  address: { no: 1, kind: "string", rule: "required" },
+});
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto EthereumGetPublicKeyOneKey
+export type EthereumGetPublicKeyOneKeyFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  showDisplay: Field<"bool", 2, "optional">;
+  chainId: Field<"uint64", 3, "optional">;
+};
+export const EthereumGetPublicKeyOneKey: MessageDef<EthereumGetPublicKeyOneKeyFields> =
+  defineMessage(20_100, {
+    addressN: { no: 1, kind: "uint32", rule: "repeated" },
+    showDisplay: { no: 2, kind: "bool", rule: "optional" },
+    chainId: { no: 3, kind: "uint64", rule: "optional" },
+  });
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto EthereumPublicKeyOneKey
+export type EthereumPublicKeyOneKeyFields = {
+  node: MsgField<1, "required", typeof HDNodeType>;
+  xpub: Field<"string", 2, "required">;
+};
+export const EthereumPublicKeyOneKey: MessageDef<EthereumPublicKeyOneKeyFields> = defineMessage(
+  20_101,
+  {
+    node: { no: 1, kind: "message", rule: "required", message: HDNodeType },
+    xpub: { no: 2, kind: "string", rule: "required" },
+  },
+);
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto EthereumGetAddressOneKey
+export type EthereumGetAddressOneKeyFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  showDisplay: Field<"bool", 2, "optional">;
+  chainId: Field<"uint64", 3, "optional">;
+};
+export const EthereumGetAddressOneKey: MessageDef<EthereumGetAddressOneKeyFields> = defineMessage(
+  20_102,
+  {
+    addressN: { no: 1, kind: "uint32", rule: "repeated" },
+    showDisplay: { no: 2, kind: "bool", rule: "optional" },
+    chainId: { no: 3, kind: "uint64", rule: "optional" },
+  },
+);
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto EthereumAddressOneKey
+export type EthereumAddressOneKeyFields = { address: Field<"string", 2, "optional"> };
+export const EthereumAddressOneKey: MessageDef<EthereumAddressOneKeyFields> = defineMessage(
+  20_103,
+  {
+    address: { no: 2, kind: "string", rule: "optional" },
+  },
+);
+
+// firmware-pro/classic1s common/protob/messages-solana.proto SolanaGetAddress
+export type SolanaGetAddressFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  showDisplay: Field<"bool", 2, "optional">;
+};
+export const SolanaGetAddress: MessageDef<SolanaGetAddressFields> = defineMessage(10_100, {
+  addressN: { no: 1, kind: "uint32", rule: "repeated" },
+  showDisplay: { no: 2, kind: "bool", rule: "optional" },
+});
+
+// firmware-pro/classic1s common/protob/messages-solana.proto SolanaAddress
+export type SolanaAddressFields = { address: Field<"string", 1, "required"> };
+export const SolanaAddress: MessageDef<SolanaAddressFields> = defineMessage(10_101, {
+  address: { no: 1, kind: "string", rule: "required" },
+});
+
+// firmware-pro/classic1s common/protob/messages-tron.proto TronGetAddress
+export type TronGetAddressFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  showDisplay: Field<"bool", 2, "optional">;
+};
+export const TronGetAddress: MessageDef<TronGetAddressFields> = defineMessage(10_501, {
+  addressN: { no: 1, kind: "uint32", rule: "repeated" },
+  showDisplay: { no: 2, kind: "bool", rule: "optional" },
+});
+
+// firmware-pro/classic1s common/protob/messages-tron.proto TronAddress — optional in the schema,
+// so a missing field surfaces as a device-fault in keys.ts rather than a decode failure.
+export type TronAddressFields = { address: Field<"string", 1, "optional"> };
+export const TronAddress: MessageDef<TronAddressFields> = defineMessage(10_502, {
+  address: { no: 1, kind: "string", rule: "optional" },
 });

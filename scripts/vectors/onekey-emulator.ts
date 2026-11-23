@@ -21,8 +21,15 @@ import {
   decodeMessage,
   encodeMessage,
 } from "../../packages/wallet-kernel/src/modules/onekey/protocol/frame.ts";
+import {
+  address,
+  evmPublicNode,
+  publicNode,
+  solanaPublicKey,
+} from "../../packages/wallet-kernel/src/modules/onekey/protocol/keys.ts";
 import { Initialize } from "../../packages/wallet-kernel/src/modules/onekey/protocol/messages.ts";
 import { encode } from "../../packages/wallet-kernel/src/modules/onekey/protocol/proto.ts";
+import type { Exchange } from "../../packages/wallet-kernel/src/modules/onekey/protocol/session.ts";
 import {
   LoadDevice,
   TEST_MNEMONIC,
@@ -93,6 +100,86 @@ if (last.type !== 17) {
 }
 
 sessions.push(uninitialized, load, initialized);
+
+// Layer 2: public nodes and addresses through the keys.ts API. Every exchange is recorded; a
+// ButtonAck request (message type 27) means the device is about to show a confirmation dialog,
+// so a DebugLink YES is pressed while that exchange waits for the follow-up response.
+const H = 0x80_00_00_00;
+const recording = (session: { exchanges: Step[] }): Exchange => {
+  return async (data: Uint8Array): Promise<Uint8Array> => {
+    let presser: ReturnType<typeof setInterval> | undefined;
+    if (decodeMessage(data).type === 27) {
+      // The confirmation dialog takes a moment to appear after the ack; keep pressing YES until
+      // the device answers — presses on the idle screen are ignored.
+      presser = setInterval(() => {
+        void debugYes(HOST, DEBUG_PORT);
+      }, 200);
+    }
+    try {
+      const response = await exchange(data);
+      session.exchanges.push({ request: bytesToHex(data), response: bytesToHex(response) });
+      return response;
+    } finally {
+      if (presser !== undefined) {
+        clearInterval(presser);
+      }
+    }
+  };
+};
+
+for (const [name, path, scriptType] of [
+  ["node-bip44", [H + 44, H, H], 0],
+  ["node-bip49", [H + 49, H, H], 4],
+  ["node-bip84", [H + 84, H, H], 3],
+  ["node-bip86", [H + 86, H, H], 5],
+  ["node-tron", [H + 44, H + 195, H], undefined],
+] as const) {
+  const session = { name, exchanges: [] as Step[] };
+  // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+  const node = await publicNode(
+    recording(session),
+    path,
+    scriptType === undefined ? undefined : { scriptType },
+  );
+  sessions.push(session);
+  console.log(
+    `${name}: pub=${bytesToHex(node.publicKey)} chain=${bytesToHex(node.chainCode)} ` +
+      `parent=${bytesToHex(node.parent)} root=${node.rootFingerprint === undefined ? "none" : bytesToHex(node.rootFingerprint)}`,
+  );
+}
+{
+  const session = { name: "node-evm", exchanges: [] as Step[] };
+  const node = await evmPublicNode(recording(session), [H + 44, H + 60, H]);
+  sessions.push(session);
+  console.log(
+    `node-evm: pub=${bytesToHex(node.publicKey)} chain=${bytesToHex(node.chainCode)} ` +
+      `parent=${bytesToHex(node.parent)}`,
+  );
+}
+// showDisplay is false: on the Classic 1S emulator a shown address runs a multi-screen loop on
+// protectWaitKey/keyScan (SDL arrow keys), which DebugLinkDecision cannot service — only the
+// initial ButtonRequest round honours it — so a display call can never complete headlessly.
+for (const [name, family, path, extra] of [
+  ["addr-bip84", "bitcoin", [H + 84, H, H, 0, 0], { scriptType: 3 }],
+  ["addr-evm", "evm", [H + 44, H + 60, H, 0, 0], { chainId: 1n }],
+  ["addr-tron", "tron", [H + 44, H + 195, H, 0, 0], {}],
+] as const) {
+  const session = { name, exchanges: [] as Step[] };
+  // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+  const value = await address(recording(session), family, path, { showDisplay: false, ...extra });
+  sessions.push(session);
+  console.log(`${name}: ${value}`);
+}
+for (const [name, path] of [
+  ["sol-account0", [H + 44, H + 501, H, H]],
+  ["sol-account1", [H + 44, H + 501, H + 1, H]],
+] as const) {
+  const session = { name, exchanges: [] as Step[] };
+  // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+  const key = await solanaPublicKey(recording(session), path, false);
+  sessions.push(session);
+  console.log(`${name}: pub=${bytesToHex(key)}`);
+}
 const transcript = {
   source: {
     repository: "https://github.com/OneKeyHQ/firmware-classic1s",

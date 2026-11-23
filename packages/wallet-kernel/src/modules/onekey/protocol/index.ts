@@ -10,6 +10,8 @@ export { OneKeyError } from "./errors.ts";
 export type { OneKeyErrorCode } from "./errors.ts";
 export { decodeMessage, encodeMessage, MAX_MESSAGE, REPORT_SIZE } from "./frame.ts";
 export type { Message } from "./frame.ts";
+export { address, evmPublicNode, publicNode, solanaPublicKey } from "./keys.ts";
+export type { AddressFamily, DeviceNode, PublicNode } from "./keys.ts";
 export {
   BixinPinInputOnDevice,
   ButtonAck,

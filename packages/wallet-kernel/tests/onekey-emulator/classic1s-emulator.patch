@@ -588,3 +588,25 @@ index 57f37d9..bc7d573 100644
  #endif
  
  #endif
+diff --git a/legacy/firmware/fsm.c b/legacy/firmware/fsm.c
+index 9cceb41..5812289 100644
+--- a/legacy/firmware/fsm.c
++++ b/legacy/firmware/fsm.c
+@@ -389,6 +389,7 @@ HDNode *fsm_getDerivedNode(const char *curve, const uint32_t *address_n,
+     return 0;
+   }
+   if (!address_n || address_n_count == 0) {
++    hdnode_fill_public_key(&node);
+     return &node;
+   }
+   if (hdnode_private_ckd_cached(&node, address_n, address_n_count,
+@@ -398,6 +399,9 @@ HDNode *fsm_getDerivedNode(const char *curve, const uint32_t *address_n,
+     layoutHome();
+     return 0;
+   }
++  // Match the SE derivation path, which returns the public key filled; without
++  // this the emulator hashed a zeroed public_key in address handlers.
++  hdnode_fill_public_key(&node);
+ #else
+   if (!config_genSessionSeed()) {
+     layoutHome();
