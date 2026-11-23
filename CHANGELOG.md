@@ -1144,6 +1144,10 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 
 ### Fixed
 
+- `@qntx/wallet-native`: the kernel bytecode is compiled with `-Xes6-block-scoping`. hermesc
+  leaves ES6 block scoping off by default, so on React Native a closure over a loop-scoped
+  `let`/`const` in kernel code saw the last iteration's value. The kernel now refuses to start in
+  a runtime without block scoping.
 - `@qntx/wallet-chains/evm`: native value sent with calldata is always an outflow; an unrecognised
   payable call, a payable token call and a contract creation decoded with no outflow (#224).
   Native amounts in typed data take the request network's symbol and decimals (Seaport no longer
