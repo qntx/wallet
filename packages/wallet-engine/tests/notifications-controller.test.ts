@@ -12,6 +12,8 @@ import { base64urlnopad } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 import { createStore } from "zustand/vanilla";
 
+import { WalletError } from "@qntx/wallet";
+
 import vectors from "../../../vectors/push.json" with { type: "json" };
 import type { AccountTreeState } from "../src/accounts/controller.ts";
 import { gatewayFetch, gatewaySession } from "../src/gateway/client.ts";
@@ -19,6 +21,7 @@ import { parseWith } from "../src/gateway/contract/endpoint.ts";
 import { PUSH_ID_DOMAIN, pushAad, pushEventInput } from "../src/gateway/contract/push-message.ts";
 import type { PushEventKind } from "../src/gateway/contract/push-message.ts";
 import { PUSH_AUTH_SCHEME, pushSubscriptionRequest } from "../src/gateway/contract/push.ts";
+import type { PushFamily } from "../src/gateway/contract/push.ts";
 import type { NetworkControllerState } from "../src/networks/controller.ts";
 import { NotificationsController } from "../src/notifications/controller.ts";
 import type { NotificationEvent, PushKeyStore } from "../src/notifications/controller.ts";
@@ -28,6 +31,7 @@ import type { TransactionControllerState } from "../src/transactions/controller.
 const TOKEN = "device-token-abc";
 const ADDRESS = "0x00000000000000000000000000000000aaBBccdd";
 const EVM = "eip155:1";
+const SOL = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const NOW0 = 1_700_000_000_000;
 const DAY = 86_400_000;
 
@@ -82,7 +86,10 @@ type Options = {
   readonly del?: "ok" | "fail";
   readonly token?: boolean;
   readonly served?: ReadonlyArray<string>;
-  readonly addresses?: ReadonlyArray<string>;
+  readonly addresses?:
+    | ReadonlyArray<string>
+    | ((walletId: string, family: PushFamily) => Promise<ReadonlyArray<string>>);
+  readonly walletIds?: ReadonlyArray<string>;
   readonly families?: ReadonlyArray<"evm" | "solana" | "bitcoin" | "tron">;
   readonly keys?: PushKeyStore;
   readonly now?: () => number;
@@ -98,10 +105,10 @@ const harness = (options: Options = {}) => {
   const served = options.served ?? [EVM];
   const families = options.families ?? ["evm" as const];
   const store = createMemoryEngineStore();
-  const enabledMap: Record<string, string[]> = { evm: [EVM] };
+  const enabledMap: Record<string, string[]> = { evm: [EVM], solana: [SOL] };
   const tree: AccountTreeState = {
     status: "ready",
-    wallets: [{ walletId: "w1", updatedAt: 0 }],
+    wallets: (options.walletIds ?? ["w1"]).map((walletId) => ({ walletId, updatedAt: 0 })),
     groups: {},
     selected: null,
     totals: {},
@@ -127,7 +134,10 @@ const harness = (options: Options = {}) => {
       }
       return Response.json(options.caps ?? { platforms: ["apns"], families });
     }
-    if (url.pathname === "/v1/push/evm/subscription" && init?.method === "PUT") {
+    const subscriptionPath = /^\/v1\/push\/(evm|solana|tron|bitcoin)\/subscription$/.test(
+      url.pathname,
+    );
+    if (subscriptionPath && init?.method === "PUT") {
       const parsed = parseWith(pushSubscriptionRequest, body);
       if (parsed === undefined) {
         return new Response("bad body", { status: 400 });
@@ -152,7 +162,7 @@ const harness = (options: Options = {}) => {
             : parsed.networks.filter((n) => served.includes(n));
       return Response.json({ id, networks, expiresAt: now + 30 * DAY });
     }
-    if (url.pathname === "/v1/push/evm/subscription" && init?.method === "DELETE") {
+    if (subscriptionPath && init?.method === "DELETE") {
       return options.del === "fail"
         ? new Response("err", { status: 500 })
         : new Response(null, { status: 204 });
@@ -203,7 +213,10 @@ const harness = (options: Options = {}) => {
       store: networksStore,
     },
     transactions: { store: txStore },
-    addresses: async () => Promise.resolve(options.addresses ?? [ADDRESS]),
+    addresses: async (walletId, family) =>
+      typeof options.addresses === "function"
+        ? options.addresses(walletId, family)
+        : Promise.resolve(options.addresses ?? [ADDRESS]),
     reconcile: async (event) => {
       reconciled.push(event);
       await Promise.resolve();
@@ -274,6 +287,58 @@ describe("NotificationsController", () => {
       { kind: "put", id: subscriptionIdOf(base64urlnopad.decode((put?.auth ?? "").slice(7))) },
     ]);
     expect(h.controller.getState().wallets["w1"]?.families["evm"]).toBe("active");
+  });
+
+  it("a device-required family reports typed status while every other wallet subscribes", async () => {
+    const h = harness({
+      walletIds: ["seed", "hw"],
+      families: ["evm", "solana"],
+      served: [EVM, SOL],
+      // oxlint-disable-next-line typescript/require-await -- the function throws for one lane
+      addresses: async (walletId, family) => {
+        if (walletId === "hw" && family === "solana") {
+          throw new WalletError("device-required", "the path lives on the device");
+        }
+        return [ADDRESS];
+      },
+    });
+    await h.controller.init();
+    await h.controller.enable("seed");
+    await h.controller.enable("hw");
+    await h.controller.setToken("apns", TOKEN);
+    await h.flush();
+    const { wallets } = h.controller.getState();
+    /* The hardware wallet's unpinned solana lane is typed; its evm lane and both of
+       the seed wallet's lanes still subscribed — the reconcile ran to completion. */
+    expect(wallets["hw"]?.families["solana"]).toBe("device-required");
+    expect(wallets["hw"]?.families["evm"]).toBe("active");
+    expect(wallets["seed"]?.families["evm"]).toBe("active");
+    expect(wallets["seed"]?.families["solana"]).toBe("active");
+    expect(puts(h)).toHaveLength(3);
+  });
+
+  it("a non-device address failure marks the family failed and reconciles on", async () => {
+    const h = harness({
+      walletIds: ["seed", "hw"],
+      families: ["evm", "solana"],
+      served: [EVM, SOL],
+      // oxlint-disable-next-line typescript/require-await -- the function throws for one lane
+      addresses: async (walletId, family) => {
+        if (walletId === "hw" && family === "solana") {
+          throw new Error("rpc down");
+        }
+        return [ADDRESS];
+      },
+    });
+    await h.controller.init();
+    await h.controller.enable("seed");
+    await h.controller.enable("hw");
+    await h.controller.setToken("apns", TOKEN);
+    await h.flush();
+    const { wallets } = h.controller.getState();
+    expect(wallets["hw"]?.families["solana"]).toBe("failed");
+    expect(wallets["seed"]?.families["solana"]).toBe("active");
+    expect(puts(h)).toHaveLength(3);
   });
 
   it("init sweeps host keys whose subscription row is gone", async () => {

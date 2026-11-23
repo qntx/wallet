@@ -989,7 +989,10 @@ Gateway (operators):
   weekly, are deleted when a wallet is disabled or removed, and stay active while the vault is
   locked. A submitted outgoing transaction of an opted-in wallet is registered so the gateway can
   report its settlement or on-chain failure. New `EngineOptions.pushKeys` (`PushKeyStore`) hands the
-  per-subscription payload keys to the host for its notification extension.
+  per-subscription payload keys to the host for its notification extension. A family whose
+  addresses need a hardware device that has not pinned that path reports `device-required` in the
+  per-wallet `NotificationStatus` instead of silently staying pending, and a failing family no
+  longer aborts the reconcile for the remaining wallets and families.
 - `@qntx/wallet-engine/push`: `openPush(message, keys)`, the dependency-light opener (only
   `@noble/ciphers` and `@scure/base`, no runtime globals) a notification extension or headless task
   bundles to decrypt a delivery; `vectors/push.json` (generated with WebCrypto by

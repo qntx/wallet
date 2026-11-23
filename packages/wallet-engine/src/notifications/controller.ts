@@ -14,6 +14,8 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import { base64urlnopad } from "@scure/base";
 import * as z from "zod/mini";
 
+import { WalletError } from "@qntx/wallet";
+
 import type { AccountTreeController } from "../accounts/controller.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
@@ -74,7 +76,7 @@ export type NotificationEvent = {
   };
 };
 
-export type NotificationStatus = "active" | "pending" | "failed";
+export type NotificationStatus = "active" | "pending" | "failed" | "device-required";
 
 export type NotificationsState = {
   readonly status: "locked" | "ready";
@@ -506,6 +508,7 @@ export class NotificationsController extends Controller<NotificationsState> {
       return;
     }
     const desired = new Map<string, { addresses: string[]; networks: string[] }>();
+    const familyErrors = new Map<string, NotificationStatus>();
     const { token } = this;
     if (token !== undefined && caps.platforms.includes(token.platform)) {
       const walletIds = new Set(
@@ -516,11 +519,28 @@ export class NotificationsController extends Controller<NotificationsState> {
           continue;
         }
         for (const family of caps.families) {
-          // oxlint-disable-next-line eslint/no-await-in-loop -- one family's addresses per await
-          const addresses = dedupe(await this.options.addresses(walletId, family)).slice(
-            0,
-            PUSH_ADDRESSES_MAX,
-          );
+          const subKey = `${walletId}:${family}`;
+          let addresses: string[];
+          try {
+            // oxlint-disable-next-line eslint/no-await-in-loop -- one family's addresses per await
+            addresses = dedupe(await this.options.addresses(walletId, family)).slice(
+              0,
+              PUSH_ADDRESSES_MAX,
+            );
+          } catch (error) {
+            if (!alive()) {
+              return;
+            }
+            /* A hardware family whose path the device has not pinned raises `device-required`;
+               record it per family and keep reconciling the rest. */
+            familyErrors.set(
+              subKey,
+              error instanceof WalletError && error.code === "device-required"
+                ? "device-required"
+                : "failed",
+            );
+            continue;
+          }
           if (!alive()) {
             return;
           }
@@ -574,6 +594,9 @@ export class NotificationsController extends Controller<NotificationsState> {
       }
     }
     this.statusBySub.clear();
+    for (const [key, status] of familyErrors) {
+      statuses.set(key, status);
+    }
     for (const [key, status] of statuses) {
       if (status === "active" || this.optedIn.has(key.slice(0, key.lastIndexOf(":")))) {
         this.statusBySub.set(key, status);

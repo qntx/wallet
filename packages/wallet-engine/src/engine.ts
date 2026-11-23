@@ -10,6 +10,7 @@ import type { StoreApi } from "zustand/vanilla";
 import type { Event } from "@qntx/nostr";
 import { createSparkClient } from "@qntx/spark";
 import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
+import { WalletError } from "@qntx/wallet";
 import type { KeysApi, Wallet } from "@qntx/wallet";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
 import {
@@ -960,7 +961,11 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       return "address" in account
         ? enabled.map((network) => ({ network, address: account.address }))
         : [];
-    } catch {
+    } catch (error) {
+      // Hardware groups without a pinned path need the device — surface it, don't swallow.
+      if (error instanceof WalletError && error.code === "device-required") {
+        throw error;
+      }
       return [];
     }
   };

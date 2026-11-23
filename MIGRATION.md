@@ -1778,7 +1778,9 @@ that does not opt in. Gateway operators deploy a new Durable Object class.
 2. **Register and opt in.** After unlock call `engine.notifications.setToken("apns" | "fcm",
    token)` whenever the platform hands you a token, then `enable(walletId)` for each wallet the user
    turns notifications on for. `disable(walletId)` and removing a wallet delete its subscriptions.
-   `engine.notifications.getState()` shows per-wallet, per-family `active` / `pending` / `failed`.
+   `engine.notifications.getState()` shows per-wallet, per-family `active` / `pending` /
+   `failed`, and `device-required` for a family whose addresses live on a hardware device that
+   has not pinned that path — other wallets and families keep subscribing normally.
 3. **Handle deliveries.** iOS: ship a Notification Service Extension; the alert carries
    `mutable-content: 1` and the message under `userInfo.qntx`. Open it with `openPush` from
    `@qntx/wallet-engine/push` (or a native AES-256-GCM port checked against `vectors/push.json`)
