@@ -8,7 +8,7 @@ import type {
   NullValue,
   RestoreWithPasskeyParams,
 } from "@qntx/wallet/protocol";
-import type { WalletInfo } from "@qntx/wallet/types";
+import type { VaultWalletInfo } from "@qntx/wallet/types";
 
 import { masterKey } from "../derive/hd.ts";
 import { walletIdOf } from "../derive/wallet-id.ts";
@@ -30,7 +30,7 @@ import type { StoredFactor, StoredRecord } from "../vault/store.ts";
 import {
   establishOps,
   factorHeader,
-  findRecord,
+  findWalletRecord,
   keystoreFactorRows,
   makeFactor,
   newFactorKek,
@@ -80,9 +80,9 @@ export async function walletMaterial(
 
 export function walletInfoOf(
   material: WalletMaterial,
-  backup: WalletInfo["backup"],
+  backup: VaultWalletInfo["backup"],
   createdAt: number,
-): WalletInfo {
+): VaultWalletInfo {
   return walletInfo({
     walletId: material.walletId,
     origin: material.origin,
@@ -106,7 +106,7 @@ export function walletRecord(
   ctx: KernelContext,
   dek: Secret,
   material: WalletMaterial,
-  backup: WalletInfo["backup"],
+  backup: VaultWalletInfo["backup"],
   createdAt: number,
 ): StoredRecord {
   const header = encodeHeader({
@@ -335,7 +335,7 @@ async function storedFactorsForPending(
 export async function confirmMnemonic(
   ctx: KernelContext,
   params: { draft: string; answers: ReadonlyArray<Uint8Array>; passphrase?: Uint8Array },
-): Promise<{ wallet: WalletInfo; session: string }> {
+): Promise<{ wallet: VaultWalletInfo; session: string }> {
   const passphrase =
     params.passphrase === undefined ? undefined : normalizePassphrase(params.passphrase);
   try {
@@ -351,7 +351,7 @@ async function confirmWithPassphrase(
   ctx: KernelContext,
   params: { draft: string; answers: ReadonlyArray<Uint8Array> },
   passphrase: Uint8Array | undefined,
-): Promise<{ wallet: WalletInfo; session: string }> {
+): Promise<{ wallet: VaultWalletInfo; session: string }> {
   const draft = ctx.session.getDraft(params.draft);
   const allMatch = draft.expected.every((expected, i) => {
     const answer = params.answers[i];
@@ -433,7 +433,7 @@ export async function importMnemonic(
   ctx: KernelContext,
   params: { mnemonic: Uint8Array; passphrase?: Uint8Array; factor?: Factor },
   requestSession: string | undefined,
-): Promise<{ wallet: WalletInfo; session: string }> {
+): Promise<{ wallet: VaultWalletInfo; session: string }> {
   return gated(
     ctx,
     params.factor,
@@ -544,7 +544,7 @@ export async function createWithPasskey(
   ctx: KernelContext,
   params: CreateWithPasskeyParams | RestoreWithPasskeyParams,
   requestSession: string | undefined,
-): Promise<{ wallet: WalletInfo; session: string }> {
+): Promise<{ wallet: VaultWalletInfo; session: string }> {
   if ((ctx.platform.passkey !== undefined) !== (params.ceremony === "kernel")) {
     throw new KernelError("unsupported", "this platform runs passkey ceremonies elsewhere");
   }
@@ -587,12 +587,15 @@ export async function deleteWallet(
     ctx.commit,
     corePromptFor(ctx.platform.keystore, "delete-wallet"),
   );
-  findRecord(ctx.image, "entropy", params.walletId);
-  // The entropy row and every module record derived from this wallet go in ONE commit —
+  const record = findWalletRecord(ctx.image, params.walletId);
+  if (record === undefined) {
+    throw new KernelError("not-found", "record not found");
+  }
+  // The wallet row and every module record derived from this wallet go in ONE commit —
   // a partial deletion can never land. Reconciliation forgets the evicted live state.
   const extras = ctx.modules.flatMap((module) =>
     module.walletDeleteOps(ctx.image, params.walletId),
   );
-  await ctx.commit([{ op: "delete-record", kind: "entropy", id: params.walletId }, ...extras]);
+  await ctx.commit([{ op: "delete-record", kind: record.kind, id: params.walletId }, ...extras]);
   return null;
 }

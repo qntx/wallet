@@ -322,7 +322,7 @@ describe("create / import", () => {
     const status = lastStatus(h);
     expect(status.vault).toBe("unlocked");
     expect(status.wallets[0]?.walletId).toBe(passkeyVector.vector.walletId);
-    expect(status.wallets[0]?.backup).toBe("passkey");
+    expect(status.wallets[0]).toMatchObject({ backup: "passkey" });
     expect(status.nostr.keys[0]?.publicKey).toBe(publicKey);
     expect(status.factors).toHaveLength(1);
   });
@@ -419,7 +419,7 @@ describe("create / import", () => {
       passkeyVector.vector.mnemonic,
     );
     await h.settle();
-    expect(lastStatus(h).wallets[0]?.backup).toBe("mnemonic");
+    expect(lastStatus(h).wallets[0]).toMatchObject({ backup: "mnemonic" });
     const metaAfter = await storedMeta(h.store);
     expect(metaAfter.revision).toBe(metaBefore.revision + 1);
 
@@ -437,7 +437,7 @@ describe("create / import", () => {
       }),
     );
     const session2 = strField(unlocked, "session");
-    expect(lastStatus(h2).wallets[0]?.backup).toBe("mnemonic");
+    expect(lastStatus(h2).wallets[0]).toMatchObject({ backup: "mnemonic" });
     const again = ok(
       await h2.call("wallet.exportMnemonic", { verify: verify(), walletId }, session2),
     );
@@ -589,7 +589,7 @@ describe("mnemonic draft", () => {
     const res = ok(await h.call("wallet.confirmMnemonic", { draft, answers: right }));
     expect(strField(res, "session")).toMatch(/^[0-9a-f]{32}$/);
     expect(lastStatus(h).vault).toBe("unlocked");
-    expect(lastStatus(h).wallets[0]?.backup).toBe("mnemonic");
+    expect(lastStatus(h).wallets[0]).toMatchObject({ backup: "mnemonic" });
   });
 
   it("discards the draft", async () => {

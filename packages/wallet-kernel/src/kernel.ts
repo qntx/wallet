@@ -25,6 +25,8 @@ import { KernelError } from "./errors.ts";
 import { createChainsModule } from "./modules/chains/index.ts";
 import { createNostrModule } from "./modules/nostr/index.ts";
 import { createSessionsModule } from "./modules/sessions/index.ts";
+import { DRIVERS } from "./modules/signers/drivers.ts";
+import { createSignersModule } from "./modules/signers/index.ts";
 import { createSparkModule } from "./modules/spark/index.ts";
 import { serializeCeremonies } from "./platform.ts";
 import type { KernelPlatform, Port } from "./platform.ts";
@@ -134,7 +136,8 @@ export function startKernel(host: KernelPlatform, port: Port): void {
   // add a line here and a section in status.ts's composition.
   const nostr = createNostrModule(platform.backends.nostr);
   const spark = createSparkModule();
-  const chains = createChainsModule();
+  const signers = createSignersModule(DRIVERS);
+  const chains = createChainsModule(signers.material);
   const sessions = createSessionsModule();
   const HANDLERS = {
     status: (ctx: KernelContext) => statusPayload(ctx, nostr),
@@ -143,6 +146,7 @@ export function startKernel(host: KernelPlatform, port: Port): void {
     ...nostr.handlers,
     ...spark.handlers,
     ...sessions.handlers,
+    ...signers.handlers,
   } satisfies { [M in MethodName]: Handler<M> };
 
   let dirty = false; // a commit happened since the last status event
@@ -315,7 +319,7 @@ export function startKernel(host: KernelPlatform, port: Port): void {
   const ctx: KernelContext = {
     platform,
     session: new Session(platform, onLock),
-    modules: [nostr.vault, spark.vault, chains.vault, sessions.vault],
+    modules: [nostr.vault, spark.vault, chains.vault, sessions.vault, signers.vault],
     image: EMPTY_IMAGE,
     health: "ok",
     commit: async (ops: ReadonlyArray<StoreOp>, options?: CommitOptions) => {

@@ -7,7 +7,6 @@
  * (./keys.ts), the prompt is verified, then `signPlan` (./run.ts) signs it against a fresh key
  * source — the plan itself is reused, never recomputed.
  */
-import { hash160 } from "@scure/btc-signer/utils.js";
 
 import { isBlindIntent } from "@qntx/wallet-chains";
 import type { KeyPath } from "@qntx/wallet-chains";
@@ -31,13 +30,13 @@ import type { Secret } from "../../secret/secret.ts";
 import { wipe } from "../../secret/secret.ts";
 import { parseKeyHeader } from "../../vault/headers.ts";
 import { BLIND_SIGNING, policyEnabled } from "../../vault/policy.ts";
-import type { StoredRecord } from "../../vault/store.ts";
-import { openRecord, verifyFactor } from "../../vault/vault.ts";
+import type { StoredRecord, VaultImage } from "../../vault/store.ts";
+import { findWalletRecord, openRecord, verifyFactor } from "../../vault/vault.ts";
 import { findSession, parseSessionHeader } from "../sessions/record.ts";
 import { prepareBitcoin } from "./bitcoin.ts";
 import { assertFiat24Deadline, prepareEvm } from "./evm.ts";
 import { importedKeys, pathString, seedKeys } from "./keys.ts";
-import type { KeySource } from "./keys.ts";
+import type { KeySource, PublicMaterial } from "./keys.ts";
 import { chainPrompt } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
 import { signPlan, taskSignerFor } from "./run.ts";
@@ -54,7 +53,7 @@ export type ChainsModule = {
 const HARDENED = 0x80000000;
 
 /** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
-const leafPath = (family: "evm" | "tron" | "solana", groupIndex: number): KeyPath => {
+export const leafPath = (family: "evm" | "tron" | "solana", groupIndex: number): KeyPath => {
   if (family === "solana") {
     return [44 + HARDENED, 501 + HARDENED, groupIndex + HARDENED, HARDENED];
   }
@@ -63,12 +62,12 @@ const leafPath = (family: "evm" | "tron" | "solana", groupIndex: number): KeyPat
 };
 
 /** An imported account's only path is `[]`; an HD account's is its group's leaf. */
-const requestPath = (
+export const requestPath = (
   family: "evm" | "tron" | "solana",
   account: SignRequest["account"],
 ): KeyPath => (account.kind === "imported" ? [] : leafPath(family, account.groupIndex));
 
-const checkNetwork = (template: string, network: string): void => {
+export const checkNetwork = (template: string, network: string): void => {
   if (template.startsWith("evm.") && !network.startsWith("eip155:")) {
     throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
   }
@@ -83,7 +82,7 @@ const checkNetwork = (template: string, network: string): void => {
   }
 };
 
-const accountFor = async (
+export const accountFor = async (
   material: KeySource["material"],
   template: ChainTemplate,
   network: string,
@@ -107,15 +106,13 @@ const accountFor = async (
   }
   const net = bitcoinNetwork(network);
   const path = [purpose + HARDENED, net.coinType + HARDENED, groupIndex + HARDENED];
-  const pub = await material.secp256k1([]);
+  const fingerprint = await material.fingerprint();
   return {
     template,
     network,
     // Bitcoin account keys serialize with the network's version bytes (xpub or tpub).
     xpub: await material.extendedPublicKey(path, net.bip32),
-    fingerprint: hash160(pub)
-      .subarray(0, 4)
-      .reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), ""),
+    fingerprint: fingerprint.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), ""),
     path: pathString(path),
   };
 };
@@ -127,16 +124,21 @@ const accountFor = async (
  */
 type AccountCache = WeakMap<StoredRecord, Map<string, ChainAccount>>;
 
+/**
+ * The signers module's `pinnedMaterial`, injected so chains never imports its owner: returns the
+ * public material pinned to an external-signer record or throws `device-required`.
+ */
+export type ExternalMaterial = (image: VaultImage, record: StoredRecord) => PublicMaterial;
+
 const walletAccounts = async (
   ctx: Parameters<Handler<"wallet.accounts">>[0],
   params: Parameters<Handler<"wallet.accounts">>[1],
   session: string | undefined,
   cache: AccountCache,
+  external: ExternalMaterial | undefined,
 ): Promise<ChainAccount> => {
   const { dek } = ctx.session.require(session);
-  const record = ctx.image.records.find(
-    (entry) => entry.kind === "entropy" && entry.id === params.walletId,
-  );
+  const record = findWalletRecord(ctx.image, params.walletId);
   if (record === undefined) {
     throw new KernelError("not-found", "no such wallet");
   }
@@ -146,14 +148,27 @@ const walletAccounts = async (
   if (known !== undefined) {
     return known;
   }
-  const account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
-    const keys = seedKeys(seed, ctx.platform.random);
-    try {
-      return await accountFor(keys.material, params.template, params.network, params.groupIndex);
-    } finally {
-      keys.wipe();
+  let account: ChainAccount;
+  if (record.kind === "entropy") {
+    account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+      const keys = seedKeys(seed, ctx.platform.random);
+      try {
+        return await accountFor(keys.material, params.template, params.network, params.groupIndex);
+      } finally {
+        keys.wipe();
+      }
+    });
+  } else {
+    if (external === undefined) {
+      throw new KernelError("device-required", "this wallet derives on its device");
     }
-  });
+    account = await accountFor(
+      external(ctx.image, record),
+      params.template,
+      params.network,
+      params.groupIndex,
+    );
+  }
   const accounts = cache.get(record) ?? new Map<string, ChainAccount>();
   accounts.set(key, account);
   cache.set(record, accounts);
@@ -161,7 +176,7 @@ const walletAccounts = async (
 };
 
 /** A request the decoder marked blind is refused before any prompt unless the owner allowed it. */
-const assertSignable = (
+export const assertSignable = (
   ctx: Parameters<Handler<"chain.sign">>[0],
   dek: Secret,
   intent: PromptIntent,
@@ -185,16 +200,12 @@ const TEMPLATES_BY_FAMILY: Readonly<Record<string, ReadonlyArray<string>>> = {
   bitcoin: ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"],
 };
 
-/** The HD source: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
-const hdSource = (
-  ctx: Parameters<Handler<"chain.sign">>[0],
-  request: SignRequest,
-  dek: Secret,
-): OpenKeys => {
+/**
+ * The request family must match the account's template — the same check the local HD source runs,
+ * shared with the external-signer executor.
+ */
+export const assertHdTemplates = (request: SignRequest): void => {
   const { account } = request;
-  if (account.kind === "imported") {
-    throw new KernelError("integrity", "unreachable: hd path with an imported account");
-  }
   if (request.kind === "bitcoin.psbt") {
     if (request.sign.some((s) => BTC_PURPOSE[s.template] === undefined)) {
       throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
@@ -206,11 +217,25 @@ const hdSource = (
       throw new KernelError("invalid-input", "account template does not match the request family");
     }
   }
-  const record = ctx.image.records.find(
-    (entry) => entry.kind === "entropy" && entry.id === account.walletId,
-  );
+};
+
+/** The HD source: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
+const hdSource = (
+  ctx: Parameters<Handler<"chain.sign">>[0],
+  request: SignRequest,
+  dek: Secret,
+): OpenKeys => {
+  const { account } = request;
+  if (account.kind === "imported") {
+    throw new KernelError("integrity", "unreachable: hd path with an imported account");
+  }
+  assertHdTemplates(request);
+  const record = findWalletRecord(ctx.image, account.walletId);
   if (record === undefined) {
     throw new KernelError("not-found", "no such wallet");
+  }
+  if (record.kind !== "entropy") {
+    throw new KernelError("device-required", "this wallet signs on its device");
   }
   return async (use) =>
     withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
@@ -276,7 +301,7 @@ const importedSource = (
  * The family's prepare on this request — `path` applies to evm/tron/solana; bitcoin derives
  * internally.
  */
-const prepareFor = async (
+export const prepareFor = async (
   request: SignRequest,
   material: KeySource["material"],
   now: number,
@@ -313,7 +338,7 @@ const prepareFor = async (
  * marks the prompt "held"; a record that exists but disagrees means the approval describes a
  * different agent under the same address and is refused; no record marks it "not held".
  */
-const bindAgent = (
+export const bindAgent = (
   ctx: Parameters<Handler<"chain.sign">>[0],
   prompt: PromptIntent,
   signer: string | undefined,
@@ -369,7 +394,7 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   );
 };
 
-export function createChainsModule(): ChainsModule {
+export function createChainsModule(external?: ExternalMaterial): ChainsModule {
   let accounts: AccountCache = new WeakMap();
   const vault: VaultHooks = {
     ownsRecord: () => false,
@@ -384,7 +409,7 @@ export function createChainsModule(): ChainsModule {
 
   const handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> } = {
     "wallet.accounts": async (ctx, params, session) =>
-      walletAccounts(ctx, params, session, accounts),
+      walletAccounts(ctx, params, session, accounts, external),
     "chain.sign": chainSign,
   };
 

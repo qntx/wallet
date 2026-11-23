@@ -209,7 +209,12 @@ describe("import with a passphrase", () => {
     expect(strField(wallet, "backup")).toBe("mnemonic");
 
     const listed = await walletsOf(h, session);
-    expect(listed.map((w) => Number(w.passphrase)).toSorted((a, b) => a - b)).toStrictEqual([0, 1]);
+    expect(
+      listed
+        .filter((w) => w.custody === "vault")
+        .map((w) => Number(w.passphrase))
+        .toSorted((a, b) => a - b),
+    ).toStrictEqual([0, 1]);
   });
 
   it("the same passphrase twice is already-exists, composed or decomposed", async () => {
