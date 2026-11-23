@@ -286,10 +286,9 @@ export type ChainRequestInput =
       readonly network: string;
       /** The ERC-721 or ERC-1155 contract. */
       readonly contract: string;
-      readonly tokenId: bigint;
+      /** The ids sent — one for ERC-721, up to `EVM_BATCH_LIMIT` for ERC-1155. */
+      readonly items: ReadonlyArray<{ readonly tokenId: bigint; readonly amount?: bigint }>;
       readonly to: string;
-      /** ERC-1155 only — the units sent; ERC-721 ignores it. */
-      readonly amount?: bigint;
       readonly fee: PrepareParams["fee"];
     }
   | {

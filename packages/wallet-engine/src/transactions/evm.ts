@@ -74,6 +74,14 @@ import {
 import type { BroadcastVerdict } from "./broadcast.ts";
 import { EvmNonces } from "./evm-nonces.ts";
 import {
+  evmNftBalances,
+  evmNftOwner,
+  evmNftStandard,
+} from "../chains/nfts.ts";
+import { NftTransferError } from "../errors.ts";
+import { mergeRisk } from "../requests/risk.ts";
+import type { RiskFinding } from "../requests/risk.ts";
+import {
   accountAddressOf,
   awaitingFinality,
   EVM_BATCH_LIMIT,
@@ -940,14 +948,17 @@ const prepareCctpIntent = (
   return { kind: "call", to: messenger, value: 0n, data };
 };
 
+/** A known NFT transfer's gas when estimation reverts — a contract recipient refusing the
+   receiver hook builds at this figure so its simulation can show the revert. */
+const NFT_SEND_GAS_FLOOR = 100_000n;
+
 /* The built call must decode back to exactly the send: one NFT outflow to the recipient
    with the right contract, id and unit count — like the bridge's quote-term guard. */
 const guardNftCall = (
   input: Extract<ChainRequestInput, { method: "evm-nft-send" }>,
   from: string,
   to: string,
-  tokenId: bigint,
-  amount: bigint,
+  items: ReadonlyArray<{ readonly tokenId: bigint; readonly amount: bigint }>,
   data: string,
 ): BuildIntent => {
   const request: SignRequest = {
@@ -968,19 +979,23 @@ const guardNftCall = (
     },
   };
   const intent = decodeEvm(request, from);
-  const [outflow] = intent.outflows;
-  if (
-    intent.summary !== "transfer" ||
-    intent.outflows.length !== 1 ||
-    outflow === undefined ||
-    outflow.to.toLowerCase() !== to.toLowerCase() ||
-    outflow.amount.asset.toLowerCase() !== input.contract.toLowerCase() ||
-    outflow.amount.tokenId !== tokenId.toString(10) ||
-    outflow.amount.amount !== amount.toString(10)
-  ) {
+  const matches =
+    intent.summary === "transfer" &&
+    intent.outflows.length === items.length &&
+    items.every((item, i) => {
+      const outflow = intent.outflows[i];
+      return (
+        outflow !== undefined &&
+        outflow.to.toLowerCase() === to.toLowerCase() &&
+        outflow.amount.asset.toLowerCase() === input.contract.toLowerCase() &&
+        outflow.amount.tokenId === item.tokenId.toString(10) &&
+        outflow.amount.amount === item.amount.toString(10)
+      );
+    });
+  if (!matches) {
     throw new ChainError("invalid-request", "the built transfer does not decode to the send");
   }
-  return { kind: "call", to: input.contract, value: 0n, data };
+  return { kind: "call", to: input.contract, value: 0n, data, minGas: NFT_SEND_GAS_FLOOR };
 };
 
 /* A cross-checked read on both endpoints: a successful disagreeing read refuses, a failed
@@ -990,13 +1005,14 @@ const nftRead = async <T>(
   network: string,
   read: (client: ViemClient) => Promise<T>,
   flags: Array<RequestCheckCode | undefined>,
+  same: (a: T, b: T) => boolean = (a, b) => a === b,
 ): Promise<T> => {
   const primary = await read(ctx.options.networks.client(network));
   const independent = ctx.options.networks.independentClient(network);
   if (independent.kind === "available") {
     try {
       const other = await read(independent.client);
-      if (other !== primary) {
+      if (!same(primary, other)) {
         throw new ChainError("invalid-request", "the two endpoints disagree on the NFT read");
       }
     } catch (error) {
@@ -1627,15 +1643,6 @@ export const createEvmRoute = (): EvmRoute => {
    * `evm-delegation` (upgrade/revoke) and `evm-batch`: internal, group-scoped self-transactions —
    * the batch upgrades the account to the delegator when it is not already delegated to it.
    */
-  const ERC165_ABI = [
-    {
-      type: "function",
-      name: "supportsInterface",
-      stateMutability: "view",
-      inputs: [{ name: "interfaceId", type: "bytes4" }],
-      outputs: [{ name: "", type: "bool" }],
-    },
-  ] as const;
   const ERC721_ABI = [
     {
       type: "function",
@@ -1659,16 +1666,6 @@ export const createEvmRoute = (): EvmRoute => {
   const ERC1155_ABI = [
     {
       type: "function",
-      name: "balanceOf",
-      stateMutability: "view",
-      inputs: [
-        { name: "account", type: "address" },
-        { name: "id", type: "uint256" },
-      ],
-      outputs: [{ name: "", type: "uint256" }],
-    },
-    {
-      type: "function",
       name: "safeTransferFrom",
       stateMutability: "nonpayable",
       inputs: [
@@ -1680,115 +1677,166 @@ export const createEvmRoute = (): EvmRoute => {
       ],
       outputs: [],
     },
+    {
+      type: "function",
+      name: "safeBatchTransferFrom",
+      stateMutability: "nonpayable",
+      inputs: [
+        { name: "from", type: "address" },
+        { name: "to", type: "address" },
+        { name: "ids", type: "uint256[]" },
+        { name: "amounts", type: "uint256[]" },
+        { name: "data", type: "bytes" },
+      ],
+      outputs: [],
+    },
   ] as const;
-  const ERC721_INTERFACE = "0x80ac58cd";
-  const ERC1155_INTERFACE = "0xd9b67a26";
 
-  /* A cross-checked read on both endpoints: a successful disagreeing read refuses, a failed
-     independent read degrades to `reads-unverified` — same rule as the swap path. */
-
-  /* `evm-nft-send`: detect the standard by ERC-165, check ownership, build safeTransferFrom. */
+  /* `evm-nft-send`: the standard is read on both endpoints before any ownership check, so a
+     gateway-listed item can never steer the build into a contract that is not an NFT. */
   const prepareNftSend = async (
     ctx: RouteContext,
     input: Extract<ChainRequestInput, { method: "evm-nft-send" }>,
     from: string,
     flags: Array<RequestCheckCode | undefined>,
-  ): Promise<BuildIntent> => {
-    const { network, contract, tokenId } = input;
+  ): Promise<{
+    readonly intent: BuildIntent;
+    readonly name?: string;
+    readonly risk: ReadonlyArray<RiskFinding>;
+  }> => {
+    const { network, contract, items } = input;
     let { to } = input;
+    let name: string | undefined;
     if (!isAddress(to) && to.includes(".")) {
       const resolved = await resolveEns(ctx.options.networks, to, network);
-      to = resolved.address;
+      ({ address: to, name } = resolved);
       flags.push(...resolved.checks);
     }
-    const c = getAddress(contract);
-    const supports721 = await nftRead(
-      ctx,
-      network,
-      async (client) =>
-        readContract(client, {
-          address: c,
-          abi: ERC165_ABI,
-          functionName: "supportsInterface",
-          args: [ERC721_INTERFACE],
-        }),
-      flags,
-    );
-    const supports1155 = await nftRead(
-      ctx,
-      network,
-      async (client) =>
-        readContract(client, {
-          address: c,
-          abi: ERC165_ABI,
-          functionName: "supportsInterface",
-          args: [ERC1155_INTERFACE],
-        }),
-      flags,
-    );
-    if (!supports721 && !supports1155) {
-      throw new ChainError("invalid-request", "the contract is neither ERC-721 nor ERC-1155");
+    if (items.length === 0) {
+      throw new ChainError("invalid-request", "an NFT send needs at least one item");
     }
-    if (supports721) {
+    if (items.length > EVM_BATCH_LIMIT) {
+      throw new ChainError(
+        "invalid-request",
+        `an NFT send allows at most ${EVM_BATCH_LIMIT} items`,
+      );
+    }
+    if (new Set(items.map((item) => item.tokenId)).size !== items.length) {
+      throw new ChainError("invalid-request", "an NFT send cannot list an id twice");
+    }
+    if (items.some((item) => item.amount !== undefined && item.amount < 1n)) {
+      throw new ChainError("invalid-request", "an NFT send needs at least one unit per item");
+    }
+    const standard = await nftRead(
+      ctx,
+      network,
+      async (client) => evmNftStandard(client, contract),
+      flags,
+    );
+    if (standard === "erc721") {
+      const [item] = items;
+      if (item === undefined || items.length !== 1 || (item.amount ?? 1n) !== 1n) {
+        throw new ChainError(
+          "invalid-request",
+          "an ERC-721 send transfers exactly one token once",
+        );
+      }
       const owner = await nftRead(
         ctx,
         network,
-        async (client) =>
-          readContract(client, {
-            address: c,
-            abi: ERC721_ABI,
-            functionName: "ownerOf",
-            args: [tokenId],
-          }) as Promise<string>,
+        async (client) => evmNftOwner(client, contract, item.tokenId),
         flags,
       );
-      if (owner.toLowerCase() !== from.toLowerCase()) {
-        throw new ChainError("invalid-request", "the account does not own the token");
+      if (owner === undefined || owner.toLowerCase() !== from.toLowerCase()) {
+        throw new NftTransferError("not-owned", "the account does not own the token");
       }
-      return guardNftCall(
-        input,
-        from,
-        to,
-        tokenId,
-        1n,
-        encodeFunctionData({
-          abi: ERC721_ABI,
-          functionName: "safeTransferFrom",
-          args: [getAddress(from), getAddress(to), tokenId],
-        }),
-      );
+      return {
+        intent: guardNftCall(
+          input,
+          from,
+          to,
+          [{ tokenId: item.tokenId, amount: 1n }],
+          encodeFunctionData({
+            abi: ERC721_ABI,
+            functionName: "safeTransferFrom",
+            args: [getAddress(from), getAddress(to), item.tokenId],
+          }),
+        ),
+        ...(name === undefined ? {} : { name }),
+        risk:
+          to.toLowerCase() === contract.toLowerCase()
+            ? [{ code: "token-contract-recipient", level: "danger" }]
+            : [],
+      };
     }
-    const amount = input.amount ?? 1n;
-    if (amount < 1n) {
-      throw new ChainError("invalid-request", "an ERC-1155 send needs at least one unit");
+    if (standard === undefined) {
+      throw new NftTransferError("not-nft", "the contract is neither ERC-721 nor ERC-1155");
     }
-    const balance = await nftRead(
+    const units = items.map((item) => ({
+      tokenId: item.tokenId,
+      amount: item.amount ?? 1n,
+    }));
+    const balances = await nftRead(
       ctx,
       network,
       async (client) =>
-        readContract(client, {
-          address: c,
-          abi: ERC1155_ABI,
-          functionName: "balanceOf",
-          args: [getAddress(from), tokenId],
-        }),
+        evmNftBalances(
+          client,
+          contract,
+          from,
+          units.map((unit) => unit.tokenId),
+        ),
       flags,
+      (a, b) => a.length === b.length && a.every((v, i) => v === b[i]),
     );
-    if (balance < amount) {
-      throw new ChainError("invalid-request", "the account does not hold enough units");
+    for (const [i, unit] of units.entries()) {
+      const balance = balances[i] ?? 0n;
+      if (balance === 0n) {
+        throw new NftTransferError("not-owned", `the account does not own id ${unit.tokenId}`);
+      }
+      if (balance < unit.amount) {
+        throw new NftTransferError(
+          "insufficient-balance",
+          `the account holds ${balance} of id ${unit.tokenId}, not ${unit.amount}`,
+        );
+      }
     }
-    return guardNftCall(
-      input,
-      from,
-      to,
-      tokenId,
-      amount,
-      encodeFunctionData({
-        abi: ERC1155_ABI,
-        functionName: "safeTransferFrom",
-        args: [getAddress(from), getAddress(to), tokenId, amount, "0x"],
-      }),
-    );
+    return {
+      intent: guardNftCall(
+        input,
+        from,
+        to,
+        units,
+        units.length === 1
+          ? encodeFunctionData({
+              abi: ERC1155_ABI,
+              functionName: "safeTransferFrom",
+              args: [
+                getAddress(from),
+                getAddress(to),
+                units[0]?.tokenId ?? 0n,
+                units[0]?.amount ?? 1n,
+                "0x",
+              ],
+            })
+          : encodeFunctionData({
+              abi: ERC1155_ABI,
+              functionName: "safeBatchTransferFrom",
+              args: [
+                getAddress(from),
+                getAddress(to),
+                units.map((unit) => unit.tokenId),
+                units.map((unit) => unit.amount),
+                "0x",
+              ],
+            }),
+      ),
+      ...(name === undefined ? {} : { name }),
+      risk:
+        to.toLowerCase() === contract.toLowerCase()
+          ? [{ code: "token-contract-recipient", level: "danger" }]
+          : [],
+    };
   };
 
   const prepareEvmInternal = async (
@@ -1803,6 +1851,8 @@ export const createEvmRoute = (): EvmRoute => {
     const flags: Array<RequestCheckCode | undefined> = [];
     let intent: BuildIntent;
     let warnings: ReadonlyArray<IntentWarning> = [];
+    let nftName: string | undefined;
+    let nftRisk: ReadonlyArray<RiskFinding> = [];
     if (input.method === "evm-delegation") {
       const state = await delegationState(ctx, network, from, flags);
       if (input.action === "upgrade" && state.kind === "ours") {
@@ -1832,7 +1882,10 @@ export const createEvmRoute = (): EvmRoute => {
     } else if (input.method === "evm-bridge") {
       intent = await prepareBridgeIntent(ctx, input, from, flags);
     } else if (input.method === "evm-nft-send") {
-      intent = await prepareNftSend(ctx, input, from, flags);
+      const nft = await prepareNftSend(ctx, input, from, flags);
+      intent = nft.intent;
+      nftName = nft.name;
+      nftRisk = nft.risk;
     } else if (input.method === "evm-lido") {
       intent = await prepareLidoIntent(ctx, input, from, flags, async () =>
         delegationStateOrNone(ctx, network, from, flags),
@@ -1919,8 +1972,19 @@ export const createEvmRoute = (): EvmRoute => {
     }
     return {
       ...prepared,
-      intent: { ...prepared.intent, warnings: [...prepared.intent.warnings, ...warnings] },
+      intent: {
+        ...prepared.intent,
+        warnings: [...prepared.intent.warnings, ...warnings],
+        ...(nftName === undefined
+          ? {}
+          : {
+              outflows: prepared.intent.outflows.map((flow) => ({ ...flow, name: nftName })),
+            }),
+      },
       checks: [...new Set([...prepared.checks, ...collectChecks(flags)])],
+      ...(nftRisk.length === 0
+        ? {}
+        : { risk: mergeRisk(prepared.risk ?? [], nftRisk) }),
     };
   };
 

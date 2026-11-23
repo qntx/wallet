@@ -6,11 +6,12 @@
  */
 import { base58, base64 } from "@scure/base";
 import { address, getAddressEncoder, getProgramDerivedAddress } from "@solana/kit";
-import { BaseError, ContractFunctionRevertedError, isAddress } from "viem";
+import { isAddress } from "viem";
 import { readContract } from "viem/actions";
 
 import { MPL_CORE_PROGRAM, PROGRAM_IDS, associatedTokenAddress } from "@qntx/wallet-chains/solana";
 
+import { reverted } from "./evm.ts";
 import type { SolanaRpc } from "../networks/controller.ts";
 
 type ViemClient = Parameters<typeof readContract>[0];
@@ -64,11 +65,6 @@ const evmAddress = (value: string): `0x${string}` => {
   }
   return value;
 };
-
-/** The error walks to a contract revert — the call is legal, the contract just refused it. */
-const reverted = (error: unknown): boolean =>
-  error instanceof BaseError &&
-  error.walk((e) => e instanceof ContractFunctionRevertedError) !== undefined;
 
 const supportsInterface = async (
   client: ViemClient,
@@ -169,7 +165,7 @@ export const evmNftBalance = async (
 
 /* --- Solana --- */
 
-const METAPLEX_METADATA_PROGRAM = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
+export const METAPLEX_METADATA_PROGRAM = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
 
 /** Mpl-core AssetV1 discriminators. */
 export const CORE_KEY_ASSET_V1 = 1;
