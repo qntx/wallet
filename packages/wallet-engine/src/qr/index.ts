@@ -8,5 +8,7 @@ export { qrResponse } from "./response.ts";
 export type { QrSigner } from "./response.ts";
 export { qrExport } from "./export.ts";
 export type { QrExport, QrExportForm } from "./export.ts";
+export { inspectQrRequest } from "./inspect.ts";
+export type { QrDigest, QrDigestKind, QrInspection } from "./inspect.ts";
 export { qrParts as qrFrames } from "@qntx/wallet/hardware";
 export type { QrPayload } from "@qntx/wallet/hardware";

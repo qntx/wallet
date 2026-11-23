@@ -177,7 +177,7 @@ type BitcoinConnections = Pick<ConnectionController, "checkOrigin" | "session" |
 type BitcoinDisplay = {
     readonly kind: "bitcoin.sign";
     readonly message?: MessageContent;
-    readonly psbts?: ReadonlyArray<DisplayIntent>;
+    readonly psbts?: ReadonlyArray<DisplayIntent$1>;
     readonly send?: boolean;
 };
 
@@ -625,7 +625,7 @@ type DelegationStatus = {
 };
 
 // @public (undocumented)
-type DisplayIntent = ReturnType<typeof decodeEvm>;
+type DisplayIntent$1 = ReturnType<typeof decodeEvm>;
 
 // @public (undocumented)
 export type Eip1193Event = {
@@ -1075,7 +1075,7 @@ type PendingRequest = {
     readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount | BitcoinAccount | BitcoinGroup;
     readonly network: string;
     readonly stage: RequestStage;
-    readonly display: DisplayIntent | SparkDisplay | NostrDisplay | LightningInvoiceDisplay | TokenWatchDisplay | SolanaDisplay | BitcoinDisplay;
+    readonly display: DisplayIntent$1 | SparkDisplay | NostrDisplay | LightningInvoiceDisplay | TokenWatchDisplay | SolanaDisplay | BitcoinDisplay;
     readonly verification: "verified" | "unverifiable";
     readonly checks: ReadonlyArray<RequestCheckCode>;
     readonly risk: ReadonlyArray<RiskFinding>;
@@ -1162,7 +1162,7 @@ type PreparedRequest = {
     readonly account: AccountRef;
     readonly network: string;
     readonly target?: string;
-    readonly intent: DisplayIntent;
+    readonly intent: DisplayIntent$1;
     readonly signer?: string;
     readonly checks: ReadonlyArray<RequestCheckCode>;
     readonly risk?: ReadonlyArray<RiskFinding>;
@@ -1421,7 +1421,7 @@ type SolanaDisplay = {
     readonly kind: "solana.sign";
     readonly send: boolean;
     readonly count: number;
-    readonly transactions: ReadonlyArray<DisplayIntent>;
+    readonly transactions: ReadonlyArray<DisplayIntent$1>;
     readonly message?: MessageContent;
     readonly signIn?: SignInFields;
 };
@@ -1786,7 +1786,7 @@ type TrackedTransaction = {
     readonly account: string;
     readonly hash: string | undefined;
     readonly state: TxState;
-    readonly intent: DisplayIntent | undefined;
+    readonly intent: DisplayIntent$1 | undefined;
     readonly nonce: number;
     readonly block?: TxBlock | undefined;
     readonly final?: boolean | undefined;
@@ -1889,7 +1889,7 @@ class TransactionController extends Controller<TransactionControllerState> {
         readonly groupIndex: number;
     }, network: string, outpoints: ReadonlyArray<string>, frozen: boolean): Promise<void>;
     submitDappBitcoin(network: string, walletId: string, prepared: PreparedBitcoinPsbt, result: SignResult): Promise<string>;
-    submitDappSolana(network: string, walletId: string, wire: Uint8Array, lastValidBlockHeight: bigint, intent: DisplayIntent): Promise<string>;
+    submitDappSolana(network: string, walletId: string, wire: Uint8Array, lastValidBlockHeight: bigint, intent: DisplayIntent$1): Promise<string>;
     submitDappTron(network: string, rawData: Uint8Array, signature: Uint8Array): Promise<TrackedTransaction>;
     txById(id: string): TrackedTransaction | undefined;
 }
