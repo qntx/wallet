@@ -206,7 +206,7 @@ describe("hardware(wallet)", () => {
     const kernel = new FakeKernel(unlockedStatus());
     const duringBegin: boolean[] = [];
     const duringExchange: boolean[] = [];
-    let wallet: Awaited<ReturnType<typeof connect>>;
+    const wallet = await connect(kernel);
     kernel.handlers.set("hardware.begin", () => {
       duringBegin.push(wallet.getSnapshot().verifying);
       return { ok: { opId: OP_ID, step: exchangeStep } };
@@ -217,7 +217,6 @@ describe("hardware(wallet)", () => {
     kernel.handlers.set("wallet.accounts", () => ({
       ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS },
     }));
-    wallet = await connect(kernel);
     await hardware(wallet).sign(
       { request: signRequest, verify: { kind: "password", password: "test password" } },
       responding({
