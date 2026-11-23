@@ -833,7 +833,7 @@ export const SOLANA_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 export const SOLANA_NETWORKS: ReadonlyArray<NetworkInfo>;
 
 // @public
-export const SOLANA_RPC_METHODS: readonly ["getAccountInfo", "getBalance", "getBlockHeight", "getBlockTime", "getEpochInfo", "getFeeForMessage", "getGenesisHash", "getLatestBlockhash", "getMinimumBalanceForRentExemption", "getMultipleAccounts", "getRecentPrioritizationFees", "getSignatureStatuses", "getSignaturesForAddress", "getSlot", "getStakeMinimumDelegation", "getTokenAccountBalance", "getTokenAccountsByOwner", "getTokenSupply", "getTransaction", "getVersion", "getVoteAccounts", "isBlockhashValid", "sendTransaction", "simulateTransaction"];
+export const SOLANA_RPC_METHODS: readonly ["getAccountInfo", "getBalance", "getBlockHeight", "getBlockTime", "getEpochInfo", "getFeeForMessage", "getFirstAvailableBlock", "getGenesisHash", "getLatestBlockhash", "getMinimumBalanceForRentExemption", "getMultipleAccounts", "getRecentPrioritizationFees", "getSignatureStatuses", "getSignaturesForAddress", "getSlot", "getStakeMinimumDelegation", "getTokenAccountBalance", "getTokenAccountsByOwner", "getTokenSupply", "getTransaction", "getVersion", "getVoteAccounts", "isBlockhashValid", "sendTransaction", "simulateTransaction"];
 
 // @public
 export const solanaInstruction: z.ZodMiniObject<{
@@ -853,12 +853,12 @@ export type SolanaRpcMethod = (typeof SOLANA_RPC_METHODS)[number];
 export const solanaRpcRequest: z.ZodMiniUnion<readonly [z.ZodMiniUnion<z.ZodMiniObject<{
     jsonrpc: z.ZodMiniLiteral<"2.0">;
     id: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniString<string>]>;
-    method: z.ZodMiniLiteral<"getAccountInfo" | "getBalance" | "getBlockHeight" | "getBlockTime" | "getEpochInfo" | "getFeeForMessage" | "getGenesisHash" | "getLatestBlockhash" | "getMinimumBalanceForRentExemption" | "getMultipleAccounts" | "getRecentPrioritizationFees" | "getSignatureStatuses" | "getSignaturesForAddress" | "getSlot" | "getStakeMinimumDelegation" | "getTokenAccountBalance" | "getTokenAccountsByOwner" | "getTokenSupply" | "getTransaction" | "getVersion" | "getVoteAccounts" | "isBlockhashValid" | "sendTransaction" | "simulateTransaction">;
+    method: z.ZodMiniLiteral<"getAccountInfo" | "getBalance" | "getBlockHeight" | "getBlockTime" | "getEpochInfo" | "getFeeForMessage" | "getFirstAvailableBlock" | "getGenesisHash" | "getLatestBlockhash" | "getMinimumBalanceForRentExemption" | "getMultipleAccounts" | "getRecentPrioritizationFees" | "getSignatureStatuses" | "getSignaturesForAddress" | "getSlot" | "getStakeMinimumDelegation" | "getTokenAccountBalance" | "getTokenAccountsByOwner" | "getTokenSupply" | "getTransaction" | "getVersion" | "getVoteAccounts" | "isBlockhashValid" | "sendTransaction" | "simulateTransaction">;
     params: z.ZodMiniType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
 }, z.core.$strip>[]>, z.ZodMiniArray<z.ZodMiniUnion<z.ZodMiniObject<{
     jsonrpc: z.ZodMiniLiteral<"2.0">;
     id: z.ZodMiniUnion<readonly [z.ZodMiniInt, z.ZodMiniString<string>]>;
-    method: z.ZodMiniLiteral<"getAccountInfo" | "getBalance" | "getBlockHeight" | "getBlockTime" | "getEpochInfo" | "getFeeForMessage" | "getGenesisHash" | "getLatestBlockhash" | "getMinimumBalanceForRentExemption" | "getMultipleAccounts" | "getRecentPrioritizationFees" | "getSignatureStatuses" | "getSignaturesForAddress" | "getSlot" | "getStakeMinimumDelegation" | "getTokenAccountBalance" | "getTokenAccountsByOwner" | "getTokenSupply" | "getTransaction" | "getVersion" | "getVoteAccounts" | "isBlockhashValid" | "sendTransaction" | "simulateTransaction">;
+    method: z.ZodMiniLiteral<"getAccountInfo" | "getBalance" | "getBlockHeight" | "getBlockTime" | "getEpochInfo" | "getFeeForMessage" | "getFirstAvailableBlock" | "getGenesisHash" | "getLatestBlockhash" | "getMinimumBalanceForRentExemption" | "getMultipleAccounts" | "getRecentPrioritizationFees" | "getSignatureStatuses" | "getSignaturesForAddress" | "getSlot" | "getStakeMinimumDelegation" | "getTokenAccountBalance" | "getTokenAccountsByOwner" | "getTokenSupply" | "getTransaction" | "getVersion" | "getVoteAccounts" | "isBlockhashValid" | "sendTransaction" | "simulateTransaction">;
     params: z.ZodMiniType<unknown, unknown, z.core.$ZodTypeInternals<unknown, unknown>>;
 }, z.core.$strip>[]>>]>;
 

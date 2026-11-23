@@ -1090,6 +1090,7 @@ type Independent<T> = {
     readonly kind: "unavailable";
 } | {
     readonly kind: "available";
+    readonly source: "host" | "gateway";
     readonly client: T;
 };
 
@@ -1160,12 +1161,13 @@ class NetworkController extends Controller<NetworkControllerState> {
     endpoints(network: string): ReadonlyArray<string>;
     ensClient(network: string): PublicClient;
     esplora(network: string): Esplora;
+    gatewayFirst(network: string): boolean;
     independentClient(network: string): Independent<PublicClient>;
     independentEnsClient(network: string): Independent<PublicClient>;
     // (undocumented)
     independentEsplora(network: string): Independent<Esplora>;
-    independentPinnedSolanaRpc(network: string): Independent<SolanaRpc>;
-    independentPinnedTronApi(network: string): Independent<TronApi>;
+    independentPinnedSolanaRpc(network: string, primaryUrl: string | undefined): Independent<SolanaRpc>;
+    independentPinnedTronApi(network: string, primaryUrl: string | undefined): Independent<TronApi>;
     // (undocumented)
     independentSolanaRpc(network: string): Independent<SolanaRpc>;
     independentTronApi(network: string): Independent<TronApi>;
@@ -1175,8 +1177,8 @@ class NetworkController extends Controller<NetworkControllerState> {
     init(): Promise<void>;
     // (undocumented)
     lock(): void;
-    pinnedSolanaRpc(network: string): SolanaRpc;
-    pinnedTronApi(network: string, until?: () => number): TronApi;
+    pinnedSolanaRpc(network: string): PinnedSolanaRpc;
+    pinnedTronApi(network: string, until?: () => number): PinnedTronApi;
     solanaRpc(network: string): SolanaRpc;
     tronApi(network: string): TronApi;
 }
@@ -1362,6 +1364,16 @@ type PhishingState = {
 
 // @public
 type PhishingStatus = "blocked" | "trusted" | "clear" | "unchecked";
+
+// @public
+type PinnedSolanaRpc = SolanaRpc & {
+    readonly pinnedUrl: () => string | undefined;
+};
+
+// @public
+type PinnedTronApi = TronApi & {
+    readonly pinnedUrl: () => string | undefined;
+};
 
 export { PortfolioResponse }
 
@@ -2006,6 +2018,7 @@ type TrackedTransaction = {
 class TransactionController extends Controller<TransactionControllerState> {
     constructor(options: Options);
     batchById(origin: string, id: string): BatchRecord | undefined;
+    bindDappSolana(network: string, messages: ReadonlyArray<Uint8Array>): Promise<ReadonlyArray<RequestCheckCode>>;
     delegationState(account: AccountRef, network: string): Promise<DelegationStatus>;
     // (undocumented)
     destroy(): Promise<void>;
