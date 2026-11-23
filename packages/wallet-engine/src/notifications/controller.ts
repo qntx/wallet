@@ -586,6 +586,10 @@ export class NotificationsController extends Controller<NotificationsState> {
       if (desired.has(key) && sub.deleting !== true) {
         continue;
       }
+      /* Its addresses could not be read this round — the live subscription is untouched. */
+      if (familyErrors.has(key)) {
+        continue;
+      }
       const [, family] = splitSubKey(key);
       // oxlint-disable-next-line eslint/no-await-in-loop -- subscriptions DELETE serially by design
       await this.deleteSubscription(key, sub, family);

@@ -341,6 +341,63 @@ describe("NotificationsController", () => {
     expect(puts(h)).toHaveLength(3);
   });
 
+  it("a live subscription whose addresses fail to read is kept and still opens deliveries", async () => {
+    let failSol = false;
+    const h = harness({
+      walletIds: ["w1"],
+      families: ["evm", "solana"],
+      served: [EVM, SOL],
+      // oxlint-disable-next-line typescript/require-await -- the function throws after a flip
+      addresses: async (_walletId, family) => {
+        if (family === "solana" && failSol) {
+          throw new WalletError("device-required", "the path lives on the device");
+        }
+        return [ADDRESS];
+      },
+    });
+    await h.controller.init();
+    await h.controller.enable("w1");
+    await h.controller.setToken("apns", TOKEN);
+    await h.flush();
+    expect(puts(h)).toHaveLength(2);
+    const solPut = puts(h).find((r) => r.path === "/v1/push/solana/subscription");
+    const solKey = base64urlnopad.decode(((solPut?.body ?? {}) as { key: string }).key ?? "");
+
+    failSol = true;
+    h.emitAccounts();
+    await h.flush();
+    /* The transient failure must not DELETE the live gateway subscription; the status
+       is typed, and the kept key still opens a delivery addressed to it. */
+    expect(h.requests.filter((r) => r.method === "DELETE")).toHaveLength(0);
+    expect(h.controller.getState().wallets["w1"]?.families["solana"]).toBe("device-required");
+    expect(h.controller.getState().wallets["w1"]?.families["evm"]).toBe("active");
+    const hash = `0x${"ab".repeat(32)}`;
+    const eventId = eventIdOf(solKey, SOL, hash, "received");
+    const plaintext = JSON.stringify({
+      v: 1,
+      k: "received",
+      n: SOL,
+      h: hash,
+      a: ADDRESS,
+      t: NOW0,
+      x: { q: "1000000000", d: 9, s: "SOL" },
+    });
+    const nonce = new Uint8Array(12).fill(5);
+    const event = await h.controller.receive({
+      v: "1",
+      e: eventId,
+      c: sealForTest(solKey, eventId, plaintext, nonce),
+    });
+    expect(event).toMatchObject({ walletId: "w1", family: "solana", kind: "received" });
+
+    failSol = false;
+    h.emitAccounts();
+    await h.flush();
+    /* The surviving row resumes without a re-PUT — the same subscription id serves. */
+    expect(puts(h)).toHaveLength(2);
+    expect(h.controller.getState().wallets["w1"]?.families["solana"]).toBe("active");
+  });
+
   it("init sweeps host keys whose subscription row is gone", async () => {
     const h = harness();
     await h.controller.init();
