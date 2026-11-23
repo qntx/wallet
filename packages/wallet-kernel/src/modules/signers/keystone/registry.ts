@@ -6,10 +6,24 @@
  * component is a flat `[index-or-empty-array, hardened-bool]` pair — the empty array is the
  * wildcard. Unknown map keys are skipped after their value parsed structurally, like the reference
  * decoder; a structural error anywhere is `integrity`.
+ *
+ * The signing side encodes `eth-sign-request` (401), `sol-sign-request` (1101), `tron-sign-request`
+ * (5201), `btc-sign-request` (8101) and `crypto-psbt` (310), and decodes the matching `*-signature`
+ * responses. As with `crypto-multi-accounts`, the UR type carries the registry tag: payloads are
+ * bare maps (or, for `crypto-psbt`, the bare PSBT byte string), while embedded items keep their
+ * tags — UUID `#37` on request ids and `crypto-keypath` `#304`. Field layout and optional-field
+ * rules mirror the Rust encoders exactly (ethereum/ eth_sign_request.rs,
+ * solana/sol_sign_request.rs, tron/tron_sign_request.rs, bitcoin/btc_sign_request.rs,
+ * crypto_psbt.rs): the keypath `depth` field is omitted, address fields are omitted, and `origin`
+ * is always written.
  */
+import type { KeyPath } from "@qntx/wallet-chains";
+
 import { KernelError } from "../../../errors.ts";
 import type { Cbor } from "./cbor.ts";
+import { encodeCbor } from "./cbor.ts";
 
+export const TAG_UUID = 37;
 export const TAG_HD_KEY = 303;
 export const TAG_KEY_PATH = 304;
 export const TAG_COIN_INFO = 305;
@@ -292,3 +306,170 @@ export const multiAccounts = (value: Cbor): CryptoMultiAccounts => {
   }
   return { masterFingerprint, keys, device, deviceId, deviceVersion };
 };
+
+const HARDENED_BIT = 0x80000000;
+
+const cborUint = (value: number): Cbor => ({ kind: "uint", value });
+const cborBytes = (value: Uint8Array): Cbor => ({ kind: "bytes", value });
+const cborText = (value: string): Cbor => ({ kind: "text", value });
+
+const cborMap = (entries: ReadonlyArray<readonly [number, Cbor]>): Cbor => ({
+  kind: "map",
+  entries: entries.map(([key, value]) => [cborUint(key), value]),
+});
+
+const keyPathCbor = (path: KeyPath, fingerprint: Uint8Array): Cbor => {
+  if (fingerprint.length !== 4) {
+    fail();
+  }
+  return {
+    kind: "tag",
+    tag: TAG_KEY_PATH,
+    item: cborMap([
+      [
+        1,
+        {
+          kind: "array",
+          items: path.flatMap((component): Cbor[] => [
+            cborUint(component % HARDENED_BIT),
+            { kind: "bool", value: component >= HARDENED_BIT },
+          ]),
+        },
+      ],
+      [2, cborUint(new DataView(fingerprint.buffer, fingerprint.byteOffset, 4).getUint32(0))],
+    ]),
+  };
+};
+
+const requestIdCbor = (requestId: Uint8Array): Cbor => {
+  if (requestId.length !== 16) {
+    fail();
+  }
+  return { kind: "tag", tag: TAG_UUID, item: cborBytes(requestId) };
+};
+
+/** What every sign request shares: the request id, the payload bytes, the origin string. */
+export type SignRequestFields = {
+  readonly requestId: Uint8Array;
+  readonly signData: Uint8Array;
+  readonly fingerprint: Uint8Array;
+  readonly origin: string;
+};
+
+export const ethSignRequest = (
+  fields: SignRequestFields & {
+    readonly dataType: 1 | 2 | 3 | 4;
+    readonly chainId?: number;
+    readonly path: KeyPath;
+  },
+): Uint8Array =>
+  encodeCbor(
+    cborMap([
+      [1, requestIdCbor(fields.requestId)],
+      [2, cborBytes(fields.signData)],
+      [3, cborUint(fields.dataType)],
+      ...(fields.chainId === undefined
+        ? []
+        : [[4, cborUint(fields.chainId)] as readonly [number, Cbor]]),
+      [5, keyPathCbor(fields.path, fields.fingerprint)],
+      [7, cborText(fields.origin)],
+    ]),
+  );
+
+export const solSignRequest = (
+  fields: SignRequestFields & { readonly signType: 1 | 2; readonly path: KeyPath },
+): Uint8Array =>
+  encodeCbor(
+    cborMap([
+      [1, requestIdCbor(fields.requestId)],
+      [2, cborBytes(fields.signData)],
+      [3, keyPathCbor(fields.path, fields.fingerprint)],
+      [5, cborText(fields.origin)],
+      [6, cborUint(fields.signType)],
+    ]),
+  );
+
+export const tronSignRequest = (
+  fields: SignRequestFields & { readonly dataType: 1 | 2; readonly path: KeyPath },
+): Uint8Array =>
+  encodeCbor(
+    cborMap([
+      [1, requestIdCbor(fields.requestId)],
+      [2, cborBytes(fields.signData)],
+      [3, cborUint(fields.dataType)],
+      [4, keyPathCbor(fields.path, fields.fingerprint)],
+      [6, cborText(fields.origin)],
+    ]),
+  );
+
+export const btcSignRequest = (
+  fields: SignRequestFields & { readonly paths: ReadonlyArray<KeyPath> },
+): Uint8Array =>
+  encodeCbor(
+    cborMap([
+      [1, requestIdCbor(fields.requestId)],
+      [2, cborBytes(fields.signData)],
+      [3, cborUint(1)],
+      [
+        4,
+        {
+          kind: "array",
+          items: fields.paths.map((path) => keyPathCbor(path, fields.fingerprint)),
+        },
+      ],
+      [6, cborText(fields.origin)],
+    ]),
+  );
+
+/** A `crypto-psbt` payload is the bare PSBT byte string — the UR type carries tag 310. */
+export const cryptoPsbt = (psbt: Uint8Array): Uint8Array => encodeCbor(cborBytes(psbt));
+
+const requestId = (entries: ReadonlyArray<readonly [Cbor, Cbor]>): Uint8Array | undefined => {
+  const taggedId = entries.find(([key]) => key.kind === "uint" && key.value === 1)?.[1];
+  return taggedId === undefined ? undefined : bytes(tagged(taggedId, TAG_UUID));
+};
+
+const signatureFields = (
+  value: Cbor,
+): { readonly requestId: Uint8Array | undefined; readonly signature: Uint8Array } => {
+  if (value.kind !== "map") {
+    fail();
+  }
+  const signature = value.entries.find(([key]) => key.kind === "uint" && key.value === 2)?.[1];
+  if (signature === undefined) {
+    fail();
+  }
+  return { requestId: requestId(value.entries), signature: bytes(signature) };
+};
+
+export const ethSignature = (
+  value: Cbor,
+): { requestId: Uint8Array | undefined; signature: Uint8Array } => signatureFields(value);
+
+export const solSignature = (
+  value: Cbor,
+): { requestId: Uint8Array | undefined; signature: Uint8Array } => signatureFields(value);
+
+export const tronSignature = (
+  value: Cbor,
+): { requestId: Uint8Array | undefined; signature: Uint8Array } => signatureFields(value);
+
+export const btcSignature = (
+  value: Cbor,
+): {
+  readonly requestId: Uint8Array | undefined;
+  readonly signature: Uint8Array;
+  readonly publicKey: Uint8Array;
+} => {
+  if (value.kind !== "map") {
+    fail();
+  }
+  const publicKey = value.entries.find(([key]) => key.kind === "uint" && key.value === 3)?.[1];
+  if (publicKey === undefined) {
+    fail();
+  }
+  return { ...signatureFields(value), publicKey: bytes(publicKey) };
+};
+
+/** Decodes a `crypto-psbt` response payload: the signed PSBT byte string. */
+export const cryptoPsbtBytes = (value: Cbor): Uint8Array => bytes(value);

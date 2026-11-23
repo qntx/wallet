@@ -62,6 +62,7 @@ export const parseSync = (response: DeviceResponse): PairingResult => {
   const accounts = multiAccounts(decodeCbor(response.ur.cbor));
   const nodes: PinnedNode[] = [];
   const ed25519: PinnedEd25519[] = [];
+  const claimed: KeyPath[] = [];
   for (const key of accounts.keys) {
     const path = key.origin === undefined ? undefined : pathOf(key.origin);
     // A key that cannot name its own path — or one carrying secret material — is not pinnable.
@@ -74,6 +75,11 @@ export const parseSync = (response: DeviceResponse): PairingResult => {
     if (key.isMaster || key.isPrivate || key.key === undefined || path === undefined) {
       continue;
     }
+    // Two pinnable keys claiming one path cannot both be the device account for it.
+    if (claimed.some((seen) => samePath(seen, path))) {
+      fail();
+    }
+    claimed.push(path);
     if (SECP256K1_PATHS.some((wanted) => samePath(path, wanted))) {
       if (
         key.key.length !== 33 ||

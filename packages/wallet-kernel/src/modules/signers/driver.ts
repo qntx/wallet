@@ -59,6 +59,8 @@ export type SignContext = {
   readonly request: ChainSignRequest;
   readonly stage: ChainPlan;
   readonly pin: HardwarePin;
+  /** Fresh platform randomness for request ids and challenges — never a device input. */
+  readonly random: (length: number) => Uint8Array;
 };
 
 /**

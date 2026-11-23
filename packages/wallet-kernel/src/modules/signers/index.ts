@@ -410,7 +410,7 @@ export function createSignersModule(
     return executorOf(ctx.platform).begin(header.device, display, async (link) => ({
       kind: "sign",
       result: await signStages(prepared.plan, async (stage) =>
-        driver.sign(link, { request, stage, pin }),
+        driver.sign(link, { request, stage, pin, random: ctx.platform.random }),
       ),
     }));
   };
