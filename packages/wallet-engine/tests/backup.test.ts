@@ -61,6 +61,8 @@ type Rig = {
   readonly cloud: CloudStore;
   readonly files: Map<string, string>;
   readonly storeBacking: Map<string, Map<string, Uint8Array>>;
+  /** One-shot hooks the engine store runs before `put`, keyed by `collection\0key`. */
+  readonly storeHooks: Map<string, () => Promise<void>>;
   readonly faults: {
     write: boolean;
     read: boolean;
@@ -154,6 +156,7 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
     },
   };
   const storeBacking = new Map<string, Map<string, Uint8Array>>();
+  const storeHooks = new Map<string, () => Promise<void>>();
   const engine = createWalletEngine({
     publicStore: createMemoryPublicStore(),
     verifyEvent,
@@ -166,7 +169,7 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
     now: () => Date.now(),
     logger: LOGGER,
     showCallsStatus: () => undefined,
-    openStore: async () => Promise.resolve(persistentEngineStore(storeBacking)),
+    openStore: async () => Promise.resolve(persistentEngineStore(storeBacking, storeHooks)),
     ...(opts.cloud === false ? {} : { cloud }),
   });
   return {
@@ -174,6 +177,7 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
     cloud,
     files,
     storeBacking,
+    storeHooks,
     faults,
     engine,
     close: async () => {
@@ -220,7 +224,10 @@ const tick = Promise.resolve();
  * A persistent EngineStore for lock/unlock tests: records survive close(), the way IndexedDB does —
  * unlike createMemoryEngineStore, which clears its backing on close.
  */
-function persistentEngineStore(backing: Map<string, Map<string, Uint8Array>>): EngineStore {
+function persistentEngineStore(
+  backing: Map<string, Map<string, Uint8Array>>,
+  hooks?: Map<string, () => Promise<void>>,
+): EngineStore {
   return {
     collection(name: string) {
       let table = backing.get(name);
@@ -235,6 +242,7 @@ function persistentEngineStore(backing: Map<string, Map<string, Uint8Array>>): E
         },
         put: async (key, bytes) => {
           await tick;
+          await hooks?.get(`${name}${key}`)?.();
           table.set(key, bytes);
         },
         delete: async (key) => {
@@ -512,6 +520,32 @@ describe("BackupController", () => {
     }
   });
 
+  it("a foreign version whose name digest does not match its text is ignored", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+      const backupId = remoteName(r.files).split("-")[3]!;
+
+      // A real envelope covering a wallet this device does not hold, filed under a name whose
+      // digest belongs to nothing: it fails verification and must not read as a conflict.
+      const foreign = await r.wallet.wallets.importMnemonic({
+        mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow",
+      });
+      await settle(r);
+      const foreignText = r.files.get(remoteName(r.files))!;
+      await r.wallet.wallets.delete(foreign.walletId, PW);
+      await settle(r);
+      r.files.set(`qntx-wallet-backup-${backupId}-${"0".repeat(64)}.json`, foreignText);
+      await settle(r);
+
+      expect(r.engine.backup.getState().status).toBe("synced");
+      expect(r.files.has(`qntx-wallet-backup-${backupId}-${"0".repeat(64)}.json`)).toBe(true);
+    } finally {
+      await r.close();
+    }
+  });
+
   it("lock during an in-flight sync: no cloud or store writes land afterwards", async () => {
     const r = await rig();
     try {
@@ -539,6 +573,43 @@ describe("BackupController", () => {
       expect(r.engine.backup.getState().status).toBe("locked");
       expect(r.files).toStrictEqual(before); // the pending upload never landed
       expect(r.files.get(name)).toBeDefined();
+    } finally {
+      await r.close();
+    }
+  });
+
+  it("lock while the staged record write is parked: the upload never reaches the cloud", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+      const before = new Map(r.files);
+
+      // Coverage change → pass → staged record put parks mid-pass; lock lands inside the parked
+      // write so the pre-write generation check is what keeps the cloud write from being issued.
+      let release!: () => void;
+      let parked = 0;
+      const gate = new Promise<void>((resolve) => {
+        release = () => resolve();
+      });
+      r.storeHooks.set("backupstate", async () => {
+        r.storeHooks.delete("backupstate");
+        parked += 1;
+        await gate;
+      });
+      await r.wallet.wallets.importMnemonic({
+        mnemonic: "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
+      });
+      await until(
+        () => parked,
+        (n) => n === 1,
+      );
+      await r.wallet.vault.lock();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(r.engine.backup.getState().status).toBe("locked");
+      expect(r.files).toStrictEqual(before); // the pending upload never landed
     } finally {
       await r.close();
     }
