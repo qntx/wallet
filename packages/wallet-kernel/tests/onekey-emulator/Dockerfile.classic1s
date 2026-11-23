@@ -1,0 +1,96 @@
+# OneKey Classic 1S legacy firmware emulator.
+# Source: https://github.com/OneKeyHQ/firmware-classic1s @ v3.21.0
+#         (be08c78d2230f11028bca55ae65469e64ad45e4a)
+# Builds `EMULATOR=1 DEBUG_LINK=1 ./legacy/script/cibuild` (equivalent of
+# `make -C legacy build_unix`) and runs the resulting UDP emulator headless.
+#
+#   main wire link : UDP 54935
+#   debug link     : UDP 54936
+#
+# Build:  docker build -f Dockerfile.classic1s -t onekey-emu-classic1s .
+# Run:    docker run --rm -p 54935:54935/udp -p 54936:54936/udp onekey-emu-classic1s
+
+# python:3.10-slim-bookworm multi-arch index digest (amd64 + arm64).
+FROM python:3.10-slim-bookworm@sha256:5be5aaecb962a41567bc8041f1e9e3432cb085b037fe057f9a562630b2e4b370 AS build
+
+ARG CLASSIC1S_COMMIT=be08c78d2230f11028bca55ae65469e64ad45e4a
+ARG PROTOC_VERSION=3.19.5
+# Optional Debian mirror host (e.g. mirrors.tuna.tsinghua.edu.cn) for hosts
+# where deb.debian.org is slow. Empty keeps the default upstream mirror.
+ARG APT_MIRROR=
+
+RUN if [ -n "${APT_MIRROR}" ]; then \
+        sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+    fi && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        git \
+        libsdl2-dev \
+        libsdl2-image-dev \
+        pkg-config \
+        unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# protoc matching the pinned protobuf runtime (upstream nix uses protobuf 3.19).
+# The protob Makefile hardcodes -I/usr/include for google/protobuf/descriptor.proto,
+# so the bundled include tree is copied into /usr/include.
+RUN arch="$(dpkg --print-architecture)" && \
+    case "$arch" in \
+      amd64) protoc_arch="x86_64" ;; \
+      arm64) protoc_arch="aarch_64" ;; \
+      *) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL -o /tmp/protoc.zip \
+      "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${protoc_arch}.zip" && \
+    unzip -o -q /tmp/protoc.zip -d /usr/local bin/protoc 'include/*' && \
+    cp -r /usr/local/include/google /usr/include/ && \
+    rm /tmp/protoc.zip
+
+# Python packages needed by the build (coin template rendering + nanopb codegen).
+RUN pip install --no-cache-dir \
+        "protobuf==3.19.5" \
+        "nanopb==0.4.5.post1" \
+        "click" "mako" "munch" "typing-extensions"
+
+RUN git init /src && cd /src && \
+    git remote add origin https://github.com/OneKeyHQ/firmware-classic1s.git && \
+    git fetch --depth 1 origin "${CLASSIC1S_COMMIT}" && \
+    git checkout FETCH_HEAD && \
+    git submodule update --init --depth 1 \
+        vendor/QR-Code-generator \
+        vendor/libopencm3 \
+        vendor/libsol \
+        vendor/nanopb \
+        vendor/secp256k1-zkp \
+        vendor/tiny_cbor \
+        common/defs/ethereum/chains
+
+# Patches fixing the emulator build at this tag (upstream bit-rot: layout.c
+# uses register_timer/unregister_timer/ble_passkey_cancel without EMULATOR
+# guards and legacy/emulator lacks host-side implementations).
+COPY classic1s-emulator.patch /tmp/classic1s-emulator.patch
+RUN cd /src && git apply /tmp/classic1s-emulator.patch
+
+RUN cd /src/legacy && EMULATOR=1 DEBUG_LINK=1 PRODUCTION=0 ./script/cibuild
+
+# ---------------------------------------------------------------------------
+
+FROM python:3.10-slim-bookworm@sha256:5be5aaecb962a41567bc8041f1e9e3432cb085b037fe057f9a562630b2e4b370
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libsdl2-2.0-0 \
+        libsdl2-image-2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /emu
+COPY --from=build /src/legacy/firmware/onekey_emu.elf /emu/onekey_emu.elf
+
+# Storage file "emulator.img" is created in the working directory and persists
+# flash state across restarts; delete it for a clean state.
+ENV SDL_VIDEODRIVER=dummy
+
+EXPOSE 54935/udp 54936/udp
+
+ENTRYPOINT ["/emu/onekey_emu.elf"]

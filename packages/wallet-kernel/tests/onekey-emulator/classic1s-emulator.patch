@@ -1,0 +1,590 @@
+diff --git a/legacy/ble.h b/legacy/ble.h
+index 50686e3..f587917 100644
+--- a/legacy/ble.h
++++ b/legacy/ble.h
+@@ -97,6 +97,9 @@ void ble_passkey_cancel(void);
+ #define ble_build_id_state(...) false
+ #define ble_hash_state(...) false
+ 
++#define ble_passkey_confirm(...)
++#define ble_passkey_cancel(...)
++
+ #endif
+ 
+ #endif
+diff --git a/legacy/emulator/Makefile b/legacy/emulator/Makefile
+index 0bfe003..5be0a12 100755
+--- a/legacy/emulator/Makefile
++++ b/legacy/emulator/Makefile
+@@ -10,6 +10,8 @@ OBJS += udp.o
+ 
+ OBJS += strl.o
+ 
++OBJS += stubs.o
++
+ libemulator.a: $(OBJS)
+ 	$(AR) rcs $@ $(OBJS)
+ 
+diff --git a/legacy/emulator/stubs.c b/legacy/emulator/stubs.c
+new file mode 100644
+index 0000000..0508fd2
+--- /dev/null
++++ b/legacy/emulator/stubs.c
+@@ -0,0 +1,43 @@
++#include <stdbool.h>
++#include <stdint.h>
++
++#include "bip32.h"
++#include "zkp_bip340.h"
++#include "timer.h"
++#include "firmware/usb.h"
++#include "memory.h"
++#include "ble.h"
++#include "layout.h"
++void layoutStatusLogoEx(bool fresh);
++extern bool reset_after_usb_lock;
++
++bool ble_hw_ver_is_pure(void) { return false; }
++
++int hdnode_bip340_sign_digest_internal(const HDNode *node,
++                                       const uint8_t *digest, uint8_t sig[64]) {
++  return zkp_bip340_sign_digest(node->private_key, digest, sig, NULL);
++}
++
++void layoutBlePasskey(uint8_t *passkey) { (void)passkey; }
++void layoutBlePasskeyDismiss(void) {}
++void layoutBlePairSuccess(void) {}
++void layoutBlePairFailed(void) {}
++void layoutStatusLogoEx(bool fresh) { (void)fresh; }
++
++void loop_callback_handler(void) {}
++void register_loop_callback(void (*callback)(void), uint32_t start,
++                            uint32_t interval) {
++  (void)callback;
++  (void)start;
++  (void)interval;
++}
++void unregister_loop_callback(void) {}
++
++uint32_t svc_timer_ms(void) { return timer_ms(); }
++void svc_system_reset(void) {}
++
++bool reset_after_usb_lock = false;
++
++void usbDisconnect(void) {}
++void usb_u2f_data_send(void) {}
++uint8_t memory_protect_state(void) { return 0; }
+diff --git a/legacy/emulator/timer.c b/legacy/emulator/timer.c
+index d2d9dc6..7989874 100755
+--- a/legacy/emulator/timer.c
++++ b/legacy/emulator/timer.c
+@@ -48,3 +48,14 @@ uint32_t timer_ms(void) {
+ }
+ 
+ void delay_ms(uint32_t uiDelay_Ms) { (void)uiDelay_Ms; }
++
++/* Host-side no-op implementations: the only callers reachable in the
++ * emulator are the BLE pair-result code paths in layout.c, whose timers
++ * only auto-dismiss BLE pairing dialogs. */
++void register_timer(char *name, uint32_t cyc, timer_func fp) {
++  (void)name;
++  (void)cyc;
++  (void)fp;
++}
++
++void unregister_timer(char *name) { (void)name; }
+diff --git a/legacy/firmware/ada.c b/legacy/firmware/ada.c
+index 837eefd..1d02e42 100644
+--- a/legacy/firmware/ada.c
++++ b/legacy/firmware/ada.c
+@@ -2176,8 +2176,8 @@ bool ada_sign_messages(const CardanoSignMessage *msg,
+     return false;
+   }
+ #if EMULATOR
+-  ed25519_sign_ext(sig_structure, sig_structure_index, node->private_key,
+-                   node->private_key_extension, sig);
++  ed25519_sign_ext(sig_structure, sig_structure_index, node.private_key,
++                   node.private_key_extension, sig);
+ #else
+   if (hdnode_sign(&node, sig_structure, sig_structure_index, 0, sig, NULL,
+                   NULL) != 0) {
+diff --git a/legacy/firmware/alephium.c b/legacy/firmware/alephium.c
+index 92cf17f..37226c7 100644
+--- a/legacy/firmware/alephium.c
++++ b/legacy/firmware/alephium.c
+@@ -512,7 +512,7 @@ bool alephium_sign_message(const HDNode *node, const AlephiumSignMessage *msg,
+ 
+   uint8_t signature[64];
+   uint8_t pby;
+-  if (hdnode_sign_digest(node, hash, signature, &pby, NULL) != 0) {
++  if (hdnode_sign_digest((HDNode *)node, hash, signature, &pby, NULL) != 0) {
+     return false;
+   }
+   resp->has_address = true;
+diff --git a/legacy/firmware/babylon_emu.c b/legacy/firmware/babylon_emu.c
+index 8b42787..d9b15f8 100644
+--- a/legacy/firmware/babylon_emu.c
++++ b/legacy/firmware/babylon_emu.c
+@@ -6,7 +6,7 @@
+ 
+ #include "bignum.h"
+ #include "bip32.h"
+-#include "config_root.h"
++#include "config.h"
+ #include "curves.h"
+ #include "hmac.h"
+ #include "messages-bitcoin.pb.h"
+diff --git a/legacy/firmware/bip322_simple/bip322_simple.c b/legacy/firmware/bip322_simple/bip322_simple.c
+index 8ca6225..d4c7c65 100644
+--- a/legacy/firmware/bip322_simple/bip322_simple.c
++++ b/legacy/firmware/bip322_simple/bip322_simple.c
+@@ -201,7 +201,7 @@ bool sign_bip322_simple_segwit(const HDNode *node, const CoinInfo *coin,
+                  script_pub + 2, coin->curve->hasher_sign == HASHER_SHA2D,
+                  sig_hash);
+ 
+-  if (hdnode_sign_digest(node, sig_hash, signature, NULL, NULL) != 0) {
++  if (hdnode_sign_digest((HDNode *)node, sig_hash, signature, NULL, NULL) != 0) {
+     return false;
+   }
+ 
+diff --git a/legacy/firmware/config_emu.c b/legacy/firmware/config_emu.c
+index af6b2a5..dd1f985 100644
+--- a/legacy/firmware/config_emu.c
++++ b/legacy/firmware/config_emu.c
+@@ -51,7 +51,8 @@
+ #include "supervise.h"
+ #include "timer.h"
+ #include "trezor.h"
+-#include "u2f.h"
++#include "fido2/u2f.h"
++#include "fido2/ctap_trans.h"
+ #include "usb.h"
+ #include "util.h"
+ 
+@@ -121,6 +122,7 @@ static const uint32_t META_MAGIC_V10 = 0xFFFFFFFF;
+ #define KEY_USB_LOCK (41 | APP | FLAG_PUBLIC_SHIFTED)                   // bool
+ 
+ #define KEY_INPUT_DIRECTION (42 | APP | FLAG_PUBLIC_SHIFTED)            // bool
++#define KEY_FIDO_SWITCH (43 | APP | FLAG_PUBLIC_SHIFTED)                  // bool
+ 
+ #define KEY_DEBUG_LINK_PIN (255 | APP | FLAG_PUBLIC_SHIFTED)            // string(10)
+ // clang-format on
+@@ -475,10 +477,12 @@ void config_init(void) {
+   for (uint8_t i = 0; i < 5; i++) {
+     se_version = se_get_version();
+     if (se_version == NULL) {
++#if !EMULATOR
+       se_power_off();
+       delay_ms(100);
+       se_power_on();
+       delay_ms(100);
++#endif
+     } else {
+       break;
+     }
+@@ -1097,6 +1101,22 @@ bool config_containsMnemonic(const char *mnemonic) {
+ /* Check whether pin matches storage.  The pin must be
+  * a null-terminated string with at most 9 characters.
+  */
++bool config_getFidoSwitch(bool *fido_switch) {
++  return sectrue == config_get_bool(KEY_FIDO_SWITCH, fido_switch);
++}
++
++void config_setFidoSwitch(bool fido_switch) {
++  config_set_bool(KEY_FIDO_SWITCH, fido_switch);
++}
++
++char *config_get_device_model(void) {
++  return (char *)"OneKey Classic 1S";
++}
++
++bool config_verifyPin(const char *pin, pin_type_t pin_type) {
++  return config_unlock(pin, pin_type);
++}
++
+ bool config_unlock(const char *pin, pin_type_t pin_type) {
+   if (g_bSelectSEFlag) {
+     if (se_verifyPin((pin_to_int(pin)))) {
+diff --git a/legacy/firmware/config_emu.h b/legacy/firmware/config_emu.h
+index 879ee49..27199ac 100644
+--- a/legacy/firmware/config_emu.h
++++ b/legacy/firmware/config_emu.h
+@@ -155,7 +155,11 @@ bool config_dumpNode(HDNodeType *node);
+ bool config_getPin(char *dest, uint16_t dest_size);
+ #endif
+ 
++bool config_verifyPin(const char *pin, pin_type_t pin_type);
+ bool config_unlock(const char *pin, pin_type_t pin_type);
++bool config_getFidoSwitch(bool *fido_switch);
++void config_setFidoSwitch(bool fido_switch);
++char *config_get_device_model(void);
+ bool config_hasPin(void);
+ bool config_changePin(const char *old_pin, const char *new_pin);
+ bool session_isUnlocked(void);
+diff --git a/legacy/firmware/fido2/ctap.c b/legacy/firmware/fido2/ctap.c
+index de2dd15..70e66e2 100644
+--- a/legacy/firmware/fido2/ctap.c
++++ b/legacy/firmware/fido2/ctap.c
+@@ -753,6 +753,8 @@ static int ctap_derive_credential_pubkey(uint8_t type, uint8_t *cred_id,
+   //   ctap_printf("path[%d]: %04x\n", i, path[i]);
+   // }
+ 
++  (void)path;
++  (void)path_len;
+   if (!se_derive_fido_keys(&node, "nist256p1", path, path_len, NULL)) {
+     return CTAP1_ERR_OTHER;
+   }
+diff --git a/legacy/firmware/fsm_msg_common.h b/legacy/firmware/fsm_msg_common.h
+index d6e12c5..5d332f4 100644
+--- a/legacy/firmware/fsm_msg_common.h
++++ b/legacy/firmware/fsm_msg_common.h
+@@ -1199,7 +1199,11 @@ void fsm_msgGetPassphraseState(const GetPassphraseState *msg) {
+ 
+   uint8_t space_check = 0;
+   (void)space_check;
++#if EMULATOR
++  (void)se_get_pin_passphrase_space(NULL);
++#else
+   (void)se_get_pin_passphrase_space;
++#endif
+   resp->has_unlocked_attach_pin = true;
+   resp->unlocked_attach_pin = is_passphrase_pin_enabled;
+ 
+diff --git a/legacy/firmware/menu_list.c b/legacy/firmware/menu_list.c
+index 90bc4ca..9d030fb 100644
+--- a/legacy/firmware/menu_list.c
++++ b/legacy/firmware/menu_list.c
+@@ -1008,6 +1008,7 @@ void menu_default(void) {
+ 
+ static void menu_pin_input_for_attach(void) {
+   uint8_t available_space = 0;
++  (void)available_space;
+   (void)se_get_pin_passphrase_space(&available_space);
+   const char *main_pin = NULL;
+   const char *hidden_pin1 = NULL;
+diff --git a/legacy/firmware/neo.c b/legacy/firmware/neo.c
+index 9cd4593..836aee3 100644
+--- a/legacy/firmware/neo.c
++++ b/legacy/firmware/neo.c
+@@ -566,7 +566,7 @@ refresh_menu:
+     oledDrawStringAdapter(0, y, _(GLOBAL_TARGET_NETWORK), FONT_STANDARD);
+     char network_magic_str[11] = {0};
+     snprintf(network_magic_str, sizeof(network_magic_str), "%lu",
+-             network_magic);
++             (unsigned long)network_magic);
+     oledDrawStringAdapter(0, y + 10, network_magic_str, FONT_STANDARD);
+     layoutButtonNoAdapter(NULL, &bmp_bottom_left_arrow);
+     layoutButtonYesAdapter(NULL, &bmp_bottom_right_arrow);
+@@ -636,7 +636,7 @@ refresh_menu:
+       oledDrawStringAdapter(0, y, _(GLOBAL_TARGET_NETWORK), FONT_STANDARD);
+       char network_magic_str[11] = {0};
+       snprintf(network_magic_str, sizeof(network_magic_str), "%lu",
+-               network_magic);
++               (unsigned long)network_magic);
+       oledDrawStringAdapter(0, y + 10, network_magic_str, FONT_STANDARD);
+     }
+     layoutButtonNoAdapter(NULL, &bmp_bottom_left_arrow);
+@@ -647,7 +647,7 @@ refresh_menu:
+       oledDrawStringAdapter(0, y, _(GLOBAL_TARGET_NETWORK), FONT_STANDARD);
+       char network_magic_str[11] = {0};
+       snprintf(network_magic_str, sizeof(network_magic_str), "%lu",
+-               network_magic);
++               (unsigned long)network_magic);
+       oledDrawStringAdapter(0, y + 10, network_magic_str, FONT_STANDARD);
+       layoutButtonNoAdapter(NULL, &bmp_bottom_left_arrow);
+       layoutButtonYesAdapter(NULL, &bmp_bottom_right_arrow);
+diff --git a/legacy/firmware/se_chip.h b/legacy/firmware/se_chip.h
+index 22fe7b0..85f92e5 100644
+--- a/legacy/firmware/se_chip.h
++++ b/legacy/firmware/se_chip.h
+@@ -177,10 +177,10 @@ int se_aes256_encrypt(const uint8_t *data, uint16_t data_len, const uint8_t *iv,
+ int se_aes256_decrypt(const uint8_t *data, uint16_t data_len, const uint8_t *iv,
+                       uint8_t *value, uint16_t value_len, uint8_t *out);
+ 
+-int se_nem_aes256_encrypt(const uint8_t *ed25519_public_key, const uint8_t *iv,
++int se_nem_aes256_encrypt(const uint8_t *pubkey, const uint8_t *iv,
+                           const uint8_t *salt, uint8_t *payload, uint16_t size,
+                           uint8_t *out);
+-int se_nem_aes256_decrypt(const uint8_t *ed25519_public_key, const uint8_t *iv,
++int se_nem_aes256_decrypt(const uint8_t *pubkey, const uint8_t *iv,
+                           const uint8_t *salt, uint8_t *payload, uint16_t size,
+                           uint8_t *out);
+ secbool se_slip21_ownership_id(const uint8_t *script_pubkey,
+@@ -240,33 +240,178 @@ secbool se_fido_hmac_secret(const uint8_t *credential_id,
+                             uint16_t credential_id_len, const uint8_t *salt,
+                             uint16_t salt_len, uint8_t *output);
+ #else
+-#define se_transmit(...) 0
+-#define se_get_sn(...) false
+-#define se_get_version(...) "1.1.0.0"
+-#define se_get_build_id(...) "xxxxxxx"
+-#define se_get_hash(...) "00000000000000000000000000000000"
+-#define se_backup(...) false
+-#define se_restore(...) false
+-#define se_verify(...) false
+-#define se_device_init(...) false
+-#define se_st_seed_en(...) false
+-#define se_st_seed_de(...) false
+-#define se_set_value(...) false
+-#define st_backup_entory_to_se(...) false
+-#define st_restore_entory_from_se(...) false
+-#define se_reset_storage(...)
+-#define se_isInitialized(...) false
+-#define se_hasPin(...) false
+-#define se_setPin(...) false
+-#define se_verifyPin(...) false
+-#define se_changePin(...) false
+-#define se_pinFailedCounter(...) 0
+-#define se_setSeedStrength(...) false
+-#define se_getSeedStrength(...) false
+-#define se_getNeedsBackup(...) false
+-#define se_setNeedsBackup(...) false
+-#define se_export_seed(...) false
+-#define se_importSeed(...) false
+-#define se_isFactoryMode(...) false
++#include "secbool.h"
++
++typedef enum {
++  PIN_TYPE_USER = 0,
++  PIN_TYPE_USER_CHECK,
++  PIN_TYPE_USER_AND_PASSPHRASE_PIN,
++  PIN_TYPE_PASSPHRASE_PIN,
++  PIN_TYPE_PASSPHRASE_PIN_CHECK,
++  PIN_TYPE_USER_AND_PASSPHRASE_PIN_CHECK,
++  PIN_TYPE_MAX
++} pin_type_t;
++
++typedef enum {
++  PIN_SUCCESS,
++  USER_PIN_ENTERED,
++  USER_PIN_FAILED,
++  PASSPHRASE_PIN_ENTERED,
++  PASSPHRASE_PIN_NO_MATCHED,
++  USER_PIN_NOT_ENTERED,
++  WIPE_CODE_ENTERED,
++  PIN_SAME_AS_USER_PIN,
++  PIN_SAME_AS_WIPE_CODE,
++  PIN_PASSPHRASE_MAX_ITEMS_REACHED,
++  PIN_PASSPHRASE_SAVE_FAILED,
++  PIN_PASSPHRASE_READ_FAILED,
++  SE_PIN_RETRY_LIMIT_WIPED,
++  PIN_FAILED
++} pin_result_t;
++
++typedef void (*UI_WAIT_CALLBACK)(const char *message, int progress);
++
++#define SESSION_KEYLEN (16)
++#define PUBLIC_REGION_SIZE (0x800)
++#define PRIVATE_REGION_SIZE (0x800)
++#define MAX_AUTHORIZATION_LEN 128
++
++#define SE_FIDO2_SLOT_DATA_OK 0
++#define SE_FIDO2_SLOT_DATA_NULL 1
++#define SE_FIDO2_SLOT_DATA_BUFFER_TOO_SMALL 2
++#define SE_FIDO2_SLOT_DATA_INVALID 3
++
++#define SE_FIDO_CREDENTIAL_ID_MIN_LEN 33U
++#define SE_FIDO_CREDENTIAL_ID_MAX_LEN 512U
++#define SE_FIDO_CREDENTIAL_PLAINTEXT_MAX_LEN 480U
++#define SE_FIDO_RESIDENT_SLOT_COUNT 60U
++#define SE_FIDO_RESIDENT_CREDENTIAL_ID_MAX_LEN 474U
++#define SE_FIDO_RESIDENT_CREDENTIAL_PLAINTEXT_MAX_LEN 442U
++#define SE_FIDO_RESIDENT_SLOT_NONE 0xffU
++
++#define SE_FIDO_CREDENTIAL_ACTION_NOT_STORED 0U
++#define SE_FIDO_CREDENTIAL_ACTION_CREATED 1U
++#define SE_FIDO_CREDENTIAL_ACTION_REPLACED 2U
++
++#define check_se_fido_seed(...) ({ false; })
++#define se_aes256_decrypt(...) ({ 0; })
++#define se_aes256_encrypt(...) ({ 0; })
++#define se_authorization_clear(...) ({ (void)0; })
++#define se_authorization_get_data(...) ({ secfalse; })
++#define se_authorization_get_type(...) ({ secfalse; })
++#define se_authorization_set(...) ({ secfalse; })
++#define se_bch_sign_digest(...) ({ 0; })
++#define se_bip340_sign_digest(...) ({ 0; })
++#define se_changePin(...) ({ secfalse; })
++#define se_changeWipeCode(...) ({ secfalse; })
++#define se_change_pin_passphrase(...) ({ secfalse; })
++#define se_check_passphrase_btc_test_address(...) ({ secfalse; })
++#define se_clearPinStateCache(...) ({ (void)0; })
++#define se_clearSecsta(...) ({ secfalse; })
++#define se_clear_runtime_state(...) ({ (void)0; })
++#define se_containsMnemonic(...) ({ secfalse; })
++#define se_delete_pin_passphrase(...) ({ secfalse; })
++#define se_derive_fido_keys(...) ({ secfalse; })
++#define se_derive_keys(...) ({ secfalse; })
++#define se_derive_tweak_private_keys(...) ({ secfalse; })
++#define se_device_init(...) ({ secfalse; })
++#define se_disableFactoryMode(...) ({ false; })
++#define se_ecdsa_get_pubkey(...) ({ secfalse; })
++#define se_ecdsa_sign_digest(...) ({ 0; })
++#define se_ed25519_sign(...) ({ 0; })
++#define se_ed25519_sign_ext(...) ({ 0; })
++#define se_ed25519_sign_keccak(...) ({ 0; })
++#define se_fido_att_sign_digest(...) ({ secfalse; })
++#define se_fido_credential_create(...) ({ secfalse; })
++#define se_fido_credential_validate(...) ({ secfalse; })
++#define se_fido_hdnode_sign_digest(...) ({ secfalse; })
++#define se_fido_hmac_secret(...) ({ secfalse; })
++#define se_fido_resident_clear(...) ({ secfalse; })
++#define se_fido_resident_delete(...) ({ secfalse; })
++#define se_fido_resident_import(...) ({ secfalse; })
++#define se_fido_resident_list(...) ({ secfalse; })
++#define se_fido_resident_read(...) ({ secfalse; })
++#define se_fido_seed_is_ready(...) ({ false; })
++#define se_gen_root_node(...) ({ secfalse; })
++#define se_gen_session_seed(...) ({ secfalse; })
++#define se_getRetryTimes(...) ({ secfalse; })
++#define se_getSecsta(...) ({ secfalse; })
++#define se_get_ecdh_pubkey(...) ({ secfalse; })
++#define se_get_pin_passphrase_space(...) ({ secfalse; })
++#define se_backup(...) ({ secfalse; })
++#define se_restore(...) ({ secfalse; })
++#define se_verify(...) ({ secfalse; })
++#define se_st_seed_en(...) ({ secfalse; })
++#define se_st_seed_de(...) ({ secfalse; })
++#define se_set_value(...) ({ secfalse; })
++#define st_backup_entory_to_se(...) ({ secfalse; })
++#define st_restore_entory_from_se(...) ({ secfalse; })
++#define se_export_seed(...) ({ secfalse; })
++#define se_importSeed(...) ({ secfalse; })
++#define se_getSeedStrength(...) ({ secfalse; })
++#define se_setSeedStrength(...) ({ secfalse; })
++#define se_getNeedsBackup(...) ({ secfalse; })
++#define se_setNeedsBackup(...) ({ secfalse; })
++#define se_get_version_checked(...) ({ "1.1.0.0"; })
++#define se_get_version(...) ({ "1.1.0.0"; })
++#define se_security_halt(...) ({ for (;;) { } })
++#define se_configuration_halt(...) ({ for (;;) { } })
++#define se_get_build_id(...) ({ "xxxxxxx"; })
++#define se_get_hash(...) ({ "00000000000000000000000000000000"; })
++#define se_transmit(...) ({ 0; })
++#define se_get_pin_result_type(...) ({ 0; })
++#define se_get_private_region(...) ({ secfalse; })
++#define se_get_pubkey(...) ({ secfalse; })
++#define se_get_public_region(...) ({ secfalse; })
++#define se_get_rand(...) ({ secfalse; })
++#define se_get_session_seed_state(...) ({ secfalse; })
++#define se_get_shared_key(...) ({ 0; })
++#define se_get_sn(...) ({ secfalse; })
++#define se_get_u2f_next_counter(...) ({ secfalse; })
++#define se_get_ui_callback(...) ({ NULL; })
++#define se_hasPin(...) ({ secfalse; })
++#define se_hasWipeCode(...) ({ secfalse; })
++#define se_has_cerrificate(...) ({ secfalse; })
++#define se_isFactoryMode(...) ({ false; })
++#define se_isInitialized(...) ({ secfalse; })
++#define se_lasterror(...) ({ 0; })
++#define se_lock_ecdh_pubkey(...) ({ secfalse; })
++#define se_nem_aes256_decrypt(...) ({ 0; })
++#define se_nem_aes256_encrypt(...) ({ 0; })
++#define se_nist256p1_sign_digest(...) ({ 0; })
++#define se_node_sign_digest(...) ({ secfalse; })
++#define se_pinFailedCounter(...) ({ 0; })
++#define se_random_encrypted(...) ({ secfalse; })
++#define se_read_certificate(...) ({ secfalse; })
++#define se_reset_se(...) ({ secfalse; })
++#define se_reset_storage(...) ({ secfalse; })
++#define se_secp256k1_sign_digest(...) ({ 0; })
++#define se_sessionClear(...) ({ secfalse; })
++#define se_sessionClose(...) ({ secfalse; })
++#define se_sessionOpen(...) ({ secfalse; })
++#define se_sessionStart(...) ({ secfalse; })
++#define se_session_is_open(...) ({ secfalse; })
++#define se_setPin(...) ({ secfalse; })
++#define se_set_mnemonic(...) ({ secfalse; })
++#define se_set_pin_passphrase(...) ({ secfalse; })
++#define se_set_private_key_feitian(...) ({ secfalse; })
++#define se_set_private_region(...) ({ secfalse; })
++#define se_set_public_region(...) ({ secfalse; })
++#define se_set_session_key(...) ({ secfalse; })
++#define se_set_sn(...) ({ secfalse; })
++#define se_set_u2f_counter(...) ({ secfalse; })
++#define se_set_ui_callback(...) ({ (void)0; })
++#define se_sign_message(...) ({ secfalse; })
++#define se_sign_message_feitian(...) ({ secfalse; })
++#define se_slip21_ownership_id(...) ({ secfalse; })
++#define se_slip21_slip25_mac(...) ({ secfalse; })
++#define se_sync_session_key(...) ({ secfalse; })
++#define se_transmit_mac(...) ({ secfalse; })
++#define se_transmit_mac_with_status(...) ({ secfalse; })
++#define se_u2f_authenticate(...) ({ secfalse; })
++#define se_u2f_register(...) ({ secfalse; })
++#define se_u2f_validate_handle(...) ({ secfalse; })
++#define se_verifyPin(...) ({ secfalse; })
++#define se_write_certificate(...) ({ secfalse; })
+ #endif
+ #endif
+diff --git a/legacy/firmware/ton.c b/legacy/firmware/ton.c
+index 283cf47..f7207a0 100644
+--- a/legacy/firmware/ton.c
++++ b/legacy/firmware/ton.c
+@@ -261,8 +261,11 @@ bool ton_sign_message(const TonSignMessage *msg, const HDNode *node,
+       if (strlen(msg->comment) >= 8 &&
+           memcmp(msg->comment, "b5ee9c72", 8) == 0) {
+         is_raw_data = true;
+-        data_len = strlen(msg->comment) / 2;
+-        hex2data(msg->comment, raw_data, &data_len);
++        {
++          unsigned int out_len = strlen(msg->comment) / 2;
++          hex2data(msg->comment, raw_data, &out_len);
++          data_len = out_len;
++        }
+ 
+         if (!layoutTonSign("Ton", false, amount_str, msg->destination,
+                            usr_friendly_address, NULL, NULL,
+diff --git a/legacy/firmware/tron.c b/legacy/firmware/tron.c
+index 895cdc9..6ef2580 100644
+--- a/legacy/firmware/tron.c
++++ b/legacy/firmware/tron.c
+@@ -1016,7 +1016,7 @@ refresh_menu:
+     oledDrawStringAdapter(0, y, _(GLOBAL__VOTE_COUNT), FONT_STANDARD);
+     char vote_count_str[64] = {0};
+     snprintf(vote_count_str, sizeof(vote_count_str), "%ld",
+-             (contract->votes[(index - 3) / 2].vote_count));
++             (long)(contract->votes[(index - 3) / 2].vote_count));
+     oledDrawStringAdapter(0, y + 10, vote_count_str, FONT_STANDARD);
+     layoutButtonNoAdapter(NULL, &bmp_bottom_left_arrow);
+     layoutButtonYesAdapter(NULL, &bmp_bottom_right_arrow);
+diff --git a/legacy/layout.c b/legacy/layout.c
+index a14fee8..b17ba6b 100644
+--- a/legacy/layout.c
++++ b/legacy/layout.c
+@@ -22,6 +22,7 @@
+ #include "common.h"
+ #include "oled.h"
+ #include "prompt.h"
++#include "timer.h"
+ #include "usart.h"
+ #include "util.h"
+ 
+@@ -58,6 +59,7 @@ void pair_cancel_timeout_callback(void) {
+   }
+ }
+ 
++#if !EMULATOR
+ static void pair_result_timeout_callback(void) {
+   if (layoutLast == layoutBlePairSuccess || layoutLast == layoutBlePairFailed) {
+     unregister_timer(TIMER_NAME_PAIR_RESULT);
+@@ -65,6 +67,7 @@ static void pair_result_timeout_callback(void) {
+     layoutBlePairRestore();
+   }
+ }
++#endif
+ 
+ bool layoutBlePairResultShowing(void) {
+   return (layoutLast == layoutBlePairSuccess ||
+diff --git a/legacy/si2c.h b/legacy/si2c.h
+index 57f37d9..bc7d573 100644
+--- a/legacy/si2c.h
++++ b/legacy/si2c.h
+@@ -38,6 +38,7 @@ void i2c_slave_send_ex(uint32_t data_len);
+ bool i2c_slave_send_fido(uint8_t *data, uint32_t data_len);
+ #else
+ #define i2c_set_wait(...)
++#define i2c_slave_send_fido(...) ({ true; })
+ #endif
+ 
+ #endif
