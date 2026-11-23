@@ -43,8 +43,6 @@ export type DeviceIo = {
     request: DeviceRequest,
     context: { readonly device: HardwareDevice; readonly display?: DeviceDisplay },
   ) => Promise<DeviceResponse>;
-  /** Aborted before or while waiting → the operation is cancelled and the call rejects `cancelled`. */
-  readonly signal?: AbortSignal;
 };
 
 export type HardwareOperation =

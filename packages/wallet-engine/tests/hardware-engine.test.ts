@@ -31,11 +31,19 @@ const NETWORK = "eip155:42161";
 const pairKeystone = async (w: Awaited<ReturnType<typeof world>>): Promise<string> => {
   /* The world wallet is shared across tests — a device already paired is reused. */
   try {
-    const info = await hardware(w.wallet).pair("keystone", {
-      exchange: async () =>
-        Promise.resolve({ kind: "qr", ur: { type: "crypto-multi-accounts", cbor: SYNC } }),
-    });
-    return info.walletId;
+    const result = await hardware(w.wallet).start(
+      { kind: "pair", device: "keystone" },
+      {
+        io: {
+          exchange: async () =>
+            Promise.resolve({ kind: "qr", ur: { type: "crypto-multi-accounts", cbor: SYNC } }),
+        },
+      },
+    ).result;
+    if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
+      throw new WalletError("integrity", "pair did not return a hardware wallet");
+    }
+    return result.wallet.walletId;
   } catch (error) {
     if (!(error instanceof WalletError && error.code === "already-exists")) {
       throw error;

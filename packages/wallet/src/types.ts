@@ -408,6 +408,18 @@ export type BackupApi = {
   }>;
 };
 
+/**
+ * One running signer operation (card or device): `observe` replays the current step first, then
+ * every step the kernel reports; `cancel` is idempotent and resolves once the kernel answered the
+ * cancellation; `result` resolves with the operation's result or rejects —
+ * `WalletError("cancelled")` after a cancel.
+ */
+export type SignerTask<Step, Result> = {
+  readonly observe: (listener: (step: Step) => void) => () => void;
+  readonly cancel: () => Promise<void>;
+  readonly result: Promise<Result>;
+};
+
 export type Wallet = {
   readonly getSnapshot: () => WalletSnapshot;
   readonly subscribe: (listener: () => void) => () => void;

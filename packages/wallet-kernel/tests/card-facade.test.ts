@@ -238,7 +238,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card(wallet) facade end to end", ()
 
     const created = api.start(
       { kind: "create", cards: 1, source: { kind: "wallet", walletId: sourceId } },
-      { kind: "password", password: PASSWORD },
+      { verify: { kind: "password", password: PASSWORD } },
     );
     const createSteps = drive(created, input, reader, {
       codes: [freshCode(), freshCode()],
@@ -275,7 +275,10 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card(wallet) facade end to end", ()
       },
       message: utf8ToBytes("hello facade"),
     };
-    const signed = api.start({ kind: "sign", request }, { kind: "password", password: PASSWORD });
+    const signed = api.start(
+      { kind: "sign", request },
+      { verify: { kind: "password", password: PASSWORD } },
+    );
     drive(signed, input, reader, { codes: [freshCode()], choices: [sim], deck: [sim] });
     const outcome = (await signed.result) as {
       kind: "sign";
@@ -302,7 +305,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card(wallet) facade end to end", ()
 
     const created = api.start(
       { kind: "create", cards: 2, source: { kind: "generate" } },
-      { kind: "password", password: PASSWORD },
+      { verify: { kind: "password", password: PASSWORD } },
     );
     drive(created, input, reader, {
       codes: [freshCode(), freshCode()],
@@ -347,7 +350,10 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card(wallet) facade end to end", ()
 
     /** A sign through the facade — resolving `task.result` means checkResult already passed. */
     const sign = async (request: ChainSignRequest, which: SimCard): Promise<ChainSignResult> => {
-      const task = api.start({ kind: "sign", request }, { kind: "password", password: PASSWORD });
+      const task = api.start(
+        { kind: "sign", request },
+        { verify: { kind: "password", password: PASSWORD } },
+      );
       drive(task, input, reader, { codes: [freshCode()], choices: [which], deck: [which] });
       const outcome = (await task.result) as { kind: "sign"; result: ChainSignResult };
       return outcome.result;

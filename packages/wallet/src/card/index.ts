@@ -11,7 +11,7 @@ import { internalsOf } from "../internal.ts";
 import type { WalletInternals } from "../internal.ts";
 import type { CardOperation, CardOpResult, CardStep } from "../protocol/index.ts";
 import { WalletError } from "../types.ts";
-import type { VerifyFactor, Wallet } from "../types.ts";
+import type { SignerTask, VerifyFactor, Wallet } from "../types.ts";
 
 export type {
   CardInputPurpose,
@@ -22,17 +22,10 @@ export type {
 } from "../protocol/index.ts";
 
 /** One running card operation: the host renders steps, never drives APDUs. */
-export type CardTask = {
-  /** Every step as the kernel reports it, starting with the current one; returns an unsubscribe. */
-  readonly observe: (listener: (step: CardStep) => void) => () => void;
-  /** Ends the operation (the kernel wipes its state); idempotent; resolves when the kernel answered. */
-  readonly cancel: () => Promise<void>;
-  /** The operation's result, or its WalletError (cancelled → `cancelled`). */
-  readonly result: Promise<CardOpResult>;
-};
+export type CardTask = SignerTask<CardStep, CardOpResult>;
 
 export type CardApi = {
-  readonly start: (op: CardOperation, verify?: VerifyFactor) => CardTask;
+  readonly start: (op: CardOperation, options?: { readonly verify?: VerifyFactor }) => CardTask;
 };
 
 const cancelledError = (): WalletError =>
@@ -157,9 +150,9 @@ function createCardApi(internals: WalletInternals): CardApi {
   /** The running task, if any — a second `start` cancels it (the kernel does the same). */
   let active: CardTask | undefined;
   return {
-    start: (op, verify) => {
+    start: (op, options) => {
       void active?.cancel();
-      active = run(internals, op, verify);
+      active = run(internals, op, options?.verify);
       return active;
     },
   };

@@ -116,7 +116,7 @@ describe("card(wallet)", () => {
     });
     const task = card(wallet).start(
       { kind: "health", walletId: "0a".repeat(8) },
-      { kind: "password", password: "test password" },
+      { verify: { kind: "password", password: "test password" } },
     );
     await task.result;
     expect(seen).toBeDefined();

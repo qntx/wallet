@@ -11,7 +11,7 @@ import { signEvmPersonalMessage } from "@qntx/wallet-chains/evm/sign";
 
 import { hardware, qrParts, qrReader } from "../src/hardware/index.ts";
 import type { DeviceIo } from "../src/hardware/index.ts";
-import type { DeviceResponse, HardwareResult } from "../src/protocol/hardware.ts";
+import type { DeviceResponse, HardwareResult, HardwareStep } from "../src/protocol/hardware.ts";
 import type { WalletInfo } from "../src/types.ts";
 import { connectKernel } from "../src/wallet.ts";
 import { FakeKernel, PASSKEY, ScriptedPort, unlockedStatus, walletError } from "./host.test.ts";
@@ -64,11 +64,10 @@ const responding = (io: Partial<DeviceIo>): DeviceIo => ({
         kind: "qr",
         ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
       } as DeviceResponse)),
-  ...(io.signal === undefined ? {} : { signal: io.signal }),
 });
 
 describe("hardware(wallet)", () => {
-  it("runs begin → exchange → step until done and returns the result", async () => {
+  it("runs begin → exchange → step until done and observes every step", async () => {
     const kernel = new FakeKernel(unlockedStatus());
     let asks = 0;
     kernel.handlers.set("hardware.begin", () => {
@@ -80,22 +79,45 @@ describe("hardware(wallet)", () => {
     }));
     const wallet = await connect(kernel);
     const contexts: unknown[] = [];
-    const info = await hardware(wallet).pair(
-      "keystone",
-      responding({
-        exchange: async (request, context) => {
-          contexts.push([request.kind, context]);
-          return Promise.resolve({
-            kind: "qr",
-            ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
-          });
-        },
-      }),
+    const steps: string[] = [];
+    const task = hardware(wallet).start(
+      { kind: "pair", device: "keystone" },
+      {
+        io: responding({
+          exchange: async (request, context) => {
+            contexts.push([request.kind, context]);
+            return Promise.resolve({
+              kind: "qr",
+              ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
+            });
+          },
+        }),
+      },
     );
-    expect(info).toStrictEqual(WALLET);
+    task.observe((step) => steps.push(step.kind));
+    const result = await task.result;
+    expect(result).toStrictEqual({ kind: "pair", wallet: WALLET });
+    expect(steps).toStrictEqual(["exchange", "done"]);
     expect(kernel.received).toStrictEqual(["hardware.begin", "hardware.step"]);
     expect(contexts).toStrictEqual([["qr", { device: "keystone", display: "clear" }]]);
     expect(asks).toBe(1);
+  });
+
+  it("a late observer replays the current step first", async () => {
+    const kernel = new FakeKernel(unlockedStatus());
+    kernel.handlers.set("hardware.begin", () => ({ ok: { opId: OP_ID, step: exchangeStep } }));
+    kernel.handlers.set("hardware.step", () => ({
+      ok: doneStep({ kind: "pair", wallet: WALLET }),
+    }));
+    const wallet = await connect(kernel);
+    const task = hardware(wallet).start(
+      { kind: "pair", device: "keystone" },
+      { io: responding({}) },
+    );
+    await task.result;
+    const steps: string[] = [];
+    task.observe((step) => steps.push(step.kind));
+    expect(steps).toStrictEqual(["done"]);
   });
 
   it("refuses a done result whose kind is not the operation's", async () => {
@@ -104,13 +126,15 @@ describe("hardware(wallet)", () => {
       ok: { opId: OP_ID, step: doneStep({ kind: "accounts", accounts: [] }) },
     }));
     const wallet = await connect(kernel);
-    await expect(hardware(wallet).pair("keystone", responding({}))).rejects.toSatisfy(
-      (e) => walletError(e).code === "integrity",
+    const task = hardware(wallet).start(
+      { kind: "pair", device: "keystone" },
+      { io: responding({}) },
     );
+    await expect(task.result).rejects.toSatisfy((e) => walletError(e).code === "integrity");
     expect(kernel.received).toContain("hardware.cancel");
   });
 
-  it("cancels the operation when the signal aborts mid-exchange", async () => {
+  it("cancel() during an exchange cancels the operation and rejects cancelled", async () => {
     const kernel = new FakeKernel(unlockedStatus());
     kernel.handlers.set("hardware.begin", () => ({ ok: { opId: OP_ID, step: exchangeStep } }));
     kernel.handlers.set("hardware.step", () => ({
@@ -118,48 +142,82 @@ describe("hardware(wallet)", () => {
     }));
     kernel.handlers.set("hardware.cancel", () => ({ ok: null }));
     const wallet = await connect(kernel);
-    const controller = new AbortController();
-    const io = responding({
-      signal: controller.signal,
-      exchange: async () => {
-        controller.abort();
-        return Promise.resolve({
-          kind: "qr",
-          ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
-        });
+    const task = hardware(wallet).start(
+      { kind: "pair", device: "keystone" },
+      {
+        io: responding({
+          exchange: async () => {
+            void task.cancel();
+            return Promise.resolve({
+              kind: "qr",
+              ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
+            });
+          },
+        }),
       },
-    });
-    await expect(hardware(wallet).pair("keystone", io)).rejects.toSatisfy(
-      (e) => walletError(e).code === "cancelled",
     );
+    await expect(task.result).rejects.toSatisfy((e) => walletError(e).code === "cancelled");
     expect(kernel.received).toContain("hardware.cancel");
     expect(kernel.received).not.toContain("hardware.step");
   });
 
-  it("does not issue the next device request once the signal aborted during step", async () => {
+  it("cancel() before begin answers cancels the operation once it lands", async () => {
+    const kernel = new FakeKernel(unlockedStatus());
+    kernel.handlers.set("hardware.cancel", () => ({ ok: null }));
+    let resolveBegin:
+      | ((value: { ok: { opId: string; step: typeof exchangeStep } }) => void)
+      | undefined;
+    let began!: () => void;
+    const beganP = new Promise<void>((resolve) => {
+      began = resolve;
+    });
+    kernel.handlers.set("hardware.begin", async () => {
+      began();
+      return new Promise<{ ok: { opId: string; step: typeof exchangeStep } }>((resolve) => {
+        resolveBegin = resolve;
+      });
+    });
+    const wallet = await connect(kernel);
+    const task = hardware(wallet).start(
+      { kind: "pair", device: "keystone" },
+      { io: responding({}) },
+    );
+    await beganP;
+    const cancelling = task.cancel();
+    expect(kernel.received).not.toContain("hardware.cancel");
+    resolveBegin?.({ ok: { opId: OP_ID, step: exchangeStep } });
+    await cancelling;
+    await expect(task.result).rejects.toSatisfy((e) => walletError(e).code === "cancelled");
+    expect(kernel.received).toStrictEqual(["hardware.begin", "hardware.cancel"]);
+  });
+
+  it("does not issue the next device request once cancelled during step", async () => {
     const kernel = new FakeKernel(unlockedStatus());
     kernel.handlers.set("hardware.begin", () => ({ ok: { opId: OP_ID, step: exchangeStep } }));
-    const controller = new AbortController();
+    const wallet = await connect(kernel);
+    const task = hardware(wallet).start(
+      { kind: "pair", device: "keystone" },
+      {
+        io: responding({
+          exchange: async () =>
+            Promise.resolve({
+              kind: "qr",
+              ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
+            }),
+        }),
+      },
+    );
     kernel.handlers.set("hardware.step", () => {
-      controller.abort();
+      void task.cancel();
       return { ok: exchangeStep };
     });
     kernel.handlers.set("hardware.cancel", () => ({ ok: null }));
-    const wallet = await connect(kernel);
     let exchanges = 0;
-    const io = responding({
-      signal: controller.signal,
-      exchange: async () => {
-        exchanges += 1;
-        return Promise.resolve({
-          kind: "qr",
-          ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
-        });
-      },
+    const counting = task.observe(() => {
+      exchanges += 1;
     });
-    await expect(hardware(wallet).pair("keystone", io)).rejects.toSatisfy(
-      (e) => walletError(e).code === "cancelled",
-    );
+    void counting;
+    await expect(task.result).rejects.toSatisfy((e) => walletError(e).code === "cancelled");
     expect(exchanges).toBe(1);
     expect(kernel.received).toContain("hardware.cancel");
   });
@@ -173,7 +231,8 @@ describe("hardware(wallet)", () => {
     const io = responding({
       exchange: async () => Promise.reject(failure),
     });
-    await expect(hardware(wallet).pair("keystone", io)).rejects.toBe(failure);
+    const task = hardware(wallet).start({ kind: "pair", device: "keystone" }, { io });
+    await expect(task.result).rejects.toBe(failure);
     expect(kernel.received).toContain("hardware.cancel");
   });
 
@@ -209,25 +268,73 @@ describe("hardware(wallet)", () => {
   it("verifies a device signature the same way chains().sign does", async () => {
     const kernel = signKernel(signEvmPersonalMessage(MESSAGE, PRIV));
     const wallet = await connect(kernel);
-    const result = await hardware(wallet).sign(
-      { request: signRequest, verify: { kind: "password", password: "test password" } },
-      responding({}),
-    );
-    expect(result.kind).toBe("evm.personal-message");
+    const result = await hardware(wallet).start(
+      { kind: "sign", request: signRequest },
+      { io: responding({}), verify: { kind: "password", password: "test password" } },
+    ).result;
+    expect(result).toStrictEqual({
+      kind: "sign",
+      result: { kind: "evm.personal-message", signature: signEvmPersonalMessage(MESSAGE, PRIV) },
+    });
     expect(kernel.received).toContain("hardware.begin");
     expect(kernel.received).toContain("wallet.accounts");
   });
 
-  it("rejects a forged device signature with integrity", async () => {
+  it("a forged sign result never reaches done", async () => {
     const kernel = signKernel(signEvmPersonalMessage(MESSAGE, new Uint8Array(32).fill(8)));
     kernel.handlers.set("hardware.cancel", () => ({ ok: null }));
     const wallet = await connect(kernel);
-    await expect(
-      hardware(wallet).sign(
-        { request: signRequest, verify: { kind: "password", password: "test password" } },
-        responding({}),
-      ),
-    ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
+    const task = hardware(wallet).start(
+      { kind: "sign", request: signRequest },
+      { io: responding({}), verify: { kind: "password", password: "test password" } },
+    );
+    const steps: Array<HardwareStep["kind"]> = [];
+    task.observe((step) => steps.push(step.kind));
+    await expect(task.result).rejects.toSatisfy((e) => walletError(e).code === "integrity");
+    expect(steps).not.toContain("done");
+    expect(kernel.received).toContain("hardware.cancel");
+  });
+
+  it("a second start cancels the first task", async () => {
+    const kernel = new FakeKernel(unlockedStatus());
+    kernel.handlers.set("hardware.begin", () => ({ ok: { opId: OP_ID, step: exchangeStep } }));
+    kernel.handlers.set("hardware.cancel", () => ({ ok: null }));
+    let release: (() => void) | undefined;
+    const io = responding({
+      exchange: async () =>
+        new Promise<DeviceResponse>((resolve) => {
+          release = () =>
+            resolve({
+              kind: "qr",
+              ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
+            });
+        }),
+    });
+    const wallet = await connect(kernel);
+    const first = hardware(wallet).start(
+      {
+        kind: "accounts",
+        walletId: WALLET.walletId,
+        groupIndex: 0,
+        templates: [],
+        network: "eip155:1",
+      },
+      { io },
+    );
+    const second = hardware(wallet).start(
+      { kind: "pair", device: "keystone" },
+      { io: responding({}) },
+    );
+    kernel.handlers.set("hardware.step", () => ({
+      ok: doneStep({ kind: "pair", wallet: WALLET }),
+    }));
+    await expect(first.result).rejects.toSatisfy((e) => walletError(e).code === "cancelled");
+    release?.();
+    expect(kernel.received).toContain("hardware.cancel");
+    kernel.handlers.set("hardware.begin", () => ({
+      ok: { opId: OP_ID, step: doneStep({ kind: "pair", wallet: WALLET }) },
+    }));
+    void second;
   });
 
   it("marks verifying only while begin runs, not while the device exchange waits", async () => {
@@ -246,18 +353,21 @@ describe("hardware(wallet)", () => {
     kernel.handlers.set("wallet.accounts", () => ({
       ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS },
     }));
-    await hardware(wallet).sign(
-      { request: signRequest, verify: { kind: "password", password: "test password" } },
-      responding({
-        exchange: async () => {
-          duringExchange.push(wallet.getSnapshot().verifying);
-          return Promise.resolve({
-            kind: "qr",
-            ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
-          } as DeviceResponse);
-        },
-      }),
-    );
+    await hardware(wallet).start(
+      { kind: "sign", request: signRequest },
+      {
+        verify: { kind: "password", password: "test password" },
+        io: responding({
+          exchange: async () => {
+            duringExchange.push(wallet.getSnapshot().verifying);
+            return Promise.resolve({
+              kind: "qr",
+              ur: { type: "crypto-multi-accounts", cbor: new Uint8Array([0xa0]) },
+            } as DeviceResponse);
+          },
+        }),
+      },
+    ).result;
     expect(duringBegin).toStrictEqual([true]);
     expect(duringExchange).toStrictEqual([false]);
   });

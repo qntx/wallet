@@ -58,7 +58,7 @@ export async function signAnyWallet(
       throw error;
     }
   }
-  const task = card(wallet).start({ kind: "sign", request }, verify);
+  const task = card(wallet).start({ kind: "sign", request }, { verify });
   const stop = task.observe((step) => {
     render(stepText(step));
   });

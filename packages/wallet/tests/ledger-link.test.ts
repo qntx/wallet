@@ -160,17 +160,12 @@ describe("ledgerIo", () => {
     await expect(code(io.exchange(compare, { device: "ledger" }))).resolves.toBe("unsupported");
   });
 
-  it("propagates the abort signal and underlying exchange errors", async () => {
-    const controller = new AbortController();
-    const io = ledgerIo(apdu, controller.signal);
-    expect(io.signal).toBe(controller.signal);
+  it("propagates underlying exchange errors", async () => {
     const failing = ledgerIo(async () =>
       Promise.reject(new WalletError("integrity", "link dropped")),
     );
     await expect(
       code(failing.exchange({ kind: "message", data: Uint8Array.of(1) }, { device: "ledger" })),
     ).resolves.toBe("integrity");
-    const noSignal = ledgerIo(apdu);
-    expect(noSignal.signal).toBeUndefined();
   });
 });

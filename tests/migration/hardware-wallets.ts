@@ -1,5 +1,11 @@
 import { WalletError } from "@qntx/wallet";
-import type { HardwareWalletInfo, Wallet, WalletErrorCode, WalletInfo } from "@qntx/wallet";
+import type {
+  HardwareWalletInfo,
+  VerifyFactor,
+  Wallet,
+  WalletErrorCode,
+  WalletInfo,
+} from "@qntx/wallet";
 import { hardware, qrParts, qrReader } from "@qntx/wallet/hardware";
 import type { DeviceIo } from "@qntx/wallet/hardware";
 import type { ChainSignRequest, ChainSignResult } from "@qntx/wallet/protocol";
@@ -40,7 +46,7 @@ export function requiresSeed(info: WalletInfo): info is Extract<WalletInfo, { wo
 export function deviceErrorHint(code: WalletErrorCode): string | undefined {
   switch (code) {
     case "device-required":
-      // The kernel has no public material for this path yet — run hardware().accounts first.
+      // The kernel has no public material for this path yet — run an "accounts" op first.
       return "connect the device to export this account";
     case "device-locked":
       return "unlock the device and retry";
@@ -103,11 +109,11 @@ export function keystoneQrIo(ui: {
 
 /** Pair the device: scans its sync QR, resolves with the new `HardwareWalletInfo`. */
 export async function pairKeystone(wallet: Wallet, io: DeviceIo): Promise<HardwareWalletInfo> {
-  const info = await hardware(wallet).pair("keystone", io);
-  if (info.custody !== "hardware") {
+  const result = await hardware(wallet).start({ kind: "pair", device: "keystone" }, { io }).result;
+  if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
     throw new WalletError("integrity", "pair did not return a hardware wallet");
   }
-  return info;
+  return result.wallet;
 }
 
 /**
@@ -117,8 +123,12 @@ export async function pairKeystone(wallet: Wallet, io: DeviceIo): Promise<Hardwa
 export async function signOnDevice(
   wallet: Wallet,
   request: ChainSignRequest,
-  verify: Parameters<ReturnType<typeof hardware>["sign"]>[0]["verify"],
+  verify: VerifyFactor,
   io: DeviceIo,
 ): Promise<ChainSignResult> {
-  return hardware(wallet).sign({ request, verify }, io);
+  const result = await hardware(wallet).start({ kind: "sign", request }, { io, verify }).result;
+  if (result.kind !== "sign") {
+    throw new WalletError("integrity", "a sign task answered another result");
+  }
+  return result.result;
 }

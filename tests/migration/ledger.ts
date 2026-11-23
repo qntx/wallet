@@ -69,11 +69,11 @@ export async function pairLedgerHid(wallet: Wallet, hid: HidApi): Promise<Hardwa
       }),
   };
   const io = ledgerIo(ledgerHidExchange(port, 0x0101));
-  const info = await hardware(wallet).pair("ledger", io);
-  if (info.custody !== "hardware") {
+  const result = await hardware(wallet).start({ kind: "pair", device: "ledger" }, { io }).result;
+  if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
     throw new WalletError("integrity", "pair did not return a hardware wallet");
   }
-  return info;
+  return result.wallet;
 }
 
 /**
@@ -144,11 +144,11 @@ export async function pairLedgerBle(
     filters: [{ services: [bleUuid(model, "0000")] }],
   });
   const io = ledgerIo(await ledgerBleExchange(await ledgerBlePort(device, model)));
-  const info = await hardware(wallet).pair("ledger", io);
-  if (info.custody !== "hardware") {
+  const result = await hardware(wallet).start({ kind: "pair", device: "ledger" }, { io }).result;
+  if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
     throw new WalletError("integrity", "pair did not return a hardware wallet");
   }
-  return info;
+  return result.wallet;
 }
 
 /** Accounts, signing and address checks ride the same `DeviceIo` once the link is up. */
@@ -160,21 +160,28 @@ export async function ledgerOps(
   io: DeviceIo,
 ): Promise<void> {
   const api = hardware(wallet);
-  await api.accounts(
-    { walletId: hardwareWalletId, groupIndex: 0, templates: ["evm.bip44"], network: "eip155:1" },
-    io,
-  );
-  await api.verifyAddress(
+  await api.start(
     {
+      kind: "accounts",
+      walletId: hardwareWalletId,
+      groupIndex: 0,
+      templates: ["evm.bip44"],
+      network: "eip155:1",
+    },
+    { io },
+  ).result;
+  await api.start(
+    {
+      kind: "verify-address",
       walletId: hardwareWalletId,
       groupIndex: 0,
       template: "btc.bip84",
       network: "bip122:000000000019d6689c085ae165831e93",
       index: 0,
     },
-    io,
-  );
-  await api.sign({ request, verify }, io);
+    { io },
+  ).result;
+  await api.start({ kind: "sign", request }, { io, verify }).result;
 }
 
 /**

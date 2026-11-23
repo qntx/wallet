@@ -290,12 +290,8 @@ export async function ledgerBleExchange(
  * A `DeviceIo` backed by a raw APDU exchange: `message` requests are answered with `apdu`, any
  * other request kind is `unsupported` — a Ledger device cannot take a QR or compare exchange.
  */
-export function ledgerIo(
-  apdu: (apdu: Uint8Array) => Promise<Uint8Array>,
-  signal?: AbortSignal,
-): DeviceIo {
+export function ledgerIo(apdu: (apdu: Uint8Array) => Promise<Uint8Array>): DeviceIo {
   return {
-    ...(signal === undefined ? {} : { signal }),
     exchange: async (request: DeviceRequest): Promise<DeviceResponse> => {
       if (request.kind !== "message") {
         throw new WalletError("unsupported", "the ledger transport only carries APDU messages");

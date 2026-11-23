@@ -80,7 +80,7 @@ card task instead:
 ```ts
 import { card } from "@qntx/wallet/card";
 
-const task = card(wallet).start({ kind: "sign", request }, { kind: "hardware" });
+const task = card(wallet).start({ kind: "sign", request }, { verify: { kind: "hardware" } });
 task.observe((step) => {
   // "input": mount SecureInput from @qntx/wallet-native/secure-input
   // "tap": show the hold-the-card instruction; "done": the result is ready
