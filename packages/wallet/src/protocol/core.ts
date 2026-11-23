@@ -8,6 +8,7 @@
  * The shared wire validators (factor, wallet info, ids) live here too so the nostr module's table
  * can reuse them — `protocol/nostr.ts` imports only from this file.
  */
+import { HARDWARE_DEVICES } from "../types.ts";
 import type {
   FactorInfo,
   HardwareDevice,
@@ -243,8 +244,10 @@ export const backupUnlockFactor: Validator<BackupUnlockFactor> = union(
   }),
 );
 
-/** A hardware-signing device family on the wire; each signer adds a literal. */
-export const hardwareDevice: Validator<HardwareDevice> = literal("keystone");
+/** A hardware-signing device family on the wire; each signer adds a literal to HARDWARE_DEVICES. */
+export const hardwareDevice: Validator<HardwareDevice> = union(
+  ...HARDWARE_DEVICES.map((device) => literal(device)),
+);
 
 const DEVICE_TEXT = /^[\u0020-\u007E]{1,64}$/;
 

@@ -15,6 +15,7 @@ import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/
 
 import type { KeyPath } from "@qntx/wallet-chains";
 import type { HardwareDevice } from "@qntx/wallet/protocol";
+import { HARDWARE_DEVICES } from "@qntx/wallet/types";
 import type { HardwareWalletInfo } from "@qntx/wallet/types";
 
 import { KernelError } from "../../errors.ts";
@@ -64,10 +65,14 @@ export function hardwareWallet(image: VaultImage, walletId: string): StoredRecor
 }
 
 const asDevice = (value: unknown): HardwareDevice => {
-  if (value !== "keystone") {
+  if (typeof value !== "string") {
     throw headerFailure();
   }
-  return value;
+  const device = HARDWARE_DEVICES.find((d) => d === value);
+  if (device === undefined) {
+    throw headerFailure();
+  }
+  return device;
 };
 
 const asFingerprint = (value: unknown): Uint8Array => {

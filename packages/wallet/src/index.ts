@@ -10,6 +10,7 @@ export type { BackupInfo } from "./types.ts";
 export type { WalletOptions } from "./options.ts";
 export {
   WalletError,
+  HARDWARE_DEVICES,
   type AutoLockPolicy,
   type BackupApi,
   type DataKeyApi,

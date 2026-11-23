@@ -41,7 +41,6 @@ type Active = {
   readonly opId: string;
   readonly device: HardwareDevice;
   readonly display: DeviceDisplay | undefined;
-  progressAt: number;
   cancelTimer: () => void;
   pending: Pending | undefined;
   /** Turns the body produced before any handler waited on them. */
@@ -136,7 +135,6 @@ export function createOperationExecutor(platform: KernelPlatform): OperationExec
       opId: bytesToHex(platform.random(16)),
       device,
       display,
-      progressAt: platform.elapsed(),
       cancelTimer: () => undefined,
       pending: undefined,
       events: [],
@@ -176,7 +174,6 @@ export function createOperationExecutor(platform: KernelPlatform): OperationExec
       throw new KernelError("invalid-input", "the response does not match the device request");
     }
     op.pending = undefined;
-    op.progressAt = platform.elapsed();
     armTimer(op);
     pending.resolve(response);
     return toStep(op, await waitTurn(op));

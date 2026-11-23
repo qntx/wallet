@@ -32,7 +32,6 @@ import type { Handler, KernelContext, VaultHooks } from "../../commands/context.
 import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt, KernelPlatform } from "../../platform.ts";
 import { promptLocale } from "../../prompts.ts";
-import type { Secret } from "../../secret/secret.ts";
 import { wipe } from "../../secret/secret.ts";
 import type { StoredRecord, VaultImage } from "../../vault/store.ts";
 import type { OpenedRecord } from "../../vault/vault.ts";
@@ -103,7 +102,11 @@ const pinAt = (pins: ReadonlyMap<string, PinnedKeys>, record: StoredRecord): Har
   if (keys === undefined) {
     throw integrity("hardware wallet record has no authenticated material");
   }
-  return hardwarePin(parseHardwareHeader(record.header), keys);
+  const header = parseHardwareHeader(record.header);
+  if (hardwareWalletId(header.device, header.fingerprint) !== record.id) {
+    throw integrity("hardware wallet record does not match its id");
+  }
+  return hardwarePin(header, keys);
 };
 
 /** Whether the pinned material fails to serve `path` — only `device-required` counts as a gap. */
@@ -207,16 +210,11 @@ export function createSignersModule(
 
   const driverFor = (record: StoredRecord): { driver: Driver; header: HardwareHeader } => {
     const header = parseHardwareHeader(record.header);
-    const driver = drivers[header.device];
-    if (driver === undefined) {
-      throw new KernelError("unsupported", "this kernel does not support the wallet's device");
-    }
-    return { driver, header };
+    return { driver: drivers[header.device], header };
   };
 
   const pairBody = (
     ctx: KernelContext,
-    dek: Secret,
     device: HardwareDevice,
   ): ((link: DeviceLink) => Promise<HardwareResult>) => {
     return async (link) => {
@@ -246,9 +244,10 @@ export function createSignersModule(
         header.firmware = result.firmware;
       }
       const body = authenticatedBody({ nodes: result.nodes, ed25519: result.ed25519 });
+      // The DEK is read live at commit time: it may have rotated since `begin` captured the op.
       const record = sealRecord(
         ctx.platform,
-        dek,
+        ctx.session.current().dek,
         HARDWARE_WALLET_KIND,
         id,
         encodeHardwareHeader(header),
@@ -263,7 +262,6 @@ export function createSignersModule(
 
   const accountsBody = (
     ctx: KernelContext,
-    dek: Secret,
     op: Extract<HardwareOperation, { kind: "accounts" }>,
   ): ((link: DeviceLink) => Promise<HardwareResult>) => {
     const record = hardwareRecord(ctx, op.walletId);
@@ -302,7 +300,7 @@ export function createSignersModule(
             op: "put-record",
             record: sealRecord(
               ctx.platform,
-              dek,
+              ctx.session.current().dek,
               HARDWARE_WALLET_KIND,
               record.id,
               record.header,
@@ -329,12 +327,16 @@ export function createSignersModule(
     const record = hardwareRecord(ctx, op.walletId);
     const { driver } = driverFor(record);
     checkNetwork(op.template, op.network);
+    // All input checks run before the executor starts — a bad op never earns an opId.
+    if (BTC_PURPOSE[op.template] === undefined && op.index !== undefined) {
+      throw new KernelError("invalid-input", "an index applies only to bitcoin templates");
+    }
+    if (BTC_PURPOSE[op.template] !== undefined && op.index === undefined) {
+      throw new KernelError("invalid-input", "a bitcoin address check needs an index");
+    }
     return async (link) => {
       const pin = pinAt(pins, record);
       const material = pinnedMaterial(pin);
-      if (op.index !== undefined && BTC_PURPOSE[op.template] === undefined) {
-        throw new KernelError("invalid-input", "an index applies only to bitcoin templates");
-      }
       let address: string;
       let path: KeyPath;
       if (op.template === "evm.bip44") {
@@ -348,11 +350,8 @@ export function createSignersModule(
         address = solanaAddressFromPublicKey(await material.ed25519(path));
       } else {
         const purpose = BTC_PURPOSE[op.template];
-        if (purpose === undefined) {
-          throw new KernelError("invalid-input", `unknown template ${op.template}`);
-        }
-        if (op.index === undefined) {
-          throw new KernelError("invalid-input", "a bitcoin address check needs an index");
+        if (purpose === undefined || op.index === undefined) {
+          throw integrity("unreachable: non-bitcoin template or missing index");
         }
         const net = bitcoinNetwork(op.network);
         const account = [purpose + HARDENED, net.coinType + HARDENED, op.groupIndex + HARDENED];
@@ -450,14 +449,17 @@ export function createSignersModule(
     },
     walletDeleteOps: () => [],
     parseHeader: (record) => {
-      parseHardwareHeader(record.header);
+      const header = parseHardwareHeader(record.header);
+      if (hardwareWalletId(header.device, header.fingerprint) !== record.id) {
+        throw integrity("hardware wallet record does not match its id");
+      }
     },
   };
 
   const handlers: { [M in keyof typeof HARDWARE_METHODS & MethodName]: Handler<M> } = {
     // oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
     "hardware.begin": async (ctx, params, session) => {
-      const { dek } = ctx.session.require(session);
+      ctx.session.require(session);
       const { op, verify } = params;
       if (op.kind === "sign") {
         if (verify === undefined) {
@@ -471,12 +473,12 @@ export function createSignersModule(
       const exec = executorOf(ctx.platform);
       switch (op.kind) {
         case "pair":
-          return exec.begin(op.device, undefined, pairBody(ctx, dek, op.device));
+          return exec.begin(op.device, undefined, pairBody(ctx, op.device));
         case "accounts":
           return exec.begin(
             driverFor(hardwareRecord(ctx, op.walletId)).header.device,
             undefined,
-            accountsBody(ctx, dek, op),
+            accountsBody(ctx, op),
           );
         case "verify-address":
           return exec.begin(
