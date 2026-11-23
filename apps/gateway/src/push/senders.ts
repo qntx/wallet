@@ -152,7 +152,7 @@ export const apnsSender = async (
   }
   const key = await crypto.subtle.importKey(
     "pkcs8",
-    der,
+    new Uint8Array(der).buffer,
     { name: "ECDSA", namedCurve: "P-256" },
     false,
     ["sign"],
@@ -169,7 +169,7 @@ export const apnsSender = async (
     const signature = await crypto.subtle.sign(
       { name: "ECDSA", hash: "SHA-256" },
       key,
-      utf8(input),
+      new Uint8Array(utf8(input)).buffer,
     );
     const jwt = `${input}.${base64urlOf(new Uint8Array(signature))}`;
     cached = { jwt, iat: at };
@@ -249,7 +249,7 @@ export const fcmSender = async (
   }
   const key = await crypto.subtle.importKey(
     "pkcs8",
-    der,
+    new Uint8Array(der).buffer,
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
     ["sign"],
@@ -273,7 +273,11 @@ export const fcmSender = async (
       ),
     );
     const input = `${header}.${claims}`;
-    const signature = await crypto.subtle.sign({ name: "RSASSA-PKCS1-v1_5" }, key, utf8(input));
+    const signature = await crypto.subtle.sign(
+      { name: "RSASSA-PKCS1-v1_5" },
+      key,
+      new Uint8Array(utf8(input)).buffer,
+    );
     const assertion = `${input}.${base64urlOf(new Uint8Array(signature))}`;
     const res = await fetchImpl(FCM_TOKEN_URL, {
       method: "POST",

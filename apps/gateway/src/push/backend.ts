@@ -52,9 +52,14 @@ export type PushStub = {
 };
 
 /** The slice of `env.PUSH` the service uses — a namespace of per-family objects. */
+export type PushObjectId = {
+  toString: () => string;
+  equals: (other: PushObjectId) => boolean;
+};
+
 export type PushNamespace = {
-  idFromName: (name: string) => DurableObjectId;
-  get: (id: DurableObjectId) => PushStub;
+  idFromName: (name: string) => PushObjectId;
+  get: (id: PushObjectId) => PushStub;
 };
 
 /** What `GET /v1/push` advertises and how the routes reach the family's Durable Object. */

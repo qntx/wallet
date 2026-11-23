@@ -29,11 +29,19 @@ const NONCE_LENGTH = 12;
 const TAG_LENGTH = 16;
 const KEY_LENGTH = 32;
 
-const importAes = async (key: Uint8Array, usages: string[]): Promise<CryptoKey> =>
-  crypto.subtle.importKey("raw", key, "AES-GCM", false, usages);
+const importAes = async (
+  key: Uint8Array,
+  usages: Array<"encrypt" | "decrypt">,
+): Promise<CryptoKey> =>
+  crypto.subtle.importKey("raw", new Uint8Array(key).buffer, "AES-GCM", false, usages);
 
 export const subscriptionIdOf = async (secret: Uint8Array): Promise<string> =>
-  hexOf(await crypto.subtle.digest("SHA-256", concat(utf8(PUSH_ID_DOMAIN), secret))).slice(0, 32);
+  hexOf(
+    await crypto.subtle.digest(
+      "SHA-256",
+      new Uint8Array(concat(utf8(PUSH_ID_DOMAIN), secret)).buffer,
+    ),
+  ).slice(0, 32);
 
 export const eventIdOf = async (
   key: Uint8Array,
@@ -42,11 +50,15 @@ export const eventIdOf = async (
   kind: PushEventKind,
   generation: number,
 ): Promise<string> => {
-  const hmac = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, [
-    "sign",
-  ]);
+  const hmac = await crypto.subtle.importKey(
+    "raw",
+    new Uint8Array(key).buffer,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
   const input = utf8(pushEventInput(network, hash, kind, generation));
-  return hexOf(await crypto.subtle.sign("HMAC", hmac, input)).slice(0, 32);
+  return hexOf(await crypto.subtle.sign("HMAC", hmac, new Uint8Array(input).buffer)).slice(0, 32);
 };
 
 /** `base64url(nonce ‖ AES-256-GCM(key, nonce, plaintext, aad = PUSH_AAD_PREFIX ‖ eventId))`. */
@@ -60,11 +72,11 @@ export const sealEvent = async (
   const sealed = await crypto.subtle.encrypt(
     {
       name: "AES-GCM",
-      iv: nonce,
-      additionalData: utf8(pushAad(eventId)),
+      iv: new Uint8Array(nonce).buffer,
+      additionalData: new Uint8Array(utf8(pushAad(eventId))).buffer,
     },
     aes,
-    utf8(plaintext),
+    new Uint8Array(utf8(plaintext)).buffer,
   );
   return base64urlOf(concat(nonce, new Uint8Array(sealed)));
 };
@@ -90,11 +102,11 @@ export const sealTarget = async (
   const sealed = await crypto.subtle.encrypt(
     {
       name: "AES-GCM",
-      iv: nonce,
-      additionalData: targetAad(family, id),
+      iv: new Uint8Array(nonce).buffer,
+      additionalData: new Uint8Array(targetAad(family, id)).buffer,
     },
     sealKey,
-    utf8(plaintext),
+    new Uint8Array(utf8(plaintext)).buffer,
   );
   return base64urlOf(concat(nonce, new Uint8Array(sealed)));
 };
@@ -124,11 +136,11 @@ export const openTarget = async (
     plaintext = await crypto.subtle.decrypt(
       {
         name: "AES-GCM",
-        iv: blob.slice(0, NONCE_LENGTH),
-        additionalData: targetAad(family, id),
+        iv: blob.slice(0, NONCE_LENGTH).buffer,
+        additionalData: new Uint8Array(targetAad(family, id)).buffer,
       },
       sealKey,
-      blob.slice(NONCE_LENGTH),
+      new Uint8Array(blob.slice(NONCE_LENGTH)).buffer,
     );
   } catch {
     return undefined;

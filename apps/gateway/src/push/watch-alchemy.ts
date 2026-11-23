@@ -141,7 +141,12 @@ export const verifyAlchemySignature = async (
     false,
     ["verify"],
   );
-  return crypto.subtle.verify("HMAC", key, signature, new TextEncoder().encode(rawBody));
+  return crypto.subtle.verify(
+    "HMAC",
+    key,
+    new Uint8Array(signature).buffer,
+    new TextEncoder().encode(rawBody),
+  );
 };
 
 const activitySchema = z.looseObject({
