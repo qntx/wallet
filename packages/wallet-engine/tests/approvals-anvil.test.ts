@@ -292,7 +292,7 @@ const contractAddress = (value: string | null | undefined): Address => {
 };
 
 describe.runIf(RUN)("anvil e2e: approvals inventory and revocation", () => {
-  const port = 18562;
+  const port = 18580;
   const url = `http://127.0.0.1:${port}`;
 
   let proc: ChildProcess;
