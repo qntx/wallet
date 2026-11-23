@@ -394,7 +394,7 @@ export function createSignersModule(
     // blind-signing policy, the system verification prompt — plus the device's display line.
     const prepared = await prepareFor(request, pinnedMaterial(pin), ctx.platform.now());
     const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
-    const display = driver.display(request, prepared.plan);
+    const display = driver.display(request, prepared.plan, header);
     if (display === "unsupported") {
       throw new KernelError("unsupported", "the device cannot sign this request");
     }
@@ -410,7 +410,7 @@ export function createSignersModule(
     return executorOf(ctx.platform).begin(header.device, display, async (link) => ({
       kind: "sign",
       result: await signStages(prepared.plan, async (stage) =>
-        driver.sign(link, { request, stage, pin, random: ctx.platform.random }),
+        driver.sign(link, { request, stage, pin, display, random: ctx.platform.random }),
       ),
     }));
   };

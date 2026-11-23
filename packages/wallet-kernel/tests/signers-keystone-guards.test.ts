@@ -184,6 +184,7 @@ const psbt84Context = (): SignContext => {
     },
     stage: planBitcoinPsbt(bytes, [{ index: 0, key: { path: BTC84_PATH, publicKey: BTC84_PUB } }]),
     pin,
+    display: "clear" as const,
     random,
   };
 };
@@ -222,6 +223,7 @@ const psbt86Context = (): SignContext => {
     },
     stage: planBitcoinPsbt(bytes, [{ index: 0, key: { path: BTC86_PATH, publicKey: BTC86_PUB } }]),
     pin,
+    display: "clear" as const,
     random,
   };
 };
@@ -396,36 +398,42 @@ describe("keystone sign stage/request consistency", () => {
         request: personal,
         stage: planEvm({ ...personal, message: utf8ToBytes("bye") }, EVM_KEY),
         pin,
+        display: "clear" as const,
         random,
       },
       {
         request: fiat24,
         stage: planEvm({ ...fiat24, tokenId: "8" }, EVM_KEY),
         pin,
+        display: "clear" as const,
         random,
       },
       {
         request: typed,
         stage: planEvm({ ...typed, typedData: OTHER_TYPED_DATA }, EVM_KEY),
         pin,
+        display: "clear" as const,
         random,
       },
       {
         request: tronTx,
         stage: planTron({ ...tronTx, rawData: tronTransfer(2n) }, TRON_KEY),
         pin,
+        display: "clear" as const,
         random,
       },
       {
         request: tronMsg,
         stage: planTron({ ...tronMsg, message: utf8ToBytes("bye tron") }, TRON_KEY),
         pin,
+        display: "clear" as const,
         random,
       },
       {
         request: btcMsg,
         stage: planBitcoinMessage({ ...btcMsg, message: "sign that" }, BTC44_KEY),
         pin,
+        display: "clear" as const,
         random,
       },
     ];
