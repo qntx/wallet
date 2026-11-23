@@ -136,6 +136,26 @@
 		if (!(out.length >= min)) throw new RangeError("\"output\" expected length >= " + min);
 	}
 	/**
+	* Asserts output is a sufficiently-sized, 4-byte-aligned byte array.
+	* {@link aoutput} plus an {@link isAligned32} check, for `digestInto()` paths
+	* that write through zero-allocation `u32` word views.
+	* @param out - Output buffer to validate.
+	* @param instance - Hash-like instance providing `outputLen`.
+	* @throws On wrong argument types. {@link TypeError}
+	* @throws On wrong output buffer lengths. {@link RangeError}
+	* @throws On wrong output buffer alignment. {@link Error}
+	* @example
+	* Verifies that a caller-provided output buffer is large enough and aligned.
+	*
+	* ```ts
+	* aoutput32(new Uint8Array(16), { outputLen: 16 });
+	* ```
+	*/
+	function aoutput32(out, instance) {
+		aoutput$1(out, instance);
+		if (!isAligned32(out)) throw new Error("invalid output, must be aligned");
+	}
+	/**
 	* Casts a typed-array view to Uint32Array.
 	* @param arr - Typed-array view to reinterpret.
 	* @returns Uint32Array view over the same bytes. Callers are expected to provide a
@@ -147,7 +167,7 @@
 	* u32(new Uint8Array(4));
 	* ```
 	*/
-	function u32$6(arr) {
+	function u32$7(arr) {
 		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
 	}
 	/**
@@ -497,7 +517,7 @@
 	var init_defineProperty = __esmMin((() => {
 		init_toPropertyKey();
 	}));
-	// packages/wallet/dist/core-Chf2pSL0.mjs
+	// packages/wallet/dist/core-HPm-BNrr.mjs
 	init_defineProperty();
 	/**
 	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
@@ -634,10 +654,12 @@
 	var walletId = str(16, /^[0-9a-f]{16}$/);
 	var keyId = str(16, /^[0-9a-f]{16}$/);
 	var keyFamily = union(literal("evm"), literal("solana"), literal("bitcoin"), literal("tron"));
-	var publicKey = str(64, /^[0-9a-f]{64}$/);
+	var publicKey$1 = str(64, /^[0-9a-f]{64}$/);
 	var credentialId = str(1364, /^[A-Za-z0-9_-]+$/);
 	var safeTime$1 = int(0, Number.MAX_SAFE_INTEGER);
 	var groupIndex = int(0, 2147483647);
+	/** A card's `ID(A)`: 16 bytes as 32 lowercase hex. */
+	var cardId$1 = str(32, /^[0-9a-f]{32}$/);
 	var keyInfo = obj({
 		keyId,
 		family: keyFamily,
@@ -726,19 +748,34 @@
 		rpId: str(253, RP_ID),
 		backupSalt: label(64)
 	}));
-	var walletInfo$1 = obj({
+	var walletInfo$2 = union(obj({
+		custody: literal("vault"),
 		walletId,
 		origin: union(literal("passkey"), literal("mnemonic")),
 		words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
 		backup: union(literal("none"), literal("passkey"), literal("mnemonic")),
 		passphrase: bool,
 		createdAt: safeTime$1
-	});
+	}), obj({
+		custody: literal("card"),
+		walletId,
+		origin: union(literal("card-generated"), literal("card-imported")),
+		backup: literal("cards"),
+		createdAt: safeTime$1,
+		members: int(1, 3),
+		cards: arr(obj({
+			cardId: cardId$1,
+			shortId: opt(str(9, /^[0-9A-F]{4}-[0-9A-F]{4}$/)),
+			state: union(literal("ready"), literal("unknown"), literal("pending")),
+			tries: opt(int(0, 10)),
+			verifiedAt: opt(safeTime$1)
+		}), 3, 1)
+	}));
 	/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
 	var passphraseBytes = bytes(1, 1024);
-	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("verification-unavailable"), literal("blind-signing-disabled"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("crashed"));
+	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("verification-unavailable"), literal("blind-signing-disabled"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("card-required"), literal("card-not-genuine"), literal("card-id-mismatch"), literal("wrong-card"), literal("card-erased"), literal("card-locked"), literal("card-tampered"), literal("card-fault"), literal("card-unsupported"), literal("crashed"));
 	var createdResult = obj({
-		wallet: walletInfo$1,
+		wallet: walletInfo$2,
 		session: sessionId
 	});
 	var CORE_METHODS = {
@@ -877,7 +914,7 @@
 				factor: opt(factor)
 			}),
 			result: obj({
-				wallets: arr(walletInfo$1, 1e3),
+				wallets: arr(walletInfo$2, 1e3),
 				passphraseRequired: arr(str(128), 1e3),
 				session: sessionId
 			})
@@ -978,7 +1015,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-B_olgDm6.mjs
+	// packages/wallet/dist/protocol-B8MMTCZ2.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1176,6 +1213,13 @@
 		kind: union(literal("tron.transaction"), literal("tron.message"), literal("tron.typed-data")),
 		signature: bytes(65, 65)
 	}));
+	var chainAccount = union(addressResult("evm.bip44"), addressResult("solana.bip44-change"), addressResult("tron.bip44", str(34, /^T[1-9A-HJ-NP-Za-km-z]{33}$/)), obj({
+		template: union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84"), literal("btc.bip86")),
+		network: caip2,
+		xpub: str(111, /^[a-zA-Z0-9]{111}$/),
+		fingerprint: str(8, /^[0-9a-f]{8}$/),
+		path: str(11, /^m\/[0-9'/]+$/)
+	}));
 	var CHAINS_METHODS = {
 		"wallet.accounts": {
 			session: true,
@@ -1186,13 +1230,7 @@
 				template,
 				network: caip2
 			}),
-			result: union(addressResult("evm.bip44"), addressResult("solana.bip44-change"), addressResult("tron.bip44", str(34, /^T[1-9A-HJ-NP-Za-km-z]{33}$/)), obj({
-				template: union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84"), literal("btc.bip86")),
-				network: caip2,
-				xpub: str(111, /^[a-zA-Z0-9]{111}$/),
-				fingerprint: str(8, /^[0-9a-f]{8}$/),
-				path: str(11, /^m\/[0-9'/]+$/)
-			}))
+			result: chainAccount
 		},
 		"chain.sign": {
 			session: true,
@@ -1204,6 +1242,139 @@
 			result: signResult
 		}
 	};
+	/** `XXXX-XXXX` — the short id printed on a card and shown in prompts. */
+	var shortId$1 = str(9, /^[0-9A-F]{4}-[0-9A-F]{4}$/);
+	var opId = str(32, /^[0-9a-f]{32}$/);
+	/** Rejects a list whose entries repeat — the protocol requires distinct templates. */
+	var distinct = (validator) => {
+		return (value) => {
+			const list = validator(value);
+			if (new Set(list).size !== list.length) throw new ValidationError();
+			return list;
+		};
+	};
+	var cardOperation = union(obj({ kind: literal("status") }), obj({
+		kind: literal("add"),
+		groups: opt(int(1, 20))
+	}), obj({
+		kind: literal("accounts"),
+		walletId,
+		groupIndex,
+		templates: distinct(arr(template, 7, 1)),
+		network: caip2
+	}), obj({
+		kind: literal("health"),
+		walletId
+	}), obj({
+		kind: literal("change-access"),
+		walletId,
+		remember: opt(literal(true))
+	}), obj({
+		kind: literal("erase"),
+		walletId,
+		card: cardId$1,
+		last: opt(literal(true))
+	}), obj({
+		kind: literal("create"),
+		cards: int(1, 3),
+		source: union(obj({ kind: literal("generate") }), obj({
+			kind: literal("wallet"),
+			walletId
+		})),
+		groups: opt(int(1, 20)),
+		remember: opt(literal(true))
+	}), obj({
+		kind: literal("transfer"),
+		walletId
+	}), obj({
+		kind: literal("reseal"),
+		walletId,
+		card: cardId$1,
+		member: opt(cardId$1)
+	}), obj({
+		kind: literal("sign"),
+		request: signRequest,
+		remember: opt(literal(true))
+	}), obj({
+		kind: literal("forget-access"),
+		walletId
+	}));
+	var cardOpResult = union(obj({
+		kind: literal("status"),
+		life: union(literal("blank"), literal("loaded")),
+		tries: int(0, 10),
+		walletId: opt(walletId)
+	}), obj({
+		kind: literal("sign"),
+		result: signResult
+	}), obj({
+		kind: literal("accounts"),
+		accounts: arr(chainAccount, 64)
+	}), obj({
+		kind: literal("add"),
+		walletId
+	}), obj({
+		kind: literal("health"),
+		walletId
+	}), obj({
+		kind: literal("change-access"),
+		walletId
+	}), obj({
+		kind: literal("erase"),
+		walletId
+	}), obj({
+		kind: literal("create"),
+		walletId
+	}), obj({
+		kind: literal("transfer"),
+		walletId
+	}), obj({
+		kind: literal("reseal"),
+		walletId
+	}), obj({
+		kind: literal("forget-access"),
+		walletId
+	}));
+	var cardStep = union(obj({
+		kind: literal("input"),
+		purpose: union(literal("access-code"), literal("new-access-code"), literal("confirm-access-code"), literal("short-id")),
+		card: opt(shortId$1),
+		remaining: opt(int(0, 10))
+	}), obj({
+		kind: literal("tap"),
+		reason: union(literal("any"), literal("source"), literal("target"), literal("member"), literal("retry")),
+		card: opt(shortId$1),
+		hold: opt(literal(true))
+	}), obj({
+		kind: literal("done"),
+		result: cardOpResult
+	}));
+	var CARD_METHODS = {
+		"card.begin": {
+			session: true,
+			presence: true,
+			params: obj({
+				op: cardOperation,
+				verify: opt(verifier)
+			}),
+			result: obj({
+				opId,
+				step: cardStep
+			})
+		},
+		"card.step": {
+			session: true,
+			presence: true,
+			params: obj({ opId }),
+			result: cardStep
+		},
+		"card.cancel": {
+			session: true,
+			presence: false,
+			params: obj({ opId }),
+			result: literal(null)
+		}
+	};
 	var hex128 = str(128, /^[0-9a-f]{128}$/);
 	var nostrKeyInfo$1 = obj({
 		ref: obj({
@@ -1211,14 +1382,14 @@
 			walletId,
 			index: identityIndex
 		}),
-		publicKey,
+		publicKey: publicKey$1,
 		createdAt: safeTime$1
 	});
 	/** The nostr section of the status payload, composed by protocol/index.ts. */
 	var nostrStatus$1 = obj({ keys: arr(nostrKeyInfo$1, MAX_SNAPSHOT_ITEMS) });
 	var derivedNostrKey = obj({
 		index: identityIndex,
-		publicKey
+		publicKey: publicKey$1
 	});
 	var tags = arr(arr(str(MAX_TAG_ITEM), 64), MAX_TAGS);
 	var signEventInput = obj({
@@ -1226,11 +1397,11 @@
 		created_at: safeTime$1,
 		tags,
 		content: str(MAX_TEXT),
-		pubkey: opt(publicKey)
+		pubkey: opt(publicKey$1)
 	});
 	var signedEvent = obj({
-		id: publicKey,
-		pubkey: publicKey,
+		id: publicKey$1,
+		pubkey: publicKey$1,
 		sig: hex128,
 		kind: int(0, 65535),
 		created_at: safeTime$1,
@@ -1238,8 +1409,8 @@
 		content: str(MAX_TEXT)
 	});
 	var rumor = obj({
-		id: publicKey,
-		pubkey: publicKey,
+		id: publicKey$1,
+		pubkey: publicKey$1,
 		kind: int(0, 65535),
 		created_at: safeTime$1,
 		tags,
@@ -1250,8 +1421,8 @@
 		password: bytes(1, 1024)
 	}));
 	var textParams = obj({
-		publicKey,
-		peer: publicKey,
+		publicKey: publicKey$1,
+		peer: publicKey$1,
 		text: str(MAX_TEXT)
 	});
 	var textResult = str(MAX_TEXT * 4);
@@ -1278,7 +1449,7 @@
 		"nostr.removeKey": {
 			session: true,
 			presence: true,
-			params: obj({ publicKey }),
+			params: obj({ publicKey: publicKey$1 }),
 			result: nullValue
 		},
 		"nostr.exportKey": {
@@ -1286,7 +1457,7 @@
 			presence: true,
 			params: obj({
 				verify: verifier,
-				publicKey,
+				publicKey: publicKey$1,
 				format: nostrExportFormat
 			}),
 			result: bytes(16, 4096)
@@ -1295,7 +1466,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				publicKey,
+				publicKey: publicKey$1,
 				event: signEventInput
 			}),
 			result: signedEvent
@@ -1328,7 +1499,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				publicKey,
+				publicKey: publicKey$1,
 				events: arr(signedEvent, 64)
 			}),
 			result: obj({ results: arr(union(obj({ ok: rumor }), obj({ err: walletErrorCode })), 64) })
@@ -1337,7 +1508,7 @@
 			session: true,
 			presence: false,
 			params: obj({ walletId }),
-			result: obj({ publicKey })
+			result: obj({ publicKey: publicKey$1 })
 		},
 		"nostr.syncSign": {
 			session: true,
@@ -1861,18 +2032,18 @@
 		factors: arr(factorInfo$1, MAX_SNAPSHOT_ITEMS),
 		appLock: bool,
 		verification: union(literal("available"), literal("unavailable")),
-		wallets: arr(walletInfo$1, MAX_SNAPSHOT_ITEMS),
+		wallets: arr(walletInfo$2, MAX_SNAPSHOT_ITEMS),
 		nostr: nostrStatus$1,
 		importedKeys: arr(keyInfo, MAX_SNAPSHOT_ITEMS),
 		backup: union(backupInfo, nullValue),
 		blindSigning: bool
 	});
-	var METHODS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: {
+	var METHODS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: {
 		session: false,
 		presence: false,
 		params: nullValue,
 		result: statusPayload$1
-	} }, CORE_METHODS), CHAINS_METHODS), NOSTR_METHODS), SPARK_METHODS), SESSIONS_METHODS);
+	} }, CORE_METHODS), CARD_METHODS), CHAINS_METHODS), NOSTR_METHODS), SPARK_METHODS), SESSIONS_METHODS);
 	var lockReason = union(literal("cold-start"), literal("user"), literal("idle"), literal("background"), literal("expired"), literal("crashed"), literal("invalidated"));
 	obj({
 		code: walletErrorCode,
@@ -2035,7 +2206,7 @@
 	* u32(new Uint8Array(8));
 	* ```
 	*/
-	function u32$5(arr) {
+	function u32$6(arr) {
 		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
 	}
 	/**
@@ -3898,23 +4069,60 @@
 	*/
 	function serializeCeremonies(platform, onCeremony) {
 		let tail = Promise.resolve();
-		const queue = async (work) => {
+		/** Takes the ceremony slot and returns its release — the base of `queue` and `reader.open`. */
+		const acquire = async () => {
 			const previous = tail;
 			let release;
 			tail = new Promise((resolve) => {
 				release = resolve;
 			});
-			try {
-				await previous;
-				onCeremony(true);
-				return await work();
-			} finally {
+			await previous;
+			onCeremony(true);
+			let done = false;
+			return () => {
+				if (done) return;
+				done = true;
 				release === null || release === void 0 || release();
 				onCeremony(false);
+			};
+		};
+		const queue = async (work) => {
+			const release = await acquire();
+			try {
+				return await work();
+			} finally {
+				release();
 			}
 		};
-		const { keystore, passkey } = platform;
+		const { keystore, passkey, card } = platform;
+		let releaseReader;
+		const reader = card === void 0 ? void 0 : {
+			open: async (prompt) => {
+				const release = await acquire();
+				const result = await card.reader.open(prompt);
+				if (!result.ok) {
+					release();
+					return result;
+				}
+				releaseReader = release;
+				return result;
+			},
+			transmit: async (apdu) => card.reader.transmit(apdu),
+			close: (outcome, text) => {
+				card.reader.close(outcome, text);
+				releaseReader === null || releaseReader === void 0 || releaseReader();
+				releaseReader = void 0;
+			}
+		};
 		return _objectSpread2(_objectSpread2({}, platform), {}, {
+			card: card === void 0 || reader === void 0 ? card : _objectSpread2({
+				anchors: card.anchors,
+				reader,
+				secureInput: {
+					request: async (kind, label) => queue(async () => card.secureInput.request(kind, label)),
+					cancel: () => card.secureInput.cancel()
+				}
+			}, card.planMs === void 0 ? {} : { planMs: card.planMs }),
 			keystore: keystore === void 0 ? void 0 : {
 				locale: keystore.locale,
 				seal: async (id, secret, use) => use.protection === "presence" ? queue(async () => keystore.seal(id, secret, use)) : keystore.seal(id, secret, use),
@@ -4070,6 +4278,68 @@
 	function corePrompt(locale, kind) {
 		return CORE[locale][kind];
 	}
+	var CARD = {
+		"zh-Hans": {
+			"card-change-access": (cards) => ({
+				title: "更改卡片访问码",
+				description: `验证身份以更改卡 ${cards} 的访问码`
+			}),
+			"card-erase": (cards) => ({
+				title: "擦除卡上的钱包",
+				description: `验证身份以擦除卡 ${cards} 上的钱包`
+			}),
+			"card-create": (cards) => ({
+				title: "创建卡钱包",
+				description: `验证身份以将钱包移入卡 ${cards}`
+			}),
+			"card-transfer": (cards) => ({
+				title: "写入成员卡",
+				description: `验证身份以把钱包写入卡 ${cards}`
+			}),
+			"card-reseal": (cards) => ({
+				title: "重写卡访问码",
+				description: `验证身份以给卡 ${cards} 设置新的访问码`
+			}),
+			"card-forget-access": (cards) => ({
+				title: "遗忘卡访问码",
+				description: `验证身份以删除卡 ${cards} 已保存的访问码`
+			})
+		},
+		en: {
+			"card-change-access": (cards) => ({
+				title: "Change card access code",
+				description: `Verify your identity to change the access code on ${cards}`
+			}),
+			"card-erase": (cards) => ({
+				title: "Erase the card's wallet",
+				description: `Verify your identity to erase the wallet on ${cards}`
+			}),
+			"card-create": (cards) => ({
+				title: "Create card wallet",
+				description: `Verify your identity to move the wallet onto ${cards}`
+			}),
+			"card-transfer": (cards) => ({
+				title: "Provision member card",
+				description: `Verify your identity to write the wallet onto ${cards}`
+			}),
+			"card-reseal": (cards) => ({
+				title: "Reseal card",
+				description: `Verify your identity to set a new access code on ${cards}`
+			}),
+			"card-forget-access": (cards) => ({
+				title: "Forget card access code",
+				description: `Verify your identity to delete the saved access code for ${cards}`
+			})
+		}
+	};
+	function cardPrompt(locale, kind, cards) {
+		return CARD[locale][kind](cards.join(", "));
+	}
+	/** A prompt thunk for a card operation — locale and the card list resolve only when it runs. */
+	var cardPromptFor = (keystore, kind, cards) => () => {
+		var _keystore$locale;
+		return cardPrompt(promptLocale((_keystore$locale = keystore === null || keystore === void 0 ? void 0 : keystore.locale) !== null && _keystore$locale !== void 0 ? _keystore$locale : "en"), kind, cards());
+	};
 	/**
 	* The display name of a backup protection credential, chosen by the kernel so password managers
 	* list it apart from the user's wallet passkeys (the RP and app name are shown next to it).
@@ -4083,8 +4353,8 @@
 	};
 	/** A prompt thunk for a core operation — the keystore locale is read only when it runs. */
 	var corePromptFor = (keystore, kind) => () => {
-		var _keystore$locale;
-		return corePrompt(promptLocale((_keystore$locale = keystore === null || keystore === void 0 ? void 0 : keystore.locale) !== null && _keystore$locale !== void 0 ? _keystore$locale : "en"), kind);
+		var _keystore$locale2;
+		return corePrompt(promptLocale((_keystore$locale2 = keystore === null || keystore === void 0 ? void 0 : keystore.locale) !== null && _keystore$locale2 !== void 0 ? _keystore$locale2 : "en"), kind);
 	};
 	/**
 	* An integer amount in smallest units rendered at `decimals` places with bigint arithmetic — no
@@ -4125,7 +4395,7 @@
 	}
 	// packages/wallet-kernel/src/secret/secret.ts
 	/** Overwrites buffers with zeros. The only "zeroing" we can rely on. */
-	function wipe(...buffers) {
+	function wipe$1(...buffers) {
 		for (const buffer of buffers) buffer.fill(0);
 	}
 	/**
@@ -4139,7 +4409,7 @@
 		} catch (_unused) {
 			throw new KernelError("invalid-input", "input is not valid UTF-8");
 		} finally {
-			wipe(bytes);
+			wipe$1(bytes);
 		}
 	}
 	var _bytes$1 = /* @__PURE__ */ new WeakMap();
@@ -4226,8 +4496,8 @@
 	* @module
 	*/
 	var encodeStr = (str) => Uint8Array.from(str.split(""), (c) => c.charCodeAt(0));
-	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$6(encodeStr("expand 16-byte k"))))();
-	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$6(encodeStr("expand 32-byte k"))))();
+	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$7(encodeStr("expand 16-byte k"))))();
+	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$7(encodeStr("expand 32-byte k"))))();
 	/**
 	* Rotates a 32-bit word left.
 	* @param a - Input word.
@@ -4249,10 +4519,10 @@
 	function runCipher(core, sigma, key, nonce, data, output, counter, rounds) {
 		const len = data.length;
 		const block = new Uint8Array(BLOCK_LEN);
-		const b32 = u32$6(block);
+		const b32 = u32$7(block);
 		const isAligned = isLE$1 && isAligned32(data) && isAligned32(output);
-		const d32 = isAligned ? u32$6(data) : U32_EMPTY;
-		const o32 = isAligned ? u32$6(output) : U32_EMPTY;
+		const d32 = isAligned ? u32$7(data) : U32_EMPTY;
+		const o32 = isAligned ? u32$7(output) : U32_EMPTY;
 		if (!isLE$1) {
 			for (let pos = 0; pos < len; counter++) {
 				core(sigma, key, nonce, b32, counter, rounds);
@@ -4336,14 +4606,14 @@
 				throw new Error("invalid key size");
 			}
 			if (!isLE$1 || !isAligned32(nonce)) toClean.push(nonce = copyBytes$1(nonce));
-			let k32 = u32$6(k);
+			let k32 = u32$7(k);
 			if (extendNonceFn) {
 				if (nonce.length !== 24) throw new Error("arx: extended nonce must be 24 bytes");
 				const n16 = nonce.subarray(0, 16);
-				if (isLE$1) extendNonceFn(sigma, k32, u32$6(n16), k32);
+				if (isLE$1) extendNonceFn(sigma, k32, u32$7(n16), k32);
 				else {
 					const sigmaRaw = swap32IfBE$1(Uint32Array.from(sigma));
-					extendNonceFn(sigmaRaw, k32, u32$6(n16), k32);
+					extendNonceFn(sigmaRaw, k32, u32$7(n16), k32);
 					clean$1(sigmaRaw);
 					swap32IfBE$1(k32);
 				}
@@ -4357,7 +4627,7 @@
 				nonce = nc;
 				toClean.push(nonce);
 			}
-			const n32 = swap32IfBE$1(u32$6(nonce));
+			const n32 = swap32IfBE$1(u32$7(nonce));
 			try {
 				runCipher(core, sigma, k32, n32, data, output, counter, rounds);
 				return output;
@@ -7524,10 +7794,10 @@
 		};
 	}
 	var ed25519_Point = /* @__PURE__ */ edwards(ed25519_CURVE, { uvRatio });
-	var Fp = /* @__PURE__ */ (() => ed25519_Point.Fp)();
+	var Fp$1 = /* @__PURE__ */ (() => ed25519_Point.Fp)();
 	function toMontgomery(point) {
 		const { y } = point;
-		return Fp.toBytes(Fp.div(_1n$6 + y, _1n$6 - y));
+		return Fp$1.toBytes(Fp$1.div(_1n$6 + y, _1n$6 - y));
 	}
 	function toMontgomerySecret(secretKey) {
 		const size = ed25519_Point.Fp.BYTES;
@@ -7600,7 +7870,7 @@
 	var INVSQRT_A_MINUS_D = /* @__PURE__ */ BigInt("54469307008909316920995813868745141605393597292927456921205312896311721017578");
 	var invertSqrt = (number) => uvRatio(_1n$6, number);
 	var MAX_255B = /* @__PURE__ */ BigInt("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-	var bytes255ToNumberLE = (bytes) => Fp.create(bytesToNumberLE(bytes) & MAX_255B);
+	var bytes255ToNumberLE = (bytes) => Fp$1.create(bytesToNumberLE(bytes) & MAX_255B);
 	/**
 	* Wrapper over Edwards Point for ristretto255.
 	*
@@ -7633,22 +7903,22 @@
 			abytes$2(bytes, 32);
 			const { a, d } = ed25519_CURVE;
 			const s = bytes255ToNumberLE(bytes);
-			if (!equalBytes$5(Fp.toBytes(s), bytes) || Fp.isOdd(s)) throw new Error("invalid ristretto255 encoding 1");
-			const s2 = Fp.sqr(s);
-			const u1 = Fp.add(_1n$6, Fp.mulN(a, s2));
-			const u2 = Fp.sub(_1n$6, Fp.mulN(a, s2));
-			const u1_2 = Fp.sqr(u1);
-			const u2_2 = Fp.sqr(u2);
-			const v = Fp.sub(Fp.mulN(Fp.mulN(a, d), u1_2), u2_2);
-			const { isValid, value: I } = invertSqrt(Fp.mul(v, u2_2));
-			const Dx = Fp.mul(I, u2);
-			const Dy = Fp.mul(Fp.mulN(I, Dx), v);
-			let x = Fp.mul(Fp.addN(s, s), Dx);
-			if (Fp.isOdd(x)) x = Fp.neg(x);
-			const y = Fp.mul(u1, Dy);
-			const t = Fp.mul(x, y);
-			if (!isValid || Fp.isOdd(t) || Fp.is0(y)) throw new Error("invalid ristretto255 encoding 2");
-			return new _RistrettoPoint(new ed25519_Point(x, y, Fp.ONE, t));
+			if (!equalBytes$5(Fp$1.toBytes(s), bytes) || Fp$1.isOdd(s)) throw new Error("invalid ristretto255 encoding 1");
+			const s2 = Fp$1.sqr(s);
+			const u1 = Fp$1.add(_1n$6, Fp$1.mulN(a, s2));
+			const u2 = Fp$1.sub(_1n$6, Fp$1.mulN(a, s2));
+			const u1_2 = Fp$1.sqr(u1);
+			const u2_2 = Fp$1.sqr(u2);
+			const v = Fp$1.sub(Fp$1.mulN(Fp$1.mulN(a, d), u1_2), u2_2);
+			const { isValid, value: I } = invertSqrt(Fp$1.mul(v, u2_2));
+			const Dx = Fp$1.mul(I, u2);
+			const Dy = Fp$1.mul(Fp$1.mulN(I, Dx), v);
+			let x = Fp$1.mul(Fp$1.addN(s, s), Dx);
+			if (Fp$1.isOdd(x)) x = Fp$1.neg(x);
+			const y = Fp$1.mul(u1, Dy);
+			const t = Fp$1.mul(x, y);
+			if (!isValid || Fp$1.isOdd(t) || Fp$1.is0(y)) throw new Error("invalid ristretto255 encoding 2");
+			return new _RistrettoPoint(new ed25519_Point(x, y, Fp$1.ONE, t));
 		}
 		/**
 		* Converts ristretto-encoded string to ristretto point.
@@ -7664,25 +7934,25 @@
 		*/
 		toBytes() {
 			let { X, Y, Z, T } = this.ep;
-			const u1 = Fp.mul(Fp.add(Z, Y), Fp.sub(Z, Y));
-			const u2 = Fp.mul(X, Y);
-			const u2sq = Fp.sqr(u2);
-			const { value: invsqrt } = invertSqrt(Fp.mul(u1, u2sq));
-			const D1 = Fp.mul(invsqrt, u1);
-			const D2 = Fp.mul(invsqrt, u2);
-			const zInv = Fp.mul(Fp.mulN(D1, D2), T);
+			const u1 = Fp$1.mul(Fp$1.add(Z, Y), Fp$1.sub(Z, Y));
+			const u2 = Fp$1.mul(X, Y);
+			const u2sq = Fp$1.sqr(u2);
+			const { value: invsqrt } = invertSqrt(Fp$1.mul(u1, u2sq));
+			const D1 = Fp$1.mul(invsqrt, u1);
+			const D2 = Fp$1.mul(invsqrt, u2);
+			const zInv = Fp$1.mul(Fp$1.mulN(D1, D2), T);
 			let D;
-			if (Fp.isOdd(Fp.mul(T, zInv))) {
-				let _x = Fp.mul(Y, SQRT_M1);
-				let _y = Fp.mul(X, SQRT_M1);
+			if (Fp$1.isOdd(Fp$1.mul(T, zInv))) {
+				let _x = Fp$1.mul(Y, SQRT_M1);
+				let _y = Fp$1.mul(X, SQRT_M1);
 				X = _x;
 				Y = _y;
-				D = Fp.mul(D1, INVSQRT_A_MINUS_D);
+				D = Fp$1.mul(D1, INVSQRT_A_MINUS_D);
 			} else D = D2;
-			if (Fp.isOdd(Fp.mul(X, zInv))) Y = Fp.neg(Y);
-			let s = Fp.mul(Fp.subN(Z, Y), D);
-			if (Fp.isOdd(s)) s = Fp.neg(s);
-			return Fp.toBytes(s);
+			if (Fp$1.isOdd(Fp$1.mul(X, zInv))) Y = Fp$1.neg(Y);
+			let s = Fp$1.mul(Fp$1.subN(Z, Y), D);
+			if (Fp$1.isOdd(s)) s = Fp$1.neg(s);
+			return Fp$1.toBytes(s);
 		}
 		/**
 		* Compares two Ristretto points.
@@ -7692,8 +7962,8 @@
 			this.assertSame(other);
 			const { X: X1, Y: Y1 } = this.ep;
 			const { X: X2, Y: Y2 } = other.ep;
-			const one = Fp.eql(Fp.mul(X1, Y2), Fp.mul(Y1, X2));
-			const two = Fp.eql(Fp.mul(Y1, Y2), Fp.mul(X1, X2));
+			const one = Fp$1.eql(Fp$1.mul(X1, Y2), Fp$1.mul(Y1, X2));
+			const two = Fp$1.eql(Fp$1.mul(Y1, Y2), Fp$1.mul(X1, X2));
 			return one || two;
 		}
 		is0() {
@@ -7708,7 +7978,7 @@
 		return new _RistrettoPoint2(ed25519_Point.ZERO);
 	})());
 	_defineProperty(_RistrettoPoint, "Fp", /* @__PURE__ */ (() => {
-		return Fp;
+		return Fp$1;
 	})());
 	_defineProperty(_RistrettoPoint, "Fn", /* @__PURE__ */ (() => {
 		return Fn$3;
@@ -8027,7 +8297,7 @@
 		try {
 			return await argon2id(normalizedBytes, salt, BACKUP_PASSWORD_COST, 32);
 		} finally {
-			wipe(normalizedBytes);
+			wipe$1(normalizedBytes);
 		}
 	}
 	/**
@@ -8039,7 +8309,7 @@
 		try {
 			return await pbkdf2("sha256", normalizedBytes, salt, PASSWORD_ITERATIONS, 32);
 		} finally {
-			wipe(normalizedBytes);
+			wipe$1(normalizedBytes);
 		}
 	}
 	/**
@@ -8051,7 +8321,7 @@
 			if (prf.length !== 32) throw new KernelError("invalid-input", "PRF output must be 32 bytes");
 			return hkdf(sha256$1, prf, credentialId, utf8ToBytes$1("qntx-wallet/kek/passkey/v1"), 32);
 		} finally {
-			wipe(prf);
+			wipe$1(prf);
 		}
 	}
 	/** The factor's public wrapping key: X25519(HKDF-SHA256(KEK)). Public — safe to store in headers. */
@@ -8060,7 +8330,7 @@
 		try {
 			return x25519.getPublicKey(factorSk);
 		} finally {
-			wipe(factorSk);
+			wipe$1(factorSk);
 		}
 	}
 	/** The `publicKey` a factor header declares, decoded; malformed headers throw `integrity`. */
@@ -8083,7 +8353,7 @@
 		try {
 			return equalBytes$6(expected, sealed.subarray(33, 65));
 		} finally {
-			wipe(expected);
+			wipe$1(expected);
 		}
 	}
 	/**
@@ -8104,16 +8374,16 @@
 					try {
 						return concatBytes$3(new Uint8Array([WRAP_VERSION]), ephPk, binding, envelope);
 					} finally {
-						wipe(binding);
+						wipe$1(binding);
 					}
 				} finally {
-					wipe(wrapKey);
+					wipe$1(wrapKey);
 				}
 			} finally {
-				wipe(shared);
+				wipe$1(shared);
 			}
 		} finally {
-			wipe(eph);
+			wipe$1(eph);
 		}
 	}
 	var corruptError = (message) => new KernelError("integrity", message, void 0, true);
@@ -8150,20 +8420,20 @@
 					}
 					const expected = factorBinding(dekBytes, factorContext(stored.kind, stored.id), stored.header);
 					const bound = equalBytes$6(expected, binding);
-					wipe(expected);
+					wipe$1(expected);
 					if (!bound) {
-						wipe(dekBytes);
+						wipe$1(dekBytes);
 						throw corruptError("factor binding mismatch");
 					}
 					return Secret.take(dekBytes);
 				} finally {
-					wipe(wrapKey);
+					wipe$1(wrapKey);
 				}
 			} finally {
-				wipe(shared);
+				wipe$1(shared);
 			}
 		} finally {
-			wipe(factorSk);
+			wipe$1(factorSk);
 		}
 	}
 	// packages/wallet-kernel/src/vault/memory.ts
@@ -8290,7 +8560,7 @@
 	var DOMAIN = "qntx-wallet/vault/v1/manifest";
 	var isManifestRecord = (record) => record.kind === MANIFEST_KIND;
 	var byCodeUnits = (a, b) => a < b ? -1 : a > b ? 1 : 0;
-	function u32$4(value) {
+	function u32$5(value) {
 		const out = /* @__PURE__ */ new Uint8Array(4);
 		new DataView(out.buffer).setUint32(0, value);
 		return out;
@@ -8302,7 +8572,7 @@
 		const hash = sha256$1.create();
 		const lp = (value) => {
 			const bytes = typeof value === "string" ? utf8ToBytes$1(value) : value;
-			hash.update(u32$4(bytes.length));
+			hash.update(u32$5(bytes.length));
 			hash.update(bytes);
 		};
 		const row = (entry) => {
@@ -8312,13 +8582,13 @@
 			lp(entry.sealed);
 		};
 		lp(DOMAIN);
-		hash.update(u32$4(meta.format));
+		hash.update(u32$5(meta.format));
 		lp(meta.keyId);
 		const records = image.records.filter((record) => !isManifestRecord(record)).sort((a, b) => byCodeUnits(a.kind, b.kind) || byCodeUnits(a.id, b.id));
-		hash.update(u32$4(records.length));
+		hash.update(u32$5(records.length));
 		for (const record of records) row(record);
 		const factors = [...image.factors].sort((a, b) => byCodeUnits(a.id, b.id));
-		hash.update(u32$4(factors.length));
+		hash.update(u32$5(factors.length));
 		for (const factor of factors) row(factor);
 		return hash.digest();
 	}
@@ -8344,7 +8614,7 @@
 				record
 			}];
 		} finally {
-			wipe(digest);
+			wipe$1(digest);
 		}
 	}
 	/**
@@ -8365,7 +8635,7 @@
 		try {
 			if (!equalBytes$6(sealed, manifestDigest(image))) throw failure;
 		} finally {
-			wipe(sealed);
+			wipe$1(sealed);
 		}
 	}
 	// packages/wallet-kernel/src/vault/store.ts
@@ -8379,6 +8649,8 @@
 	function isRecordKind(kind) {
 		return RECORD_KIND_PATTERN.test(kind);
 	}
+	/** The card module's wallet record kind — named here so the vault and commands layers know it. */
+	var CARD_WALLET_KIND = "card-wallet";
 	// packages/wallet-kernel/src/vault/vault.ts
 	init_utils$2();
 	init_base();
@@ -8450,7 +8722,7 @@
 				sealedKek
 			};
 		} catch (error) {
-			wipe(kek);
+			wipe$1(kek);
 			throw error;
 		}
 	}
@@ -8494,8 +8766,8 @@
 				sealed
 			};
 		} finally {
-			wipe(material.kek);
-			if (material.kind === "password") wipe(material.salt);
+			wipe$1(material.kek);
+			if (material.kind === "password") wipe$1(material.salt);
 		}
 	}
 	/** Builds a new factor record wrapping `dek`. The id comes first: it is the keystore key alias. */
@@ -8572,7 +8844,7 @@
 			try {
 				dek = unwrapDek(kek, stored);
 			} finally {
-				wipe(kek);
+				wipe$1(kek);
 			}
 		} else if (factor.kind === "password") {
 			const passwords = image.factors.filter((stored) => stored.kind === "password");
@@ -8586,7 +8858,7 @@
 				} catch (error) {
 					if (!(error instanceof KernelError) || error.code !== "wrong-password") throw error;
 				} finally {
-					wipe(kek);
+					wipe$1(kek);
 				}
 			}
 			if (dek === void 0) {
@@ -8601,14 +8873,14 @@
 			const wanted = base64urlnopad.encode(factor.credentialId);
 			const stored = image.factors.find((f) => f.kind === "passkey" && credentialIdOf(f) === wanted);
 			if (stored === void 0) {
-				wipe(factor.prf);
+				wipe$1(factor.prf);
 				throw new KernelError("wrong-passkey", "no passkey factor matches the credential");
 			}
 			const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
 			try {
 				dek = unwrapDek(kek, stored);
 			} finally {
-				wipe(kek);
+				wipe$1(kek);
 			}
 		}
 		return {
@@ -8675,7 +8947,7 @@
 			} catch (error) {
 				if (!(error instanceof KernelError) || error.code !== "wrong-password" && error.code !== "wrong-passkey") throw error;
 			} finally {
-				wipe(kek);
+				wipe$1(kek);
 			}
 		}
 		if (verified) {
@@ -8764,7 +9036,7 @@
 						}
 					});
 				} finally {
-					wipe(plaintext);
+					wipe$1(plaintext);
 				}
 			}
 			return {
@@ -8814,13 +9086,22 @@
 		try {
 			return splitWalletSecret(header, plaintext);
 		} finally {
-			wipe(plaintext);
+			wipe$1(plaintext);
 		}
 	}
 	function findRecord(image, kind, id) {
 		const record = image.records.find((r) => r.kind === kind && r.id === id);
 		if (record === void 0) throw new KernelError("not-found", "record not found");
 		return record;
+	}
+	/**
+	* The entropy record behind `walletId` — for every caller that needs a seed on this device. A
+	* `card-wallet` record of the same id wins: its seed lives only on the cards, so the lookup answers
+	* `unsupported` rather than falling through to a missing entropy record.
+	*/
+	function findSeedWallet(image, walletId) {
+		if (image.records.some((r) => r.kind === "card-wallet" && r.id === walletId)) throw new KernelError("unsupported", "card wallets hold no seed on this device");
+		return findRecord(image, "entropy", walletId);
 	}
 	/**
 	* Ops that establish the vault in one atomic `init` commit, rejected by `conflict` if the store is
@@ -8873,8 +9154,9 @@
 		};
 	}
 	/** The `WalletInfo` an entropy record's public header reports. */
-	function walletInfo(header) {
+	function walletInfo$1(header) {
 		return {
+			custody: "vault",
 			walletId: header.walletId,
 			origin: header.origin,
 			words: header.words,
@@ -9621,7 +9903,7 @@
 	* const isValid = p256ecdsa.verify(sig, msg, publicKey);
 	* ```
 	*/
-	function ecdsa$2(Point, hash, ecdsaOpts = {}) {
+	function ecdsa$3(Point, hash, ecdsaOpts = {}) {
 		validatePointCons(Point);
 		const hash_ = hash;
 		ahash(hash_);
@@ -10064,7 +10346,7 @@
 			Fp: Fpk1,
 			endo: secp256k1_ENDO
 		});
-		secp256k1 = /* @__PURE__ */ ecdsa$2(Pointk1, sha256$1);
+		secp256k1 = /* @__PURE__ */ ecdsa$3(Pointk1, sha256$1);
 		TAGGED_HASH_PREFIXES = Object.create(null);
 		pointToBytes = (point) => point.toBytes(true).slice(1);
 		affineXToBytes = ({ x }) => Fpk1.toBytes(x);
@@ -12770,7 +13052,7 @@
 			anumber$2(outputLen, "outputLen");
 			if (!(0 < blockLen && blockLen < 200)) throw new Error("\"blockLen\" must be 1..199");
 			this.state = /* @__PURE__ */ new Uint8Array(200);
-			this.state32 = u32$5(this.state);
+			this.state32 = u32$6(this.state);
 		}
 		clone() {
 			return this._cloneInto();
@@ -12789,7 +13071,7 @@
 			const len = data.length;
 			const canUseU32 = blockLen % 4 === 0 && data.byteOffset % 4 === 0;
 			const blockLen32 = blockLen / 4;
-			const data32 = canUseU32 && len >= blockLen ? u32$5(data) : void 0;
+			const data32 = canUseU32 && len >= blockLen ? u32$6(data) : void 0;
 			for (let pos = 0; pos < len;) {
 				if (data32 !== void 0 && this.pos === 0 && pos % 4 === 0 && len - pos >= blockLen) {
 					for (let i = 0, o = pos / 4; i < blockLen32; i++) state32[i] ^= data32[o + i];
@@ -12934,8 +13216,8 @@
 	//! 65 → `v ∉ {0,1,27,28}` → `r`/`s` equal to 0 or ≥ n → `s > n/2` (all
 	//! `InvalidSignature`) → recovery failure or address mismatch →
 	//! `VerificationFailed`.
-	var N = secp256k1.Point.Fn.ORDER;
-	var N_HALF = N / 2n;
+	var N$1 = secp256k1.Point.Fn.ORDER;
+	var N_HALF = N$1 / 2n;
 	/** `keccak256("\x19Ethereum Signed Message:\n" + len + message)`. */
 	function eip191Hash(message) {
 		const prefix = utf8Encode$2(`\u0019Ethereum Signed Message:\n${message.length}`);
@@ -12958,7 +13240,7 @@
 		});
 		const r = bytesToNumberBE(signature.subarray(0, 32));
 		const s = bytesToNumberBE(signature.subarray(32, 64));
-		if (r === 0n || r >= N || s === 0n || s >= N) throw new SiwxError({
+		if (r === 0n || r >= N$1 || s === 0n || s >= N$1) throw new SiwxError({
 			code: "InvalidSignature",
 			reason: "r/s out of range"
 		});
@@ -16555,7 +16837,7 @@
 	var maxUint256 = 2n ** 256n - 1n;
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AbiParameters.js
 	init_defineProperty();
-	function decode$2(parameters, data, options = {}) {
+	function decode$3(parameters, data, options = {}) {
 		const { as = "Array", checksumAddress = true } = options;
 		const bytes = typeof data === "string" ? fromHex$2(data) : data;
 		const cursor = create$1(bytes);
@@ -17928,7 +18210,7 @@
 			size: Math.max(0, size$1(data) - 4)
 		});
 		if (size$1(data) <= 4) return void 0;
-		return decode$2(item.inputs, slice$2(data, 4), options);
+		return decode$3(item.inputs, slice$2(data, 4), options);
 	}
 	function encodeData$1(...parameters) {
 		const [abiFunction, args] = (() => {
@@ -18731,7 +19013,7 @@
 		try {
 			const [mode, executionData] = list(decodeData(EXECUTE, hex$2(data)));
 			if (mode !== "0x0100000000000000000000000000000000000000000000000000000000000000" || typeof executionData !== "string") return;
-			const [inner] = list(decode$2(EXECUTIONS, hex$2(executionData)));
+			const [inner] = list(decode$3(EXECUTIONS, hex$2(executionData)));
 			const executions = [];
 			for (const e of list(inner)) {
 				if (!isExecution(e)) return;
@@ -18810,7 +19092,7 @@
 		accessList: ["accessList"],
 		eip1559: ["maxFeePerGas", "maxPriorityFeePerGas"]
 	};
-	var ALLOWED = {
+	var ALLOWED$1 = {
 		base: [
 			"type",
 			"chainId",
@@ -18838,7 +19120,7 @@
 		for (const field of fields) if (input[field] === void 0) throw new ChainError("invalid-request", `tx.${field} is required`);
 	};
 	var rejectUnknown = (input, type) => {
-		const allowed = /* @__PURE__ */ new Set([...ALLOWED.base, ...ALLOWED[type]]);
+		const allowed = /* @__PURE__ */ new Set([...ALLOWED$1.base, ...ALLOWED$1[type]]);
 		const unknown = Object.keys(input).filter((k) => !allowed.has(k));
 		if (unknown.length > 0) throw new ChainError("unknown-field", `tx has unknown fields for ${type}: ${unknown.sort().join(", ")}`);
 	};
@@ -22462,7 +22744,7 @@
 	* /evm/plan — the serialisable signing plan of a normalized request: the digests each signing
 	* backend must sign, and the transaction an EIP-7702 signature later re-enters. No key material.
 	*/
-	var ecdsa$1 = (digest, key) => ({
+	var ecdsa$2 = (digest, key) => ({
 		scheme: "ecdsa-secp256k1",
 		path: key.path,
 		publicKey: key.publicKey,
@@ -22476,11 +22758,11 @@
 	var planEvmTransaction = (tx, key) => ({
 		kind: "evm.transaction",
 		tx,
-		tasks: [ecdsa$1(toBytes$1(tx.type === "eip7702" ? getSignPayload$5(evmAuthorization(tx)) : evmEnvelope(tx).payload), key)]
+		tasks: [ecdsa$2(toBytes$1(tx.type === "eip7702" ? getSignPayload$5(evmAuthorization(tx)) : evmEnvelope(tx).payload), key)]
 	});
 	var planEvmPersonalMessage = (message, key) => ({
 		kind: "evm.personal-message",
-		tasks: [ecdsa$1(personalDigest(message), key)]
+		tasks: [ecdsa$2(personalDigest(message), key)]
 	});
 	var planEvmTypedData = (typedData, key) => {
 		const { json } = parseTypedData(typedData);
@@ -22492,7 +22774,7 @@
 		}
 		return {
 			kind: "evm.typed-data",
-			tasks: [ecdsa$1(toBytes$1(payload), key)]
+			tasks: [ecdsa$2(toBytes$1(payload), key)]
 		};
 	};
 	/** The plan of a normalized request; the task keeps the request kind so the kernel can wrap it. */
@@ -22501,7 +22783,7 @@
 		if (request.kind === "evm.personal-message") return planEvmPersonalMessage(request.message, key);
 		if (request.kind === "evm.fiat24-session") return {
 			kind: "evm.fiat24-session",
-			tasks: [ecdsa$1(personalDigest(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline))), key)]
+			tasks: [ecdsa$2(personalDigest(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline))), key)]
 		};
 		return planEvmTypedData(request.typedData, key);
 	};
@@ -26826,7 +27108,7 @@ zoo`.split("\n"));
 	var isKeyMetadata = (value) => typeof value === "object" && value !== null && "requestFid" in value && typeof value.requestFid === "bigint" && "requestSigner" in value && typedDataAddress(value.requestSigner) !== void 0 && "signature" in value && typedDataBytes(value.signature) !== void 0 && "deadline" in value && typeof value.deadline === "bigint";
 	var decodeKeyMetadata = (bytes) => {
 		try {
-			const decoded = decode$2(KEY_METADATA, bytes);
+			const decoded = decode$3(KEY_METADATA, bytes);
 			const tuple = Array.isArray(decoded) ? decoded[0] : void 0;
 			if (!isKeyMetadata(tuple) || encode$2(KEY_METADATA, [tuple]).toLowerCase() !== bytes.toLowerCase()) return;
 			return tuple;
@@ -26834,7 +27116,7 @@ zoo`.split("\n"));
 			return;
 		}
 	};
-	var result = (farcaster, summary) => ({
+	var result$2 = (farcaster, summary) => ({
 		content: { farcaster },
 		summary,
 		outflows: [],
@@ -26859,7 +27141,7 @@ zoo`.split("\n"));
 			if (owner === void 0 || owner.toLowerCase() !== signer.toLowerCase() || !isUint(message["keyType"], 2n ** 32n - 1n, 1n) || !isKey(key) || !isUint(message["metadataType"], 2n ** 8n - 1n, 1n) || metadata === void 0 || nonce === void 0 || deadline === void 0) return;
 			const app = decodeKeyMetadata(metadata);
 			if (app === void 0) return;
-			return result(_objectSpread2({
+			return result$2(_objectSpread2({
 				kind: "add",
 				key,
 				requestFid: app.requestFid.toString()
@@ -26871,7 +27153,7 @@ zoo`.split("\n"));
 			const { key } = message;
 			const deadline = parseUint(message["deadline"]);
 			if (requestFid === void 0 || !isKey(key) || deadline === void 0) return;
-			return result(_objectSpread2({
+			return result$2(_objectSpread2({
 				kind: "request",
 				key,
 				requestFid: requestFid.toString()
@@ -30558,9 +30840,9 @@ zoo`.split("\n"));
 		var _table$network;
 		return (_table$network = table[network]) === null || _table$network === void 0 ? void 0 : _table$network[mint];
 	};
-	var u32 = getU32Decoder();
+	var u32$4 = getU32Decoder();
 	var u64$1 = getU64Decoder();
-	var u32le$2 = (data, offset) => u32.decode(data, offset);
+	var u32le$2 = (data, offset) => u32$4.decode(data, offset);
 	var u64le$2 = (data, offset) => u64$1.decode(data, offset);
 	/**
 	* Classifies one instruction by program + discriminator/layout. Exact-length checks keep
@@ -32347,7 +32629,7 @@ zoo`.split("\n"));
 	* /tron/plan — the serialisable signing plan of a normalized request: a transaction plans
 	* sha256(raw_data), a message the TIP-191 digest, typed data the TIP-712 digest. No key material.
 	*/
-	var ecdsa = (digest, key) => ({
+	var ecdsa$1 = (digest, key) => ({
 		scheme: "ecdsa-secp256k1",
 		path: key.path,
 		publicKey: key.publicKey,
@@ -32358,19 +32640,19 @@ zoo`.split("\n"));
 		decodeTronRawData(rawData);
 		return {
 			kind: "tron.transaction",
-			tasks: [ecdsa(sha256$1(rawData), key)]
+			tasks: [ecdsa$1(sha256$1(rawData), key)]
 		};
 	};
 	var planTronMessage = (message, key) => {
 		if (message.length === 0) throw new ChainError("invalid-request", "a TRON message is non-empty bytes");
 		return {
 			kind: "tron.message",
-			tasks: [ecdsa(tronMessageDigest(message), key)]
+			tasks: [ecdsa$1(tronMessageDigest(message), key)]
 		};
 	};
 	var planTronTypedData = (typedData, key) => ({
 		kind: "tron.typed-data",
-		tasks: [ecdsa(tronTypedDataDigest(parseTronTypedData(typedData).json), key)]
+		tasks: [ecdsa$1(tronTypedDataDigest(parseTronTypedData(typedData).json), key)]
 	});
 	/** The plan of a normalized request; the task keeps the request kind so the kernel can wrap it. */
 	var planTron = (request, key) => {
@@ -33450,7 +33732,7 @@ zoo`.split("\n"));
 			}
 			return out;
 		} finally {
-			wipe(checksum);
+			wipe$1(checksum);
 			indices.fill(0);
 		}
 	}
@@ -33476,7 +33758,7 @@ zoo`.split("\n"));
 		try {
 			return await pbkdf2("sha512", password, salt, 2048, 64);
 		} finally {
-			wipe(password, salt);
+			wipe$1(password, salt);
 		}
 	}
 	/**
@@ -33488,7 +33770,7 @@ zoo`.split("\n"));
 		try {
 			return await use(seed);
 		} finally {
-			wipe(seed);
+			wipe$1(seed);
 		}
 	}
 	// packages/wallet-kernel/src/vault/policy.ts
@@ -33501,7 +33783,7 @@ zoo`.split("\n"));
 	function policyEnabled(image, dek, id) {
 		const record = policyRecord(image, id);
 		if (record === void 0) return false;
-		wipe(openRecord(dek, record));
+		wipe$1(openRecord(dek, record));
 		return true;
 	}
 	// packages/wallet-kernel/src/commands/passphrase.ts
@@ -33538,8 +33820,8 @@ zoo`.split("\n"));
 		try {
 			return await withSeed(pbkdf2, entropy, passphraseText(passphrase), use);
 		} finally {
-			wipe(entropy);
-			if (passphrase !== void 0) wipe(passphrase);
+			wipe$1(entropy);
+			if (passphrase !== void 0) wipe$1(passphrase);
 		}
 	}
 	var EMPTY_IMAGE$1 = {
@@ -33803,12 +34085,51 @@ zoo`.split("\n"));
 		return _objectSpread2({ keyId: record.id }, header);
 	};
 	/**
-	* Every address a mnemonic wallet can derive inside the first OWN_GROUP_BOUND groups — EVM bip44,
-	* Solana bip44-change plus TRON bip44. A key matching one of them is a second handle on an account
-	* the wallet already owns, so import refuses it.
+	* Every address a wallet can derive inside the first OWN_GROUP_BOUND groups — EVM bip44, Solana
+	* bip44-change plus TRON bip44. A key matching one of them is a second handle on an account the
+	* wallet already owns, so import refuses it. Card wallets answer from their cached public material;
+	* a path the record did not cache (`card-required`) is skipped — anything else throws.
 	*/
 	async function ownAddresses(ctx, dek) {
 		const addresses = /* @__PURE__ */ new Set();
+		const cardAddresses = async (record) => {
+			const material = ctx.cardMaterial(record.id);
+			if (material === void 0) return;
+			{
+				const h = 2147483648;
+				const collect = (settled, toAddress) => {
+					for (const result of settled) if (result.status === "fulfilled") addresses.add(toAddress(result.value));
+					else if (!(result.reason instanceof KernelError && result.reason.code === "card-required")) throw result.reason instanceof Error ? result.reason : /* @__PURE__ */ new Error("derivation failed");
+				};
+				const groups = Array.from({ length: OWN_GROUP_BOUND }, (_, group) => group);
+				const [evm, tron, solana] = await Promise.all([
+					Promise.allSettled(groups.map(async (group) => material.secp256k1([
+						2147483692,
+						2147483708,
+						h,
+						0,
+						group
+					]))),
+					Promise.allSettled(groups.map(async (group) => material.secp256k1([
+						2147483692,
+						2147483843,
+						h,
+						0,
+						group
+					]))),
+					Promise.allSettled(groups.map(async (group) => material.ed25519([
+						2147483692,
+						2147484149,
+						group + h,
+						h
+					])))
+				]);
+				collect(evm, (key) => evmAddressFromPublicKey(key).toLowerCase());
+				collect(tron, tronAddressFromPublicKey);
+				collect(solana, solanaAddressFromPublicKey);
+			}
+		};
+		await Promise.all(ctx.image.records.filter((r) => r.kind !== "entropy").map(async (record) => cardAddresses(record)));
 		const entropyRecords = ctx.image.records.filter((r) => r.kind === "entropy");
 		await Promise.all(entropyRecords.map(async (record) => withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
 			const master = HDKey$1.fromMasterSeed(seed);
@@ -33827,12 +34148,12 @@ zoo`.split("\n"));
 					} finally {
 						evmChild.wipePrivateData();
 						tronChild.wipePrivateData();
-						wipe(solChild.privateKey);
+						wipe$1(solChild.privateKey);
 					}
 				}
 			} finally {
 				master.wipePrivateData();
-				wipe(solanaRoot.privateKey);
+				wipe$1(solanaRoot.privateKey);
 			}
 		})));
 		return addresses;
@@ -33861,10 +34182,10 @@ zoo`.split("\n"));
 					createdAt
 				};
 			} finally {
-				wipe(material.secret);
+				wipe$1(material.secret);
 			}
 		} finally {
-			wipe(params.secret);
+			wipe$1(params.secret);
 		}
 	}
 	function listKeys(ctx) {
@@ -33898,7 +34219,7 @@ zoo`.split("\n"));
 			if (header.family === "tron") return encodeHexAscii(secret, "");
 			throw new KernelError("invalid-input", `keys are not supported on ${header.family}`);
 		} finally {
-			wipe(secret);
+			wipe$1(secret);
 		}
 	}
 	// packages/wallet-kernel/src/derive/hd.ts
@@ -33915,9 +34236,8 @@ zoo`.split("\n"));
 	* SHA-256(UTF-8("qntx-wallet/wallet-id/v1") ‖ master compressed public key). Derived from public
 	* data only — safe to use as a record id.
 	*/
-	function walletIdOf(master) {
-		const { publicKey } = master;
-		if (publicKey === null || publicKey.length !== 33) throw new KernelError("integrity", "master key has no compressed public key");
+	function walletIdOf(publicKey) {
+		if (publicKey.length !== 33) throw new KernelError("integrity", "master key has no compressed public key");
 		return bytesToHex$4(sha256$1(concatBytes$3(utf8ToBytes$1("qntx-wallet/wallet-id/v1"), publicKey)).slice(0, 8));
 	}
 	// packages/wallet-kernel/src/seed/entropy.ts
@@ -33938,7 +34258,7 @@ zoo`.split("\n"));
 			if (prf.length !== 32) throw new KernelError("invalid-input", "PRF output must be 32 bytes");
 			return prf.slice(0, 16);
 		} finally {
-			wipe(prf);
+			wipe$1(prf);
 		}
 	}
 	// packages/wallet-kernel/src/session/session.ts
@@ -33948,12 +34268,12 @@ zoo`.split("\n"));
 	function wipePendingFactor(pending) {
 		if (pending.kind === "device") return;
 		pending.kek.wipe();
-		if (pending.kind === "password") wipe(pending.salt);
-		else wipe(pending.credentialId);
+		if (pending.kind === "password") wipe$1(pending.salt);
+		else wipe$1(pending.credentialId);
 	}
 	function wipeDraft(draft) {
 		draft.entropy.wipe();
-		for (const expected of draft.expected) wipe(expected);
+		for (const expected of draft.expected) wipe$1(expected);
 		if (draft.pendingFactor !== void 0) wipePendingFactor(draft.pendingFactor);
 	}
 	/**
@@ -34112,9 +34432,10 @@ zoo`.split("\n"));
 	async function deriveWalletMaterial(platform, entropy, passphrase) {
 		return withSeed(platform.pbkdf2, entropy, passphraseText(passphrase), (seed) => {
 			const master = masterKey(seed);
+			if (master.publicKey === null) throw new KernelError("integrity", "master key has no compressed public key");
 			return {
 				master,
-				walletId: walletIdOf(master)
+				walletId: walletIdOf(master.publicKey)
 			};
 		});
 	}
@@ -34134,7 +34455,7 @@ zoo`.split("\n"));
 		}
 	}
 	function walletInfoOf(material, backup, createdAt) {
-		return walletInfo(_objectSpread2(_objectSpread2({
+		return walletInfo$1(_objectSpread2(_objectSpread2({
 			walletId: material.walletId,
 			origin: material.origin,
 			words: material.words,
@@ -34232,7 +34553,7 @@ zoo`.split("\n"));
 		return openSession(ctx, dek, keyId);
 	}
 	function ensureNewWallet(ctx, material) {
-		if (ctx.image.records.some((r) => r.kind === "entropy" && r.id === material.walletId)) throw new KernelError("already-exists", "wallet already exists");
+		if (ctx.image.records.some((r) => r.id === material.walletId && (r.kind === "entropy" || r.kind === "card-wallet"))) throw new KernelError("already-exists", "wallet already exists");
 	}
 	/** Three distinct quiz positions via rejection sampling on whole bytes. */
 	function quizPositions(random, count) {
@@ -34331,7 +34652,7 @@ zoo`.split("\n"));
 		try {
 			return await confirmWithPassphrase(ctx, params, passphrase);
 		} finally {
-			if (passphrase !== void 0) wipe(passphrase);
+			if (passphrase !== void 0) wipe$1(passphrase);
 		}
 	}
 	async function confirmWithPassphrase(ctx, params, passphrase) {
@@ -34339,7 +34660,7 @@ zoo`.split("\n"));
 			const answer = params.answers[i];
 			return answer !== void 0 && answer.length === expected.length && equalBytes$6(answer, expected);
 		});
-		for (const answer of params.answers) wipe(answer);
+		for (const answer of params.answers) wipe$1(answer);
 		if (!allMatch) throw new KernelError("invalid-input", "backup confirmation failed");
 		const taken = ctx.session.takeDraft(params.draft);
 		try {
@@ -34373,11 +34694,11 @@ zoo`.split("\n"));
 					session: session.id
 				};
 			} finally {
-				wipe(entropy);
+				wipe$1(entropy);
 			}
 		} finally {
 			taken.entropy.wipe();
-			for (const expected of taken.expected) wipe(expected);
+			for (const expected of taken.expected) wipe$1(expected);
 			if (taken.pendingFactor !== void 0) wipePendingFactor(taken.pendingFactor);
 		}
 	}
@@ -34408,8 +34729,8 @@ zoo`.split("\n"));
 					session
 				};
 			} finally {
-				if (entropy !== void 0) wipe(entropy);
-				if (passphrase !== void 0) wipe(passphrase);
+				if (entropy !== void 0) wipe$1(entropy);
+				if (passphrase !== void 0) wipe$1(passphrase);
 			}
 		});
 	}
@@ -34421,9 +34742,9 @@ zoo`.split("\n"));
 	*/
 	function walletPrfOf(result) {
 		var _result$first;
-		if (result.second !== void 0) wipe(result.second);
+		if (result.second !== void 0) wipe$1(result.second);
 		if (!result.userVerified || ((_result$first = result.first) === null || _result$first === void 0 ? void 0 : _result$first.length) !== 32) {
-			if (result.first !== void 0) wipe(result.first);
+			if (result.first !== void 0) wipe$1(result.first);
 			throw new KernelError("passkey-prf-unsupported", "the passkey returned no verified PRF output");
 		}
 		return {
@@ -34463,7 +34784,7 @@ zoo`.split("\n"));
 			salts
 		});
 		if (((_asserted$userHandle = asserted.userHandle) === null || _asserted$userHandle === void 0 ? void 0 : _asserted$userHandle[0]) !== PURPOSE_WALLET) {
-			for (const output of [asserted.first, asserted.second]) if (output !== void 0) wipe(output);
+			for (const output of [asserted.first, asserted.second]) if (output !== void 0) wipe$1(output);
 			throw new KernelError("wrong-passkey", "the passkey is not a wallet credential");
 		}
 		return walletPrfOf(asserted);
@@ -34490,18 +34811,20 @@ zoo`.split("\n"));
 					session
 				};
 			} finally {
-				wipe(entropy);
+				wipe$1(entropy);
 			}
 		});
 	}
 	async function deleteWallet(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
 		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "delete-wallet"));
-		findRecord(ctx.image, "entropy", params.walletId);
+		const record = ctx.image.records.find((r) => r.id === params.walletId);
+		const kind = record !== void 0 && record.kind === "card-wallet" ? CARD_WALLET_KIND : "entropy";
+		findRecord(ctx.image, kind, params.walletId);
 		const extras = ctx.modules.flatMap((module) => module.walletDeleteOps(ctx.image, params.walletId));
 		await ctx.commit([{
 			op: "delete-record",
-			kind: "entropy",
+			kind,
 			id: params.walletId
 		}, ...extras]);
 		return null;
@@ -35008,7 +35331,7 @@ zoo`.split("\n"));
 									createdAt: now
 								}), material.secret));
 							} finally {
-								if (material.secret !== key.secret) wipe(material.secret);
+								if (material.secret !== key.secret) wipe$1(material.secret);
 							}
 						}
 						if (gated.uninitialized && adoptsBackupKey(material)) records.push(backupKeyRecord(ctx, gated.dek, bek, envelope.factors));
@@ -35044,7 +35367,7 @@ zoo`.split("\n"));
 	async function exportMnemonic(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
 		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "export-mnemonic"));
-		const record = findRecord(ctx.image, "entropy", params.walletId);
+		const record = findSeedWallet(ctx.image, params.walletId);
 		const header = parseEntropyHeader(record.header);
 		const { entropy, passphrase } = openWalletSecret(dek, record);
 		try {
@@ -35058,8 +35381,8 @@ zoo`.split("\n"));
 			}
 			return _objectSpread2({ mnemonic: exported }, passphrase === void 0 ? {} : { passphrase: new Uint8Array(passphrase) });
 		} finally {
-			wipe(entropy);
-			if (passphrase !== void 0) wipe(passphrase);
+			wipe$1(entropy);
+			if (passphrase !== void 0) wipe$1(passphrase);
 		}
 	}
 	/**
@@ -35122,6 +35445,31 @@ zoo`.split("\n"));
 		"keys.remove": async (ctx, params, session) => removeKey$1(ctx, params, session),
 		"keys.export": async (ctx, params, session) => exportKey$1(ctx, params, session)
 	};
+	// packages/wallet-kernel/src/modules/card/budget.ts
+	/** The plan one tap may spend, in milliseconds. */
+	var PLAN_MS = 18e3;
+	/** Conservative per-command milliseconds (§16.6, each including its 40 ms transit). */
+	var PRICE = {
+		status: 40,
+		create: 146,
+		verify: 164,
+		change: 164,
+		erase: 164,
+		wait: 1005,
+		"public-key": 340,
+		"sign-ecdsa": 451,
+		"sign-bip340": 764,
+		"ed25519-begin": 470,
+		"ed25519-update": 61,
+		"ed25519-finish": 526,
+		offer: 177,
+		"export-head": 464,
+		"export-payload": 40,
+		"import-head": 511,
+		"import-payload": 40
+	};
+	/** Estimated milliseconds one command costs the card-side budget. */
+	var priceOf = (command) => PRICE[command];
 	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/utils.js
 	/**
 	* Validates that a value is a non-negative bigint.
@@ -35389,6 +35737,505 @@ zoo`.split("\n"));
 			wif: 239
 		});
 	}));
+	// packages/wallet-kernel/src/modules/chains/keys.ts
+	init_utils();
+	/**
+	* Key sources — the kernel's bridge between a signing secret and a plan's tasks. `material` is the
+	* only way public keys leave the secret (addresses, BTC ownership, fingerprints, xpubs are all
+	* derived through it); `backend` answers one 64-byte signature per task through a family task
+	* signer. BIP-32 and SLIP-10 nodes are cached by path and each child derives from its cached
+	* parent, so a many-input PSBT derives the account node once; `wipe` zeroes every cached node.
+	*/
+	init_secp256k1();
+	init_bip32();
+	var HARDENED$3 = 2147483648;
+	/** `m/…` notation of a task path — hardened indices print with `'`. */
+	var pathString = (path) => `m${path.map((i) => i >= HARDENED$3 ? `/${i - HARDENED$3}'` : `/${i}`).join("")}`;
+	/** The HD source: BIP-32 for secp256k1 schemes, SLIP-10 for ed25519, both lazy and path-cached. */
+	var seedKeys = (seed, random) => {
+		const secpNodes = /* @__PURE__ */ new Map();
+		const edNodes = /* @__PURE__ */ new Map();
+		let wiped = false;
+		const alive = () => {
+			if (wiped) throw new KernelError("integrity", "key source is wiped");
+		};
+		const secpNode = (path) => {
+			var _path$at;
+			alive();
+			const key = path.join("/");
+			const hit = secpNodes.get(key);
+			if (hit !== void 0) return hit;
+			const node = path.length === 0 ? HDKey$1.fromMasterSeed(seed) : secpNode(path.slice(0, -1)).deriveChild((_path$at = path.at(-1)) !== null && _path$at !== void 0 ? _path$at : 0);
+			secpNodes.set(key, node);
+			return node;
+		};
+		const edNode = (path) => {
+			var _path$at2;
+			alive();
+			const key = path.join("/");
+			const hit = edNodes.get(key);
+			if (hit !== void 0) return hit;
+			const node = path.length === 0 ? HDKey.fromMasterSeed(seed) : edNode(path.slice(0, -1)).deriveChild((_path$at2 = path.at(-1)) !== null && _path$at2 !== void 0 ? _path$at2 : 0);
+			edNodes.set(key, node);
+			return node;
+		};
+		const privateAt = (task) => {
+			if (task.scheme === "ed25519") return edNode(task.path).privateKey;
+			const priv = secpNode(task.path).privateKey;
+			if (priv === null) throw new KernelError("integrity", "no private key at path");
+			return priv;
+		};
+		return {
+			material: {
+				secp256k1: async (path) => {
+					const pub = secpNode(path).publicKey;
+					if (pub === null) throw new KernelError("integrity", "no public key at path");
+					return pub;
+				},
+				ed25519: async (path) => ed25519.getPublicKey(edNode(path).privateKey),
+				extendedPublicKey: async (path, versions) => {
+					alive();
+					const master = HDKey$1.fromMasterSeed(seed, versions);
+					try {
+						const node = master.derive(pathString(path));
+						try {
+							return node.publicExtendedKey;
+						} finally {
+							node.wipePrivateData();
+						}
+					} finally {
+						master.wipePrivateData();
+					}
+				}
+			},
+			backend: (sign) => ({ sign: async (task) => sign(task, privateAt(task), task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array()) }),
+			wipe: () => {
+				wiped = true;
+				for (const node of secpNodes.values()) node.wipePrivateData();
+				for (const node of edNodes.values()) wipe$1(node.privateKey);
+				secpNodes.clear();
+				edNodes.clear();
+			}
+		};
+	};
+	/** The imported-key source: one raw key serves only path `[]` and only its own curve's tasks. */
+	var importedKeys = (secret, curve, random) => {
+		let wiped = false;
+		const alive = () => {
+			if (wiped) throw new KernelError("integrity", "key source is wiped");
+		};
+		return {
+			material: {
+				secp256k1: async (path) => {
+					alive();
+					if (curve !== "secp256k1" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
+					return secp256k1.getPublicKey(secret, true);
+				},
+				ed25519: async (path) => {
+					alive();
+					if (curve !== "ed25519" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
+					return ed25519.getPublicKey(secret);
+				},
+				extendedPublicKey: async () => {
+					throw new KernelError("integrity", "imported keys have no extended public key");
+				}
+			},
+			backend: (sign) => ({ sign: async (task) => {
+				alive();
+				const ownCurve = curve === "secp256k1" ? task.scheme !== "ed25519" : task.scheme === "ed25519";
+				if (task.path.length > 0 || !ownCurve) throw new KernelError("integrity", "an imported key signs only its own tasks at []");
+				return sign(task, secret, task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array());
+			} }),
+			wipe: () => {
+				wiped = true;
+				wipe$1(secret);
+			}
+		};
+	};
+	// packages/wallet-kernel/src/modules/card/material.ts
+	/**
+	* The `PublicMaterial` a card wallet answers from its cached record body — the seed stays on the
+	* cards, so this never derives past a hardened index the tap did not cache. `[]` is the master; any
+	* other secp256k1 path resolves through the longest cached prefix whose remaining indices are all
+	* non-hardened (public derivation). Anything else is `card-required`: the caller taps a card.
+	*/
+	init_utils$2();
+	init_bip32();
+	var HARDENED$2 = 2147483648;
+	var cardRequired = () => new KernelError("card-required", "this key needs a card tap");
+	/** The cached or publicly derived node at `path`, or `undefined` when a card tap is needed. */
+	var nodeAt = (body, path) => {
+		for (let depth = path.length; depth >= 1; depth -= 1) {
+			const cached = body.nodes[pathString(path.slice(0, depth))];
+			if (cached === void 0) continue;
+			const remainder = path.slice(depth);
+			if (remainder.some((index) => index >= HARDENED$2)) return;
+			let node = new HDKey$1({
+				publicKey: hexToBytes$3(cached.key),
+				chainCode: hexToBytes$3(cached.chainCode)
+			});
+			for (const index of remainder) node = node.deriveChild(index);
+			return node;
+		}
+	};
+	function cardMaterial(body) {
+		const master = hexToBytes$3(body.master);
+		return {
+			secp256k1: async (path) => {
+				if (path.length === 0) return master;
+				const node = nodeAt(body, path);
+				if (node === void 0 || node.publicKey === null) throw cardRequired();
+				return node.publicKey;
+			},
+			ed25519: async (path) => {
+				const cached = body.ed25519[pathString(path)];
+				if (cached === void 0) throw cardRequired();
+				return hexToBytes$3(cached);
+			},
+			extendedPublicKey: async (path, versions) => {
+				var _nodeAt, _path$at;
+				const node = nodeAt(body, path);
+				if (node === void 0 || node.publicKey === null || node.chainCode === null) throw cardRequired();
+				const parentPublic = path.length === 1 ? master : (_nodeAt = nodeAt(body, path.slice(0, -1))) === null || _nodeAt === void 0 ? void 0 : _nodeAt.publicKey;
+				if (parentPublic === void 0 || parentPublic === null) throw cardRequired();
+				const view = new DataView(hash160(parentPublic).buffer, 0, 4);
+				return new HDKey$1({
+					versions,
+					depth: path.length,
+					index: (_path$at = path.at(-1)) !== null && _path$at !== void 0 ? _path$at : 0,
+					parentFingerprint: view.getUint32(0),
+					chainCode: node.chainCode,
+					publicKey: node.publicKey
+				}).publicExtendedKey;
+			}
+		};
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/bytes.ts
+	init_secp256k1();
+	init_utils$2();
+	var ascii = utf8ToBytes$1;
+	function u16(value) {
+		const out = /* @__PURE__ */ new Uint8Array(2);
+		new DataView(out.buffer).setUint16(0, value);
+		return out;
+	}
+	function u32(value) {
+		const out = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(out.buffer).setUint32(0, value);
+		return out;
+	}
+	/** Big-endian u16 at the end of a two-or-more-byte buffer (the status word position). */
+	function readSw(bytes) {
+		return new DataView(bytes.buffer, bytes.byteOffset + bytes.length - 2, 2).getUint16(0);
+	}
+	function wipe(...buffers) {
+		for (const buffer of buffers) buffer.fill(0);
+	}
+	/** A secp256k1 point decoded and curve-checked; `undefined` on any malformed input. */
+	function tryPoint(bytes) {
+		try {
+			return secp256k1.Point.fromBytes(bytes);
+		} catch (_unused) {
+			return;
+		}
+	}
+	/** Whether `bytes` is a valid secp256k1 point encoding (compressed or uncompressed). */
+	function validPoint(bytes) {
+		return tryPoint(bytes) !== void 0;
+	}
+	/** Whether `bytes` is a valid 65-byte uncompressed secp256k1 point (`0x04 ‖ x ‖ y`). */
+	function validUncompressedPoint(bytes) {
+		return bytes.length === 65 && bytes[0] === 4 && validPoint(bytes);
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/errors.ts
+	init_defineProperty();
+	var CardError = class extends Error {
+		constructor(code, message, sw, remaining) {
+			super(message);
+			_defineProperty(this, "code", void 0);
+			_defineProperty(
+				this,
+				/** The outer or inner status word that triggered the error, when one did. */
+				"sw",
+				void 0
+			);
+			_defineProperty(
+				this,
+				/** Attempts left before erasure; only set on `wrong-access-code` (1–9, protocol.md §13.2). */
+				"remaining",
+				void 0
+			);
+			this.name = "CardError";
+			this.code = code;
+			this.sw = sw;
+			this.remaining = remaining;
+		}
+	};
+	// packages/wallet-kernel/src/modules/card/protocol/identity.ts
+	init_secp256k1();
+	init_sha2();
+	init_utils$2();
+	var LABEL_CERT = ascii("qntx-card/v1/cert");
+	/** No production batch exists yet; test anchors live in tests only. */
+	var PRODUCTION_ANCHORS = [];
+	/** `ID(A) = SHA-256(A)[0..16)`: the card ID (protocol.md §1). */
+	function cardId(identity) {
+		if (identity.length !== 33) throw new CardError("invalid-input", "identity is not a compressed point");
+		return sha256$1(identity).subarray(0, 16);
+	}
+	/** `short(A)`: `ID(A)[0..4)` as 8 uppercase hex digits in two groups (`XXXX-XXXX`). */
+	function shortId(identity) {
+		const hex = bytesToHex$4(cardId(identity).subarray(0, 4)).toUpperCase();
+		return `${hex.slice(0, 4)}-${hex.slice(4)}`;
+	}
+	/**
+	* Verifies `cert` against `anchors` (§5.2). Returns the identity key `A` (33 bytes) and the batch
+	* of the anchor that verified. `card-not-genuine` when the certificate chains to no anchor;
+	* `invalid-input` when an anchor key is not a valid uncompressed point.
+	*/
+	function verifyCertificate(cert, anchors) {
+		if (cert.length !== 97) throw new CardError("card-not-genuine", "certificate is not 97 bytes");
+		for (const anchor of anchors) if (!validUncompressedPoint(anchor.key)) throw new CardError("invalid-input", "anchor key is not a valid uncompressed point");
+		const identity = cert.subarray(0, 33);
+		if (!validPoint(identity)) throw new CardError("card-not-genuine", "certificate subject is not a compressed point");
+		const signature = cert.subarray(33, 97);
+		const digest = sha256$1(concatBytes$3(LABEL_CERT, identity));
+		for (const anchor of anchors) if (secp256k1.verify(signature, digest, anchor.key, {
+			prehash: false,
+			lowS: false
+		})) return {
+			identity: new Uint8Array(identity),
+			batch: anchor.batch
+		};
+		throw new CardError("card-not-genuine", "certificate chains to no trusted anchor");
+	}
+	// packages/wallet-kernel/src/modules/card/record.ts
+	/**
+	* The `card-wallet` record (id = `walletId`): the vault's half of a card wallet — no secret is ever
+	* stored, the seed lives only on the cards. The public header (manifest-authenticated) carries
+	* members, per-card state and pinned certificates; the sealed body is UTF-8 JSON with the public
+	* material a verified tap fetched (master key, cached nodes, recent ephemeral tags, saved access
+	* hashes). Encoders emit canonical JSON — fixed key order, sorted inner maps — so vectors are
+	* byte-exact; parsers are strict and every failure is `integrity`.
+	*/
+	init_secp256k1();
+	init_utils$2();
+	init_objectSpread2();
+	var CARD_ID = /^[0-9a-f]{32}$/;
+	var HEX64 = /^[0-9a-f]{64}$/;
+	/** `m/…` — depth 1..10, each index < 2³¹ optionally hardened. */
+	var NODE_PATH = /^m(\/\d+'?){1,10}$/;
+	var bodyFailure = () => new KernelError("integrity", "invalid card-wallet body");
+	var bodyObject = (text) => {
+		let value;
+		try {
+			value = JSON.parse(text);
+		} catch (_unused) {
+			throw bodyFailure();
+		}
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bodyFailure();
+		return value;
+	};
+	var expectBodyKeys = (object, keys) => {
+		if (Object.keys(object).length !== keys.length || !keys.every((key) => Object.hasOwn(object, key))) throw bodyFailure();
+	};
+	var asHex = (value, pattern) => {
+		if (typeof value !== "string" || !pattern.test(value)) throw bodyFailure();
+		return value;
+	};
+	/** `m/…` depth 1..10, each segment a valid BIP-32 index (optional `'` hardened mark). */
+	var asNodePath = (key) => {
+		if (!NODE_PATH.test(key)) throw bodyFailure();
+		for (const segment of key.slice(2).split("/")) {
+			const index = Number(segment.replaceAll("'", ""));
+			if (!Number.isSafeInteger(index) || index >= 2147483648) throw bodyFailure();
+		}
+	};
+	var asSecpPoint = (hex) => {
+		try {
+			secp256k1.Point.fromBytes(hexToBytes$3(hex));
+		} catch (_unused2) {
+			throw bodyFailure();
+		}
+	};
+	var asEd25519Point = (hex) => {
+		try {
+			ed25519.Point.fromBytes(hexToBytes$3(hex));
+		} catch (_unused3) {
+			throw bodyFailure();
+		}
+	};
+	var asInt = (value, min, max) => {
+		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) throw headerFailure();
+		return value;
+	};
+	var parseCard = (value, members) => {
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw headerFailure();
+		const object = value;
+		expectKeys(object, [
+			"cardId",
+			"state",
+			...[
+				"cert",
+				"tries",
+				"verifiedAt"
+			].filter((key) => Object.hasOwn(object, key))
+		]);
+		const id = object["cardId"];
+		if (typeof id !== "string" || !CARD_ID.test(id) || !members.has(id)) throw headerFailure();
+		const { state } = object;
+		if (state !== "ready" && state !== "unknown" && state !== "pending") throw headerFailure();
+		let cert;
+		if (Object.hasOwn(object, "cert")) {
+			const raw = object["cert"];
+			if (typeof raw !== "string" || !/^[0-9a-f]{194}$/.test(raw)) throw headerFailure();
+			if (bytesToHex$4(cardId(hexToBytes$3(raw).subarray(0, 33))) !== id) throw headerFailure();
+			cert = raw;
+		}
+		return _objectSpread2(_objectSpread2(_objectSpread2({ cardId: id }, cert === void 0 ? {} : { cert }), {}, { state }, Object.hasOwn(object, "tries") ? { tries: asInt(object["tries"], 0, 10) } : {}), Object.hasOwn(object, "verifiedAt") ? { verifiedAt: asCreatedAt(object["verifiedAt"]) } : {});
+	};
+	function parseCardWalletHeader(text) {
+		const object = headerObject(text);
+		expectKeys(object, [
+			"v",
+			"walletId",
+			"origin",
+			"createdAt",
+			"members",
+			"cards"
+		]);
+		if (object["v"] !== 1) throw headerFailure();
+		const { origin } = object;
+		if (origin !== "generated" && origin !== "imported") throw headerFailure();
+		const membersValue = object["members"];
+		if (!Array.isArray(membersValue) || membersValue.length === 0 || membersValue.length > 3) throw headerFailure();
+		const members = membersValue.map((member) => {
+			if (typeof member !== "string" || !CARD_ID.test(member)) throw headerFailure();
+			return member;
+		});
+		if (new Set(members).size !== members.length) throw headerFailure();
+		const memberSet = new Set(members);
+		const cardsValue = object["cards"];
+		if (!Array.isArray(cardsValue)) throw headerFailure();
+		const cards = cardsValue.map((card) => parseCard(card, memberSet));
+		if (new Set(cards.map((card) => card.cardId)).size !== cards.length) throw headerFailure();
+		return {
+			v: 1,
+			walletId: asWalletId(object["walletId"]),
+			origin,
+			createdAt: asCreatedAt(object["createdAt"]),
+			members,
+			cards
+		};
+	}
+	function encodeCardWalletHeader(header) {
+		return JSON.stringify({
+			v: header.v,
+			walletId: header.walletId,
+			origin: header.origin,
+			createdAt: header.createdAt,
+			members: header.members,
+			cards: header.cards.map((card) => _objectSpread2(_objectSpread2(_objectSpread2({ cardId: card.cardId }, card.cert === void 0 ? {} : { cert: card.cert }), {}, { state: card.state }, card.tries === void 0 ? {} : { tries: card.tries }), card.verifiedAt === void 0 ? {} : { verifiedAt: card.verifiedAt }))
+		});
+	}
+	var parseHexRecord = (value, entry) => {
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bodyFailure();
+		const out = {};
+		for (const [key, item] of Object.entries(value)) {
+			entry(key, item);
+			out[key] = item;
+		}
+		return out;
+	};
+	/**
+	* Parses and verifies a sealed body: the master key is a point deriving `walletId`, every node a
+	* point with a 32-byte chain code under a depth-1..10 path, every ed25519 entry a valid encoding,
+	* counts bounded. `walletId` is the record id the body was sealed under.
+	*/
+	function parseCardWalletBody(text, walletId) {
+		const object = bodyObject(text);
+		const flagged = Object.hasOwn(object, "access");
+		expectBodyKeys(object, flagged ? [
+			"master",
+			"nodes",
+			"ed25519",
+			"ephemerals",
+			"access"
+		] : [
+			"master",
+			"nodes",
+			"ed25519",
+			"ephemerals"
+		]);
+		const master = asHex(object["master"], /^[0-9a-f]{66}$/);
+		asSecpPoint(master);
+		if (walletIdOf(hexToBytes$3(master)) !== walletId) throw new KernelError("integrity", "card-wallet master does not derive its walletId");
+		const nodesValue = object["nodes"];
+		if (typeof nodesValue !== "object" || nodesValue === null || Array.isArray(nodesValue)) throw bodyFailure();
+		const nodeEntries = Object.entries(nodesValue);
+		if (nodeEntries.length > 512) throw bodyFailure();
+		const nodes = {};
+		for (const [path, node] of nodeEntries) {
+			asNodePath(path);
+			if (typeof node !== "object" || node === null || Array.isArray(node)) throw bodyFailure();
+			const entry = node;
+			expectBodyKeys(entry, ["key", "chainCode"]);
+			const key = asHex(entry["key"], /^[0-9a-f]{66}$/);
+			asSecpPoint(key);
+			nodes[path] = {
+				key,
+				chainCode: asHex(entry["chainCode"], HEX64)
+			};
+		}
+		const ed25519Entries = parseHexRecord(object["ed25519"], (path, pub) => {
+			asNodePath(path);
+			asEd25519Point(asHex(pub, HEX64));
+		});
+		if (Object.keys(ed25519Entries).length > 256) throw bodyFailure();
+		const ephemeralsValue = object["ephemerals"];
+		if (typeof ephemeralsValue !== "object" || ephemeralsValue === null || Array.isArray(ephemeralsValue)) throw bodyFailure();
+		const ephemerals = {};
+		for (const [id, tags] of Object.entries(ephemeralsValue)) {
+			if (!CARD_ID.test(id) || !Array.isArray(tags) || tags.length > 16) throw bodyFailure();
+			ephemerals[id] = tags.map((tag) => asHex(tag, /^[0-9a-f]{16}$/));
+		}
+		let access;
+		if (flagged) access = parseHexRecord(object["access"], (id, hash) => {
+			if (!CARD_ID.test(id)) throw bodyFailure();
+			asHex(hash, HEX64);
+		});
+		return _objectSpread2({
+			master,
+			nodes,
+			ed25519: ed25519Entries,
+			ephemerals
+		}, access === void 0 ? {} : { access });
+	}
+	var sortedEntries = (record) => Object.entries(record).sort(([a], [b]) => a.localeCompare(b));
+	function encodeCardWalletBody(body) {
+		return JSON.stringify(_objectSpread2({
+			master: body.master,
+			nodes: Object.fromEntries(sortedEntries(body.nodes)),
+			ed25519: Object.fromEntries(sortedEntries(body.ed25519)),
+			ephemerals: Object.fromEntries(sortedEntries(body.ephemerals))
+		}, body.access === void 0 ? {} : { access: Object.fromEntries(sortedEntries(body.access)) }));
+	}
+	/** The `CardWalletInfo` a `card-wallet` header contributes to `wallets` in status. */
+	function cardWalletInfo(header) {
+		return {
+			custody: "card",
+			walletId: header.walletId,
+			origin: header.origin === "generated" ? "card-generated" : "card-imported",
+			backup: "cards",
+			createdAt: header.createdAt,
+			members: header.members.length,
+			cards: header.cards.map((card) => _objectSpread2(_objectSpread2(_objectSpread2({ cardId: card.cardId }, card.cert === void 0 ? {} : { shortId: shortId(hexToBytes$3(card.cert).subarray(0, 33)) }), {}, { state: card.state }, card.tries === void 0 ? {} : { tries: card.tries }), card.verifiedAt === void 0 ? {} : { verifiedAt: card.verifiedAt }))
+		};
+	}
+	/** Whether `walletId` names a `card-wallet` record — the caller picks the card path, not a seed. */
+	function isCardWallet(image, walletId) {
+		return image.records.some((r) => r.kind === "card-wallet" && r.id === walletId);
+	}
 	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/script.js
 	/**
 	* Coder for Bitcoin Script numbers.
@@ -40102,7 +40949,8 @@ zoo`.split("\n"));
 				try {
 					const pub = await childAt(b, purpose, entry.path);
 					if (deepEqual(output.script, expectedScript(purpose, pub))) ownScripts.add(hex(output.script));
-				} catch (_unused) {
+				} catch (error) {
+					if (error instanceof KernelError && error.code === "card-required") throw error;
 					continue;
 				}
 			}
@@ -40240,120 +41088,6 @@ zoo`.split("\n"));
 			prompt: intent,
 			signer,
 			plan
-		};
-	};
-	// packages/wallet-kernel/src/modules/chains/keys.ts
-	/**
-	* Key sources — the kernel's bridge between a signing secret and a plan's tasks. `material` is the
-	* only way public keys leave the secret (addresses, BTC ownership, fingerprints, xpubs are all
-	* derived through it); `backend` answers one 64-byte signature per task through a family task
-	* signer. BIP-32 and SLIP-10 nodes are cached by path and each child derives from its cached
-	* parent, so a many-input PSBT derives the account node once; `wipe` zeroes every cached node.
-	*/
-	init_secp256k1();
-	init_bip32();
-	var HARDENED$1 = 2147483648;
-	/** `m/…` notation of a task path — hardened indices print with `'`. */
-	var pathString = (path) => `m${path.map((i) => i >= HARDENED$1 ? `/${i - HARDENED$1}'` : `/${i}`).join("")}`;
-	/** The HD source: BIP-32 for secp256k1 schemes, SLIP-10 for ed25519, both lazy and path-cached. */
-	var seedKeys = (seed, random) => {
-		const secpNodes = /* @__PURE__ */ new Map();
-		const edNodes = /* @__PURE__ */ new Map();
-		let wiped = false;
-		const alive = () => {
-			if (wiped) throw new KernelError("integrity", "key source is wiped");
-		};
-		const secpNode = (path) => {
-			var _path$at;
-			alive();
-			const key = path.join("/");
-			const hit = secpNodes.get(key);
-			if (hit !== void 0) return hit;
-			const node = path.length === 0 ? HDKey$1.fromMasterSeed(seed) : secpNode(path.slice(0, -1)).deriveChild((_path$at = path.at(-1)) !== null && _path$at !== void 0 ? _path$at : 0);
-			secpNodes.set(key, node);
-			return node;
-		};
-		const edNode = (path) => {
-			var _path$at2;
-			alive();
-			const key = path.join("/");
-			const hit = edNodes.get(key);
-			if (hit !== void 0) return hit;
-			const node = path.length === 0 ? HDKey.fromMasterSeed(seed) : edNode(path.slice(0, -1)).deriveChild((_path$at2 = path.at(-1)) !== null && _path$at2 !== void 0 ? _path$at2 : 0);
-			edNodes.set(key, node);
-			return node;
-		};
-		const privateAt = (task) => {
-			if (task.scheme === "ed25519") return edNode(task.path).privateKey;
-			const priv = secpNode(task.path).privateKey;
-			if (priv === null) throw new KernelError("integrity", "no private key at path");
-			return priv;
-		};
-		return {
-			material: {
-				secp256k1: async (path) => {
-					const pub = secpNode(path).publicKey;
-					if (pub === null) throw new KernelError("integrity", "no public key at path");
-					return pub;
-				},
-				ed25519: async (path) => ed25519.getPublicKey(edNode(path).privateKey),
-				extendedPublicKey: async (path, versions) => {
-					alive();
-					const master = HDKey$1.fromMasterSeed(seed, versions);
-					try {
-						const node = master.derive(pathString(path));
-						try {
-							return node.publicExtendedKey;
-						} finally {
-							node.wipePrivateData();
-						}
-					} finally {
-						master.wipePrivateData();
-					}
-				}
-			},
-			backend: (sign) => ({ sign: async (task) => sign(task, privateAt(task), task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array()) }),
-			wipe: () => {
-				wiped = true;
-				for (const node of secpNodes.values()) node.wipePrivateData();
-				for (const node of edNodes.values()) wipe(node.privateKey);
-				secpNodes.clear();
-				edNodes.clear();
-			}
-		};
-	};
-	/** The imported-key source: one raw key serves only path `[]` and only its own curve's tasks. */
-	var importedKeys = (secret, curve, random) => {
-		let wiped = false;
-		const alive = () => {
-			if (wiped) throw new KernelError("integrity", "key source is wiped");
-		};
-		return {
-			material: {
-				secp256k1: async (path) => {
-					alive();
-					if (curve !== "secp256k1" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
-					return secp256k1.getPublicKey(secret, true);
-				},
-				ed25519: async (path) => {
-					alive();
-					if (curve !== "ed25519" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
-					return ed25519.getPublicKey(secret);
-				},
-				extendedPublicKey: async () => {
-					throw new KernelError("integrity", "imported keys have no extended public key");
-				}
-			},
-			backend: (sign) => ({ sign: async (task) => {
-				alive();
-				const ownCurve = curve === "secp256k1" ? task.scheme !== "ed25519" : task.scheme === "ed25519";
-				if (task.path.length > 0 || !ownCurve) throw new KernelError("integrity", "an imported key signs only its own tasks at []");
-				return sign(task, secret, task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array());
-			} }),
-			wipe: () => {
-				wiped = true;
-				wipe(secret);
-			}
 		};
 	};
 	// packages/wallet-chains/dist/bitcoin-sign.mjs
@@ -40584,19 +41318,19 @@ zoo`.split("\n"));
 	// packages/wallet-kernel/src/modules/chains/index.ts
 	init_utils();
 	init_objectSpread2();
-	var HARDENED = 2147483648;
+	var HARDENED$1 = 2147483648;
 	/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
 	var leafPath = (family, groupIndex) => {
 		if (family === "solana") return [
 			2147483692,
 			2147484149,
-			groupIndex + HARDENED,
-			HARDENED
+			groupIndex + HARDENED$1,
+			HARDENED$1
 		];
 		return [
 			2147483692,
-			(family === "tron" ? 195 : 60) + HARDENED,
-			HARDENED,
+			(family === "tron" ? 195 : 60) + HARDENED$1,
+			HARDENED$1,
 			0,
 			groupIndex
 		];
@@ -40629,9 +41363,9 @@ zoo`.split("\n"));
 		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
 		const net = bitcoinNetwork(network);
 		const path = [
-			purpose + HARDENED,
-			net.coinType + HARDENED,
-			groupIndex + HARDENED
+			purpose + HARDENED$1,
+			net.coinType + HARDENED$1,
+			groupIndex + HARDENED$1
 		];
 		const pub = await material.secp256k1([]);
 		return {
@@ -40642,16 +41376,21 @@ zoo`.split("\n"));
 			path: pathString(path)
 		};
 	};
-	var walletAccounts = async (ctx, params, session, cache) => {
+	var walletAccounts = async (ctx, params, session, cache, cardMaterial) => {
 		var _cache$get, _cache$get2;
 		const { dek } = ctx.session.require(session);
-		const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === params.walletId);
+		const record = ctx.image.records.find((entry) => entry.id === params.walletId && (entry.kind === "entropy" || entry.kind === "card-wallet"));
 		if (record === void 0) throw new KernelError("not-found", "no such wallet");
 		checkNetwork(params.template, params.network);
 		const key = `${String(params.groupIndex)}/${params.template}/${params.network}`;
 		const known = (_cache$get = cache.get(record)) === null || _cache$get === void 0 ? void 0 : _cache$get.get(key);
 		if (known !== void 0) return known;
-		const account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+		let account;
+		if (record.kind === "card-wallet") {
+			const material = cardMaterial(params.walletId);
+			if (material === void 0) throw new KernelError("integrity", "card wallet material is not loaded");
+			account = await accountFor(material, params.template, params.network, params.groupIndex);
+		} else account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
 			const keys = seedKeys(seed, ctx.platform.random);
 			try {
 				return await accountFor(keys.material, params.template, params.network, params.groupIndex);
@@ -40679,10 +41418,10 @@ zoo`.split("\n"));
 			"btc.bip86"
 		]
 	};
-	/** The HD source: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
-	var hdSource = (ctx, request, dek) => {
+	/** The account-template checks both sign paths share (hd only — imported keys have no template). */
+	var checkTemplate = (request) => {
 		const { account } = request;
-		if (account.kind === "imported") throw new KernelError("integrity", "unreachable: hd path with an imported account");
+		if (account.kind !== "hd") return;
 		if (request.kind === "bitcoin.psbt") {
 			if (request.sign.some((s) => BTC_PURPOSE[s.template] === void 0)) throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
 		} else {
@@ -40691,6 +41430,12 @@ zoo`.split("\n"));
 			const expected = (_TEMPLATES_BY_FAMILY = TEMPLATES_BY_FAMILY[family !== null && family !== void 0 ? family : ""]) !== null && _TEMPLATES_BY_FAMILY !== void 0 ? _TEMPLATES_BY_FAMILY : [];
 			if (!("template" in account) || !expected.includes(account.template)) throw new KernelError("invalid-input", "account template does not match the request family");
 		}
+	};
+	/** The HD source: the wallet's entropy record, and the seed via `withWalletSeed`. */
+	var hdSource = (ctx, request, dek) => {
+		const { account } = request;
+		if (account.kind === "imported") throw new KernelError("integrity", "unreachable: hd path with an imported account");
+		if (isCardWallet(ctx.image, account.walletId)) throw new KernelError("card-required", "card wallets sign through card.begin");
 		const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
 		if (record === void 0) throw new KernelError("not-found", "no such wallet");
 		return async (use) => withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
@@ -40722,7 +41467,7 @@ zoo`.split("\n"));
 				return await use(keys);
 			} finally {
 				keys.wipe();
-				wipe(secret);
+				wipe$1(secret);
 			}
 		};
 	};
@@ -40756,22 +41501,31 @@ zoo`.split("\n"));
 		if (header.scheme !== "hyperliquid-l1-agent" || header.owner !== signer || header.scope !== action.chain || header.name !== action.name || header.validUntil !== action.validUntil) throw new KernelError("invalid-input", "the approval does not match this wallet's agent");
 		return _objectSpread2(_objectSpread2({}, prompt), {}, { agentHeld: true });
 	};
+	var prepareApproval = async (ctx, request, material, dek) => {
+		checkTemplate(request);
+		const prepared = await prepareFor(request, material, ctx.platform.now());
+		const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
+		assertSignable(ctx, dek, prompt);
+		return {
+			request,
+			prompt,
+			plan: prepared.plan
+		};
+	};
 	var chainSign = async (ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
 		const { request, verify } = params;
 		const openKeys = request.account.kind === "imported" ? importedSource(ctx, request, dek) : hdSource(ctx, request, dek);
-		const prepared = await openKeys(async (keys) => prepareFor(request, keys.material, ctx.platform.now()));
-		const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
-		assertSignable(ctx, dek, prompt);
+		const prepared = await openKeys(async (keys) => prepareApproval(ctx, request, keys.material, dek));
 		await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () => {
 			var _ctx$platform$keystor, _ctx$platform$keystor2;
-			return chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prompt);
+			return chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prepared.prompt);
 		});
 		ctx.session.require(session);
 		if (request.kind === "evm.fiat24-session") assertFiat24Deadline(request, ctx.platform.now());
 		return openKeys(async (keys) => signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan))));
 	};
-	function createChainsModule() {
+	function createChainsModule(cardMaterial) {
 		let accounts = /* @__PURE__ */ new WeakMap();
 		return {
 			vault: {
@@ -40785,9 +41539,4365 @@ zoo`.split("\n"));
 				parseHeader: () => void 0
 			},
 			handlers: {
-				"wallet.accounts": async (ctx, params, session) => walletAccounts(ctx, params, session, accounts),
+				"wallet.accounts": async (ctx, params, session) => walletAccounts(ctx, params, session, accounts, cardMaterial),
 				"chain.sign": chainSign
 			}
+		};
+	}
+	// packages/wallet-kernel/src/modules/card/text.ts
+	var OP_NAME = {
+		"zh-Hans": {
+			status: "卡片状态",
+			add: "添加卡片",
+			accounts: "读取账户",
+			health: "卡片检查",
+			"change-access": "修改访问码",
+			erase: "抹掉卡片",
+			create: "创建卡钱包",
+			transfer: "迁入卡钱包",
+			reseal: "重写访问码",
+			sign: "签名"
+		},
+		en: {
+			status: "Card status",
+			add: "Add card",
+			accounts: "Load accounts",
+			health: "Card check",
+			"change-access": "Change access code",
+			erase: "Erase card",
+			create: "Create card wallet",
+			transfer: "Provision card",
+			reseal: "Reseal card",
+			sign: "Sign"
+		}
+	};
+	/** Reader sheet text for a tap step: the op name plus the card's short ID when known. */
+	function tapPrompt(locale, op, reason, card) {
+		const name = OP_NAME[locale][op];
+		if (reason === "retry") return card === void 0 ? locale === "zh-Hans" ? `${name} — 再次贴卡以继续` : `${name} — tap the card again to continue` : locale === "zh-Hans" ? `${name} — 再次贴卡片 ${card} 以继续` : `${name} — tap card ${card} again to continue`;
+		if (card === void 0) return locale === "zh-Hans" ? `${name} — 将卡片贴近读卡器` : `${name} — hold a qntx card to the reader`;
+		return locale === "zh-Hans" ? `${name} — 将卡片 ${card} 贴近读卡器` : `${name} — hold card ${card} to the reader`;
+	}
+	var codeFor = (locale, card) => card === void 0 ? locale === "zh-Hans" ? "输入这张卡的访问码" : "Enter this card's access code" : locale === "zh-Hans" ? `输入卡片 ${card} 的访问码` : `Enter the access code for card ${card}`;
+	/** Secure-input label for an access-code ask; `remaining` is the card's attempts left. */
+	function accessCodeLabel(locale, card, remaining) {
+		const base = codeFor(locale, card);
+		if (remaining === void 0) return base;
+		if (remaining === 1) return locale === "zh-Hans" ? `${base} — 最后一次机会，输错会抹掉这张卡` : `${base} — last attempt, a wrong code erases this card`;
+		return locale === "zh-Hans" ? `${base} — 还剩 ${remaining} 次` : `${base} — ${remaining} left`;
+	}
+	/** Secure-input label for a new access code. */
+	function newAccessCodeLabel(locale, card) {
+		return locale === "zh-Hans" ? "设置新的访问码（8–64 个可打印字符；6–7 位需要再次输入确认）" : "Choose a new access code (8–64 printable characters; 6–7 needs a second entry)";
+	}
+	/** Secure-input label for the confirmation entry of a new access code. */
+	function confirmAccessCodeLabel(locale, card, short) {
+		if (short) return locale === "zh-Hans" ? "访问码较短 — 再次输入以确认" : "The code is short — enter it again to confirm";
+		return locale === "zh-Hans" ? "再次输入新的访问码" : "Enter the new access code again";
+	}
+	/** Secure-input label for the short ID printed on a card. */
+	function shortIdLabel(locale) {
+		return locale === "zh-Hans" ? "输入卡片上印的短 ID" : "Enter the short ID printed on the card";
+	}
+	/**
+	* The card line under a rendered signing intent on the reader (design §8): the pinned member's
+	* short ID when the wallet has one, else an untargeted tap ask.
+	*/
+	function signCardLine(locale, cards) {
+		const [card] = cards;
+		if (card === void 0) return locale === "zh-Hans" ? "贴一张 qntx 卡以签名" : "Tap a qntx card to sign";
+		return locale === "zh-Hans" ? `贴卡片 ${card} 以签名` : `Tap card ${card} to sign`;
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/access.ts
+	init_utils$2();
+	var LABEL_ACCESS = ascii("qntx-card/v1/access");
+	var COST = {
+		memoryKiB: 65536,
+		passes: 3,
+		lanes: 4
+	};
+	async function accessHash(code, cardId, argon2id) {
+		if (cardId.length !== 16) throw new CardError("invalid-input", "cardId is not 16 bytes");
+		if (code.length < 6 || code.length > 64) throw new CardError("invalid-input", "access code length outside 6..64");
+		for (const byte of code) if (byte < 32 || byte > 126) throw new CardError("invalid-input", "access code is not printable ASCII");
+		const password = new Uint8Array(code);
+		try {
+			const derived = await argon2id(password, concatBytes$3(LABEL_ACCESS, cardId), COST, 32);
+			if (derived.length !== 32) {
+				wipe(derived);
+				throw new CardError("invalid-input", "argon2id returned a hash that is not 32 bytes");
+			}
+			return derived;
+		} finally {
+			wipe(password);
+		}
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/commands.ts
+	/**
+	* Inner command builders (protocol.md §9.2–9.14). Every builder validates its host-side parameters
+	* — `invalid-input` on anything out of range — and produces the plaintext record `INS ‖ P1 ‖ P2 ‖
+	* data` a session wraps.
+	*/
+	init_secp256k1();
+	init_utils$1();
+	init_utils$2();
+	init_bip32();
+	var INS = {
+		status: 32,
+		create: 33,
+		verify: 34,
+		change: 35,
+		erase: 36,
+		wait: 37,
+		"public-key": 48,
+		"sign-ecdsa": 49,
+		"sign-bip340": 50,
+		"ed25519-begin": 51,
+		"ed25519-update": 51,
+		"ed25519-finish": 51,
+		offer: 64,
+		"export-head": 65,
+		"export-payload": 65,
+		"import-head": 66,
+		"import-payload": 66
+	};
+	var PATH_HARDENED = 2147483648;
+	var CHUNK = 236;
+	function inner(name, p1, p2, data) {
+		return {
+			name,
+			ins: INS[name],
+			p1,
+			p2,
+			data
+		};
+	}
+	function exact$1(what, value, length) {
+		if (value.length !== length) throw new CardError("invalid-input", `${what} must be ${length} bytes`);
+		return value;
+	}
+	/** `path = depth ‖ u32(index)…`, depth 1–10 (§9.2); ed25519 paths must be all-hardened. */
+	function encodePath(path, hardenedOnly) {
+		if (path.length === 0 || path.length > 10) throw new CardError("invalid-input", "path depth outside 1..10");
+		const out = new Uint8Array(1 + 4 * path.length);
+		out[0] = path.length;
+		const view = new DataView(out.buffer);
+		for (const [position, index] of path.entries()) {
+			if (!Number.isInteger(index) || index < 0 || index > 4294967295) throw new CardError("invalid-input", "path index outside 0..2^32-1");
+			if (hardenedOnly && index < PATH_HARDENED) throw new CardError("invalid-input", "ed25519 path index is not hardened");
+			view.setUint32(1 + 4 * position, index);
+		}
+		return out;
+	}
+	/** `others` is 0–2 pairwise-distinct 16-byte member IDs (§9.4). */
+	function checkOthers(others) {
+		if (others.length > 2) throw new CardError("invalid-input", "more than two other member IDs");
+		for (const [i, id] of others.entries()) {
+			if (id.length !== 16) throw new CardError("invalid-input", "member ID is not 16 bytes");
+			if (others.slice(i + 1).some((other) => equalBytes$6(other, id))) throw new CardError("invalid-input", "member IDs are not pairwise distinct");
+		}
+	}
+	/**
+	* The BIP-32 master public key a CREATE import seed yields. `invalid-input` when `HDKey` rejects
+	* the seed — sent unchecked, the card would answer `6A80` (§9.4).
+	*/
+	function masterPublicKey(seed) {
+		let key;
+		try {
+			key = HDKey$1.fromMasterSeed(seed);
+		} catch (_unused) {
+			throw new CardError("invalid-input", "seed does not yield a valid master key");
+		}
+		try {
+			const { publicKey } = key;
+			if (publicKey === null) throw new CardError("invalid-input", "seed does not yield a valid master key");
+			return publicKey;
+		} finally {
+			key.wipePrivateData();
+		}
+	}
+	/**
+	* The CREATE argument contract (§9.4), shared by `cmd.create` and `decode.created`: accessHash 32
+	* bytes; entropy 32 bytes for `generate`, a 64-byte seed that yields a master key for `import`;
+	* `others` per `checkOthers`.
+	*/
+	function checkCreateParams(params) {
+		checkOthers(params.others);
+		exact$1("accessHash", params.accessHash, 32);
+		if (params.mode === "generate") exact$1("entropy", params.entropy, 32);
+		else {
+			exact$1("seed", params.seed, 64);
+			masterPublicKey(params.seed);
+		}
+	}
+	var cmd = {
+		status: () => inner("status", 0, 0, /* @__PURE__ */ new Uint8Array(0)),
+		create: (params) => {
+			checkCreateParams(params);
+			const head = params.mode === "generate" ? concatBytes$3(params.accessHash, params.entropy) : concatBytes$3(params.accessHash, params.seed);
+			return inner("create", params.mode === "generate" ? 0 : 1, 0, concatBytes$3(head, ...params.others));
+		},
+		verify: (accessHash) => inner("verify", 0, 0, exact$1("accessHash", accessHash, 32)),
+		change: (newAccessHash) => inner("change", 0, 0, exact$1("newAccessHash", newAccessHash, 32)),
+		erase: () => inner("erase", 0, 0, /* @__PURE__ */ new Uint8Array(0)),
+		wait: () => inner("wait", 0, 0, /* @__PURE__ */ new Uint8Array(0)),
+		publicKey: (curve, path) => inner("public-key", curve === "ed25519" ? 1 : 0, 0, encodePath(path, curve === "ed25519")),
+		signEcdsa: (digest, path) => inner("sign-ecdsa", 0, 0, concatBytes$3(exact$1("digest", digest, 32), encodePath(path, false))),
+		signBip340: (message, tweak, path) => {
+			exact$1("message", message, 32);
+			exact$1("tweak", tweak, 32);
+			if (bytesToNumberBE(tweak) >= secp256k1.Point.Fn.ORDER) throw new CardError("invalid-input", "tweak is not below the curve order");
+			return inner("sign-bip340", 0, 0, concatBytes$3(message, tweak, encodePath(path, false)));
+		},
+		ed25519Begin: (path) => inner("ed25519-begin", 0, 0, encodePath(path, true)),
+		/**
+		* §9.11/§12.3: the stream `encode(R) ‖ encode(A) ‖ M` in ≤236-byte chunks; the last is finish.
+		* The stream is at least 64 bytes, so every chunk — finish included (amendment B2: 1–236 bytes) —
+		* is non-empty.
+		*/
+		ed25519Stream: (encodedR, publicKey, message) => {
+			const stream = concatBytes$3(exact$1("encodedR", encodedR, 32), exact$1("publicKey", publicKey, 32), message);
+			const chunks = [];
+			for (let offset = 0; offset < stream.length; offset += CHUNK) {
+				const last = offset + CHUNK >= stream.length;
+				chunks.push(inner(last ? "ed25519-finish" : "ed25519-update", last ? 2 : 1, 0, stream.subarray(offset, Math.min(offset + CHUNK, stream.length))));
+			}
+			return chunks;
+		},
+		offer: () => inner("offer", 0, 0, /* @__PURE__ */ new Uint8Array(0)),
+		export0: (certT, offer) => inner("export-head", 0, 0, concatBytes$3(exact$1("certT", certT, 97), exact$1("offer.linkKey", offer.linkKey, 65), exact$1("offer.signature", offer.signature, 64))),
+		export1: (accessHashT) => inner("export-payload", 1, 0, exact$1("accessHashT", accessHashT, 32)),
+		import0: (certS, head) => inner("import-head", 0, 0, concatBytes$3(exact$1("certS", certS, 97), exact$1("head.ephemeral", head.ephemeral, 65), exact$1("head.signature", head.signature, 64))),
+		import1: (payload) => {
+			if (payload.length !== 160 && payload.length !== 176) throw new CardError("invalid-input", "transfer payload is not 160 or 176 bytes");
+			return inner("import-payload", 1, 0, payload);
+		}
+	};
+	// packages/wallet-kernel/src/modules/card/protocol/signatures.ts
+	/**
+	* Signature verification and assembly for card signing commands (protocol.md §12). Card outputs are
+	* verified before they are returned; any failure is `card-fault`. Arguments the host itself
+	* produced (keys, digests, tweaks, member parameters) are shape-checked first and throw
+	* `invalid-input`.
+	*/
+	init_secp256k1();
+	init_utils$1();
+	init_utils$2();
+	var N = secp256k1.Point.Fn.ORDER;
+	var fault$2 = (message) => {
+		throw new CardError("card-fault", message);
+	};
+	var input$1 = (message) => {
+		throw new CardError("invalid-input", message);
+	};
+	function exact(data, length, what) {
+		if (data.length !== length) input$1(`${what} is not ${length} bytes`);
+	}
+	/** Compressed secp256k1 key argument: 33 bytes on the curve. */
+	function checkIdentityKey(key, what) {
+		exact(key, 33, what);
+		if (!validPoint(key)) input$1(`${what} is not a valid point`);
+	}
+	function recoveryBit(r, lowS, digest, publicKey) {
+		return equalBytes$6(new secp256k1.Signature(r, lowS).addRecoveryBit(0).recoverPublicKey(digest).toBytes(true), publicKey) ? 0 : 1;
+	}
+	/**
+	* §12.1: card output `r ‖ s` over a pre-computed `digest`; `s` may be high. The host verifies
+	* (accepting high s), normalises to low s and derives the recovery bit. A repeated `r` — any value
+	* in `previousR` — is a card fault: the card must never reuse a nonce point.
+	*/
+	function ecdsa(data, digest, publicKey, previousR) {
+		exact(digest, 32, "digest");
+		checkIdentityKey(publicKey, "publicKey");
+		for (const r of previousR) exact(r, 32, "previousR entry");
+		if (data.length !== 64) fault$2("SIGN_ECDSA response is not 64 bytes");
+		const rBytes = data.subarray(0, 32);
+		const r = bytesToNumberBE(rBytes);
+		const s = bytesToNumberBE(data.subarray(32, 64));
+		if (!secp256k1.verify(data, digest, publicKey, {
+			prehash: false,
+			lowS: false
+		})) fault$2("ECDSA signature does not verify");
+		if (previousR.some((previous) => equalBytes$6(previous, rBytes))) fault$2("card reused an r value");
+		const lowS = s > N / 2n ? N - s : s;
+		return {
+			signature: concatBytes$3(numberToBytesBE(r, 32), numberToBytesBE(lowS, 32)),
+			recovery: recoveryBit(r, lowS, digest, publicKey)
+		};
+	}
+	/**
+	* The BIP-341 output key `x(lift_x(x(P)) + t·G)` a SIGN_BIP340 signature verifies under — `lift_x`
+	* picks the even-y lift so an odd internal key is negated first (§12.2). `card-fault` when the
+	* lifted point is off the curve; `invalid-data` when the tweak is out of range.
+	*/
+	function bip340OutputX(internalKey, tweak) {
+		checkIdentityKey(internalKey, "internalKey");
+		exact(tweak, 32, "tweak");
+		const t = bytesToNumberBE(tweak);
+		if (t >= N) input$1("tweak is not below the curve order");
+		try {
+			const internal = schnorr.utils.lift_x(bytesToNumberBE(internalKey.subarray(1, 33)));
+			const output = t === 0n ? internal : internal.add(secp256k1.Point.BASE.multiply(t));
+			return schnorr.utils.pointToBytes(output);
+		} catch (_unused) {
+			return fault$2("tweaked output key is not on the curve");
+		}
+	}
+	/**
+	* §12.2: verifies `R_x ‖ s` under the tweaked output key `Q = lift_x(x(P)) + t·G` (BIP-341,
+	* `lift_x` picks the even-y lift so an odd internal key is negated first). Returns the signature on
+	* success.
+	*/
+	function bip340(data, message, internalKey, tweak) {
+		exact(message, 32, "message");
+		if (data.length !== 64) fault$2("SIGN_BIP340 response is not 64 bytes");
+		if (!schnorr.verify(data, message, bip340OutputX(internalKey, tweak))) fault$2("BIP-340 signature does not verify under the tweaked key");
+		return new Uint8Array(data);
+	}
+	/**
+	* §12.3: card output `le32(S)` for a stream `encode(R) ‖ encode(A) ‖ M`. Requires `S < ℓ`,
+	* assembles `encode(R) ‖ le32(S)` and verifies it under strict RFC 8032 rules.
+	*/
+	function ed25519Signature(data, encodedR, publicKey, message) {
+		exact(encodedR, 32, "encodedR");
+		exact(publicKey, 32, "publicKey");
+		if (data.length !== 32) fault$2("SIGN_ED25519 finish response is not 32 bytes");
+		const signature = concatBytes$3(encodedR, data);
+		if (!ed25519.verify(signature, message, publicKey, { zip215: false })) fault$2("assembled Ed25519 signature does not verify");
+		return signature;
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/status.ts
+	/** Words each command may legitimately fail with; `verify`'s `63Cx` range is checked separately. */
+	var ALLOWED = {
+		status: [],
+		create: [27013, 27264],
+		verify: [
+			27011,
+			27013,
+			27014
+		],
+		change: [27013, 27010],
+		erase: [27013, 27010],
+		wait: [27013],
+		"public-key": [
+			27013,
+			27010,
+			27264
+		],
+		"sign-ecdsa": [
+			27013,
+			27010,
+			27264
+		],
+		"sign-bip340": [
+			27013,
+			27010,
+			27264
+		],
+		"ed25519-begin": [
+			27013,
+			27010,
+			27264
+		],
+		"ed25519-update": [27013, 27010],
+		"ed25519-finish": [27013, 27010],
+		offer: [],
+		"export-head": [
+			27013,
+			27010,
+			27264
+		],
+		"export-payload": [27013, 27010],
+		"import-head": [27013, 27264],
+		"import-payload": [27013, 27264]
+	};
+	function result(command, response) {
+		const { sw, data } = response;
+		if (sw === 36864) return data;
+		if (sw === 28416) throw new CardError("card-fault", "card reported an internal fault", sw);
+		if (data.length > 0) throw new CardError("card-fault", "a failed command returned data", sw);
+		const { name } = command;
+		if (name === "verify" && sw >= 25537 && sw <= 25545) throw new CardError("wrong-access-code", "access code rejected", sw, sw - 25536);
+		if (!ALLOWED[name].includes(sw)) throw new CardError("card-fault", "command returned a status word it cannot produce", sw);
+		if (sw === 27011) throw new CardError("wallet-erased", "failure count reached the erase limit", sw);
+		if (sw === 27014) throw new CardError("wait-required", "verify is gated by the wait counter", sw);
+		if (sw === 27013) throw new CardError("wrong-state", "command is not allowed in this card state", sw);
+		if (sw === 27010) throw new CardError("not-verified", "command requires a verified session", sw);
+		throw new CardError("invalid-data", "command data was rejected by the card", sw);
+	}
+	/** §7.3 access policy: L failure limit, F free attempts, W waits per gated attempt. */
+	var ACCESS_LIMITS = {
+		failures: 10,
+		free: 3,
+		waits: 15
+	};
+	/**
+	* Waits needed before a `VERIFY` so the card accepts it without `6986` (§9.5 step 3, §9.15): `W`
+	* while `tries ≤ L − F`, else `0`. `BLANK` — no wallet — and `tries = 0` — the next attempt would
+	* erase without comparing — are `wrong-state`.
+	*/
+	function waitsBeforeVerify(status) {
+		if (status.life === "blank") throw new CardError("wrong-state", "a blank card holds no wallet");
+		if (status.tries === 0) throw new CardError("wrong-state", "the next verify would erase without comparing");
+		return status.tries <= ACCESS_LIMITS.failures - ACCESS_LIMITS.free ? ACCESS_LIMITS.waits : 0;
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/transfer.ts
+	init_utils$2();
+	var LABEL_OFFER = ascii("qntx-card/v1/offer");
+	var LABEL_EXPORT = ascii("qntx-card/v1/export");
+	/** `"qntx-card/v1/offer" ‖ LK` — what the target's identity key signs. */
+	function offerMessage(linkKey) {
+		return concatBytes$3(LABEL_OFFER, linkKey);
+	}
+	/** `"qntx-card/v1/export" ‖ A_S ‖ A_T ‖ LK ‖ E` — what the source's identity key signs (§9.13). */
+	function exportMessage(source, target, linkKey, ephemeral) {
+		return concatBytes$3(LABEL_EXPORT, source, target, linkKey, ephemeral);
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/wei25519.ts
+	/**
+	* Wei25519 → edwards25519 mapping (protocol.md §10.4). The card emits `W(P) = X ‖ Y`, affine
+	* coordinates big-endian; the host maps it to the edwards point and re-encodes. Every failure is
+	* `card-fault`: the input is always card output.
+	*/
+	init_utils$1();
+	var { Fp } = ed25519.Point;
+	/** A₃ = 486662/3 mod q, the Montgomery-to-Wei25519 offset of §10.4. */
+	var A3 = BigInt("0x2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad2451");
+	/** Sqrt(−486664 mod q), the root that maps G_W onto the RFC 8032 base point (§10.4). */
+	var C = BigInt("0x70d9120b9f5ff9442d84f723fc03b0813a5e2c2eb482e57d3391fb5500ba81e7");
+	var fault$1 = (message) => {
+		throw new CardError("card-fault", message);
+	};
+	/**
+	* `u = X − A₃`, `y = (u−1)(u+1)⁻¹`, `x = c·u·Y⁻¹` (mod q), then encode per RFC 8032 §5.1.2. Rejects
+	* non-canonical coordinates, `Y = 0`, `u + 1 = 0`, and any result that is off the edwards curve,
+	* the identity, or in the torsion subgroup.
+	*/
+	function edwardsEncode(wei) {
+		if (wei.length !== 64) fault$1("Wei25519 point is not 64 bytes");
+		const x0 = bytesToNumberBE(wei.subarray(0, 32));
+		const y0 = bytesToNumberBE(wei.subarray(32, 64));
+		if (x0 >= Fp.ORDER || y0 >= Fp.ORDER) fault$1("Wei25519 coordinate is not reduced mod q");
+		if (Fp.is0(y0)) fault$1("Wei25519 Y is zero");
+		const u = Fp.sub(x0, A3);
+		const uPlusOne = Fp.add(u, Fp.ONE);
+		if (Fp.is0(uPlusOne)) fault$1("Wei25519 point has no edwards image");
+		const y = Fp.mul(Fp.sub(u, Fp.ONE), Fp.inv(uPlusOne));
+		const x = Fp.mul(Fp.mul(C, u), Fp.inv(y0));
+		const point = ed25519.Point.fromAffine({
+			x,
+			y
+		});
+		try {
+			point.assertValidity();
+		} catch (_unused) {
+			fault$1("Wei25519 point does not map onto edwards25519");
+		}
+		if (!point.isTorsionFree()) fault$1("Wei25519 point maps to a torsion point");
+		return point.toBytes();
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/decode.ts
+	/**
+	* Response layouts and card-output validation (protocol.md §9.2, §9.4–9.14). Every decoder checks
+	* the response's exact structure and the semantics the design assigns the host; anything else is
+	* `card-fault`. Decoders that take host inputs (a cardId, params) reject out-of-shape arguments
+	* with `invalid-input`.
+	*/
+	init_secp256k1();
+	init_sha2();
+	var fault = (message) => {
+		throw new CardError("card-fault", message);
+	};
+	var input = (message) => {
+		throw new CardError("invalid-input", message);
+	};
+	/** Compressed secp256k1 identity key argument: 33 bytes on the curve. */
+	function checkIdentity(key, what) {
+		if (key.length !== 33 || !validPoint(key)) input(`${what} is not a valid identity key`);
+	}
+	/** §9.3: `life ‖ tries` — `01 00` BLANK; `02` with `tries ∈ [0, L]` LOADED. */
+	function status(data) {
+		if (data.length !== 2) fault("STATUS response is not 2 bytes");
+		const bytes = new DataView(data.buffer, data.byteOffset, data.byteLength);
+		const life = bytes.getUint8(0);
+		const tries = bytes.getUint8(1);
+		if (life === 1 && tries === 0) return {
+			life: "blank",
+			tries: 0
+		};
+		if (life === 2 && tries <= ACCESS_LIMITS.failures) return {
+			life: "loaded",
+			tries
+		};
+		return fault("STATUS response carries an unknown life or tries");
+	}
+	function parseWalletInfo(data) {
+		if (data.length < 51 || (data.length - 35) % 16 !== 0) fault("WalletInfo has an invalid length");
+		const bytes = new DataView(data.buffer, data.byteOffset, data.byteLength);
+		const count = bytes.getUint8(34);
+		if (count < 1 || count > 3 || data.length !== 35 + 16 * count) fault("WalletInfo member count is inconsistent");
+		const masterPublicKey = data.subarray(0, 33);
+		if (!validPoint(masterPublicKey)) fault("WalletInfo master key is not a valid point");
+		const origin = bytes.getUint8(33);
+		if (origin !== 1 && origin !== 2) fault("WalletInfo origin is neither generated nor imported");
+		const members = [];
+		for (let i = 0; i < count; i += 1) members.push(new Uint8Array(data.subarray(35 + 16 * i, 35 + 16 * (i + 1))));
+		for (const [i, id] of members.entries()) if (members.slice(i + 1).some((other) => equalBytes$6(other, id))) fault("WalletInfo member IDs are not pairwise distinct");
+		return {
+			masterPublicKey: new Uint8Array(masterPublicKey),
+			originByte: origin,
+			members
+		};
+	}
+	var originName = (byte) => byte === 1 ? "generated" : "imported";
+	function checkCardId(cardId) {
+		if (cardId.length !== 16) throw new CardError("invalid-input", "cardId is not 16 bytes");
+	}
+	/** §9.2 WalletInfo; the session card's own `ID(A)` must be a member. */
+	function walletInfo(data, cardId) {
+		checkCardId(cardId);
+		const { masterPublicKey, originByte, members } = parseWalletInfo(data);
+		if (!members.some((member) => equalBytes$6(member, cardId))) fault("WalletInfo does not list this card as a member");
+		return {
+			masterPublicKey,
+			origin: originName(originByte),
+			members
+		};
+	}
+	/**
+	* WalletInfo echoed by CREATE (§9.4): `members = ID(A) ‖ others` in order, `origin` matching the
+	* mode, and for `import` the master public key recomputed from the host's seed.
+	*/
+	function created(data, params, cardId) {
+		checkCardId(cardId);
+		checkCreateParams(params);
+		const { masterPublicKey: echoed, originByte, members } = parseWalletInfo(data);
+		if (originByte !== (params.mode === "generate" ? 1 : 2)) fault("CREATE echoed a different origin than requested");
+		if (members.length !== 1 + params.others.length) fault("CREATE echoed a different member count");
+		for (const [i, member] of members.entries()) {
+			const expected = i === 0 ? cardId : params.others[i - 1];
+			if (expected === void 0 || !equalBytes$6(member, expected)) fault("CREATE echoed the members in a different order");
+		}
+		if (params.mode === "import" && !equalBytes$6(masterPublicKey(params.seed), echoed)) fault("CREATE echoed a different master public key");
+		return {
+			masterPublicKey: echoed,
+			origin: originName(originByte),
+			members
+		};
+	}
+	/** §9.8 secp256k1 response: `publicKey(33) ‖ chainCode(32)`; the key must be a valid point. */
+	function publicKey(data) {
+		if (data.length !== 65) fault("PUBLIC_KEY response is not 65 bytes");
+		const key = data.subarray(0, 33);
+		if (!validPoint(key)) fault("PUBLIC_KEY returned a point that is not on the curve");
+		return {
+			publicKey: new Uint8Array(key),
+			chainCode: new Uint8Array(data.subarray(33, 65))
+		};
+	}
+	/** Commands whose success response is empty. */
+	function empty(data) {
+		if (data.length > 0) fault("a command with an empty layout returned data");
+	}
+	/** §9.13 `P1 = 0x01` response: `ct ‖ tag` — 160 bytes (c = 2) or 176 (c = 3). */
+	function exportPayload(data) {
+		if (data.length !== 160 && data.length !== 176) fault("export payload is not 160 or 176 bytes");
+		return new Uint8Array(data);
+	}
+	/**
+	* §9.12 OFFER response `LK ‖ Sign(idKey_T, "qntx-card/v1/offer" ‖ LK)`; `target` is the offering
+	* card's compressed identity key (its session's `identity`). High-s signatures verify, like every
+	* card signature.
+	*/
+	function offer(data, target) {
+		checkIdentity(target, "target");
+		if (data.length !== 129) fault("OFFER response is not 129 bytes");
+		const linkKey = data.subarray(0, 65);
+		const signature = data.subarray(65, 129);
+		if (!validUncompressedPoint(linkKey)) fault("OFFER link key is not a valid point");
+		if (!secp256k1.verify(signature, sha256$1(offerMessage(linkKey)), target, {
+			prehash: false,
+			lowS: false
+		})) fault("OFFER signature does not verify under the target identity");
+		return {
+			linkKey: new Uint8Array(linkKey),
+			signature: new Uint8Array(signature)
+		};
+	}
+	/**
+	* §9.13 EXPORT `P1 = 0x00` response `E ‖ Sign(idKey_S, M)` with `M = "qntx-card/v1/export" ‖ A_S ‖
+	* A_T ‖ LK ‖ E` — all keys bound into the message.
+	*/
+	function exportHead(data, params) {
+		checkIdentity(params.source, "source");
+		checkIdentity(params.target, "target");
+		if (params.linkKey.length !== 65 || !validUncompressedPoint(params.linkKey)) input("linkKey is not a valid uncompressed point");
+		if (data.length !== 129) fault("EXPORT head is not 129 bytes");
+		const ephemeral = data.subarray(0, 65);
+		const signature = data.subarray(65, 129);
+		if (!validUncompressedPoint(ephemeral)) fault("EXPORT ephemeral is not a valid point");
+		const message = exportMessage(params.source, params.target, params.linkKey, ephemeral);
+		if (!secp256k1.verify(signature, sha256$1(message), params.source, {
+			prehash: false,
+			lowS: false
+		})) fault("EXPORT signature does not verify under the source identity");
+		return {
+			ephemeral: new Uint8Array(ephemeral),
+			signature: new Uint8Array(signature)
+		};
+	}
+	var decode$2 = {
+		status,
+		walletInfo,
+		created,
+		publicKey,
+		weiPoint: edwardsEncode,
+		empty,
+		ecdsa,
+		bip340,
+		ed25519: ed25519Signature,
+		offer,
+		exportHead,
+		exportPayload
+	};
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/asyncIterator.js
+	function _asyncIterator(r) {
+		var n, t, o, e = 2;
+		for ("undefined" != typeof Symbol && (t = Symbol.asyncIterator, o = Symbol.iterator); e--;) {
+			if (t && null != (n = r[t])) return n.call(r);
+			if (o && null != (n = r[o])) return new AsyncFromSyncIterator(n.call(r));
+			t = "@@asyncIterator", o = "@@iterator";
+		}
+		throw new TypeError("Object is not async iterable");
+	}
+	function AsyncFromSyncIterator(r) {
+		function AsyncFromSyncIteratorContinuation(r) {
+			if (Object(r) !== r) return Promise.reject(/* @__PURE__ */ new TypeError(r + " is not an object."));
+			var n = r.done;
+			return Promise.resolve(r.value).then(function(r) {
+				return {
+					value: r,
+					done: n
+				};
+			});
+		}
+		return AsyncFromSyncIterator = function AsyncFromSyncIterator(r) {
+			this.s = r, this.n = r.next;
+		}, AsyncFromSyncIterator.prototype = {
+			s: null,
+			n: null,
+			next: function next() {
+				return AsyncFromSyncIteratorContinuation(this.n.apply(this.s, arguments));
+			},
+			"return": function _return(r) {
+				var n = this.s["return"];
+				return void 0 === n ? Promise.resolve({
+					value: r,
+					done: !0
+				}) : AsyncFromSyncIteratorContinuation(n.apply(this.s, arguments));
+			},
+			"throw": function _throw(r) {
+				var n = this.s["return"];
+				return void 0 === n ? Promise.reject(r) : AsyncFromSyncIteratorContinuation(n.apply(this.s, arguments));
+			}
+		}, new AsyncFromSyncIterator(r);
+	}
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/OverloadYield.js
+	function _OverloadYield(e, d) {
+		this.v = e, this.k = d;
+	}
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/asyncGeneratorDelegate.js
+	function _asyncGeneratorDelegate(t) {
+		var e = {}, n = !1;
+		function pump(e, r) {
+			return n = !0, r = new Promise(function(n) {
+				n(t[e](r));
+			}), {
+				done: !1,
+				value: new _OverloadYield(r, 1)
+			};
+		}
+		return e["undefined" != typeof Symbol && Symbol.iterator || "@@iterator"] = function() {
+			return this;
+		}, e.next = function(t) {
+			return n ? (n = !1, t) : pump("next", t);
+		}, "function" == typeof t["throw"] && (e["throw"] = function(t) {
+			if (n) throw n = !1, t;
+			return pump("throw", t);
+		}), "function" == typeof t["return"] && (e["return"] = function(t) {
+			return n ? (n = !1, t) : pump("return", t);
+		}), e;
+	}
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/wrapAsyncGenerator.js
+	function _wrapAsyncGenerator(e) {
+		return function() {
+			return new AsyncGenerator(e.apply(this, arguments));
+		};
+	}
+	function AsyncGenerator(e) {
+		var r, t;
+		function resume(r, t) {
+			try {
+				var n = e[r](t), o = n.value, u = o instanceof _OverloadYield;
+				Promise.resolve(u ? o.v : o).then(function(t) {
+					if (u) {
+						var i = "return" === r ? "return" : "next";
+						if (!o.k || t.done) return resume(i, t);
+						t = e[i](t).value;
+					}
+					settle(n.done ? "return" : "normal", t);
+				}, function(e) {
+					resume("throw", e);
+				});
+			} catch (e) {
+				settle("throw", e);
+			}
+		}
+		function settle(e, n) {
+			switch (e) {
+				case "return":
+					r.resolve({
+						value: n,
+						done: !0
+					});
+					break;
+				case "throw":
+					r.reject(n);
+					break;
+				default: r.resolve({
+					value: n,
+					done: !1
+				});
+			}
+			(r = r.next) ? resume(r.key, r.arg) : t = null;
+		}
+		this._invoke = function(e, n) {
+			return new Promise(function(o, u) {
+				var i = {
+					key: e,
+					arg: n,
+					resolve: o,
+					reject: u,
+					next: null
+				};
+				t ? t = t.next = i : (r = t = i, resume(e, n));
+			});
+		}, "function" != typeof e["return"] && (this["return"] = void 0);
+	}
+	AsyncGenerator.prototype["function" == typeof Symbol && Symbol.asyncIterator || "@@asyncIterator"] = function() {
+		return this;
+	}, AsyncGenerator.prototype.next = function(e) {
+		return this._invoke("next", e);
+	}, AsyncGenerator.prototype["throw"] = function(e) {
+		return this._invoke("throw", e);
+	}, AsyncGenerator.prototype["return"] = function(e) {
+		return this._invoke("return", e);
+	};
+	// packages/wallet-kernel/src/modules/card/ops/shared.ts
+	/**
+	* Shared machinery for the single-card ops (design §7): the step plumbing (`ask`, `tapRetry`, run
+	* outcomes), the access-code policy (`askNewCode`, `validCode`), record readers (`walletOf`,
+	* `pinnedShortId`, `holdDue`, `lowestTries`, `memberIds`), the registration and needed path sets,
+	* the PUBLIC_KEY fetcher, and the record/hash builders every op shares.
+	*/
+	init_utils$2();
+	init_objectSpread2();
+	var HARDENED = 2147483648;
+	/** Headroom kept inside the plan so the tap can still finish its commit and close. */
+	var PLAN_MARGIN_MS = 1e3;
+	/** The input contract: 6–64 printable ASCII bytes (§7.1, enforced again in accessHash). */
+	var CODE_LIMITS = {
+		min: 6,
+		confirmBelow: 8,
+		max: 64
+	};
+	var badStep = () => new KernelError("integrity", "a card step resolved with the wrong outcome");
+	/** The engine feeds Uint8Array to input steps and TapOutcome to tap steps — nothing else. */
+	var asRunOutcome = (value) => {
+		if (typeof value !== "object" || value === null || !("status" in value)) throw badStep();
+		if (value.status === "done") return { status: "done" };
+		if (value.status === "reexport") return {
+			status: "reexport",
+			remaining: 0
+		};
+		if (value.status === "need-code" && "card" in value && typeof value.card === "string") return {
+			status: "need-code",
+			card: value.card
+		};
+		if (value.status === "wrong-code" && "remaining" in value && typeof value.remaining === "number") return {
+			status: "wrong-code",
+			remaining: value.remaining
+		};
+		throw badStep();
+	};
+	/** Yields an input step and resolves with the entered bytes. */
+	function* ask(pending) {
+		const outcome = yield _objectSpread2({ kind: "input" }, pending);
+		if (!(outcome instanceof Uint8Array)) throw badStep();
+		return outcome;
+	}
+	/** Yields the tap; on a lost session re-yields it with `reason: "retry"` until it completes. */
+	function* tapRetry(build) {
+		let retry = false;
+		for (;;) {
+			const outcome = yield _objectSpread2({ kind: "tap" }, build(retry));
+			if (outcome === void 0 || outcome instanceof Uint8Array) throw badStep();
+			if (outcome.ok) return asRunOutcome(outcome.value);
+			retry = true;
+		}
+	}
+	/** The entered bytes are a usable access code — checked before they ever reach Argon2id. */
+	var validCode = (code) => code.length >= CODE_LIMITS.min && code.length <= CODE_LIMITS.max && code.every((b) => b >= 32 && b <= 126);
+	/** New → confirm, looping on an invalid code or a mismatch (§3). */
+	function askNewCode(_x) {
+		return _askNewCode.apply(this, arguments);
+	}
+	function _askNewCode() {
+		_askNewCode = _wrapAsyncGenerator(function* (env) {
+			let code;
+			try {
+				for (;;) {
+					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "new-access-code",
+						secure: "access-code",
+						label: newAccessCodeLabel(env.locale, void 0)
+					})));
+					if (!validCode(code)) {
+						wipe$1(code);
+						code = void 0;
+						continue;
+					}
+					const confirm = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "confirm-access-code",
+						secure: "access-code",
+						label: confirmAccessCodeLabel(env.locale, void 0, code.length < CODE_LIMITS.confirmBelow)
+					})));
+					const matched = equalBytes$6(code, confirm);
+					wipe$1(confirm);
+					if (matched) {
+						const accepted = code;
+						code = void 0;
+						return accepted;
+					}
+					wipe$1(code);
+					code = void 0;
+				}
+			} finally {
+				if (code !== void 0) wipe$1(code);
+			}
+		});
+		return _askNewCode.apply(this, arguments);
+	}
+	/** Reads a card-wallet record off the live image + bodies; absent body → integrity. */
+	var walletOf = (env, walletId) => {
+		const record = env.ctx.image.records.find((r) => r.kind === "card-wallet" && r.id === walletId);
+		const body = env.bodies.get(walletId);
+		if (record === void 0) throw new KernelError("not-found", "no such card wallet");
+		if (body === void 0) throw new KernelError("integrity", "card wallet body is not loaded");
+		return {
+			header: parseCardWalletHeader(record.header),
+			body
+		};
+	};
+	/** The pinned-cert short ID of a card entry, when this kernel has seen the card. */
+	var pinnedShortId = (header, cardIdHex) => {
+		var _header$cards$find;
+		const cert = (_header$cards$find = header.cards.find((c) => c.cardId === cardIdHex)) === null || _header$cards$find === void 0 ? void 0 : _header$cards$find.cert;
+		return cert === void 0 ? void 0 : shortId(hexToBytes$3(cert).subarray(0, 33));
+	};
+	/** `hold` — waits are due when the recorded tries are at or below the wait threshold. */
+	var holdDue = (header, cards) => cards.some((id) => {
+		var _header$cards$find2;
+		const tries = (_header$cards$find2 = header.cards.find((c) => c.cardId === id)) === null || _header$cards$find2 === void 0 ? void 0 : _header$cards$find2.tries;
+		return tries !== void 0 && tries <= ACCESS_LIMITS.failures - ACCESS_LIMITS.free;
+	}) || void 0;
+	/** The lowest recorded tries among a card set — drives the last-attempt label. */
+	var lowestTries = (header, cards) => {
+		let lowest;
+		for (const id of cards) {
+			var _header$cards$find3;
+			const tries = (_header$cards$find3 = header.cards.find((c) => c.cardId === id)) === null || _header$cards$find3 === void 0 ? void 0 : _header$cards$find3.tries;
+			if (tries !== void 0 && (lowest === void 0 || tries < lowest)) lowest = tries;
+		}
+		return lowest;
+	};
+	/** The registration set (design §6): account parents plus group nodes, mainnet coin type. */
+	var registrationPaths = (groups) => {
+		const paths = [{
+			curve: "secp256k1",
+			path: [
+				2147483692,
+				2147483708,
+				HARDENED
+			]
+		}, {
+			curve: "secp256k1",
+			path: [
+				2147483692,
+				2147483843,
+				HARDENED
+			]
+		}];
+		for (const purpose of [
+			44,
+			49,
+			84,
+			86
+		]) {
+			paths.push({
+				curve: "secp256k1",
+				path: [purpose + HARDENED, HARDENED]
+			});
+			for (let g = 0; g < groups; g += 1) paths.push({
+				curve: "secp256k1",
+				path: [
+					purpose + HARDENED,
+					HARDENED,
+					g + HARDENED
+				]
+			});
+		}
+		for (let g = 0; g < groups; g += 1) paths.push({
+			curve: "ed25519",
+			path: [
+				2147483692,
+				2147484149,
+				g + HARDENED,
+				HARDENED
+			]
+		});
+		return paths;
+	};
+	/** The nodes `accounts` must hold so the requested accounts resolve without a tap. */
+	var neededPaths = (templates, groupIndex, network) => {
+		const paths = [];
+		const seen = /* @__PURE__ */ new Set();
+		const push = (needed) => {
+			const key = `${needed.curve}:${pathString(needed.path)}`;
+			if (!seen.has(key)) {
+				seen.add(key);
+				paths.push(needed);
+			}
+		};
+		for (const template of templates) {
+			if (template === "evm.bip44") {
+				push({
+					curve: "secp256k1",
+					path: [
+						2147483692,
+						2147483708,
+						HARDENED
+					]
+				});
+				continue;
+			}
+			if (template === "tron.bip44") {
+				push({
+					curve: "secp256k1",
+					path: [
+						2147483692,
+						2147483843,
+						HARDENED
+					]
+				});
+				continue;
+			}
+			if (template === "solana.bip44-change") {
+				push({
+					curve: "ed25519",
+					path: [
+						2147483692,
+						2147484149,
+						groupIndex + HARDENED,
+						HARDENED
+					]
+				});
+				continue;
+			}
+			const purpose = BTC_PURPOSE[template];
+			if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
+			const coin = bitcoinNetwork(network).coinType;
+			push({
+				curve: "secp256k1",
+				path: [purpose + HARDENED, coin + HARDENED]
+			});
+			push({
+				curve: "secp256k1",
+				path: [
+					purpose + HARDENED,
+					coin + HARDENED,
+					groupIndex + HARDENED
+				]
+			});
+		}
+		return paths;
+	};
+	/** The registration/needed paths still missing from this body. */
+	var missingIn = (body, paths) => {
+		if (body === void 0) return [...paths];
+		return paths.filter(({ curve, path }) => curve === "secp256k1" ? body.nodes[pathString(path)] === void 0 : body.ed25519[pathString(path)] === void 0);
+	};
+	/**
+	* Fetches up to the plan budget of `paths` through PUBLIC_KEY and stages every node as it arrives —
+	* a lost session keeps what already landed, so the retry never refetches it. secp256k1 keeps key +
+	* chainCode of the 65-byte response, ed25519 keeps the RFC 8032 encoding.
+	*/
+	var fetchNodes = async (tap, paths, plan = PLAN_MS) => {
+		const room = Math.floor((plan - tap.cost() - PLAN_MARGIN_MS) / priceOf("public-key"));
+		const batch = paths.slice(0, Math.max(0, room));
+		for (const needed of batch) {
+			const key = pathString(needed.path);
+			const data = await tap.send(cmd.publicKey(needed.curve, needed.path));
+			if (needed.curve === "secp256k1") {
+				const { publicKey, chainCode } = decode$2.publicKey(data);
+				const node = {
+					key: bytesToHex$4(publicKey),
+					chainCode: bytesToHex$4(chainCode)
+				};
+				tap.update((d) => {
+					if (d.body !== void 0) d.body = _objectSpread2(_objectSpread2({}, d.body), {}, { nodes: _objectSpread2(_objectSpread2({}, d.body.nodes), {}, { [key]: node }) });
+				});
+			} else {
+				const encoded = bytesToHex$4(decode$2.weiPoint(data));
+				tap.update((d) => {
+					if (d.body !== void 0) d.body = _objectSpread2(_objectSpread2({}, d.body), {}, { ed25519: _objectSpread2(_objectSpread2({}, d.body.ed25519), {}, { [key]: encoded }) });
+				});
+			}
+		}
+	};
+	/** A record a `VERIFY`/`CREATE` just proved: members in the card's order, this card ready. */
+	var recordFrom = (env, cardId, info, access) => ({
+		header: {
+			v: 1,
+			walletId: walletIdOf(info.masterPublicKey),
+			origin: info.origin,
+			createdAt: env.ctx.platform.now(),
+			members: info.members.map(bytesToHex$4),
+			cards: info.members.map((id) => ({
+				cardId: bytesToHex$4(id),
+				state: equalBytes$6(id, cardId) ? "ready" : "unknown"
+			}))
+		},
+		body: _objectSpread2({
+			master: bytesToHex$4(info.masterPublicKey),
+			nodes: {},
+			ed25519: {},
+			ephemerals: {}
+		}, access === void 0 ? {} : { access })
+	});
+	/** Fills `hashes` for every allowed cardId from `code`, then wipes the code. */
+	var hashAll = async (env, hashes, code, ids) => {
+		for (const id of ids) {
+			const key = bytesToHex$4(id);
+			if (!hashes.has(key)) hashes.set(key, await accessHash(code, id, env.ctx.platform.argon2id));
+		}
+	};
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/awaitAsyncGenerator.js
+	function _awaitAsyncGenerator(e) {
+		return new _OverloadYield(e, 0);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/accounts.ts
+	init_utils$2();
+	init_objectSpread2();
+	/** `accounts` — VERIFY on a member, fetch the missing nodes, answer from the fresh cache. */
+	function accountsOp(_x, _x2) {
+		return _accountsOp.apply(this, arguments);
+	}
+	function _accountsOp() {
+		_accountsOp = _wrapAsyncGenerator(function* (env, op) {
+			const { walletId } = op;
+			const paths = neededPaths(op.templates, op.groupIndex, op.network);
+			const hashes = /* @__PURE__ */ new Map();
+			let code;
+			try {
+				var _wallet$body$access;
+				const wallet = walletOf(env, walletId);
+				const saved = (_wallet$body$access = wallet.body.access) !== null && _wallet$body$access !== void 0 ? _wallet$body$access : {};
+				if (!wallet.header.members.every((m) => saved[m] !== void 0)) {
+					const remaining = lowestTries(wallet.header, wallet.header.members);
+					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining,
+						label: accessCodeLabel(env.locale, void 0, remaining)
+					})));
+				}
+				for (;;) {
+					if (missingIn(env.bodies.get(walletId), paths).length === 0) break;
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						const fresh = walletOf(env, walletId);
+						return {
+							reason: retry ? "retry" : "member",
+							hold: holdDue(fresh.header, fresh.header.members),
+							prompt: tapPrompt(env.locale, "accounts", retry ? "retry" : "member", void 0),
+							expect: {
+								life: "loaded",
+								cards: fresh.header.members.map(hexToBytes$3),
+								walletId
+							},
+							run: async (tap) => {
+								const id = bytesToHex$4(tap.cardId);
+								let hash = hashes.get(id);
+								if (hash === void 0) {
+									var _env$bodies$get$acces, _env$bodies$get;
+									const remembered = ((_env$bodies$get$acces = (_env$bodies$get = env.bodies.get(walletId)) === null || _env$bodies$get === void 0 ? void 0 : _env$bodies$get.access) !== null && _env$bodies$get$acces !== void 0 ? _env$bodies$get$acces : {})[id];
+									if (remembered !== void 0) {
+										hash = hexToBytes$3(remembered);
+										hashes.set(id, hash);
+									} else if (code === void 0) return {
+										status: "need-code",
+										card: tap.shortId
+									};
+									else {
+										await hashAll(env, hashes, code, fresh.header.members.map(hexToBytes$3));
+										wipe$1(code);
+										code = void 0;
+										hash = hashes.get(id);
+									}
+								}
+								if (hash === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								const verified = await tap.verify(hash);
+								if (!verified.ok) {
+									wipe$1(hash);
+									hashes.delete(id);
+									tap.update((d) => {
+										var _d$body;
+										if (((_d$body = d.body) === null || _d$body === void 0 ? void 0 : _d$body.access) !== void 0 && d.body.access[id] !== void 0) {
+											const access = Object.fromEntries(Object.entries(d.body.access).filter(([key]) => key !== id));
+											d.body = _objectSpread2({
+												master: d.body.master,
+												nodes: d.body.nodes,
+												ed25519: d.body.ed25519,
+												ephemerals: d.body.ephemerals
+											}, Object.keys(access).length === 0 ? {} : { access });
+										}
+									});
+									return {
+										status: "wrong-code",
+										remaining: verified.remaining
+									};
+								}
+								await fetchNodes(tap, missingIn(env.bodies.get(walletId), paths));
+								return { status: "done" };
+							}
+						};
+					})));
+					if (outcome.status === "done") continue;
+					if (outcome.status === "need-code") {
+						code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+							purpose: "access-code",
+							secure: "access-code",
+							card: outcome.card,
+							label: accessCodeLabel(env.locale, outcome.card, void 0)
+						})));
+						continue;
+					}
+					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining: outcome.remaining,
+						label: accessCodeLabel(env.locale, void 0, outcome.remaining)
+					})));
+				}
+				const material = env.ctx.cardMaterial(walletId);
+				if (material === void 0) throw new KernelError("integrity", "card wallet material is not loaded");
+				const accounts = [];
+				for (const template of op.templates) accounts.push(yield _awaitAsyncGenerator(accountFor(material, template, op.network, op.groupIndex)));
+				return {
+					kind: "accounts",
+					accounts
+				};
+			} finally {
+				if (code !== void 0) wipe$1(code);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _accountsOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/add.ts
+	init_utils$2();
+	init_objectSpread2();
+	/**
+	* `add` — adopt a card group: code → tap(any loaded non-member): VERIFY → walletId → already-exists
+	* gate → the record lands in that tap's commit → registration PUBLIC_KEYs across as many taps of
+	* the same card as the budget needs.
+	*/
+	function addOp(_x, _x2) {
+		return _addOp.apply(this, arguments);
+	}
+	function _addOp() {
+		_addOp = _wrapAsyncGenerator(function* (env, op) {
+			var _op$groups;
+			const paths = registrationPaths((_op$groups = op.groups) !== null && _op$groups !== void 0 ? _op$groups : 3);
+			const hashes = /* @__PURE__ */ new Map();
+			let code;
+			let info;
+			let presented;
+			let remaining;
+			try {
+				for (;;) {
+					var _code;
+					(_code = code) !== null && _code !== void 0 || (code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining,
+						label: accessCodeLabel(env.locale, void 0, remaining)
+					}))));
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+						reason: retry ? "retry" : "any",
+						prompt: tapPrompt(env.locale, "add", retry ? "retry" : "any", void 0),
+						expect: { life: "loaded" },
+						run: async (tap) => {
+							if (tap.memberOf !== void 0) throw new KernelError("already-exists", "this card already belongs to a wallet");
+							const id = bytesToHex$4(tap.cardId);
+							let hash = hashes.get(id);
+							if (hash === void 0) {
+								if (code === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								hash = await accessHash(code, tap.cardId, env.ctx.platform.argon2id);
+								hashes.set(id, hash);
+								wipe$1(code);
+								code = void 0;
+							}
+							const verified = await tap.verify(hash);
+							if (!verified.ok) {
+								wipe$1(hash);
+								hashes.delete(id);
+								return {
+									status: "wrong-code",
+									remaining: verified.remaining
+								};
+							}
+							const walletId = walletIdOf(verified.info.masterPublicKey);
+							if (env.ctx.image.records.some((r) => r.id === walletId)) throw new KernelError("already-exists", "this card's wallet is already in the vault");
+							tap.update((d) => {
+								const record = recordFrom(env, tap.cardId, verified.info);
+								d.header = record.header;
+								d.body = record.body;
+							});
+							({info} = verified);
+							({cardId: presented} = tap);
+							return { status: "done" };
+						}
+					}))));
+					if (outcome.status === "done") break;
+					if (outcome.status === "need-code") {
+						code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+							purpose: "access-code",
+							secure: "access-code",
+							card: outcome.card,
+							label: accessCodeLabel(env.locale, outcome.card, void 0)
+						})));
+						continue;
+					}
+					({remaining} = outcome);
+				}
+				if (presented === void 0 || info === void 0) throw new KernelError("integrity", "the verified card was not recorded");
+				const walletId = walletIdOf(info.masterPublicKey);
+				const only = new Uint8Array(presented);
+				for (;;) {
+					if (missingIn(env.bodies.get(walletId), paths).length === 0) break;
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						const short = pinnedShortId(walletOf(env, walletId).header, bytesToHex$4(only));
+						return {
+							reason: retry ? "retry" : "member",
+							card: short,
+							prompt: tapPrompt(env.locale, "add", retry ? "retry" : "member", short),
+							expect: {
+								life: "loaded",
+								cards: [only],
+								walletId
+							},
+							run: async (tap) => {
+								const id = bytesToHex$4(tap.cardId);
+								const hash = hashes.get(id);
+								if (hash === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								const verified = await tap.verify(hash);
+								if (!verified.ok) {
+									wipe$1(hash);
+									hashes.delete(id);
+									return {
+										status: "wrong-code",
+										remaining: verified.remaining
+									};
+								}
+								await fetchNodes(tap, missingIn(env.bodies.get(walletId), paths));
+								return { status: "done" };
+							}
+						};
+					})));
+					if (outcome.status === "done") continue;
+					if (outcome.status === "need-code" || outcome.status === "wrong-code") {
+						const label = outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining);
+						code = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+							purpose: "access-code",
+							secure: "access-code"
+						}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label }))));
+						yield _awaitAsyncGenerator(hashAll(env, hashes, code, [only]));
+						wipe$1(code);
+						code = void 0;
+					}
+				}
+				return {
+					kind: "add",
+					walletId
+				};
+			} finally {
+				if (code !== void 0) wipe$1(code);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _addOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/change-access.ts
+	init_utils$2();
+	init_objectSpread2();
+	/**
+	* `change-access` — old + new + confirm inputs, then per member VERIFY(old) → CHANGE(new). A CHANGE
+	* response lost mid-tap retries VERIFY(new) first — the code may already be changed, and that probe
+	* costs the card one attempt, which the retry label warns about.
+	*/
+	function changeAccessOp(_x, _x2) {
+		return _changeAccessOp.apply(this, arguments);
+	}
+	function _changeAccessOp() {
+		_changeAccessOp = _wrapAsyncGenerator(function* (env, op) {
+			const { walletId } = op;
+			const oldHashes = /* @__PURE__ */ new Map();
+			const newHashes = /* @__PURE__ */ new Map();
+			const changeSent = /* @__PURE__ */ new Set();
+			let oldCode;
+			let newCode;
+			try {
+				const first = walletOf(env, walletId);
+				const remaining = lowestTries(first.header, first.header.members);
+				oldCode = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+					purpose: "access-code",
+					secure: "access-code",
+					remaining,
+					label: accessCodeLabel(env.locale, void 0, remaining)
+				})));
+				newCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+				const done = /* @__PURE__ */ new Set();
+				for (;;) {
+					let lastCard;
+					if (walletOf(env, walletId).header.members.every((m) => done.has(m))) break;
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						var _undone$;
+						const fresh = walletOf(env, walletId);
+						const undone = fresh.header.members.filter((m) => !done.has(m));
+						const short = undone.length === 1 ? pinnedShortId(fresh.header, (_undone$ = undone[0]) !== null && _undone$ !== void 0 ? _undone$ : "") : void 0;
+						return {
+							reason: retry ? "retry" : "member",
+							card: short,
+							hold: holdDue(fresh.header, undone),
+							prompt: tapPrompt(env.locale, "change-access", retry ? "retry" : "member", short),
+							expect: {
+								life: "loaded",
+								cards: undone.map(hexToBytes$3),
+								exclude: [...done].map(hexToBytes$3),
+								walletId
+							},
+							run: async (tap) => {
+								const id = bytesToHex$4(tap.cardId);
+								lastCard = id;
+								if (oldCode === void 0 && !oldHashes.has(id)) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								if (oldCode !== void 0) {
+									const { argon2id } = env.ctx.platform;
+									for (const member of walletOf(env, walletId).header.members) {
+										const idBytes = hexToBytes$3(member);
+										if (!oldHashes.has(member)) oldHashes.set(member, await accessHash(oldCode, idBytes, argon2id));
+									}
+									for (const member of walletOf(env, walletId).header.members) {
+										const idBytes = hexToBytes$3(member);
+										if (!newHashes.has(member) && newCode !== void 0) newHashes.set(member, await accessHash(newCode, idBytes, argon2id));
+									}
+									wipe$1(oldCode);
+									oldCode = void 0;
+									if (newCode !== void 0) {
+										wipe$1(newCode);
+										newCode = void 0;
+									}
+								}
+								const oldHash = oldHashes.get(id);
+								const newHash = newHashes.get(id);
+								if (oldHash === void 0 || newHash === void 0) throw new KernelError("integrity", "member hash was not derived");
+								if (changeSent.has(id)) {
+									if ((await tap.verify(newHash)).ok) return { status: "done" };
+								}
+								const verified = await tap.verify(oldHash);
+								if (!verified.ok) return {
+									status: "wrong-code",
+									remaining: verified.remaining
+								};
+								changeSent.add(id);
+								decode$2.empty(await tap.send(cmd.change(newHash)));
+								tap.update((d) => {
+									if (d.body !== void 0) {
+										var _d$body$access;
+										const access = op.remember === true ? _objectSpread2(_objectSpread2({}, d.body.access), {}, { [id]: bytesToHex$4(newHash) }) : Object.fromEntries(Object.entries((_d$body$access = d.body.access) !== null && _d$body$access !== void 0 ? _d$body$access : {}).filter(([key]) => key !== id));
+										d.body = _objectSpread2({
+											master: d.body.master,
+											nodes: d.body.nodes,
+											ed25519: d.body.ed25519,
+											ephemerals: d.body.ephemerals
+										}, Object.keys(access).length === 0 ? {} : { access });
+									}
+								});
+								return { status: "done" };
+							}
+						};
+					})));
+					if (outcome.status === "done") {
+						if (lastCard === void 0) throw new KernelError("integrity", "a verified tap did not record its card");
+						done.add(lastCard);
+						continue;
+					}
+					if (outcome.status === "need-code") {
+						oldCode = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+							purpose: "access-code",
+							secure: "access-code",
+							card: outcome.card,
+							label: accessCodeLabel(env.locale, outcome.card, void 0)
+						})));
+						continue;
+					}
+					for (const hash of oldHashes.values()) wipe$1(hash);
+					oldHashes.clear();
+					const again = outcome.remaining;
+					oldCode = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining: again,
+						label: accessCodeLabel(env.locale, void 0, again)
+					})));
+				}
+				return {
+					kind: "change-access",
+					walletId
+				};
+			} finally {
+				if (oldCode !== void 0) wipe$1(oldCode);
+				if (newCode !== void 0) wipe$1(newCode);
+				for (const hash of oldHashes.values()) wipe$1(hash);
+				for (const hash of newHashes.values()) wipe$1(hash);
+			}
+		});
+		return _changeAccessOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/transfer-shared.ts
+	/**
+	* The transfer machinery the multi-card ops share (§11): OFFER/EXPORT/IMPORT step bodies, the typed
+	* short-ID ask, and the target-side record comparison. The I4 target gate lives in the op structure
+	* itself — a `Target` only ever exists because this operation OFFERed that card (create) or because
+	* the wallet record names it as the member being provisioned (transfer/reseal); the card-ID gates
+	* on every tap (`expect.cards`/`exclude`/`shortId`) are what keep a different physical card from
+	* ever receiving a hash or payload.
+	*/
+	init_utils$2();
+	/** OFFER on the session's card; the signature must verify under the card's own identity (§9.12). */
+	var takeOffer = async (tap) => decode$2.offer(await tap.send(cmd.offer()), tap.identity);
+	/**
+	* EXPORT head + payload to `target` (§9.13): the head is bound to this session's identity, the
+	* target identity and the link key by the decoder's signature check; the payload is sealed under
+	* `accessHashT`, the access hash for exactly `target.cardId` (I4: never another card's hash).
+	*/
+	var exportTo = async (tap, target, accessHashT) => {
+		return {
+			head: decode$2.exportHead(await tap.send(cmd.export0(target.cert, target.offer)), {
+				source: tap.identity,
+				target: target.identity,
+				linkKey: target.offer.linkKey
+			}),
+			payload: decode$2.exportPayload(await tap.send(cmd.export1(accessHashT)))
+		};
+	};
+	/**
+	* IMPORT pair on the session's card (§9.14). `wrong-state` on IMPORT P1=0 means `offer = NONE`: the
+	* offer was consumed by a completed T-INSTALL (LOADED target — the caller VERIFYs to confirm) or
+	* lost on a BLANK one (the caller re-offers and re-exports). `invalid-data` passes through: on a
+	* LOADED card it means the sender is not in its members or the export data is corrupt — a wrong
+	* card, not a committed install (a committed install has `offer = NONE`).
+	*/
+	var importOutcome = async (tap, sourceCert, transfer) => {
+		try {
+			decode$2.empty(await tap.send(cmd.import0(sourceCert, transfer.head)));
+		} catch (error) {
+			if (error instanceof CardError && error.code === "wrong-state") return "offer-gone";
+			if (error instanceof CardError && error.code === "invalid-data" && tap.status.life === "loaded") throw new KernelError("wrong-card", "the loaded card does not accept this wallet's export");
+			throw error;
+		}
+		try {
+			return decode$2.walletInfo(await tap.send(cmd.import1(transfer.payload)), tap.cardId);
+		} catch (error) {
+			if (error instanceof CardError && error.code === "invalid-data" && tap.status.life === "loaded") throw new KernelError("wrong-card", "the loaded card holds a different wallet");
+			throw error;
+		}
+	};
+	/**
+	* The WalletInfo an install (or its VERIFY confirmation) returns must echo the record exactly: same
+	* master key and the same member list in the same order — anything else is a wrong card.
+	*/
+	var checkInfo = (header, body, info) => {
+		if (bytesToHex$4(info.masterPublicKey) !== body.master || header.members.length !== info.members.length || !header.members.every((m, i) => {
+			const member = info.members[i];
+			return member !== void 0 && equalBytes$6(hexToBytes$3(m), member);
+		})) throw new KernelError("wrong-card", "the card's wallet does not match the record");
+	};
+	/**
+	* The target-side run of an install tap — the lost-response contract of §11:
+	*
+	* - Fresh BLANK tap: IMPORT P1=0 then P1=1; the WalletInfo must echo the record.
+	* - Retry finding the target LOADED: a `wrong-state` IMPORT P1=0 means the earlier install committed
+	*   and consumed the offer — VERIFY the target's hash to prove it, which also records the card
+	*   ready through the engine's bookkeeping. (`invalid-data` there means the card holds a foreign
+	*   wallet — `wrong-card`, never a probing VERIFY.)
+	* - Retry finding it still BLANK with the offer gone (`wrong-state`): OFFER again on the spot and ask
+	*   the op for a re-export (`reexport`). Any other answer stays a real fault.
+	*/
+	var installRun = async (opts) => {
+		const { tap, target } = opts;
+		if (target.transfer === void 0) throw new KernelError("integrity", "no export is staged for this target");
+		const installed = await importOutcome(tap, opts.sourceCert, target.transfer);
+		if (installed === "offer-gone") {
+			if (tap.status.life === "loaded") {
+				const hash = opts.hashT();
+				if (hash === void 0) return {
+					status: "need-code",
+					card: tap.shortId
+				};
+				const confirmed = await tap.verify(hash);
+				if (!confirmed.ok) throw new KernelError("wrong-card", "the loaded card did not accept this wallet's code");
+				checkInfo(opts.entry.header, opts.entry.body, confirmed.info);
+				return { status: "done" };
+			}
+			if (target.refreshed === true) throw new CardError("card-fault", "the target keeps refusing the staged export");
+			target.refreshed = true;
+			target.offer = await takeOffer(tap);
+			target.transfer = void 0;
+			return {
+				status: "reexport",
+				remaining: 0
+			};
+		}
+		checkInfo(opts.entry.header, opts.entry.body, installed);
+		tap.installed(installed);
+		return { status: "done" };
+	};
+	/** The printed short ID, re-asked until it parses. */
+	function* askShortId(labelLocale) {
+		for (;;) {
+			const raw = yield* ask({
+				purpose: "short-id",
+				secure: "short-id",
+				label: shortIdLabel(labelLocale)
+			});
+			const text = new TextDecoder().decode(raw);
+			wipe$1(raw);
+			if (/^[0-9A-F]{4}-[0-9A-F]{4}$/.test(text)) return text;
+		}
+	}
+	/** `t`'s facts from a just-OFFERed session card. */
+	var targetFrom = (tap, offer) => ({
+		cardId: new Uint8Array(tap.cardId),
+		identity: new Uint8Array(tap.identity),
+		cert: new Uint8Array(tap.cert),
+		shortId: tap.shortId,
+		offer
+	});
+	// packages/wallet-kernel/src/modules/card/ops/create.ts
+	init_utils$2();
+	init_objectSpread2();
+	/**
+	* `create` — move a wallet onto `op.cards` cards (§11.3). `cards: 1` keeps the single-card imported
+	* flow; `cards: 2|3` OFFERs k−1 blank targets in the user's order, CREATEs the source with their
+	* card IDs under one access code (each card's access hash derives from that code and its own card
+	* ID), EXPORTs to each target and IMPORTs them — the source stays usable and the unfinished targets
+	* stay `pending` if the op is abandoned mid-way (`transfer` finishes them).
+	*/
+	function createOp(_x, _x2) {
+		return _createOp.apply(this, arguments);
+	}
+	function _createOp() {
+		_createOp = _wrapAsyncGenerator(function* (env, op) {
+			if (op.cards === 1) return yield* _asyncGeneratorDelegate(_asyncIterator(createOne(env, op)));
+			return yield* _asyncGeneratorDelegate(_asyncIterator(createSet(env, op)));
+		});
+		return _createOp.apply(this, arguments);
+	}
+	/**
+	* `create` k=1 — move a vault HD wallet onto one card: short ID → new/confirm code → tap(blank,
+	* shortId): CREATE import the 64-byte seed → the record lands in the same commit that deletes
+	* `entropy` — then the registration set. A CREATE response lost mid-tap leaves the card LOADED or
+	* BLANK; the retry takes life "any" and VERIFYs the same hash to tell them apart.
+	*/
+	function createOne(_x3, _x4) {
+		return _createOne.apply(this, arguments);
+	}
+	function _createOne() {
+		_createOne = _wrapAsyncGenerator(function* (env, op) {
+			var _op$groups;
+			if (op.source.kind !== "wallet") throw new KernelError("unsupported", "a generated wallet needs at least two cards");
+			const sourceId = op.source.walletId;
+			const paths = registrationPaths((_op$groups = op.groups) !== null && _op$groups !== void 0 ? _op$groups : 3);
+			const hashes = /* @__PURE__ */ new Map();
+			let newCode;
+			let info;
+			let presented;
+			try {
+				const typed = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+				newCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+				let walletId;
+				for (;;) {
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+						reason: retry ? "retry" : "source",
+						prompt: tapPrompt(env.locale, "create", retry ? "retry" : "source", typed),
+						expect: {
+							life: retry ? "any" : "blank",
+							shortId: typed,
+							walletId
+						},
+						run: async (tap) => {
+							const id = bytesToHex$4(tap.cardId);
+							let hash = hashes.get(id);
+							if (hash === void 0) {
+								if (newCode === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								hash = await accessHash(newCode, tap.cardId, env.ctx.platform.argon2id);
+								hashes.set(id, hash);
+								wipe$1(newCode);
+								newCode = void 0;
+							}
+							/** The card-wallet record plus the entropy deletion — staged in this tap's commit. */
+							const stage = (verified) => {
+								const wallet = walletIdOf(verified.masterPublicKey);
+								if (wallet !== sourceId) throw new KernelError("wrong-card", "the card's wallet does not match the source wallet");
+								walletId = wallet;
+								tap.update((d) => {
+									const record = recordFrom(env, tap.cardId, verified, op.remember === true ? { [id]: bytesToHex$4(hash) } : void 0);
+									d.header = record.header;
+									d.body = record.body;
+									d.extra.push({
+										op: "delete-record",
+										kind: "entropy",
+										id: sourceId
+									});
+									for (const module of env.ctx.modules) d.extra.push(...module.walletDeleteOps(env.ctx.image, sourceId));
+								});
+							};
+							if (tap.status.life === "loaded") {
+								const confirmed = await tap.verify(hash);
+								if (!confirmed.ok) {
+									wipe$1(hash);
+									hashes.delete(id);
+									return {
+										status: "wrong-code",
+										remaining: confirmed.remaining
+									};
+								}
+								stage(confirmed.info);
+								({info} = confirmed);
+								({cardId: presented} = tap);
+								return { status: "done" };
+							}
+							const { dek } = env.ctx.session.current();
+							const source = env.ctx.image.records.find((r) => r.kind === "entropy" && r.id === sourceId);
+							if (source === void 0) throw new KernelError("not-found", "the source wallet is gone");
+							const created = await withWalletSeed(env.ctx.platform.pbkdf2, dek, source, async (seed) => {
+								const params = {
+									mode: "import",
+									accessHash: hash,
+									seed,
+									others: []
+								};
+								const data = await tap.send(cmd.create(params));
+								const echoed = decode$2.created(data, params, tap.cardId);
+								tap.installed(echoed);
+								return echoed;
+							});
+							stage(created);
+							info = created;
+							({cardId: presented} = tap);
+							return { status: "done" };
+						}
+					}))));
+					if (outcome.status === "done") break;
+					if (outcome.status === "need-code") {
+						newCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+						continue;
+					}
+					if (outcome.status === "reexport") throw new KernelError("integrity", "a single-card create cannot re-export");
+					const { remaining } = outcome;
+					newCode = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining,
+						label: accessCodeLabel(env.locale, void 0, remaining)
+					})));
+				}
+				if (presented === void 0 || info === void 0) throw new KernelError("integrity", "the created card was not recorded");
+				const walletIdFinal = walletIdOf(info.masterPublicKey);
+				const only = new Uint8Array(presented);
+				for (;;) {
+					if (missingIn(env.bodies.get(walletIdFinal), paths).length === 0) break;
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						const entry = walletOf(env, walletIdFinal);
+						const short = pinnedShortId(entry.header, bytesToHex$4(only));
+						return {
+							reason: retry ? "retry" : "member",
+							card: short,
+							hold: holdDue(entry.header, entry.header.members),
+							prompt: tapPrompt(env.locale, "create", retry ? "retry" : "member", short),
+							expect: {
+								life: "loaded",
+								cards: [only],
+								walletId: walletIdFinal
+							},
+							run: async (tap) => {
+								const id = bytesToHex$4(tap.cardId);
+								const hash = hashes.get(id);
+								if (hash === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								const verified = await tap.verify(hash);
+								if (!verified.ok) return {
+									status: "wrong-code",
+									remaining: verified.remaining
+								};
+								await fetchNodes(tap, missingIn(env.bodies.get(walletIdFinal), paths));
+								return { status: "done" };
+							}
+						};
+					})));
+					if (outcome.status === "done") continue;
+					const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+						purpose: "access-code",
+						secure: "access-code"
+					}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+					if (outcome.status === "wrong-code") {
+						const old = hashes.get(bytesToHex$4(only));
+						if (old !== void 0) {
+							wipe$1(old);
+							hashes.delete(bytesToHex$4(only));
+						}
+					}
+					yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [only]));
+					wipe$1(asked);
+				}
+				return {
+					kind: "create",
+					walletId: walletIdFinal
+				};
+			} finally {
+				if (newCode !== void 0) wipe$1(newCode);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _createOne.apply(this, arguments);
+	}
+	/**
+	* `create` k=2|3 — §11.3's set flow. Targets are OFFERed first (each a fresh BLANK card named by
+	* its typed short ID and excluded from the other slots), then the source is CREATEd with the target
+	* IDs in order — generated mode spends 32 bytes of host entropy, imported mode the vault wallet's
+	* 64-byte seed. The record lands in the CREATE tap's commit: the source ready, every target
+	* `pending` with its OPEN certificate pinned. Later source taps VERIFY under the same code and
+	* EXPORT to each target as the plan budget allows; the target taps IMPORT and compare the returned
+	* WalletInfo to the record — `done` only once every member is ready.
+	*/
+	function createSet(_x6, _x7) {
+		return _createSet.apply(this, arguments);
+	}
+	function _createSet() {
+		_createSet = _wrapAsyncGenerator(function* (env, op) {
+			var _op$groups2;
+			const generate = op.source.kind === "generate";
+			const sourceId = generate ? void 0 : op.source.walletId;
+			const paths = registrationPaths((_op$groups2 = op.groups) !== null && _op$groups2 !== void 0 ? _op$groups2 : 3);
+			const hashes = /* @__PURE__ */ new Map();
+			const targets = [];
+			let newCode;
+			let sourceCert;
+			let sourceCard;
+			let walletId;
+			try {
+				for (let i = 0; i < op.cards - 1; i += 1) {
+					const typed = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+					const exclude = targets.map((t) => t.cardId);
+					yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+						reason: retry ? "retry" : "target",
+						prompt: tapPrompt(env.locale, "create", retry ? "retry" : "target", typed),
+						expect: {
+							life: "blank",
+							shortId: typed,
+							exclude
+						},
+						run: async (tap) => {
+							targets.push(targetFrom(tap, await takeOffer(tap)));
+							return { status: "done" };
+						}
+					}))));
+				}
+				const typedSource = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+				newCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+				/** Stages the card-wallet record — targets pending with their pinned certs. */
+				const stage = (tap, verified) => {
+					const wallet = walletIdOf(verified.masterPublicKey);
+					if (sourceId !== void 0 && wallet !== sourceId) throw new KernelError("wrong-card", "the card's wallet does not match the source wallet");
+					const expected = [tap.cardId, ...targets.map((t) => t.cardId)];
+					if (verified.members.length !== expected.length || !verified.members.every((m, i) => {
+						var _expected$i;
+						return equalBytes$6(m, (_expected$i = expected[i]) !== null && _expected$i !== void 0 ? _expected$i : m);
+					})) throw new KernelError("wrong-card", "the card's member list does not match this set");
+					if (generate && verified.origin !== "generated") throw new KernelError("wrong-card", "the card's wallet was not generated");
+					if (!generate && verified.origin !== "imported") throw new KernelError("wrong-card", "the card's wallet was not imported");
+					walletId = wallet;
+					const id = bytesToHex$4(tap.cardId);
+					const hash = hashes.get(id);
+					tap.update((d) => {
+						const record = recordFrom(env, tap.cardId, verified, op.remember === true && hash !== void 0 ? { [id]: bytesToHex$4(hash) } : void 0);
+						d.header = _objectSpread2(_objectSpread2({}, record.header), {}, { cards: record.header.cards.map((card) => {
+							const target = targets.find((t) => bytesToHex$4(t.cardId) === card.cardId);
+							return target === void 0 ? card : {
+								cardId: card.cardId,
+								cert: bytesToHex$4(target.cert),
+								state: "pending"
+							};
+						}) });
+						d.body = record.body;
+						if (sourceId !== void 0) {
+							d.extra.push({
+								op: "delete-record",
+								kind: "entropy",
+								id: sourceId
+							});
+							for (const module of env.ctx.modules) d.extra.push(...module.walletDeleteOps(env.ctx.image, sourceId));
+						}
+					});
+				};
+				/** Pending source-side work — exports the plan still affords, after the nodes it affords. */
+				const work = async (tap) => {
+					if (walletId !== void 0) await fetchNodes(tap, missingIn(env.bodies.get(walletId), paths), env.planMs);
+					for (const target of targets) {
+						if (target.transfer !== void 0) continue;
+						if (tap.cost() + priceOf("export-head") + priceOf("export-payload") > env.planMs - 1e3) break;
+						const hashT = hashes.get(bytesToHex$4(target.cardId));
+						if (hashT === void 0) continue;
+						target.transfer = await exportTo(tap, target, hashT);
+					}
+				};
+				for (;;) {
+					if (sourceCard !== void 0 && walletId !== void 0 && targets.every((t) => t.transfer !== void 0) && missingIn(env.bodies.get(walletId), paths).length === 0) break;
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+						reason: retry ? "retry" : "source",
+						prompt: tapPrompt(env.locale, "create", retry ? "retry" : "source", sourceCard === void 0 ? typedSource : void 0),
+						expect: sourceCard === void 0 ? {
+							life: retry ? "any" : "blank",
+							shortId: typedSource,
+							exclude: targets.map((t) => t.cardId)
+						} : {
+							life: "loaded",
+							cards: [sourceCard],
+							walletId
+						},
+						run: async (tap) => {
+							const id = bytesToHex$4(tap.cardId);
+							if (!hashes.has(id)) {
+								if (newCode === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								const code = newCode;
+								newCode = void 0;
+								await hashAll(env, hashes, code, [tap.cardId, ...targets.map((t) => t.cardId)]);
+								wipe$1(code);
+							}
+							const hash = hashes.get(id);
+							if (hash === void 0) return {
+								status: "need-code",
+								card: tap.shortId
+							};
+							if (sourceCard !== void 0) {
+								const verified = await tap.verify(hash);
+								if (!verified.ok) return {
+									status: "wrong-code",
+									remaining: verified.remaining
+								};
+								await work(tap);
+								return { status: "done" };
+							}
+							if (tap.status.life === "loaded") {
+								const confirmed = await tap.verify(hash);
+								if (!confirmed.ok) {
+									wipe$1(hash);
+									hashes.delete(id);
+									return {
+										status: "wrong-code",
+										remaining: confirmed.remaining
+									};
+								}
+								stage(tap, confirmed.info);
+								tap.installed(confirmed.info);
+							} else if (generate) {
+								const params = {
+									mode: "generate",
+									accessHash: hash,
+									entropy: env.ctx.platform.random(32),
+									others: targets.map((t) => t.cardId)
+								};
+								try {
+									const echoed = decode$2.created(await tap.send(cmd.create(params)), params, tap.cardId);
+									tap.installed(echoed);
+									stage(tap, echoed);
+								} finally {
+									wipe$1(params.entropy);
+								}
+							} else {
+								const { dek } = env.ctx.session.current();
+								const source = env.ctx.image.records.find((r) => r.kind === "entropy" && r.id === sourceId);
+								if (source === void 0) throw new KernelError("not-found", "the source wallet is gone");
+								const created = await withWalletSeed(env.ctx.platform.pbkdf2, dek, source, async (seed) => {
+									const build = {
+										mode: "import",
+										accessHash: hash,
+										seed,
+										others: targets.map((t) => t.cardId)
+									};
+									const echoed = decode$2.created(await tap.send(cmd.create(build)), build, tap.cardId);
+									tap.installed(echoed);
+									return echoed;
+								});
+								stage(tap, created);
+								({cardId: sourceCard, cert: sourceCert} = tap);
+								await work(tap);
+								return { status: "done" };
+							}
+							({cardId: sourceCard, cert: sourceCert} = tap);
+							await work(tap);
+							return { status: "done" };
+						}
+					}))));
+					if (outcome.status === "done") continue;
+					if (outcome.status === "reexport") throw new KernelError("integrity", "a source tap cannot re-export");
+					if (outcome.status === "need-code") {
+						newCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+						continue;
+					}
+					const { remaining } = outcome;
+					const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining,
+						label: accessCodeLabel(env.locale, void 0, remaining)
+					})));
+					const old = sourceCard === void 0 ? void 0 : hashes.get(bytesToHex$4(sourceCard));
+					if (old !== void 0) {
+						var _sourceCard;
+						wipe$1(old);
+						hashes.delete(bytesToHex$4((_sourceCard = sourceCard) !== null && _sourceCard !== void 0 ? _sourceCard : /* @__PURE__ */ new Uint8Array()));
+					}
+					yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [...sourceCard === void 0 ? [] : [sourceCard], ...targets.map((t) => t.cardId)]));
+					wipe$1(asked);
+				}
+				if (sourceCard === void 0 || sourceCert === void 0 || walletId === void 0) throw new KernelError("integrity", "the created card was not recorded");
+				const own = sourceCard;
+				const cert = sourceCert;
+				const wid = walletId;
+				/** One source tap that (re-)exports `target` — VERIFY under the source hash first. */
+				function reExport(_x5) {
+					return _reExport.apply(this, arguments);
+				}
+				function _reExport() {
+					_reExport = _wrapAsyncGenerator(function* (target) {
+						for (;;) {
+							const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+								const entry = walletOf(env, wid);
+								const short = pinnedShortId(entry.header, bytesToHex$4(own));
+								return {
+									reason: retry ? "retry" : "source",
+									card: short,
+									hold: holdDue(entry.header, entry.header.members),
+									prompt: tapPrompt(env.locale, "create", retry ? "retry" : "source", short),
+									expect: {
+										life: "loaded",
+										cards: [own],
+										walletId: wid
+									},
+									run: async (tap) => {
+										const hashS = hashes.get(bytesToHex$4(tap.cardId));
+										if (hashS === void 0) return {
+											status: "need-code",
+											card: tap.shortId
+										};
+										const verified = await tap.verify(hashS);
+										if (!verified.ok) return {
+											status: "wrong-code",
+											remaining: verified.remaining
+										};
+										const hashT = hashes.get(bytesToHex$4(target.cardId));
+										if (hashT === void 0) return {
+											status: "need-code",
+											card: target.shortId
+										};
+										target.transfer = await exportTo(tap, target, hashT);
+										return { status: "done" };
+									}
+								};
+							})));
+							if (outcome.status === "done") return;
+							if (outcome.status === "reexport") throw new KernelError("integrity", "a source tap cannot re-export");
+							const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+								purpose: "access-code",
+								secure: "access-code"
+							}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+							const old = hashes.get(bytesToHex$4(own));
+							if (outcome.status === "wrong-code" && old !== void 0) {
+								wipe$1(old);
+								hashes.delete(bytesToHex$4(own));
+							}
+							yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [own, target.cardId]));
+							wipe$1(asked);
+						}
+					});
+					return _reExport.apply(this, arguments);
+				}
+				for (const target of targets) for (;;) {
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						walletOf(env, wid);
+						return {
+							reason: retry ? "retry" : "target",
+							card: target.shortId,
+							prompt: tapPrompt(env.locale, "create", retry ? "retry" : "target", target.shortId),
+							expect: {
+								life: "any",
+								cards: [target.cardId],
+								shortId: target.shortId,
+								walletId: wid
+							},
+							run: async (tap) => installRun({
+								tap,
+								target,
+								sourceCert: cert,
+								hashT: () => hashes.get(bytesToHex$4(target.cardId)),
+								entry: walletOf(env, wid)
+							})
+						};
+					})));
+					if (outcome.status === "done") break;
+					if (outcome.status === "reexport") {
+						yield* _asyncGeneratorDelegate(_asyncIterator(reExport(target)));
+						continue;
+					}
+					const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+						purpose: "access-code",
+						secure: "access-code"
+					}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+					const old = hashes.get(bytesToHex$4(target.cardId));
+					if (outcome.status === "wrong-code" && old !== void 0) {
+						wipe$1(old);
+						hashes.delete(bytesToHex$4(target.cardId));
+					}
+					yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [target.cardId]));
+					wipe$1(asked);
+				}
+				return {
+					kind: "create",
+					walletId: wid
+				};
+			} finally {
+				if (newCode !== void 0) wipe$1(newCode);
+				for (const hash of hashes.values()) wipe$1(hash);
+				for (const target of targets) if (target.transfer !== void 0) wipe$1(target.transfer.payload);
+			}
+		});
+		return _createSet.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/erase.ts
+	init_utils$2();
+	init_objectSpread2();
+	/** `erase` — VERIFY then ERASE; drops the card entry, and deletes a now card-less record. */
+	function eraseOp(_x, _x2) {
+		return _eraseOp.apply(this, arguments);
+	}
+	function _eraseOp() {
+		_eraseOp = _wrapAsyncGenerator(function* (env, op) {
+			const { walletId } = op;
+			const target = op.card;
+			const hashes = /* @__PURE__ */ new Map();
+			let code;
+			try {
+				const wallet = walletOf(env, walletId);
+				const short = pinnedShortId(wallet.header, target);
+				const remaining = lowestTries(wallet.header, [target]);
+				code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+					purpose: "access-code",
+					secure: "access-code",
+					card: short,
+					remaining,
+					label: accessCodeLabel(env.locale, short, remaining)
+				})));
+				for (;;) {
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						const fresh = walletOf(env, walletId);
+						const card = pinnedShortId(fresh.header, target);
+						return {
+							reason: retry ? "retry" : "member",
+							card,
+							hold: holdDue(fresh.header, [target]),
+							prompt: tapPrompt(env.locale, "erase", retry ? "retry" : "member", card),
+							expect: {
+								life: "loaded",
+								cards: [hexToBytes$3(target)],
+								walletId
+							},
+							run: async (tap) => {
+								const id = bytesToHex$4(tap.cardId);
+								let hash = hashes.get(id);
+								if (hash === void 0) {
+									if (code === void 0) return {
+										status: "need-code",
+										card: tap.shortId
+									};
+									hash = await accessHash(code, tap.cardId, env.ctx.platform.argon2id);
+									hashes.set(id, hash);
+									wipe$1(code);
+									code = void 0;
+								}
+								const verified = await tap.verify(hash);
+								if (!verified.ok) {
+									wipe$1(hash);
+									hashes.delete(id);
+									return {
+										status: "wrong-code",
+										remaining: verified.remaining
+									};
+								}
+								decode$2.empty(await tap.send(cmd.erase()));
+								tap.update((d) => {
+									if (d.header === void 0 || d.body === void 0) return;
+									const cards = d.header.cards.filter((c) => c.cardId !== target);
+									if (cards.length === 0) {
+										d.header = void 0;
+										d.body = void 0;
+										d.extra.push({
+											op: "delete-record",
+											kind: CARD_WALLET_KIND,
+											id: walletId
+										});
+										return;
+									}
+									d.header = _objectSpread2(_objectSpread2({}, d.header), {}, { cards });
+								});
+								return { status: "done" };
+							}
+						};
+					})));
+					if (outcome.status === "done") break;
+					if (outcome.status === "need-code") {
+						code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+							purpose: "access-code",
+							secure: "access-code",
+							card: outcome.card,
+							label: accessCodeLabel(env.locale, outcome.card, void 0)
+						})));
+						continue;
+					}
+					const { remaining } = outcome;
+					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining,
+						label: accessCodeLabel(env.locale, void 0, remaining)
+					})));
+				}
+				return {
+					kind: "erase",
+					walletId
+				};
+			} finally {
+				if (code !== void 0) wipe$1(code);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _eraseOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/forget-access.ts
+	init_utils$2();
+	/** `forget-access` — no tap: reseal the record without `access`; it completes in `card.begin`. */
+	function forgetAccessOp(_x, _x2) {
+		return _forgetAccessOp.apply(this, arguments);
+	}
+	function _forgetAccessOp() {
+		_forgetAccessOp = _wrapAsyncGenerator(function* (env, op) {
+			const { header, body } = walletOf(env, op.walletId);
+			const stripped = {
+				master: body.master,
+				nodes: body.nodes,
+				ed25519: body.ed25519,
+				ephemerals: body.ephemerals
+			};
+			const { dek } = env.ctx.session.current();
+			const record = sealRecord(env.ctx.platform, dek, CARD_WALLET_KIND, op.walletId, encodeCardWalletHeader(header), utf8ToBytes$1(encodeCardWalletBody(stripped)));
+			yield _awaitAsyncGenerator(env.ctx.commit([{
+				op: "put-record",
+				record
+			}]));
+			return {
+				kind: "forget-access",
+				walletId: op.walletId
+			};
+		});
+		return _forgetAccessOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/health.ts
+	init_utils$2();
+	/** `health` — one input, then a VERIFY tap for every member, any order. */
+	function healthOp(_x, _x2) {
+		return _healthOp.apply(this, arguments);
+	}
+	function _healthOp() {
+		_healthOp = _wrapAsyncGenerator(function* (env, op) {
+			const { walletId } = op;
+			const hashes = /* @__PURE__ */ new Map();
+			let code;
+			const done = /* @__PURE__ */ new Set();
+			try {
+				code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+					purpose: "access-code",
+					secure: "access-code",
+					label: accessCodeLabel(env.locale, void 0, void 0)
+				})));
+				for (;;) {
+					if (walletOf(env, walletId).header.members.every((m) => done.has(m))) break;
+					let lastCard;
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						var _undone$;
+						const fresh = walletOf(env, walletId);
+						const undone = fresh.header.members.filter((m) => !done.has(m));
+						const short = undone.length === 1 ? pinnedShortId(fresh.header, (_undone$ = undone[0]) !== null && _undone$ !== void 0 ? _undone$ : "") : void 0;
+						return {
+							reason: retry ? "retry" : "member",
+							card: short,
+							hold: holdDue(fresh.header, undone),
+							prompt: tapPrompt(env.locale, "health", retry ? "retry" : "member", short),
+							expect: {
+								life: "loaded",
+								cards: undone.map(hexToBytes$3),
+								exclude: [...done].map(hexToBytes$3),
+								walletId
+							},
+							run: async (tap) => {
+								const id = bytesToHex$4(tap.cardId);
+								lastCard = id;
+								let hash = hashes.get(id);
+								if (hash === void 0) {
+									if (code === void 0) return {
+										status: "need-code",
+										card: tap.shortId
+									};
+									await hashAll(env, hashes, code, fresh.header.members.map(hexToBytes$3));
+									wipe$1(code);
+									code = void 0;
+									hash = hashes.get(id);
+								}
+								if (hash === void 0) return {
+									status: "need-code",
+									card: tap.shortId
+								};
+								const verified = await tap.verify(hash);
+								if (!verified.ok) {
+									wipe$1(hash);
+									hashes.delete(id);
+									return {
+										status: "wrong-code",
+										remaining: verified.remaining
+									};
+								}
+								return { status: "done" };
+							}
+						};
+					})));
+					if (outcome.status === "done") {
+						if (lastCard === void 0) throw new KernelError("integrity", "a verified tap did not record its card");
+						done.add(lastCard);
+						continue;
+					}
+					if (outcome.status === "need-code") {
+						code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+							purpose: "access-code",
+							secure: "access-code",
+							card: outcome.card,
+							label: accessCodeLabel(env.locale, outcome.card, void 0)
+						})));
+						continue;
+					}
+					const { remaining } = outcome;
+					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining,
+						label: accessCodeLabel(env.locale, void 0, remaining)
+					})));
+				}
+				return {
+					kind: "health",
+					walletId
+				};
+			} finally {
+				if (code !== void 0) wipe$1(code);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _healthOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/reseal.ts
+	init_utils$2();
+	init_objectSpread2();
+	init_toPropertyKey();
+	init_objectWithoutProperties();
+	/**
+	* `reseal` — give member `op.card` a fresh access code without knowing the old one (§11.3): the
+	* target is never erased and never VERIFYed — OFFER is allowed on a LOADED card and a valid offer
+	* just re-answers the same link key. Another ready member (`op.member`, or the first ready member
+	* that is not the target) VERIFYs under its own code and EXPORTs under the target's new hash; the
+	* target IMPORTs and its WalletInfo must echo the record. Covers both a LOADED card whose code was
+	* forgotten (T-INSTALL rewrites equal wallet data, new code) and a BLANK card the failure limit
+	* erased (fresh install).
+	*/
+	function resealOp(_x, _x2) {
+		return _resealOp.apply(this, arguments);
+	}
+	function _resealOp() {
+		_resealOp = _wrapAsyncGenerator(function* (env, op) {
+			var _op$member, _header$cards$find;
+			const { header } = walletOf(env, op.walletId);
+			const targetId = hexToBytes$3(op.card);
+			const member = (_op$member = op.member) !== null && _op$member !== void 0 ? _op$member : (_header$cards$find = header.cards.find((c) => c.state === "ready" && c.cardId !== op.card)) === null || _header$cards$find === void 0 ? void 0 : _header$cards$find.cardId;
+			if (member === void 0) throw new KernelError("invalid-input", "no other ready member can reseal this card");
+			const memberId = hexToBytes$3(member);
+			const hashes = /* @__PURE__ */ new Map();
+			let memberCode;
+			let newCode;
+			let sourceCert;
+			let target;
+			try {
+				const typedT = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+				yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+					walletOf(env, op.walletId);
+					return {
+						reason: retry ? "retry" : "target",
+						prompt: tapPrompt(env.locale, "reseal", retry ? "retry" : "target", typedT),
+						expect: {
+							life: "any",
+							cards: [targetId],
+							shortId: typedT,
+							walletId: op.walletId
+						},
+						run: async (tap) => {
+							target = targetFrom(tap, await takeOffer(tap));
+							return { status: "done" };
+						}
+					};
+				})));
+				if (target === void 0) throw new KernelError("integrity", "the target's offer was not taken");
+				const peer = target;
+				const typedM = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+				memberCode = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+					purpose: "access-code",
+					secure: "access-code",
+					card: typedM,
+					label: accessCodeLabel(env.locale, typedM, void 0)
+				})));
+				newCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+				for (;;) {
+					while (peer.transfer === void 0) {
+						const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+							const entry = walletOf(env, op.walletId);
+							const short = pinnedShortId(entry.header, member);
+							return {
+								reason: retry ? "retry" : "source",
+								card: short !== null && short !== void 0 ? short : typedM,
+								hold: holdDue(entry.header, [member]),
+								prompt: tapPrompt(env.locale, "reseal", retry ? "retry" : "source", short !== null && short !== void 0 ? short : typedM),
+								expect: {
+									life: "loaded",
+									cards: [memberId],
+									shortId: typedM,
+									walletId: op.walletId
+								},
+								run: async (tap) => {
+									const id = bytesToHex$4(tap.cardId);
+									if (!hashes.has(id)) {
+										if (memberCode === void 0) return {
+											status: "need-code",
+											card: tap.shortId
+										};
+										const code = memberCode;
+										memberCode = void 0;
+										await hashAll(env, hashes, code, [tap.cardId]);
+										wipe$1(code);
+									}
+									if (!hashes.has(bytesToHex$4(peer.cardId))) {
+										if (newCode === void 0) return {
+											status: "need-code",
+											card: peer.shortId
+										};
+										await hashAll(env, hashes, newCode, [peer.cardId]);
+									}
+									const hashS = hashes.get(id);
+									if (hashS === void 0) return {
+										status: "need-code",
+										card: tap.shortId
+									};
+									const verified = await tap.verify(hashS);
+									if (!verified.ok) return {
+										status: "wrong-code",
+										remaining: verified.remaining
+									};
+									const hashT = hashes.get(bytesToHex$4(peer.cardId));
+									if (hashT === void 0) return {
+										status: "need-code",
+										card: peer.shortId
+									};
+									peer.transfer = await exportTo(tap, peer, hashT);
+									({cert: sourceCert} = tap);
+									return { status: "done" };
+								}
+							};
+						})));
+						if (outcome.status === "done") break;
+						if (outcome.status === "reexport") throw new KernelError("integrity", "a source tap cannot re-export");
+						const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+							purpose: "access-code",
+							secure: "access-code"
+						}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+						const old = hashes.get(member);
+						if (outcome.status === "wrong-code" && old !== void 0) {
+							wipe$1(old);
+							hashes.delete(member);
+						}
+						yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [memberId]));
+						wipe$1(asked);
+					}
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+						reason: retry ? "retry" : "target",
+						card: peer.shortId,
+						prompt: tapPrompt(env.locale, "reseal", retry ? "retry" : "target", peer.shortId),
+						expect: {
+							life: "any",
+							cards: [peer.cardId],
+							shortId: peer.shortId,
+							walletId: op.walletId
+						},
+						run: async (tap) => {
+							if (sourceCert === void 0) throw new KernelError("integrity", "the exporting member was never tapped");
+							const result = await installRun({
+								tap,
+								target: peer,
+								sourceCert,
+								hashT: () => hashes.get(op.card),
+								entry: walletOf(env, op.walletId)
+							});
+							if (result.status === "done") tap.update((d) => {
+								var _d$body$access;
+								if (d.body !== void 0 && ((_d$body$access = d.body.access) === null || _d$body$access === void 0 ? void 0 : _d$body$access[op.card]) !== void 0) {
+									const _d$body$access2 = d.body.access, _op$card = op.card, { [_op$card]: _removed } = _d$body$access2, access = _objectWithoutProperties(_d$body$access2, [_op$card].map(toPropertyKey));
+									d.body = _objectSpread2(_objectSpread2({}, d.body), {}, { access });
+								}
+							});
+							return result;
+						}
+					}))));
+					if (outcome.status === "done") break;
+					if (outcome.status === "reexport") continue;
+					const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+						purpose: "access-code",
+						secure: "access-code"
+					}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+					const old = hashes.get(op.card);
+					if (outcome.status === "wrong-code" && old !== void 0) {
+						wipe$1(old);
+						hashes.delete(op.card);
+					}
+					yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [targetId]));
+					wipe$1(asked);
+				}
+				return {
+					kind: "reseal",
+					walletId: op.walletId
+				};
+			} finally {
+				if (memberCode !== void 0) wipe$1(memberCode);
+				if (newCode !== void 0) wipe$1(newCode);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _resealOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/backend.ts
+	/**
+	* The card signing backend (design §8, protocol §9.9–§9.11): turns one prepared `ChainTask` into
+	* the card commands that produce its signature. The card never sees a request or a plan — only
+	* digests, paths and the Ed25519 challenge stream — and every response is re-verified against the
+	* task's public key by `decode`, so a hostile or faulty card cannot slip a bad signature through.
+	*/
+	/**
+	* Estimated card ms of one task's commands — the price of its APDUs, matching the wire the backend
+	* sends: a single command for ecdsa/bip340, begin + ceil((64+|M|)/236) chunks for ed25519 (the
+	* stream `encode(R)‖encode(A)‖M` of §12.3).
+	*/
+	var taskPrice = (task) => {
+		switch (task.scheme) {
+			case "ecdsa-secp256k1": return priceOf("sign-ecdsa");
+			case "bip340": return priceOf("sign-bip340");
+			case "ed25519": {
+				const chunks = Math.ceil((64 + task.message.length) / 236);
+				return priceOf("ed25519-begin") + chunks * priceOf("ed25519-finish");
+			}
+		}
+	};
+	/**
+	* SIGN_ECDSA — `digest(32) ‖ path` → `r‖s`, verified against `task.digest`/`task.publicKey` by
+	* decode (§12.1); a repeated `r` — the nonce-reuse signature — is `card-fault` at decode. Returns
+	* the signature and its `r` so the op can feed it to the next task.
+	*/
+	var signEcdsaTask = async (tap, task, previousR) => {
+		const { signature } = decode$2.ecdsa(await tap.send(cmd.signEcdsa(task.digest, task.path)), task.digest, task.publicKey, previousR);
+		return {
+			signature,
+			r: signature.subarray(0, 32)
+		};
+	};
+	/**
+	* SIGN_BIP340 — `message(32) ‖ tweak(32) ‖ path` → `R_x‖s`; decode verifies it against the tweaked
+	* internal key `P` and the tweaked output key is checked to be the task's (§12.2).
+	*/
+	var signBip340Task = async (tap, task, internalKey) => {
+		if (!equalBytes$6(bip340OutputX(internalKey, task.tweak), task.publicKey)) throw new KernelError("card-fault", "the card's tweaked key is not the task's output key");
+		return decode$2.bip340(await tap.send(cmd.signBip340(task.message, task.tweak, task.path)), task.message, internalKey, task.tweak);
+	};
+	/**
+	* SIGN_ED25519 — begin(path) → `W(R)`, then the challenge stream `encode(R)‖encode(A)‖M` in
+	* ≤236-byte update chunks and one finish carrying `le32(S)`; decode assembles and verifies the RFC
+	* 8032 signature (§12.3). `publicKey` is the task's RFC 8032 key.
+	*/
+	var signEd25519Task = async (tap, task, publicKey) => {
+		const encodedR = decode$2.weiPoint(await tap.send(cmd.ed25519Begin(task.path)));
+		const chunks = cmd.ed25519Stream(encodedR, publicKey, task.message);
+		let data = /* @__PURE__ */ new Uint8Array(0);
+		for (const chunk of chunks) data = await tap.send(chunk);
+		return decode$2.ed25519(data, encodedR, publicKey, task.message);
+	};
+	/**
+	* Sign one prepared task on the open card session. BIP-340 derives the internal key `P` at
+	* `task.path` from card material (a miss → `card-required`), ed25519 insists the cached key is
+	* exactly `task.publicKey` (`integrity` otherwise — the prepare already bound it), ecdsa tracks `r`
+	* across the op so a reused nonce is `card-fault`.
+	*/
+	var signTask = async (tap, task, material, previousR) => {
+		switch (task.scheme) {
+			case "ecdsa-secp256k1": {
+				const { signature, r } = await signEcdsaTask(tap, task, previousR);
+				previousR.push(r);
+				return signature;
+			}
+			case "bip340": return signBip340Task(tap, task, await material.secp256k1(task.path));
+			case "ed25519": {
+				const publicKey = await material.ed25519(task.path);
+				if (!equalBytes$6(publicKey, task.publicKey)) throw new KernelError("integrity", "the card's ed25519 key is not the task's key");
+				return signEd25519Task(tap, task, publicKey);
+			}
+		}
+	};
+	// node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/aes.js
+	init_defineProperty();
+	var BLOCK_SIZE = 16;
+	var POLY = 283;
+	function validateKeyLength(key) {
+		if (![
+			16,
+			24,
+			32
+		].includes(key.length)) throw new Error("\"aes key\" expected Uint8Array of length 16/24/32, got length=" + key.length);
+	}
+	function mul2(n) {
+		return n << 1 ^ POLY & -(n >> 7);
+	}
+	function mul(a, b) {
+		let res = 0;
+		for (; b > 0; b >>= 1) {
+			res ^= a & -(b & 1);
+			a = mul2(a);
+		}
+		return res;
+	}
+	var sbox = /* @__PURE__ */ (() => {
+		const t = /* @__PURE__ */ new Uint8Array(256);
+		for (let i = 0, x = 1; i < 256; i++, x ^= mul2(x)) t[i] = x;
+		const box = /* @__PURE__ */ new Uint8Array(256);
+		box[0] = 99;
+		for (let i = 0; i < 255; i++) {
+			let x = t[255 - i];
+			x |= x << 8;
+			box[t[i]] = (x ^ x >> 4 ^ x >> 5 ^ x >> 6 ^ x >> 7 ^ 99) & 255;
+		}
+		clean$1(t);
+		return box;
+	})();
+	var invSbox = /* @__PURE__ */ sbox.map((_, j) => sbox.indexOf(j));
+	var rotr32_8 = (n) => n << 24 | n >>> 8;
+	var rotl32_8 = (n) => n << 8 | n >>> 24;
+	function genTtable(sbox, fn) {
+		if (sbox.length !== 256) throw new Error("wrong sbox length");
+		const T0 = (/* @__PURE__ */ new Uint32Array(256)).map((_, j) => fn(sbox[j]));
+		const T1 = T0.map(rotl32_8);
+		const T2 = T1.map(rotl32_8);
+		const T3 = T2.map(rotl32_8);
+		const T01 = /* @__PURE__ */ new Uint32Array(65536);
+		const T23 = /* @__PURE__ */ new Uint32Array(65536);
+		const sbox2 = /* @__PURE__ */ new Uint16Array(65536);
+		for (let i = 0; i < 256; i++) for (let j = 0; j < 256; j++) {
+			const idx = i * 256 + j;
+			T01[idx] = T0[i] ^ T1[j];
+			T23[idx] = T2[i] ^ T3[j];
+			sbox2[idx] = sbox[i] << 8 | sbox[j];
+		}
+		return {
+			sbox,
+			sbox2,
+			T0,
+			T1,
+			T2,
+			T3,
+			T01,
+			T23
+		};
+	}
+	var tableEncoding = /* @__PURE__ */ genTtable(sbox, (s) => mul(s, 3) << 24 | s << 16 | s << 8 | mul(s, 2));
+	var tableDecoding = /* @__PURE__ */ genTtable(invSbox, (s) => mul(s, 11) << 24 | mul(s, 13) << 16 | mul(s, 9) << 8 | mul(s, 14));
+	var xPowers = /* @__PURE__ */ (() => {
+		const p = /* @__PURE__ */ new Uint8Array(16);
+		for (let i = 0, x = 1; i < 16; i++, x = mul2(x)) p[i] = x;
+		return p;
+	})();
+	/** Forward AES key expansion used across ECB/CBC/CTR/GCM/CMAC/KW-style paths. */
+	function expandKeyLE(key) {
+		abytes$3(key);
+		const len = key.length;
+		validateKeyLength(key);
+		const { sbox2 } = tableEncoding;
+		const toClean = [];
+		if (!isLE$1 || !isAligned32(key)) toClean.push(key = copyBytes$1(key));
+		const k32 = swap32IfBE$1(u32$7(key));
+		const Nk = k32.length;
+		const subByte = (n) => applySbox(sbox2, n, n, n, n);
+		const xk = new Uint32Array(len + 28);
+		xk.set(k32);
+		for (let i = Nk; i < xk.length; i++) {
+			let t = xk[i - 1];
+			if (i % Nk === 0) t = subByte(rotr32_8(t)) ^ xPowers[i / Nk - 1];
+			else if (Nk > 6 && i % Nk === 4) t = subByte(t);
+			xk[i] = xk[i - Nk] ^ t;
+		}
+		clean$1(...toClean);
+		return xk;
+	}
+	function expandKeyDecLE(key) {
+		const encKey = expandKeyLE(key);
+		const xk = encKey.slice();
+		const Nk = encKey.length;
+		const { sbox2 } = tableEncoding;
+		const { T0, T1, T2, T3 } = tableDecoding;
+		for (let i = 0; i < Nk; i += 4) for (let j = 0; j < 4; j++) xk[i + j] = encKey[Nk - i - 4 + j];
+		clean$1(encKey);
+		for (let i = 4; i < Nk - 4; i++) {
+			const x = xk[i];
+			const w = applySbox(sbox2, x, x, x, x);
+			xk[i] = T0[w & 255] ^ T1[w >>> 8 & 255] ^ T2[w >>> 16 & 255] ^ T3[w >>> 24];
+		}
+		return xk;
+	}
+	function apply0123(T01, T23, s0, s1, s2, s3) {
+		return T01[s0 << 8 & 65280 | s1 >>> 8 & 255] ^ T23[s2 >>> 8 & 65280 | s3 >>> 24 & 255];
+	}
+	function applySbox(sbox2, s0, s1, s2, s3) {
+		return sbox2[s0 & 255 | s1 & 65280] | sbox2[s2 >>> 16 & 255 | s3 >>> 16 & 65280] << 16;
+	}
+	function encrypt$3(xk, s0, s1, s2, s3) {
+		const { sbox2, T01, T23 } = tableEncoding;
+		let k = 0;
+		s0 ^= xk[k++], s1 ^= xk[k++], s2 ^= xk[k++], s3 ^= xk[k++];
+		const rounds = xk.length / 4 - 2;
+		for (let i = 0; i < rounds; i++) {
+			const t0 = xk[k++] ^ apply0123(T01, T23, s0, s1, s2, s3);
+			const t1 = xk[k++] ^ apply0123(T01, T23, s1, s2, s3, s0);
+			const t2 = xk[k++] ^ apply0123(T01, T23, s2, s3, s0, s1);
+			const t3 = xk[k++] ^ apply0123(T01, T23, s3, s0, s1, s2);
+			s0 = t0, s1 = t1, s2 = t2, s3 = t3;
+		}
+		return {
+			s0: xk[k++] ^ applySbox(sbox2, s0, s1, s2, s3),
+			s1: xk[k++] ^ applySbox(sbox2, s1, s2, s3, s0),
+			s2: xk[k++] ^ applySbox(sbox2, s2, s3, s0, s1),
+			s3: xk[k++] ^ applySbox(sbox2, s3, s0, s1, s2)
+		};
+	}
+	function decrypt$2(xk, s0, s1, s2, s3) {
+		const { sbox2, T01, T23 } = tableDecoding;
+		let k = 0;
+		s0 ^= xk[k++], s1 ^= xk[k++], s2 ^= xk[k++], s3 ^= xk[k++];
+		const rounds = xk.length / 4 - 2;
+		for (let i = 0; i < rounds; i++) {
+			const t0 = xk[k++] ^ apply0123(T01, T23, s0, s3, s2, s1);
+			const t1 = xk[k++] ^ apply0123(T01, T23, s1, s0, s3, s2);
+			const t2 = xk[k++] ^ apply0123(T01, T23, s2, s1, s0, s3);
+			const t3 = xk[k++] ^ apply0123(T01, T23, s3, s2, s1, s0);
+			s0 = t0, s1 = t1, s2 = t2, s3 = t3;
+		}
+		return {
+			s0: xk[k++] ^ applySbox(sbox2, s0, s3, s2, s1),
+			s1: xk[k++] ^ applySbox(sbox2, s1, s0, s3, s2),
+			s2: xk[k++] ^ applySbox(sbox2, s2, s1, s0, s3),
+			s3: xk[k++] ^ applySbox(sbox2, s3, s2, s1, s0)
+		};
+	}
+	function validateBlockDecrypt(data, dst) {
+		abytes$3(data);
+		if (data.length % BLOCK_SIZE !== 0) throw new Error("ciphertext must be multiple of 16");
+		if (dst !== void 0) {
+			getOutput(data.length, dst);
+			complexOverlapBytes(data, dst);
+		}
+	}
+	function validateBlockEncrypt(plaintext, pkcs5, dst) {
+		abytes$3(plaintext);
+		let outLen = plaintext.length;
+		const remaining = outLen % BLOCK_SIZE;
+		if (!pkcs5 && remaining !== 0) throw new Error("plaintext must be multiple of 16");
+		if (pkcs5) {
+			let left = BLOCK_SIZE - remaining;
+			if (!left) left = BLOCK_SIZE;
+			outLen = outLen + left;
+		}
+		if (dst !== void 0) {
+			getOutput(outLen, dst);
+			complexOverlapBytes(plaintext, dst);
+		}
+		return outLen;
+	}
+	function prepareBlockEncrypt(plaintext, outLen, dst) {
+		if (dst === void 0) dst = new Uint8Array(outLen);
+		if (!isLE$1 || !isAligned32(plaintext)) plaintext = copyBytes$1(plaintext);
+		const o = u32$7(dst);
+		return {
+			b: plaintext,
+			o,
+			out: dst
+		};
+	}
+	function validatePKCS(data, pkcs5) {
+		if (!pkcs5) return data;
+		const len = data.length;
+		if (len === 0) throw new Error("pkcs7: empty ciphertext not allowed");
+		const lastByte = data[len - 1];
+		let valid = 1;
+		valid &= lastByte - 1 >>> 31 ^ 1;
+		valid &= 16 - lastByte >>> 31 ^ 1;
+		for (let i = 0; i < 16; i++) {
+			const shouldCheck = i - lastByte >>> 31;
+			const eq = (data[len - 1 - i] ^ lastByte) === 0 ? 1 : 0;
+			valid &= eq | shouldCheck ^ 1;
+		}
+		if (!valid) throw new Error("aes: bad decrypt");
+		return data.subarray(0, len - lastByte);
+	}
+	function padPCKS(left) {
+		const tmp = /* @__PURE__ */ new Uint8Array(16);
+		const tmp32 = u32$7(tmp);
+		tmp.set(left);
+		const paddingByte = BLOCK_SIZE - left.length;
+		for (let i = BLOCK_SIZE - paddingByte; i < BLOCK_SIZE; i++) tmp[i] = paddingByte;
+		return tmp32;
+	}
+	/**
+	* **ECB** (Electronic Codebook): Deterministic encryption; identical plaintext blocks yield
+	* identical ciphertexts. Not secure due to pattern leakage.
+	* See {@link https://words.filippo.io/the-ecb-penguin/ | the AES Penguin}.
+	* @param key - AES key bytes.
+	* @param opts - Padding options. See {@link BlockOpts}.
+	* @returns Cipher instance with `encrypt()` and `decrypt()`.
+	* @example
+	* Shows the basic ECB encrypt call shape with a fresh key; avoid ECB in new designs.
+	*
+	* ```ts
+	* import { ecb } from '@noble/ciphers/aes.js';
+	* import { randomBytes } from '@noble/ciphers/utils.js';
+	* const key = randomBytes(16);
+	* const cipher = ecb(key);
+	* cipher.encrypt(new Uint8Array([1, 2, 3]));
+	* ```
+	*/
+	var ecb = /* @__PURE__ */ wrapCipher({ blockSize: 16 }, function aesecb(key, opts = {}) {
+		const pkcs5 = !opts.disablePadding;
+		return {
+			encrypt(plaintext, dst) {
+				const outLen = validateBlockEncrypt(plaintext, pkcs5, dst);
+				const xk = expandKeyLE(key);
+				const { b: input, o, out: _out } = prepareBlockEncrypt(plaintext, outLen, dst);
+				const b = u32$7(input);
+				swap32IfBE$1(b);
+				let i = 0;
+				for (; i + 4 <= b.length;) {
+					const { s0, s1, s2, s3 } = encrypt$3(xk, b[i + 0], b[i + 1], b[i + 2], b[i + 3]);
+					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
+				}
+				if (pkcs5) {
+					const tmp32 = padPCKS(plaintext.subarray(i * 4));
+					swap32IfBE$1(tmp32);
+					const { s0, s1, s2, s3 } = encrypt$3(xk, tmp32[0], tmp32[1], tmp32[2], tmp32[3]);
+					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
+					clean$1(tmp32);
+				}
+				swap32IfBE$1(o);
+				clean$1(xk);
+				if (input !== plaintext) clean$1(input);
+				return _out;
+			},
+			decrypt(ciphertext, dst) {
+				validateBlockDecrypt(ciphertext, dst);
+				const xk = expandKeyDecLE(key);
+				if (dst === void 0) dst = new Uint8Array(ciphertext.length);
+				const toClean = [xk];
+				if (!isLE$1 || !isAligned32(ciphertext)) toClean.push(ciphertext = copyBytes$1(ciphertext));
+				const b = u32$7(ciphertext);
+				const o = u32$7(dst);
+				swap32IfBE$1(b);
+				for (let i = 0; i + 4 <= b.length;) {
+					const { s0, s1, s2, s3 } = decrypt$2(xk, b[i + 0], b[i + 1], b[i + 2], b[i + 3]);
+					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
+				}
+				swap32IfBE$1(o);
+				clean$1(...toClean);
+				return validatePKCS(dst, pkcs5);
+			}
+		};
+	});
+	/**
+	* **CBC** (Cipher Block Chaining): Each plaintext block is XORed with the
+	* previous block of ciphertext before encryption.
+	* Hard to use: requires proper padding and an unpredictable IV. Unauthenticated: needs MAC.
+	* Bad padding is reported as decrypt failure, which can be a padding oracle if exposed.
+	* @param key - AES key bytes.
+	* @param iv - 16-byte unpredictable initialization vector.
+	* @param opts - Padding options. See {@link BlockOpts}.
+	* @returns Cipher instance with `encrypt()` and `decrypt()`.
+	* @example
+	* Encrypts a padded message with a fresh key and 16-byte IV.
+	*
+	* ```ts
+	* import { cbc } from '@noble/ciphers/aes.js';
+	* import { randomBytes } from '@noble/ciphers/utils.js';
+	* const key = randomBytes(16);
+	* const iv = randomBytes(16);
+	* const cipher = cbc(key, iv);
+	* cipher.encrypt(new Uint8Array([1, 2, 3]));
+	* ```
+	*/
+	var cbc = /* @__PURE__ */ wrapCipher({
+		blockSize: 16,
+		nonceLength: 16
+	}, function aescbc(key, iv, opts = {}) {
+		const pkcs5 = !opts.disablePadding;
+		return {
+			encrypt(plaintext, dst) {
+				const outLen = validateBlockEncrypt(plaintext, pkcs5, dst);
+				const xk = expandKeyLE(key);
+				const { b: input, o, out: _out } = prepareBlockEncrypt(plaintext, outLen, dst);
+				const b = u32$7(input);
+				swap32IfBE$1(b);
+				let _iv = iv;
+				const toClean = [xk];
+				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
+				const n32 = u32$7(_iv);
+				swap32IfBE$1(n32);
+				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
+				let i = 0;
+				for (; i + 4 <= b.length;) {
+					s0 ^= b[i + 0], s1 ^= b[i + 1], s2 ^= b[i + 2], s3 ^= b[i + 3];
+					({s0, s1, s2, s3} = encrypt$3(xk, s0, s1, s2, s3));
+					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
+				}
+				if (pkcs5) {
+					const tmp32 = padPCKS(plaintext.subarray(i * 4));
+					swap32IfBE$1(tmp32);
+					s0 ^= tmp32[0], s1 ^= tmp32[1], s2 ^= tmp32[2], s3 ^= tmp32[3];
+					({s0, s1, s2, s3} = encrypt$3(xk, s0, s1, s2, s3));
+					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
+					clean$1(tmp32);
+				}
+				swap32IfBE$1(o);
+				clean$1(...toClean);
+				if (input !== plaintext) clean$1(input);
+				return _out;
+			},
+			decrypt(ciphertext, dst) {
+				validateBlockDecrypt(ciphertext, dst);
+				const xk = expandKeyDecLE(key);
+				if (dst === void 0) dst = new Uint8Array(ciphertext.length);
+				let _iv = iv;
+				const toClean = [xk];
+				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
+				const n32 = u32$7(_iv);
+				swap32IfBE$1(n32);
+				if (!isLE$1 || !isAligned32(ciphertext)) toClean.push(ciphertext = copyBytes$1(ciphertext));
+				const b = u32$7(ciphertext);
+				const o = u32$7(dst);
+				swap32IfBE$1(b);
+				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
+				for (let i = 0; i + 4 <= b.length;) {
+					const ps0 = s0, ps1 = s1, ps2 = s2, ps3 = s3;
+					s0 = b[i + 0], s1 = b[i + 1], s2 = b[i + 2], s3 = b[i + 3];
+					const { s0: o0, s1: o1, s2: o2, s3: o3 } = decrypt$2(xk, s0, s1, s2, s3);
+					o[i++] = o0 ^ ps0, o[i++] = o1 ^ ps1, o[i++] = o2 ^ ps2, o[i++] = o3 ^ ps3;
+				}
+				swap32IfBE$1(o);
+				clean$1(...toClean);
+				return validatePKCS(dst, pkcs5);
+			}
+		};
+	});
+	function isBytes32(a) {
+		return a instanceof Uint32Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint32Array";
+	}
+	function encryptBlock(xk, block) {
+		abytes$3(block, 16, "block");
+		if (!isBytes32(xk)) throw new Error("_encryptBlock accepts result of expandKeyLE");
+		const b32 = u32$7(block);
+		swap32IfBE$1(b32);
+		let { s0, s1, s2, s3 } = encrypt$3(xk, b32[0], b32[1], b32[2], b32[3]);
+		b32[0] = s0, b32[1] = s1, b32[2] = s2, b32[3] = s3;
+		swap32IfBE$1(b32);
+		return block;
+	}
+	/**
+	* Left-shift by one bit and conditionally XOR with 0x87:
+	* ```
+	* if MSB(L) is equal to 0
+	* then    K1 := L << 1;
+	* else    K1 := (L << 1) XOR const_Rb;
+	* ```
+	*
+	* Specs:
+	* {@link https://www.rfc-editor.org/rfc/rfc4493.html#section-2.3 | RFC 4493 Section 2.3},
+	* {@link https://datatracker.ietf.org/doc/html/rfc5297.html#section-2.3 | RFC 5297 Section 2.3}
+	*
+	* @returns modified `block` (for chaining)
+	*/
+	function dbl(block) {
+		let carry = 0;
+		for (let i = 15; i >= 0; i--) {
+			const newCarry = (block[i] & 128) >>> 7;
+			block[i] = block[i] << 1 | carry;
+			carry = newCarry;
+		}
+		block[15] ^= 135 & -carry;
+		return block;
+	}
+	/**
+	* `a XOR b`, running in-place on `a`.
+	* @param a left operand and output
+	* @param b right operand
+	* @returns `a` (for chaining)
+	*/
+	function xorBlock(a, b) {
+		if (a.length !== b.length) throw new Error("xorBlock: blocks must have same length");
+		for (let i = 0; i < a.length; i++) a[i] = a[i] ^ b[i];
+		return a;
+	}
+	/**
+	* Internal CMAC class.
+	*/
+	var _CMAC = class {
+		constructor(key) {
+			_defineProperty(this, "blockLen", BLOCK_SIZE);
+			_defineProperty(this, "outputLen", BLOCK_SIZE);
+			_defineProperty(this, "buffer", void 0);
+			_defineProperty(this, "pos", void 0);
+			_defineProperty(this, "finished", void 0);
+			_defineProperty(this, "destroyed", void 0);
+			_defineProperty(this, "k1", void 0);
+			_defineProperty(this, "k2", void 0);
+			_defineProperty(this, "x", void 0);
+			_defineProperty(this, "x32", void 0);
+			_defineProperty(this, "xk", void 0);
+			abytes$3(key);
+			validateKeyLength(key);
+			this.xk = expandKeyLE(key);
+			this.buffer = new Uint8Array(BLOCK_SIZE);
+			this.pos = 0;
+			this.finished = false;
+			this.destroyed = false;
+			this.x = new Uint8Array(BLOCK_SIZE);
+			this.x32 = u32$7(this.x);
+			const L = new Uint8Array(BLOCK_SIZE);
+			encryptBlock(this.xk, L);
+			this.k1 = dbl(L);
+			this.k2 = dbl(new Uint8Array(this.k1));
+		}
+		process(data, pos) {
+			const { x, x32, xk } = this;
+			for (let i = 0; i < BLOCK_SIZE; i++) x[i] ^= data[pos + i];
+			swap32IfBE$1(x32);
+			const { s0, s1, s2, s3 } = encrypt$3(xk, x32[0], x32[1], x32[2], x32[3]);
+			x32[0] = s0, x32[1] = s1, x32[2] = s2, x32[3] = s3;
+			swap32IfBE$1(x32);
+		}
+		update(data) {
+			aexists$1(this);
+			abytes$3(data);
+			let pos = 0;
+			if (this.pos) {
+				const take = Math.min(BLOCK_SIZE - this.pos, data.length);
+				this.buffer.set(data.subarray(0, take), this.pos);
+				this.pos += take;
+				pos = take;
+				if (this.pos === BLOCK_SIZE && pos < data.length) {
+					this.process(this.buffer, 0);
+					this.pos = 0;
+				}
+			}
+			while (pos + BLOCK_SIZE < data.length) {
+				this.process(data, pos);
+				pos += BLOCK_SIZE;
+			}
+			if (pos < data.length) {
+				this.buffer.set(data.subarray(pos), 0);
+				this.pos = data.length - pos;
+			}
+			return this;
+		}
+		digestInto(out) {
+			aexists$1(this);
+			aoutput32(out, this);
+			this.finished = true;
+			const view = out.subarray(0, this.outputLen);
+			let last = new Uint8Array(BLOCK_SIZE);
+			if (this.pos === BLOCK_SIZE) {
+				last.set(this.buffer);
+				xorBlock(last, this.k1);
+			} else {
+				last.set(this.buffer.subarray(0, this.pos));
+				last[this.pos] = 128;
+				xorBlock(last, this.k2);
+			}
+			view.set(this.x);
+			xorBlock(view, last);
+			encryptBlock(this.xk, view);
+			clean$1(last);
+		}
+		digest() {
+			const { buffer, outputLen } = this;
+			this.digestInto(buffer);
+			const res = buffer.slice(0, outputLen);
+			this.destroy();
+			return res;
+		}
+		destroy() {
+			const { buffer, destroyed, x, xk, k1, k2 } = this;
+			if (destroyed) return;
+			this.destroyed = true;
+			clean$1(buffer, x, xk, k1, k2);
+		}
+	};
+	/**
+	* AES-CMAC (Cipher-based Message Authentication Code).
+	* Specs: {@link https://www.rfc-editor.org/rfc/rfc4493.html | RFC 4493}.
+	* @param msg - Message bytes to authenticate.
+	* @param key - AES key bytes.
+	* @returns 16-byte authentication tag. `cmac.create(...)` follows the same incremental MAC shape as
+	* the other keyed helpers in this repo, including `blockLen`,
+	* `outputLen`, `digestInto()` and `destroy()`.
+	* @example
+	* Authenticates a message with AES-CMAC and a fresh key.
+	*
+	* ```ts
+	* import { cmac } from '@noble/ciphers/aes.js';
+	* import { randomBytes } from '@noble/ciphers/utils.js';
+	* const key = randomBytes(16);
+	* cmac(new Uint8Array(), key);
+	* ```
+	*/
+	var cmac = /* @__PURE__ */ wrapMacConstructor(16, (key) => new _CMAC(key));
+	// packages/wallet-kernel/src/modules/card/protocol/kdf.ts
+	init_sha2();
+	init_utils$2();
+	/** `KDF(Z, label, ctx, len)` = first `len` bytes of `SHA-256(u32(i) ‖ Z ‖ label ‖ ctx)`, `len ≤ 64`. */
+	function kdf(z, label, ctx, len) {
+		if (len < 1 || len > 64) throw new CardError("invalid-input", "KDF output length outside 1..64");
+		const fixedInfo = concatBytes$3(label, ctx);
+		const out = new Uint8Array(len <= 32 ? 32 : 64);
+		out.set(sha256$1(concatBytes$3(u32(1), z, fixedInfo)), 0);
+		if (len > 32) out.set(sha256$1(concatBytes$3(u32(2), z, fixedInfo)), 32);
+		return new Uint8Array(out.subarray(0, len));
+	}
+	/** `M2(X)` = `X ‖ 0x80 ‖ 0ᵏ` with the smallest `k ≥ 0` making the length a multiple of 16. */
+	function m2(data) {
+		const padded = new Uint8Array(data.length + 1 + (16 - (data.length + 1) % 16) % 16);
+		padded.set(data);
+		padded[data.length] = 128;
+		return padded;
+	}
+	/**
+	* `unM2(Y)` — `undefined` when `Y` is empty, not a multiple of 16, when the last non-zero byte is
+	* not `0x80`, or when more than 15 zero bytes follow it (protocol.md §1).
+	*/
+	function unM2(padded) {
+		if (padded.length === 0 || padded.length % 16 !== 0) return;
+		let marker = padded.length - 1;
+		while (marker >= 0 && padded[marker] === 0) marker -= 1;
+		if (padded[marker] !== 128 || padded.length - 1 - marker > 15) return;
+		return padded.subarray(0, marker);
+	}
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/classPrivateMethodInitSpec.js
+	function _classPrivateMethodInitSpec(e, a) {
+		_checkPrivateRedeclaration(e, a), a.add(e);
+	}
+	// packages/wallet-kernel/src/modules/card/protocol/session.ts
+	/**
+	* OPEN (protocol.md §8.1–8.2) and the §8.4 secure session. One request/response record pair per
+	* inner command, AES-128 CBC + CMAC under the four session keys, u16 counters. The session is torn
+	* down — keys wiped, every further call `session-broken` — on any framing or cryptographic failure,
+	* after an inner `6F00`, or after the response that uses `ctr = 0xFFFF`.
+	*/
+	init_secp256k1();
+	init_sha2();
+	init_utils$2();
+	init_defineProperty();
+	var INS_OPEN = 16;
+	var INS_SESSION = 18;
+	var MAX_RANDOM_DRAWS = 8;
+	var COUNTER_MAX = 65535;
+	var LABEL_SESSION = ascii("qntx-card/v1/session");
+	var LABEL_KDF_SESSION = ascii("qntx-card/v1/kdf-session");
+	/** `00 A4 04 00 07 F0716E74780101 00` — SELECT the wallet applet by its AID (§6). */
+	var SELECT_APDU = hexToBytes$3("00a4040007f0716e7478010100");
+	/**
+	* Draws a host ephemeral secret and returns the `80 10 00 00 41 hostEph 00` OPEN APDU. `random` is
+	* the injected randomness; invalid draws are wiped and retried — after 8 the source is treated as
+	* broken (`invalid-input`).
+	*/
+	function openRequest(random) {
+		for (let draw = 0; draw < MAX_RANDOM_DRAWS; draw += 1) {
+			const secret = random(32);
+			if (!secp256k1.utils.isValidSecretKey(secret)) {
+				wipe(secret);
+				continue;
+			}
+			const hostEph = secp256k1.getPublicKey(secret, false);
+			return {
+				apdu: concatBytes$3(new Uint8Array([
+					128,
+					INS_OPEN,
+					0,
+					0,
+					65
+				]), hostEph, new Uint8Array([0])),
+				secret
+			};
+		}
+		throw new CardError("invalid-input", "random source did not yield a valid scalar");
+	}
+	/**
+	* Verifies the card's OPEN response (`cardEph ‖ sig ‖ cert ‖ 9000`, §8.1) and derives the session
+	* keys. `secret` and the ECDH output are wiped on every path; every failure of the response itself
+	* is `card-not-genuine` — except a repeated `cardEph`, which is `card-fault`.
+	*/
+	function openResponse(secret, request, response, anchors, recentEphemerals) {
+		let shared;
+		try {
+			if (!secp256k1.utils.isValidSecretKey(secret)) throw new CardError("invalid-input", "host ephemeral is not a valid scalar");
+			const hostEph = secp256k1.getPublicKey(secret, false);
+			if (!equalBytes$6(request, concatBytes$3(new Uint8Array([
+				128,
+				INS_OPEN,
+				0,
+				0,
+				65
+			]), hostEph, new Uint8Array([0])))) throw new CardError("invalid-input", "request does not carry the host ephemeral");
+			if (response.length !== 228 || response.at(-2) !== 144 || response.at(-1) !== 0) throw new CardError("card-not-genuine", "OPEN response is not 226 bytes + 9000", response.length >= 2 ? readSw(response) : void 0);
+			const cardEph = response.subarray(0, 65);
+			const signature = response.subarray(65, 129);
+			const cert = response.subarray(129, 226);
+			const { identity, batch } = verifyCertificate(cert, anchors);
+			if (!validUncompressedPoint(cardEph)) throw new CardError("card-not-genuine", "cardEph is not a valid uncompressed point");
+			const transcriptHash = sha256$1(concatBytes$3(LABEL_SESSION, hostEph, cardEph, identity));
+			if (!secp256k1.verify(signature, transcriptHash, identity, {
+				prehash: false,
+				lowS: false
+			})) throw new CardError("card-not-genuine", "session signature does not verify");
+			const ephemeralTag = sha256$1(cardEph).subarray(0, 8);
+			if (recentEphemerals.some((seen) => equalBytes$6(seen, ephemeralTag))) throw new CardError("card-fault", "cardEph repeats a recently seen value");
+			shared = secp256k1.getSharedSecret(secret, cardEph, true);
+			return sessionFromKeys(kdf(shared.subarray(1, 33), LABEL_KDF_SESSION, transcriptHash, 64), identity, cert, batch, ephemeralTag);
+		} finally {
+			wipe(secret);
+			if (shared !== void 0) wipe(shared);
+		}
+	}
+	var _keys$1 = /* @__PURE__ */ new WeakMap();
+	var _sent = /* @__PURE__ */ new WeakMap();
+	var _received = /* @__PURE__ */ new WeakMap();
+	var _CardSession_brand = /* @__PURE__ */ new WeakSet();
+	var CardSession = class {
+		constructor(keys, identity, cert, batch, ephemeralTag) {
+			_classPrivateMethodInitSpec(this, _CardSession_brand);
+			_defineProperty(this, "identity", void 0);
+			_defineProperty(this, "cert", void 0);
+			_defineProperty(this, "cardId", void 0);
+			_defineProperty(this, "batch", void 0);
+			_defineProperty(this, "ephemeralTag", void 0);
+			_classPrivateFieldInitSpec(this, _keys$1, void 0);
+			_classPrivateFieldInitSpec(this, _sent, 0);
+			_classPrivateFieldInitSpec(this, _received, 0);
+			_classPrivateFieldSet2(_keys$1, this, keys);
+			this.identity = identity;
+			this.cert = cert;
+			this.cardId = cardId(identity);
+			this.batch = batch;
+			this.ephemeralTag = ephemeralTag;
+		}
+		get closed() {
+			return _classPrivateFieldGet2(_keys$1, this) === void 0;
+		}
+		wrap(command) {
+			checkInner(command);
+			const keys = _assertClassBrand(_CardSession_brand, this, _open$1).call(this);
+			if (_classPrivateFieldGet2(_sent, this) > COUNTER_MAX) _assertClassBrand(_CardSession_brand, this, _break).call(this, "command counter exhausted");
+			const counter = _classPrivateFieldGet2(_sent, this);
+			const kce = keys.subarray(0, 16);
+			const plaintext = concatBytes$3(new Uint8Array([
+				command.ins,
+				command.p1,
+				command.p2
+			]), command.data);
+			const padded = m2(plaintext);
+			wipe(plaintext);
+			let ciphertext;
+			try {
+				ciphertext = cbc(kce, recordIv(kce, 1, counter), { disablePadding: true }).encrypt(padded);
+			} finally {
+				wipe(padded);
+			}
+			const tag = cmac(concatBytes$3(u16(counter), ciphertext), keys.subarray(16, 32)).subarray(0, 8);
+			_classPrivateFieldSet2(_sent, this, counter + 1);
+			return concatBytes$3(new Uint8Array([
+				128,
+				INS_SESSION,
+				0,
+				0,
+				ciphertext.length + tag.length
+			]), ciphertext, tag, new Uint8Array([0]));
+		}
+		unwrap(rapdu) {
+			const keys = _assertClassBrand(_CardSession_brand, this, _open$1).call(this);
+			if (_classPrivateFieldGet2(_received, this) >= _classPrivateFieldGet2(_sent, this)) _assertClassBrand(_CardSession_brand, this, _break).call(this, "no command awaiting a response");
+			if (rapdu.length < 2) _assertClassBrand(_CardSession_brand, this, _break).call(this, "response is shorter than a status word");
+			const sw = readSw(rapdu);
+			if (sw !== 36864) _assertClassBrand(_CardSession_brand, this, _break).call(this, "secure-messaging status is not 9000", sw);
+			const bodyLength = rapdu.length - 10;
+			if (bodyLength % 16 !== 0 || bodyLength > 240) _assertClassBrand(_CardSession_brand, this, _break).call(this, "response ciphertext has an invalid length");
+			const ciphertext = rapdu.subarray(0, bodyLength);
+			const tag = rapdu.subarray(bodyLength, -2);
+			const counter = _classPrivateFieldGet2(_received, this);
+			if (!equalBytes$6(tag, cmac(concatBytes$3(u16(counter), ciphertext), keys.subarray(48, 64)).subarray(0, 8))) _assertClassBrand(_CardSession_brand, this, _break).call(this, "response MAC does not verify");
+			const kre = keys.subarray(32, 48);
+			const padded = cbc(kre, recordIv(kre, 2, counter), { disablePadding: true }).decrypt(ciphertext);
+			try {
+				const plaintext = unM2(padded);
+				if (plaintext === void 0 || plaintext.length < 2) _assertClassBrand(_CardSession_brand, this, _break).call(this, "response padding is malformed");
+				_classPrivateFieldSet2(_received, this, counter + 1);
+				const response = {
+					data: new Uint8Array(plaintext.subarray(0, -2)),
+					sw: readSw(plaintext)
+				};
+				if (response.sw === 28416 || counter === COUNTER_MAX) _assertClassBrand(_CardSession_brand, this, _teardown).call(this);
+				return response;
+			} finally {
+				wipe(padded);
+			}
+		}
+		close() {
+			_assertClassBrand(_CardSession_brand, this, _teardown).call(this);
+		}
+	};
+	function _open$1() {
+		const keys = _classPrivateFieldGet2(_keys$1, this);
+		if (keys === void 0) _assertClassBrand(_CardSession_brand, this, _break).call(this, "session is closed");
+		return keys;
+	}
+	function _teardown() {
+		const keys = _classPrivateFieldGet2(_keys$1, this);
+		_classPrivateFieldSet2(_keys$1, this, void 0);
+		if (keys !== void 0) wipe(keys);
+	}
+	function _break(message, sw) {
+		_assertClassBrand(_CardSession_brand, this, _teardown).call(this);
+		throw new CardError("session-broken", message, sw);
+	}
+	/**
+	* Opens a session directly from the four concatenated session keys (`K_ce ‖ K_cm ‖ K_re ‖ K_rm`, 64
+	* bytes) — the constructor `openResponse` uses after the ECDH exchange and KDF. It is exported from
+	* session.ts so tests can drive sessions without an OPEN exchange; index.ts does not re-export it.
+	* Takes ownership of `keys` and wipes it on close and on every teardown path.
+	*/
+	function sessionFromKeys(keys, identity, cert, batch, ephemeralTag) {
+		if (keys.length !== 64 || identity.length !== 33 || cert.length !== 97 || ephemeralTag.length !== 8) throw new CardError("invalid-input", "session material has wrong lengths");
+		return new CardSession(keys, new Uint8Array(identity), new Uint8Array(cert), batch, new Uint8Array(ephemeralTag));
+	}
+	/** `IV = AES-ECB(key, direction ‖ 13×0x00 ‖ u16(counter))` (§8.4). */
+	function recordIv(key, direction, counter) {
+		const block = /* @__PURE__ */ new Uint8Array(16);
+		block[0] = direction;
+		block.set(u16(counter), 14);
+		return ecb(key, { disablePadding: true }).encrypt(block);
+	}
+	function checkInner(command) {
+		if ([
+			command.ins,
+			command.p1,
+			command.p2
+		].some((value) => !Number.isInteger(value) || value < 0 || value > 255) || command.data.length > 236) throw new CardError("invalid-input", "inner command fields are out of range");
+	}
+	// packages/wallet-kernel/src/modules/card/tap.ts
+	/**
+	* The tap engine (design §6): one `tap` step is one reader session — SELECT → OPEN (certificate
+	* chain + session signature) → ephemeral-tag history → cert pin → card-ID gate → short-ID check →
+	* STATUS gates → the op's commands → one record commit → close. Every failure path closes the
+	* session and, when STATUS was read, still lands the per-tap record bookkeeping.
+	*/
+	init_utils$2();
+	init_defineProperty();
+	init_objectSpread2();
+	var ERROR_CODE = {
+		"card-not-genuine": "card-not-genuine",
+		"wallet-erased": "card-erased",
+		"session-broken": "card-fault",
+		"card-fault": "card-fault",
+		"invalid-data": "card-fault",
+		"not-verified": "card-fault",
+		"wrong-state": "card-fault",
+		"wait-required": "card-fault",
+		"wrong-access-code": "card-fault",
+		"invalid-input": "integrity"
+	};
+	/** The CardError → KernelError table (§5): the one place protocol errors become kernel codes. */
+	function cardToKernel(error) {
+		if (error instanceof KernelError) throw error;
+		if (error instanceof CardError) throw new KernelError(ERROR_CODE[error.code], error.message);
+		throw error;
+	}
+	/** A transmit's reader failure, rethrown so `run` unwinds to the session bookkeeping. */
+	var LostError = class extends Error {
+		constructor(failure, detail) {
+			super(failure);
+			_defineProperty(this, "failure", void 0);
+			_defineProperty(this, "detail", void 0);
+			this.name = "LostError";
+			this.failure = failure;
+			this.detail = detail;
+		}
+	};
+	var lostOf = (failure) => failure === "tag-lost" || failure === "timeout" || failure === "interrupted" ? failure : "interrupted";
+	/**
+	* One reader session for `pending`. `bodies` is the card module's live map — the engine parses
+	* headers from `ctx.image` itself. Resolves the op's outcome; KernelErrors propagate.
+	*/
+	async function runTap(ctx, pending, bodies, unaccounted) {
+		var _ctx$platform$keystor, _ctx$platform$keystor2;
+		const { card } = ctx.platform;
+		if (card === void 0) throw new KernelError("unsupported", "this host has no card reader");
+		const { expect } = pending;
+		const { reader } = card;
+		if (utf8ToBytes$1(pending.prompt).length > 1024) throw new KernelError("card-unsupported", "the reader prompt does not fit the card surface");
+		const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
+		const closedText = (error) => {
+			if (error instanceof KernelError && error.code === "card-tampered") return locale === "zh-Hans" ? "这张卡上有人在别处试过访问码" : "Someone else tried codes on this card";
+			return "";
+		};
+		const recordOf = (walletId) => {
+			const record = ctx.image.records.find((r) => r.kind === "card-wallet" && r.id === walletId);
+			const body = bodies.get(walletId);
+			if (record === void 0) return;
+			if (body === void 0) throw new KernelError("integrity", "card wallet body is not loaded");
+			return {
+				header: parseCardWalletHeader(record.header),
+				body
+			};
+		};
+		/** The card-wallet record whose `cards[]` tracks this cardId, whichever wallet it is. */
+		const recordForCard = (cardIdHex) => {
+			for (const record of ctx.image.records) {
+				if (record.kind !== "card-wallet") continue;
+				const header = parseCardWalletHeader(record.header);
+				if (header.cards.some((c) => c.cardId === cardIdHex)) {
+					const body = bodies.get(record.id);
+					if (body === void 0) throw new KernelError("integrity", "card wallet body is not loaded");
+					return {
+						header,
+						body
+					};
+				}
+			}
+		};
+		const draft = {
+			header: void 0,
+			body: void 0,
+			extra: []
+		};
+		const updates = [];
+		if (expect.walletId !== void 0) {
+			const entry = recordOf(expect.walletId);
+			draft.header = entry === null || entry === void 0 ? void 0 : entry.header;
+			draft.body = entry === null || entry === void 0 ? void 0 : entry.body;
+		}
+		/** The bookkeeping fields the engine owns for the card it just talked to. */
+		let triesNow;
+		let verifyInfo;
+		let certHex;
+		let tagHex;
+		let cardIdHex = "";
+		let own;
+		/** The card self-erased this session — its record entry goes back to `unknown`. */
+		let markErased = false;
+		/** Applies the engine's bookkeeping to the record entry that tracks `cardIdHex`. */
+		const bookkeep = (entry) => {
+			var _entry$body$ephemeral;
+			const cards = entry.header.cards.map((c) => {
+				if (c.cardId !== cardIdHex) return c;
+				if (markErased) return {
+					cardId: c.cardId,
+					state: "unknown"
+				};
+				return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, c), triesNow === void 0 ? {} : { tries: triesNow }), c.cert === void 0 && certHex !== void 0 ? { cert: certHex } : {}), verifyInfo === void 0 ? {} : {
+					state: "ready",
+					verifiedAt: ctx.platform.now()
+				});
+			});
+			const ephemerals = tagHex === void 0 ? entry.body.ephemerals : _objectSpread2(_objectSpread2({}, entry.body.ephemerals), {}, { [cardIdHex]: [tagHex, ...(_entry$body$ephemeral = entry.body.ephemerals[cardIdHex]) !== null && _entry$body$ephemeral !== void 0 ? _entry$body$ephemeral : []].slice(0, 16) });
+			return {
+				header: _objectSpread2(_objectSpread2({}, entry.header), {}, { cards }),
+				body: _objectSpread2(_objectSpread2({}, entry.body), {}, { ephemerals })
+			};
+		};
+		/**
+		* The tap's single commit: the op's staged changes plus the engine's bookkeeping — the ephemeral
+		* tag of every OPENed known card and the tries read on every post-STATUS exit. Bookkeeping lands
+		* on the record that lists this card: the draft's when it does (member taps, staged creates), the
+		* presented card's own record when it belongs to a different wallet.
+		*/
+		const commit = async () => {
+			var _draft$header;
+			for (const update of updates) update(draft);
+			if (!ctx.session.unlocked) return;
+			const seal = (entry) => sealRecord(ctx.platform, ctx.session.current().dek, CARD_WALLET_KIND, entry.header.walletId, encodeCardWalletHeader(entry.header), utf8ToBytes$1(encodeCardWalletBody(entry.body)));
+			const bookkeeping = tagHex !== void 0 || triesNow !== void 0 || verifyInfo !== void 0 || markErased;
+			const inDraft = ((_draft$header = draft.header) === null || _draft$header === void 0 ? void 0 : _draft$header.cards.some((c) => c.cardId === cardIdHex)) === true;
+			const ops = [];
+			if (own !== void 0 && !inDraft && bookkeeping) ops.push({
+				op: "put-record",
+				record: seal(bookkeep(own))
+			});
+			if (draft.header !== void 0 && draft.body !== void 0 && (updates.length > 0 || inDraft && bookkeeping)) {
+				if (inDraft && bookkeeping) {
+					const booked = bookkeep({
+						header: draft.header,
+						body: draft.body
+					});
+					draft.header = booked.header;
+					draft.body = booked.body;
+				}
+				ops.push({
+					op: "put-record",
+					record: seal({
+						header: draft.header,
+						body: draft.body
+					})
+				});
+			}
+			ops.push(...draft.extra);
+			if (ops.length > 0) await ctx.commit(ops);
+		};
+		const opened = await reader.open(pending.prompt);
+		if (!opened.ok) {
+			if (opened.failure === "cancelled") throw new KernelError("cancelled", "the card session was dismissed");
+			if (opened.failure === "unavailable") throw new KernelError("unavailable", "the card reader is unavailable", void 0, false, opened.detail);
+			return {
+				ok: false,
+				lost: lostOf(opened.failure)
+			};
+		}
+		let session;
+		try {
+			var _own$body$ephemerals$, _ctx$image$records$fi, _pending$doneText;
+			const sendRaw = async (apdu) => {
+				const response = await reader.transmit(apdu);
+				if (!response.ok) throw new LostError(response.failure, response.detail);
+				return response.value;
+			};
+			const selected = await sendRaw(SELECT_APDU);
+			if (selected.length !== 2 || selected[0] !== 144 || selected[1] !== 0) throw new CardError("card-not-genuine", "SELECT did not answer 9000");
+			const request = openRequest(ctx.platform.random);
+			const answered = await sendRaw(request.apdu);
+			const sess = openResponse(request.secret, request.apdu, answered, card.anchors, []);
+			session = sess;
+			cardIdHex = bytesToHex$4(sess.cardId);
+			certHex = bytesToHex$4(sess.cert);
+			own = recordForCard(cardIdHex);
+			const tag = bytesToHex$4(sess.ephemeralTag);
+			if (own !== void 0 && ((_own$body$ephemerals$ = own.body.ephemerals[cardIdHex]) !== null && _own$body$ephemerals$ !== void 0 ? _own$body$ephemerals$ : []).includes(tag)) throw new CardError("card-fault", "cardEph repeats a recently seen value");
+			tagHex = tag;
+			const entry = own === null || own === void 0 ? void 0 : own.header.cards.find((c) => c.cardId === cardIdHex);
+			if ((entry === null || entry === void 0 ? void 0 : entry.cert) !== void 0 && !equalBytes$6(hexToBytes$3(entry.cert), sess.cert)) throw new CardError("card-not-genuine", "the card presented a different certificate");
+			if (expect.cards !== void 0 && !expect.cards.some((id) => equalBytes$6(id, sess.cardId)) || expect.exclude !== void 0 && expect.exclude.some((id) => equalBytes$6(id, sess.cardId))) throw new KernelError("card-id-mismatch", "this tap expects a different card");
+			if (expect.shortId !== void 0 && expect.shortId !== shortId(sess.identity)) throw new KernelError("card-id-mismatch", "the card's short ID does not match");
+			const spent = { ms: 200 };
+			const send = async (inner) => {
+				const response = await reader.transmit(sess.wrap(inner));
+				spent.ms += priceOf(inner.name);
+				if (!response.ok) throw new LostError(response.failure, response.detail);
+				return result(inner, sess.unwrap(response.value));
+			};
+			const status = decode$2.status(await send(cmd.status()));
+			triesNow = status.tries;
+			const ourMissedAttempt = unaccounted.delete(cardIdHex);
+			const memberOf = (_ctx$image$records$fi = ctx.image.records.find((record) => {
+				if (record.kind !== "card-wallet") return false;
+				return parseCardWalletHeader(record.header).members.includes(cardIdHex);
+			})) === null || _ctx$image$records$fi === void 0 ? void 0 : _ctx$image$records$fi.id;
+			if (expect.life === "loaded" && status.life === "blank") {
+				markErased = true;
+				throw new KernelError("card-erased", "the card is blank — its wallet was erased");
+			}
+			if (expect.life === "blank" && status.life === "loaded") throw new KernelError("card-id-mismatch", "this tap expects a blank card");
+			const recorded = entry === null || entry === void 0 ? void 0 : entry.tries;
+			if (recorded !== void 0 && status.life === "loaded" && status.tries < recorded && !(ourMissedAttempt && status.tries === recorded - 1)) throw new KernelError("card-tampered", "the card's failure count dropped since the last tap");
+			if (status.life === "loaded" && status.tries === 0) throw new KernelError("card-locked", "the card is locked — the next code would erase it");
+			const verify = async (hash) => {
+				const waits = waitsBeforeVerify(status);
+				for (let i = 0; i < waits; i += 1) await send(cmd.wait());
+				let data;
+				try {
+					data = await send(cmd.verify(hash));
+				} catch (error) {
+					if (error instanceof LostError) unaccounted.add(cardIdHex);
+					if (error instanceof CardError && error.code === "wrong-access-code") {
+						var _error$remaining;
+						triesNow = error.remaining;
+						return {
+							ok: false,
+							remaining: (_error$remaining = error.remaining) !== null && _error$remaining !== void 0 ? _error$remaining : 0
+						};
+					}
+					throw error;
+				}
+				triesNow = ACCESS_LIMITS.failures;
+				const info = decode$2.walletInfo(data, sess.cardId);
+				if (draft.header !== void 0 && draft.body !== void 0) {
+					const { members } = draft.header;
+					if (bytesToHex$4(info.masterPublicKey) !== draft.body.master || members.length !== info.members.length || !members.every((m) => info.members.some((id) => bytesToHex$4(id) === m))) throw new KernelError("wrong-card", "the card's wallet does not match the record");
+				}
+				verifyInfo = info;
+				return {
+					ok: true,
+					info
+				};
+			};
+			const tap = {
+				identity: sess.identity,
+				cert: sess.cert,
+				cardId: sess.cardId,
+				shortId: shortId(sess.identity),
+				status,
+				memberOf,
+				send,
+				verify,
+				installed: (info) => {
+					triesNow = ACCESS_LIMITS.failures;
+					verifyInfo = info;
+				},
+				cost: () => spent.ms,
+				update: (fn) => {
+					updates.push(fn);
+				}
+			};
+			const value = await pending.run(tap);
+			await commit();
+			reader.close("success", (_pending$doneText = pending.doneText) !== null && _pending$doneText !== void 0 ? _pending$doneText : "");
+			session.close();
+			session = void 0;
+			return {
+				ok: true,
+				value
+			};
+		} catch (error) {
+			const live = session;
+			session = void 0;
+			live === null || live === void 0 || live.close();
+			if (error instanceof CardError && error.code === "wallet-erased") markErased = true;
+			const bookkeeping = (async () => {
+				try {
+					await commit();
+				} catch (_unused) {}
+			})();
+			if (error instanceof LostError) {
+				reader.close("failure", "");
+				await bookkeeping;
+				if (error.failure === "cancelled") throw new KernelError("cancelled", "the card session was dismissed");
+				if (error.failure === "unavailable") throw new KernelError("unavailable", "the card reader is unavailable", void 0, false, error.detail);
+				return {
+					ok: false,
+					lost: lostOf(error.failure)
+				};
+			}
+			reader.close("failure", closedText(error));
+			await bookkeeping;
+			return cardToKernel(error);
+		} finally {
+			session === null || session === void 0 || session.close();
+		}
+	}
+	// packages/wallet-kernel/src/modules/card/ops/sign.ts
+	init_utils$2();
+	init_objectSpread2();
+	/** A 7702 stage-1 plan signs the authorization, then the envelope under the same account. */
+	var isTwoStage = (plan) => plan.kind === "evm.transaction" && "authorization" in plan && plan.authorization === void 0 && plan.tx.type === "eip7702";
+	/** Greedy pack: how many taps `prices` need at `budget`, the first tap also paying `waits`. */
+	var estimateTaps = (prices, waits, budget) => {
+		let taps = 0;
+		let spent = 0;
+		for (const price of prices) {
+			if (spent === 0) {
+				taps += 1;
+				spent = 200 + priceOf("verify") + (taps === 1 ? waits : 0);
+			}
+			if (spent + price + 1e3 > budget) {
+				taps += 1;
+				spent = 200 + priceOf("verify");
+			}
+			spent += price;
+		}
+		return taps;
+	};
+	/**
+	* The sign op's begin-time work (design §8): wallet lookup, `prepareApproval` on the card's public
+	* material — every miss is `card-required`, and the same normalize/ownership/agent checks
+	* `chain.sign` runs — then the prompt the reader shows (`chainPrompt`'s title + description plus a
+	* card line, ≤ 1024 UTF-8 bytes) and the budget bounds: every task must fit an empty tap and the
+	* whole plan — a 7702's two stages included — at most two taps.
+	*/
+	var prepareSign = async (env, op, dek) => {
+		const { request } = op;
+		if (request.account.kind !== "hd") throw new KernelError("invalid-input", "only an hd account signs on a card");
+		const { walletId } = request.account;
+		const { header } = walletOf(env, walletId);
+		const material = env.ctx.cardMaterial(walletId);
+		if (material === void 0) throw new KernelError("integrity", "card wallet material is not loaded");
+		if (request.kind === "solana.message" && request.message.length > 16384) throw new KernelError("card-unsupported", "the message is too large for the card");
+		const prepared = await prepareApproval(env.ctx, request, material, dek);
+		const keystore = chainPrompt(env.locale, prepared.prompt);
+		const cards = header.cards.map((c) => pinnedShortId(header, c.cardId)).filter((s) => s !== void 0);
+		const tapText = `${keystore.title}\n${keystore.description}\n${signCardLine(env.locale, cards)}`;
+		if (utf8ToBytes$1(tapText).length > 1024) throw new KernelError("card-unsupported", "the signing text is too long for the reader");
+		const budget = env.planMs;
+		const waits = holdDue(header, header.members) ? ACCESS_LIMITS.waits * priceOf("wait") : 0;
+		const base = 200 + priceOf("verify") + waits;
+		for (const task of prepared.plan.tasks) if (base + taskPrice(task) + 1e3 > budget) throw new KernelError("card-unsupported", "a signing task does not fit one tap");
+		const prices = prepared.plan.tasks.map(taskPrice);
+		if (isTwoStage(prepared.plan)) prices.push(priceOf("sign-ecdsa"));
+		if (estimateTaps(prices, waits, budget) > 2) throw new KernelError("card-unsupported", "the signing plan needs more than two taps");
+		return {
+			walletId,
+			prompt: prepared.prompt,
+			plan: prepared.plan,
+			verifyPrompt: () => {
+				var _env$ctx$platform$key, _env$ctx$platform$key2;
+				return chainPrompt(promptLocale((_env$ctx$platform$key = (_env$ctx$platform$key2 = env.ctx.platform.keystore) === null || _env$ctx$platform$key2 === void 0 ? void 0 : _env$ctx$platform$key2.locale) !== null && _env$ctx$platform$key !== void 0 ? _env$ctx$platform$key : "en"), prepared.prompt);
+			},
+			tapText
+		};
+	};
+	var signOp = (env, op, prepared) => _wrapAsyncGenerator(function* () {
+		const { walletId, tapText } = prepared;
+		const hashes = /* @__PURE__ */ new Map();
+		/**
+		* `r` values the card already produced this op — member cards share the seed, so a repeated r
+		* on any of them is nonce reuse. Spans taps, retries and continuation stages.
+		*/
+		const previousR = [];
+		/** The card the first successful VERIFY bound this approval to — later taps accept only it. */
+		let boundCard;
+		let boundShort;
+		let code;
+		try {
+			const material = env.ctx.cardMaterial(walletId);
+			if (material === void 0) throw new KernelError("integrity", "card wallet material is not loaded");
+			const saved = () => {
+				var _env$bodies$get$acces, _env$bodies$get;
+				return (_env$bodies$get$acces = (_env$bodies$get = env.bodies.get(walletId)) === null || _env$bodies$get === void 0 ? void 0 : _env$bodies$get.access) !== null && _env$bodies$get$acces !== void 0 ? _env$bodies$get$acces : {};
+			};
+			{
+				const { header } = walletOf(env, walletId);
+				if (!header.members.every((id) => saved()[id] !== void 0)) code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+					purpose: "access-code",
+					secure: "access-code",
+					remaining: lowestTries(header, header.members),
+					label: accessCodeLabel(env.locale, void 0, lowestTries(header, header.members))
+				})));
+			}
+			let current = prepared.plan;
+			for (;;) {
+				const pending = current.tasks.map((task, index) => ({
+					index,
+					task
+				}));
+				const signatures = [];
+				while (pending.length > 0) {
+					const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						var _boundShort;
+						const fresh = walletOf(env, walletId);
+						if (op.request.kind === "evm.fiat24-session") assertFiat24Deadline(op.request, env.ctx.platform.now());
+						const bound = boundCard === void 0 ? fresh.header.members.map(hexToBytes$3) : [boundCard];
+						return _objectSpread2(_objectSpread2({
+							reason: retry ? "retry" : "member",
+							hold: holdDue(fresh.header, fresh.header.members)
+						}, boundShort === void 0 ? {} : { card: boundShort }), {}, {
+							prompt: retry ? tapPrompt(env.locale, "sign", "retry", (_boundShort = boundShort) !== null && _boundShort !== void 0 ? _boundShort : fresh.header.cards.map((c) => pinnedShortId(fresh.header, c.cardId)).find((s) => s !== void 0)) : tapText,
+							expect: {
+								life: "loaded",
+								cards: bound,
+								walletId
+							},
+							run: async (tap) => {
+								const cardIdHex = bytesToHex$4(tap.cardId);
+								let hash = hashes.get(cardIdHex);
+								if (hash === void 0) {
+									const remembered = saved()[cardIdHex];
+									if (remembered !== void 0) {
+										hash = hexToBytes$3(remembered);
+										hashes.set(cardIdHex, hash);
+									} else if (code === void 0) return {
+										status: "need-code",
+										card: tap.shortId
+									};
+									else {
+										hash = await accessHash(code, tap.cardId, env.ctx.platform.argon2id);
+										wipe$1(code);
+										code = void 0;
+										hashes.set(cardIdHex, hash);
+									}
+								}
+								const verified = await tap.verify(hash);
+								if (verified.ok) {
+									boundCard = tap.cardId;
+									boundShort = tap.shortId;
+								} else {
+									wipe$1(hash);
+									hashes.delete(cardIdHex);
+									tap.update((d) => {
+										var _d$body;
+										if (((_d$body = d.body) === null || _d$body === void 0 ? void 0 : _d$body.access) !== void 0 && d.body.access[cardIdHex] !== void 0) {
+											const access = Object.fromEntries(Object.entries(d.body.access).filter(([key]) => key !== cardIdHex));
+											d.body = _objectSpread2({
+												master: d.body.master,
+												nodes: d.body.nodes,
+												ed25519: d.body.ed25519,
+												ephemerals: d.body.ephemerals
+											}, Object.keys(access).length === 0 ? {} : { access });
+										}
+									});
+									return {
+										status: "wrong-code",
+										remaining: verified.remaining
+									};
+								}
+								if (op.remember === true) {
+									const savedHash = bytesToHex$4(hash);
+									tap.update((d) => {
+										if (d.body !== void 0) d.body = _objectSpread2(_objectSpread2({}, d.body), {}, { access: _objectSpread2(_objectSpread2({}, d.body.access), {}, { [cardIdHex]: savedHash }) });
+									});
+								}
+								for (;;) {
+									const [item] = pending;
+									if (item === void 0 || tap.cost() + taskPrice(item.task) + 1e3 > env.planMs) break;
+									signatures[item.index] = await signTask(tap, item.task, material, previousR);
+									pending.shift();
+								}
+								return { status: "done" };
+							}
+						});
+					})));
+					if (outcome.status === "done") continue;
+					if (outcome.status === "need-code") {
+						code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+							purpose: "access-code",
+							secure: "access-code",
+							card: outcome.card,
+							label: accessCodeLabel(env.locale, outcome.card, void 0)
+						})));
+						continue;
+					}
+					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						remaining: outcome.remaining,
+						label: accessCodeLabel(env.locale, void 0, outcome.remaining)
+					})));
+				}
+				let result;
+				try {
+					result = assembleChain(current, signatures);
+				} catch (error) {
+					if (error instanceof ChainError) throw new KernelError("integrity", "assembled card signatures were refused");
+					throw error;
+				}
+				if (result.kind === "signed") return {
+					kind: "sign",
+					result: result.artefact
+				};
+				current = result.plan;
+			}
+		} finally {
+			if (code !== void 0) wipe$1(code);
+			for (const hash of hashes.values()) wipe$1(hash);
+		}
+	})();
+	// packages/wallet-kernel/src/modules/card/ops/status.ts
+	init_objectSpread2();
+	/** `status` — one tap, life any; no VERIFY, no record write. */
+	function statusOp(_x) {
+		return _statusOp.apply(this, arguments);
+	}
+	function _statusOp() {
+		_statusOp = _wrapAsyncGenerator(function* (env) {
+			let life;
+			let tries;
+			let memberOf;
+			yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+				reason: retry ? "retry" : "any",
+				prompt: tapPrompt(env.locale, "status", retry ? "retry" : "any", void 0),
+				expect: { life: "any" },
+				run: async (tap) => {
+					({life, tries} = tap.status);
+					({memberOf} = tap);
+					return { status: "done" };
+				}
+			}))));
+			if (life === void 0 || tries === void 0) throw new KernelError("integrity", "the status tap did not report");
+			return _objectSpread2({
+				kind: "status",
+				life,
+				tries
+			}, memberOf === void 0 ? {} : { walletId: memberOf });
+		});
+		return _statusOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/transfer.ts
+	init_utils$2();
+	init_objectSpread2();
+	/**
+	* `transfer` — provision the wallet's unfinished members (§11.3): every `pending` member, or when
+	* none are pending the members not yet proven `ready` (an erased card shows BLANK). Each target is
+	* OFFERed by typed short ID, the user names a ready member as the source, enters the source's
+	* existing code and the target's new code; the source VERIFYs and EXPORTs under the target's hash,
+	* the target IMPORTs and its WalletInfo must echo the record. I4 is structural: the export's target
+	* is exactly the card this operation OFFERed and the record lists.
+	*/
+	function transferOp(_x, _x2) {
+		return _transferOp.apply(this, arguments);
+	}
+	function _transferOp() {
+		_transferOp = _wrapAsyncGenerator(function* (env, op) {
+			const { header } = walletOf(env, op.walletId);
+			const pending = header.cards.filter((c) => c.state === "pending").map((c) => c.cardId);
+			const targetIds = pending.length > 0 ? pending : header.cards.filter((c) => c.state !== "ready").map((c) => c.cardId);
+			if (targetIds.length === 0) throw new KernelError("invalid-input", "every member of this wallet is already provisioned");
+			const readyIds = header.cards.filter((c) => c.state === "ready").map((c) => c.cardId);
+			if (readyIds.length === 0) throw new KernelError("invalid-input", "no ready member can export this wallet");
+			const ready = readyIds.map(hexToBytes$3);
+			const hashes = /* @__PURE__ */ new Map();
+			let sourceCode;
+			let targetCode;
+			let sourceCert;
+			try {
+				for (const targetIdHex of targetIds) {
+					var _sourceCode;
+					const targetId = hexToBytes$3(targetIdHex);
+					const typedT = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+					let target;
+					yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+						walletOf(env, op.walletId);
+						return {
+							reason: retry ? "retry" : "target",
+							prompt: tapPrompt(env.locale, "transfer", retry ? "retry" : "target", typedT),
+							expect: {
+								life: "any",
+								cards: [targetId],
+								shortId: typedT,
+								walletId: op.walletId
+							},
+							run: async (tap) => {
+								target = targetFrom(tap, await takeOffer(tap));
+								return { status: "done" };
+							}
+						};
+					})));
+					if (target === void 0) throw new KernelError("integrity", "the target's offer was not taken");
+					const peer = target;
+					const typedS = yield* _asyncGeneratorDelegate(_asyncIterator(askShortId(env.locale)));
+					(_sourceCode = sourceCode) !== null && _sourceCode !== void 0 || (sourceCode = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
+						purpose: "access-code",
+						secure: "access-code",
+						card: typedS,
+						label: accessCodeLabel(env.locale, typedS, void 0)
+					}))));
+					targetCode = yield* _asyncGeneratorDelegate(_asyncIterator(askNewCode(env)));
+					for (;;) {
+						while (peer.transfer === void 0) {
+							const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => {
+								const entry = walletOf(env, op.walletId);
+								const short = typedS;
+								return {
+									reason: retry ? "retry" : "source",
+									card: short,
+									hold: holdDue(entry.header, readyIds),
+									prompt: tapPrompt(env.locale, "transfer", retry ? "retry" : "source", short),
+									expect: {
+										life: "loaded",
+										cards: ready,
+										shortId: typedS,
+										walletId: op.walletId
+									},
+									run: async (tap) => {
+										const id = bytesToHex$4(tap.cardId);
+										if (!hashes.has(id)) {
+											if (sourceCode === void 0) return {
+												status: "need-code",
+												card: tap.shortId
+											};
+											const code = sourceCode;
+											sourceCode = void 0;
+											await hashAll(env, hashes, code, [tap.cardId]);
+											wipe$1(code);
+										}
+										if (!hashes.has(bytesToHex$4(peer.cardId))) {
+											if (targetCode === void 0) return {
+												status: "need-code",
+												card: peer.shortId
+											};
+											await hashAll(env, hashes, targetCode, [peer.cardId]);
+										}
+										const hashS = hashes.get(id);
+										if (hashS === void 0) return {
+											status: "need-code",
+											card: tap.shortId
+										};
+										const verified = await tap.verify(hashS);
+										if (!verified.ok) return {
+											status: "wrong-code",
+											remaining: verified.remaining
+										};
+										const hashT = hashes.get(bytesToHex$4(peer.cardId));
+										if (hashT === void 0) return {
+											status: "need-code",
+											card: peer.shortId
+										};
+										peer.transfer = await exportTo(tap, peer, hashT);
+										({cert: sourceCert} = tap);
+										return { status: "done" };
+									}
+								};
+							})));
+							if (outcome.status === "done") break;
+							if (outcome.status === "reexport") throw new KernelError("integrity", "a source tap cannot re-export");
+							const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+								purpose: "access-code",
+								secure: "access-code"
+							}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+							if (outcome.status === "wrong-code") for (const id of readyIds) {
+								const old = hashes.get(id);
+								if (old !== void 0) {
+									wipe$1(old);
+									hashes.delete(id);
+								}
+							}
+							yield _awaitAsyncGenerator(hashAll(env, hashes, asked, ready));
+							wipe$1(asked);
+						}
+						const outcome = yield* _asyncGeneratorDelegate(_asyncIterator(tapRetry((retry) => ({
+							reason: retry ? "retry" : "target",
+							card: peer.shortId,
+							prompt: tapPrompt(env.locale, "transfer", retry ? "retry" : "target", peer.shortId),
+							expect: {
+								life: "any",
+								cards: [peer.cardId],
+								shortId: peer.shortId,
+								walletId: op.walletId
+							},
+							run: async (tap) => {
+								if (sourceCert === void 0) throw new KernelError("integrity", "the exporting member was never tapped");
+								const result = await installRun({
+									tap,
+									target: peer,
+									sourceCert,
+									hashT: () => hashes.get(targetIdHex),
+									entry: walletOf(env, op.walletId)
+								});
+								if (result.status === "done" && targetCode !== void 0) {
+									wipe$1(targetCode);
+									targetCode = void 0;
+								}
+								return result;
+							}
+						}))));
+						if (outcome.status === "done" || outcome.status === "reexport") break;
+						const asked = yield* _asyncGeneratorDelegate(_asyncIterator(ask(_objectSpread2(_objectSpread2(_objectSpread2({
+							purpose: "access-code",
+							secure: "access-code"
+						}, outcome.status === "need-code" ? { card: outcome.card } : {}), outcome.status === "wrong-code" ? { remaining: outcome.remaining } : {}), {}, { label: outcome.status === "need-code" ? accessCodeLabel(env.locale, outcome.card, void 0) : accessCodeLabel(env.locale, void 0, outcome.remaining) }))));
+						const old = hashes.get(targetIdHex);
+						if (outcome.status === "wrong-code" && old !== void 0) {
+							wipe$1(old);
+							hashes.delete(targetIdHex);
+						}
+						yield _awaitAsyncGenerator(hashAll(env, hashes, asked, [targetId]));
+						wipe$1(asked);
+					}
+				}
+				return {
+					kind: "transfer",
+					walletId: op.walletId
+				};
+			} finally {
+				if (sourceCode !== void 0) wipe$1(sourceCode);
+				if (targetCode !== void 0) wipe$1(targetCode);
+				for (const hash of hashes.values()) wipe$1(hash);
+			}
+		});
+		return _transferOp.apply(this, arguments);
+	}
+	// packages/wallet-kernel/src/modules/card/ops/index.ts
+	/** Preconditions that end `card.begin` before any step: wallets exist, gates, unsupported ops. */
+	var checkOperation = (ctx, op) => {
+		const cardRecord = (walletId) => ctx.image.records.find((r) => r.kind === "card-wallet" && r.id === walletId);
+		switch (op.kind) {
+			case "accounts":
+			case "health":
+			case "change-access":
+			case "forget-access":
+				if (cardRecord(op.walletId) === void 0) throw new KernelError("not-found", "no such card wallet");
+				return;
+			case "sign": {
+				const { account } = op.request;
+				if (account.kind !== "hd") throw new KernelError("invalid-input", "only an hd account signs on a card");
+				if (cardRecord(account.walletId) === void 0) throw ctx.image.records.some((r) => r.id === account.walletId) ? new KernelError("invalid-input", "the account's wallet is not a card wallet") : new KernelError("not-found", "no such card wallet");
+				return;
+			}
+			case "erase": {
+				const record = cardRecord(op.walletId);
+				if (record === void 0) throw new KernelError("not-found", "no such card wallet");
+				const header = parseCardWalletHeader(record.header);
+				if (!header.cards.some((c) => c.cardId === op.card)) throw new KernelError("not-found", "no such card in this wallet");
+				if (header.cards.length === 1 && header.origin === "generated" && op.last !== true) throw new KernelError("invalid-input", "erasing the only card of a generated wallet needs last: true");
+				return;
+			}
+			case "create": {
+				if (op.source.kind === "generate") {
+					if (op.cards === 1) throw new KernelError("invalid-input", "a card-generated wallet needs at least two cards");
+					break;
+				}
+				const sourceId = op.source.walletId;
+				const source = ctx.image.records.find((r) => r.id === sourceId);
+				if (source === void 0) throw new KernelError("not-found", "no such source wallet");
+				if (source.kind !== "entropy") throw new KernelError("invalid-input", "the source is not a vault HD wallet");
+				break;
+			}
+			case "transfer": {
+				const record = cardRecord(op.walletId);
+				if (record === void 0) throw new KernelError("not-found", "no such card wallet");
+				const header = parseCardWalletHeader(record.header);
+				if (header.cards.every((c) => c.state === "ready")) throw new KernelError("invalid-input", "every member of this wallet is already provisioned");
+				if (!header.cards.some((c) => c.state === "ready")) throw new KernelError("invalid-input", "no ready member can export this wallet");
+				break;
+			}
+			case "reseal": {
+				const record = cardRecord(op.walletId);
+				if (record === void 0) throw new KernelError("not-found", "no such card wallet");
+				const header = parseCardWalletHeader(record.header);
+				if (header.cards.find((c) => c.cardId === op.card) === void 0) throw new KernelError("not-found", "no such card in this wallet");
+				if (op.member !== void 0) {
+					const member = header.cards.find((c) => c.cardId === op.member);
+					if (member === void 0) throw new KernelError("not-found", "no such card in this wallet");
+					if (op.member === op.card) throw new KernelError("invalid-input", "the resealing member must be another card");
+					if (member.state !== "ready") throw new KernelError("invalid-input", "the resealing member is not ready");
+				} else if (!header.cards.some((c) => c.state === "ready" && c.cardId !== op.card)) throw new KernelError("invalid-input", "no other ready member can reseal this card");
+				break;
+			}
+		}
+	};
+	/** Whether the op takes a `verify`, forbids one, or is not in this layer. */
+	var verifyGate = (op) => {
+		switch (op.kind) {
+			case "status":
+			case "add":
+			case "accounts":
+			case "health": return "forbidden";
+			case "change-access":
+			case "erase":
+			case "create":
+			case "transfer":
+			case "reseal":
+			case "forget-access":
+			case "sign": return "required";
+		}
+	};
+	/** Which prompt kind a verify-bearing op uses. */
+	var promptKind = (op) => {
+		switch (op.kind) {
+			case "change-access": return "card-change-access";
+			case "erase": return "card-erase";
+			case "transfer": return "card-transfer";
+			case "reseal": return "card-reseal";
+			case "forget-access": return "card-forget-access";
+			default: return "card-create";
+		}
+	};
+	/** `remember` needs app lock on and a hardware verify — else `unsupported` at begin. */
+	var rememberGated = (ctx, op, verifyKind) => {
+		if (!((op.kind === "change-access" || op.kind === "create" || op.kind === "sign") && op.remember === true)) return;
+		if (verifyKind !== "hardware" || ctx.image.factors.some((f) => f.kind === "device")) throw new KernelError("unsupported", "saving the card code needs app lock and a hardware verify");
+	};
+	/** The short IDs an op's verify prompt names — the pinned cards of the wallet, or the target. */
+	var promptCards = (ctx, op) => {
+		const walletId = "walletId" in op && typeof op.walletId === "string" ? op.walletId : void 0;
+		if (walletId === void 0) return [];
+		const record = ctx.image.records.find((r) => r.kind === "card-wallet" && r.id === walletId);
+		if (record === void 0) return [];
+		const header = parseCardWalletHeader(record.header);
+		if (op.kind === "erase") {
+			const short = pinnedShortId(header, op.card);
+			return short === void 0 ? [] : [short];
+		}
+		return header.cards.map((c) => pinnedShortId(header, c.cardId)).filter((s) => s !== void 0);
+	};
+	/** Builds the op's generator — thrown precondition failures happen before any yield. */
+	var makeOp = (env, op, prepared) => {
+		switch (op.kind) {
+			case "status": return statusOp(env);
+			case "add": return addOp(env, op);
+			case "accounts": return accountsOp(env, op);
+			case "health": return healthOp(env, op);
+			case "change-access": return changeAccessOp(env, op);
+			case "erase": return eraseOp(env, op);
+			case "create": return createOp(env, op);
+			case "transfer": return transferOp(env, op);
+			case "reseal": return resealOp(env, op);
+			case "forget-access": return forgetAccessOp(env, op);
+			case "sign":
+				if (prepared === void 0) throw new KernelError("integrity", "the sign operation was not prepared");
+				return signOp(env, op, prepared);
+		}
+	};
+	// packages/wallet-kernel/src/modules/card/index.ts
+	init_utils$2();
+	init_objectSpread2();
+	/** A step may wait this long for its host work — re-armed at every step boundary. */
+	var STEP_TIMEOUT_MS = 12e4;
+	/** The public shape of a pending step — never carries labels, prompts, expectations or APDUs. */
+	var publicOf = (pending) => {
+		if (pending.kind === "input") return _objectSpread2(_objectSpread2({
+			kind: "input",
+			purpose: pending.purpose
+		}, pending.card === void 0 ? {} : { card: pending.card }), pending.remaining === void 0 ? {} : { remaining: pending.remaining });
+		return _objectSpread2(_objectSpread2({
+			kind: "tap",
+			reason: pending.reason
+		}, pending.card === void 0 ? {} : { card: pending.card }), pending.hold === void 0 ? {} : { hold: true });
+	};
+	function createCardModule(platform) {
+		const live = /* @__PURE__ */ new Map();
+		let current;
+		/** The value a discarded generator completes with — only its `finally` matters. */
+		const DISCARDED = {
+			kind: "status",
+			life: "blank",
+			tries: 0
+		};
+		const discard = async (active) => {
+			if (current === active) current = void 0;
+			active.cancelTimer();
+			await active.gen.return(DISCARDED);
+		};
+		/** Aborts an operation: a step in flight is interrupted, an idle generator just winds down. */
+		const abort = (active) => {
+			if (current === active) current = void 0;
+			active.cancelTimer();
+			if (active.stepActive) {
+				var _platform$card, _platform$card2;
+				active.aborted = true;
+				(_platform$card = platform.card) === null || _platform$card === void 0 || _platform$card.secureInput.cancel();
+				(_platform$card2 = platform.card) === null || _platform$card2 === void 0 || _platform$card2.reader.close("failure", "");
+			} else active.gen.return(DISCARDED);
+		};
+		const interrupt = (opId) => {
+			if ((current === null || current === void 0 ? void 0 : current.opId) === opId) abort(current);
+		};
+		/** The no-progress timeout — armed at every step boundary; fires interrupt + discard. */
+		const arm = (active) => {
+			active.cancelTimer();
+			active.cancelTimer = platform.setTimer(STEP_TIMEOUT_MS, () => interrupt(active.opId));
+		};
+		return {
+			vault: {
+				ownsRecord: (kind) => kind === CARD_WALLET_KIND,
+				claimUnlocked: (records) => {
+					const unclaimed = [];
+					for (const record of records) {
+						if (record.kind !== "card-wallet") {
+							unclaimed.push(record);
+							continue;
+						}
+						try {
+							const text = new TextDecoder().decode(record.plaintext);
+							live.set(record.id, parseCardWalletBody(text, record.id));
+						} finally {
+							wipe$1(record.plaintext);
+						}
+					}
+					return unclaimed;
+				},
+				forget: (kind, id) => {
+					if (kind === "card-wallet") live.delete(id);
+				},
+				lock: () => {
+					if (current !== void 0) abort(current);
+					live.clear();
+				},
+				walletDeleteOps: () => [],
+				parseHeader: (record) => {
+					parseCardWalletHeader(record.header);
+				}
+			},
+			handlers: {
+				"card.begin": async (ctx, params, session) => {
+					var _platform$keystore$lo, _platform$keystore, _card$planMs;
+					const { dek } = ctx.session.require(session);
+					const { card } = platform;
+					if (card === void 0) throw new KernelError("unsupported", "this host has no card reader");
+					const gate = verifyGate(params.op);
+					if (gate === "unsupported") throw new KernelError("unsupported", "card operations arrive in a later build");
+					checkOperation(ctx, params.op);
+					if (gate === "forbidden" && params.verify !== void 0) throw new KernelError("invalid-input", "this card operation takes no verify");
+					const env = {
+						ctx,
+						bodies: live,
+						locale: promptLocale((_platform$keystore$lo = (_platform$keystore = platform.keystore) === null || _platform$keystore === void 0 ? void 0 : _platform$keystore.locale) !== null && _platform$keystore$lo !== void 0 ? _platform$keystore$lo : "en"),
+						planMs: (_card$planMs = card.planMs) !== null && _card$planMs !== void 0 ? _card$planMs : PLAN_MS
+					};
+					let prepared;
+					if (gate === "required") {
+						if (params.verify === void 0) throw new KernelError("invalid-input", "this card operation needs a verify");
+						rememberGated(ctx, params.op, params.verify.kind);
+						const prompt = params.op.kind === "sign" ? (prepared = await prepareSign(env, params.op, dek)).verifyPrompt : cardPromptFor(platform.keystore, promptKind(params.op), () => promptCards(ctx, params.op));
+						await verifyFactor(platform, ctx.image, params.verify, dek, ctx.commit, prompt);
+					}
+					if (current !== void 0) await discard(current);
+					const gen = makeOp(env, params.op, prepared);
+					const opId = bytesToHex$4(platform.random(16));
+					const first = await gen.next(void 0);
+					if (first.done === true) return {
+						opId,
+						step: {
+							kind: "done",
+							result: first.value
+						}
+					};
+					const active = {
+						opId,
+						gen,
+						pending: first.value,
+						stepActive: false,
+						aborted: false,
+						unaccounted: /* @__PURE__ */ new Set(),
+						cancelTimer: () => void 0
+					};
+					arm(active);
+					current = active;
+					return {
+						opId,
+						step: publicOf(first.value)
+					};
+				},
+				"card.step": async (ctx, params, session) => {
+					ctx.session.require(session);
+					const { card } = platform;
+					if (card === void 0) throw new KernelError("unsupported", "this host has no card reader");
+					const active = current;
+					if (active === void 0 || active.opId !== params.opId) throw new KernelError("not-found", "no such card operation");
+					active.stepActive = true;
+					try {
+						let outcome;
+						if (active.pending.kind === "input") {
+							const response = await card.secureInput.request(active.pending.secure, active.pending.label);
+							if (!response.ok) throw response.failure === "cancelled" ? new KernelError("cancelled", "the secure input was dismissed") : new KernelError("unavailable", "the secure input is unavailable");
+							outcome = response.value;
+						} else outcome = await runTap(ctx, active.pending, live, active.unaccounted);
+						if (active.aborted) throw new KernelError("cancelled", "the card operation was cancelled");
+						const next = await active.gen.next(outcome);
+						if (active.aborted) throw new KernelError("cancelled", "the card operation was cancelled");
+						if (next.done === true) {
+							const result = next.value;
+							await discard(active);
+							return {
+								kind: "done",
+								result
+							};
+						}
+						active.pending = next.value;
+						arm(active);
+						return publicOf(next.value);
+					} catch (error) {
+						await discard(active).catch(() => void 0);
+						throw error;
+					} finally {
+						active.stepActive = false;
+					}
+				},
+				"card.cancel": async (ctx, params, session) => {
+					ctx.session.require(session);
+					if (platform.card === void 0) throw new KernelError("unsupported", "this host has no card reader");
+					const active = current;
+					if (active !== void 0 && active.opId === params.opId) await discard(active);
+					return null;
+				}
+			},
+			material: (walletId) => {
+				const body = live.get(walletId);
+				return body === void 0 ? void 0 : cardMaterial(body);
+			},
+			interrupt
 		};
 	}
 	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/util-D8wUYmm0.mjs
@@ -41178,299 +46288,6 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "SignerDisposedError");
 		}
 	};
-	// node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/aes.js
-	var BLOCK_SIZE = 16;
-	var POLY = 283;
-	function validateKeyLength(key) {
-		if (![
-			16,
-			24,
-			32
-		].includes(key.length)) throw new Error("\"aes key\" expected Uint8Array of length 16/24/32, got length=" + key.length);
-	}
-	function mul2(n) {
-		return n << 1 ^ POLY & -(n >> 7);
-	}
-	function mul(a, b) {
-		let res = 0;
-		for (; b > 0; b >>= 1) {
-			res ^= a & -(b & 1);
-			a = mul2(a);
-		}
-		return res;
-	}
-	var sbox = /* @__PURE__ */ (() => {
-		const t = /* @__PURE__ */ new Uint8Array(256);
-		for (let i = 0, x = 1; i < 256; i++, x ^= mul2(x)) t[i] = x;
-		const box = /* @__PURE__ */ new Uint8Array(256);
-		box[0] = 99;
-		for (let i = 0; i < 255; i++) {
-			let x = t[255 - i];
-			x |= x << 8;
-			box[t[i]] = (x ^ x >> 4 ^ x >> 5 ^ x >> 6 ^ x >> 7 ^ 99) & 255;
-		}
-		clean$1(t);
-		return box;
-	})();
-	var invSbox = /* @__PURE__ */ sbox.map((_, j) => sbox.indexOf(j));
-	var rotr32_8 = (n) => n << 24 | n >>> 8;
-	var rotl32_8 = (n) => n << 8 | n >>> 24;
-	function genTtable(sbox, fn) {
-		if (sbox.length !== 256) throw new Error("wrong sbox length");
-		const T0 = (/* @__PURE__ */ new Uint32Array(256)).map((_, j) => fn(sbox[j]));
-		const T1 = T0.map(rotl32_8);
-		const T2 = T1.map(rotl32_8);
-		const T3 = T2.map(rotl32_8);
-		const T01 = /* @__PURE__ */ new Uint32Array(65536);
-		const T23 = /* @__PURE__ */ new Uint32Array(65536);
-		const sbox2 = /* @__PURE__ */ new Uint16Array(65536);
-		for (let i = 0; i < 256; i++) for (let j = 0; j < 256; j++) {
-			const idx = i * 256 + j;
-			T01[idx] = T0[i] ^ T1[j];
-			T23[idx] = T2[i] ^ T3[j];
-			sbox2[idx] = sbox[i] << 8 | sbox[j];
-		}
-		return {
-			sbox,
-			sbox2,
-			T0,
-			T1,
-			T2,
-			T3,
-			T01,
-			T23
-		};
-	}
-	var tableEncoding = /* @__PURE__ */ genTtable(sbox, (s) => mul(s, 3) << 24 | s << 16 | s << 8 | mul(s, 2));
-	var tableDecoding = /* @__PURE__ */ genTtable(invSbox, (s) => mul(s, 11) << 24 | mul(s, 13) << 16 | mul(s, 9) << 8 | mul(s, 14));
-	var xPowers = /* @__PURE__ */ (() => {
-		const p = /* @__PURE__ */ new Uint8Array(16);
-		for (let i = 0, x = 1; i < 16; i++, x = mul2(x)) p[i] = x;
-		return p;
-	})();
-	/** Forward AES key expansion used across ECB/CBC/CTR/GCM/CMAC/KW-style paths. */
-	function expandKeyLE(key) {
-		abytes$3(key);
-		const len = key.length;
-		validateKeyLength(key);
-		const { sbox2 } = tableEncoding;
-		const toClean = [];
-		if (!isLE$1 || !isAligned32(key)) toClean.push(key = copyBytes$1(key));
-		const k32 = swap32IfBE$1(u32$6(key));
-		const Nk = k32.length;
-		const subByte = (n) => applySbox(sbox2, n, n, n, n);
-		const xk = new Uint32Array(len + 28);
-		xk.set(k32);
-		for (let i = Nk; i < xk.length; i++) {
-			let t = xk[i - 1];
-			if (i % Nk === 0) t = subByte(rotr32_8(t)) ^ xPowers[i / Nk - 1];
-			else if (Nk > 6 && i % Nk === 4) t = subByte(t);
-			xk[i] = xk[i - Nk] ^ t;
-		}
-		clean$1(...toClean);
-		return xk;
-	}
-	function expandKeyDecLE(key) {
-		const encKey = expandKeyLE(key);
-		const xk = encKey.slice();
-		const Nk = encKey.length;
-		const { sbox2 } = tableEncoding;
-		const { T0, T1, T2, T3 } = tableDecoding;
-		for (let i = 0; i < Nk; i += 4) for (let j = 0; j < 4; j++) xk[i + j] = encKey[Nk - i - 4 + j];
-		clean$1(encKey);
-		for (let i = 4; i < Nk - 4; i++) {
-			const x = xk[i];
-			const w = applySbox(sbox2, x, x, x, x);
-			xk[i] = T0[w & 255] ^ T1[w >>> 8 & 255] ^ T2[w >>> 16 & 255] ^ T3[w >>> 24];
-		}
-		return xk;
-	}
-	function apply0123(T01, T23, s0, s1, s2, s3) {
-		return T01[s0 << 8 & 65280 | s1 >>> 8 & 255] ^ T23[s2 >>> 8 & 65280 | s3 >>> 24 & 255];
-	}
-	function applySbox(sbox2, s0, s1, s2, s3) {
-		return sbox2[s0 & 255 | s1 & 65280] | sbox2[s2 >>> 16 & 255 | s3 >>> 16 & 65280] << 16;
-	}
-	function encrypt$3(xk, s0, s1, s2, s3) {
-		const { sbox2, T01, T23 } = tableEncoding;
-		let k = 0;
-		s0 ^= xk[k++], s1 ^= xk[k++], s2 ^= xk[k++], s3 ^= xk[k++];
-		const rounds = xk.length / 4 - 2;
-		for (let i = 0; i < rounds; i++) {
-			const t0 = xk[k++] ^ apply0123(T01, T23, s0, s1, s2, s3);
-			const t1 = xk[k++] ^ apply0123(T01, T23, s1, s2, s3, s0);
-			const t2 = xk[k++] ^ apply0123(T01, T23, s2, s3, s0, s1);
-			const t3 = xk[k++] ^ apply0123(T01, T23, s3, s0, s1, s2);
-			s0 = t0, s1 = t1, s2 = t2, s3 = t3;
-		}
-		return {
-			s0: xk[k++] ^ applySbox(sbox2, s0, s1, s2, s3),
-			s1: xk[k++] ^ applySbox(sbox2, s1, s2, s3, s0),
-			s2: xk[k++] ^ applySbox(sbox2, s2, s3, s0, s1),
-			s3: xk[k++] ^ applySbox(sbox2, s3, s0, s1, s2)
-		};
-	}
-	function decrypt$2(xk, s0, s1, s2, s3) {
-		const { sbox2, T01, T23 } = tableDecoding;
-		let k = 0;
-		s0 ^= xk[k++], s1 ^= xk[k++], s2 ^= xk[k++], s3 ^= xk[k++];
-		const rounds = xk.length / 4 - 2;
-		for (let i = 0; i < rounds; i++) {
-			const t0 = xk[k++] ^ apply0123(T01, T23, s0, s3, s2, s1);
-			const t1 = xk[k++] ^ apply0123(T01, T23, s1, s0, s3, s2);
-			const t2 = xk[k++] ^ apply0123(T01, T23, s2, s1, s0, s3);
-			const t3 = xk[k++] ^ apply0123(T01, T23, s3, s2, s1, s0);
-			s0 = t0, s1 = t1, s2 = t2, s3 = t3;
-		}
-		return {
-			s0: xk[k++] ^ applySbox(sbox2, s0, s3, s2, s1),
-			s1: xk[k++] ^ applySbox(sbox2, s1, s0, s3, s2),
-			s2: xk[k++] ^ applySbox(sbox2, s2, s1, s0, s3),
-			s3: xk[k++] ^ applySbox(sbox2, s3, s2, s1, s0)
-		};
-	}
-	function validateBlockDecrypt(data, dst) {
-		abytes$3(data);
-		if (data.length % BLOCK_SIZE !== 0) throw new Error("ciphertext must be multiple of 16");
-		if (dst !== void 0) {
-			getOutput(data.length, dst);
-			complexOverlapBytes(data, dst);
-		}
-	}
-	function validateBlockEncrypt(plaintext, pkcs5, dst) {
-		abytes$3(plaintext);
-		let outLen = plaintext.length;
-		const remaining = outLen % BLOCK_SIZE;
-		if (!pkcs5 && remaining !== 0) throw new Error("plaintext must be multiple of 16");
-		if (pkcs5) {
-			let left = BLOCK_SIZE - remaining;
-			if (!left) left = BLOCK_SIZE;
-			outLen = outLen + left;
-		}
-		if (dst !== void 0) {
-			getOutput(outLen, dst);
-			complexOverlapBytes(plaintext, dst);
-		}
-		return outLen;
-	}
-	function prepareBlockEncrypt(plaintext, outLen, dst) {
-		if (dst === void 0) dst = new Uint8Array(outLen);
-		if (!isLE$1 || !isAligned32(plaintext)) plaintext = copyBytes$1(plaintext);
-		const o = u32$6(dst);
-		return {
-			b: plaintext,
-			o,
-			out: dst
-		};
-	}
-	function validatePKCS(data, pkcs5) {
-		if (!pkcs5) return data;
-		const len = data.length;
-		if (len === 0) throw new Error("pkcs7: empty ciphertext not allowed");
-		const lastByte = data[len - 1];
-		let valid = 1;
-		valid &= lastByte - 1 >>> 31 ^ 1;
-		valid &= 16 - lastByte >>> 31 ^ 1;
-		for (let i = 0; i < 16; i++) {
-			const shouldCheck = i - lastByte >>> 31;
-			const eq = (data[len - 1 - i] ^ lastByte) === 0 ? 1 : 0;
-			valid &= eq | shouldCheck ^ 1;
-		}
-		if (!valid) throw new Error("aes: bad decrypt");
-		return data.subarray(0, len - lastByte);
-	}
-	function padPCKS(left) {
-		const tmp = /* @__PURE__ */ new Uint8Array(16);
-		const tmp32 = u32$6(tmp);
-		tmp.set(left);
-		const paddingByte = BLOCK_SIZE - left.length;
-		for (let i = BLOCK_SIZE - paddingByte; i < BLOCK_SIZE; i++) tmp[i] = paddingByte;
-		return tmp32;
-	}
-	/**
-	* **CBC** (Cipher Block Chaining): Each plaintext block is XORed with the
-	* previous block of ciphertext before encryption.
-	* Hard to use: requires proper padding and an unpredictable IV. Unauthenticated: needs MAC.
-	* Bad padding is reported as decrypt failure, which can be a padding oracle if exposed.
-	* @param key - AES key bytes.
-	* @param iv - 16-byte unpredictable initialization vector.
-	* @param opts - Padding options. See {@link BlockOpts}.
-	* @returns Cipher instance with `encrypt()` and `decrypt()`.
-	* @example
-	* Encrypts a padded message with a fresh key and 16-byte IV.
-	*
-	* ```ts
-	* import { cbc } from '@noble/ciphers/aes.js';
-	* import { randomBytes } from '@noble/ciphers/utils.js';
-	* const key = randomBytes(16);
-	* const iv = randomBytes(16);
-	* const cipher = cbc(key, iv);
-	* cipher.encrypt(new Uint8Array([1, 2, 3]));
-	* ```
-	*/
-	var cbc = /* @__PURE__ */ wrapCipher({
-		blockSize: 16,
-		nonceLength: 16
-	}, function aescbc(key, iv, opts = {}) {
-		const pkcs5 = !opts.disablePadding;
-		return {
-			encrypt(plaintext, dst) {
-				const outLen = validateBlockEncrypt(plaintext, pkcs5, dst);
-				const xk = expandKeyLE(key);
-				const { b: input, o, out: _out } = prepareBlockEncrypt(plaintext, outLen, dst);
-				const b = u32$6(input);
-				swap32IfBE$1(b);
-				let _iv = iv;
-				const toClean = [xk];
-				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
-				const n32 = u32$6(_iv);
-				swap32IfBE$1(n32);
-				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
-				let i = 0;
-				for (; i + 4 <= b.length;) {
-					s0 ^= b[i + 0], s1 ^= b[i + 1], s2 ^= b[i + 2], s3 ^= b[i + 3];
-					({s0, s1, s2, s3} = encrypt$3(xk, s0, s1, s2, s3));
-					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
-				}
-				if (pkcs5) {
-					const tmp32 = padPCKS(plaintext.subarray(i * 4));
-					swap32IfBE$1(tmp32);
-					s0 ^= tmp32[0], s1 ^= tmp32[1], s2 ^= tmp32[2], s3 ^= tmp32[3];
-					({s0, s1, s2, s3} = encrypt$3(xk, s0, s1, s2, s3));
-					o[i++] = s0, o[i++] = s1, o[i++] = s2, o[i++] = s3;
-					clean$1(tmp32);
-				}
-				swap32IfBE$1(o);
-				clean$1(...toClean);
-				if (input !== plaintext) clean$1(input);
-				return _out;
-			},
-			decrypt(ciphertext, dst) {
-				validateBlockDecrypt(ciphertext, dst);
-				const xk = expandKeyDecLE(key);
-				if (dst === void 0) dst = new Uint8Array(ciphertext.length);
-				let _iv = iv;
-				const toClean = [xk];
-				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
-				const n32 = u32$6(_iv);
-				swap32IfBE$1(n32);
-				if (!isLE$1 || !isAligned32(ciphertext)) toClean.push(ciphertext = copyBytes$1(ciphertext));
-				const b = u32$6(ciphertext);
-				const o = u32$6(dst);
-				swap32IfBE$1(b);
-				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
-				for (let i = 0; i + 4 <= b.length;) {
-					const ps0 = s0, ps1 = s1, ps2 = s2, ps3 = s3;
-					s0 = b[i + 0], s1 = b[i + 1], s2 = b[i + 2], s3 = b[i + 3];
-					const { s0: o0, s1: o1, s2: o2, s3: o3 } = decrypt$2(xk, s0, s1, s2, s3);
-					o[i++] = o0 ^ ps0, o[i++] = o1 ^ ps1, o[i++] = o2 ^ ps2, o[i++] = o3 ^ ps3;
-				}
-				swap32IfBE$1(o);
-				clean$1(...toClean);
-				return validatePKCS(dst, pkcs5);
-			}
-		};
-	});
 	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip04.mjs
 	init_utils$2();
 	init_base();
@@ -41724,10 +46541,6 @@ zoo`.split("\n"));
 	}
 	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip46.mjs
 	init_defineProperty();
-	// \0@oxc-project+runtime@0.155.0/helpers/esm/classPrivateMethodInitSpec.js
-	function _classPrivateMethodInitSpec(e, a) {
-		_checkPrivateRedeclaration(e, a), a.add(e);
-	}
 	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/signer-Y3gcghwd.mjs
 	init_utils$2();
 	init_objectSpread2();
@@ -41965,9 +46778,9 @@ zoo`.split("\n"));
 			c: 1,
 			dkLen: blockSize * p
 		});
-		const B32 = u32$5(B);
-		const V = u32$5(new Uint8Array(blockSize * N));
-		const tmp = u32$5(new Uint8Array(blockSize));
+		const B32 = u32$6(B);
+		const V = u32$6(new Uint8Array(blockSize * N));
+		const tmp = u32$6(new Uint8Array(blockSize));
 		let blockMixCb = () => {};
 		if (onProgress) {
 			const totalBlockMix = 2 * N * p;
@@ -42140,7 +46953,7 @@ zoo`.split("\n"));
 				this.signers.set(publicKey, signer);
 				return publicKey;
 			} finally {
-				wipe(secretKey);
+				wipe$1(secretKey);
 			}
 		}
 		get(publicKey) {
@@ -42286,7 +47099,7 @@ zoo`.split("\n"));
 	}
 	async function deriveKey(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		const record = findRecord(ctx.image, "entropy", params.walletId);
+		const record = findSeedWallet(ctx.image, params.walletId);
 		return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
 			const master = masterKey(seed);
 			try {
@@ -42306,7 +47119,7 @@ zoo`.split("\n"));
 					}]);
 					return nostrKeyInfo(header);
 				} finally {
-					wipe(secretKey);
+					wipe$1(secretKey);
 				}
 			} finally {
 				master.wipePrivateData();
@@ -42315,7 +47128,7 @@ zoo`.split("\n"));
 	}
 	async function discover(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		const record = findRecord(ctx.image, "entropy", params.walletId);
+		const record = findSeedWallet(ctx.image, params.walletId);
 		if (params.from + params.count - 1 > 2147483646) throw new KernelError("invalid-input", "identity range exceeds 0x7ffffffe");
 		const keys = [];
 		return withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
@@ -42328,7 +47141,7 @@ zoo`.split("\n"));
 						index,
 						publicKey: getPublicKey(secretKey)
 					});
-					wipe(secretKey);
+					wipe$1(secretKey);
 				}
 				return { keys };
 			} finally {
@@ -42353,7 +47166,7 @@ zoo`.split("\n"));
 		try {
 			return params.format.kind === "nsec" ? nsecFromSecretKey(secretKey) : await ncryptsecFromSecretKey(secretKey, params.format.password);
 		} finally {
-			wipe(secretKey);
+			wipe$1(secretKey);
 		}
 	}
 	// packages/wallet-kernel/src/modules/nostr/ops.ts
@@ -42393,7 +47206,7 @@ zoo`.split("\n"));
 	var SYNC_INDEX = 2147483647;
 	/** The vault's one sync-key record for `walletId`, or `not-found`. */
 	function syncRecord(ctx, walletId) {
-		findRecord(ctx.image, "entropy", walletId);
+		findSeedWallet(ctx.image, walletId);
 		for (const record of ctx.image.records) if (record.kind === "nostr-sync-key") {
 			if (parseSyncKeyHeader(record.header).walletId === walletId) return record;
 		}
@@ -42410,7 +47223,7 @@ zoo`.split("\n"));
 		} catch (error) {
 			if (!(error instanceof KernelError && error.code === "not-found")) throw error;
 		}
-		const wallet = findRecord(ctx.image, "entropy", params.walletId);
+		const wallet = findSeedWallet(ctx.image, params.walletId);
 		return withWalletSeed(ctx.platform.pbkdf2, dek, wallet, async (seed) => {
 			const master = masterKey(seed);
 			try {
@@ -42434,7 +47247,7 @@ zoo`.split("\n"));
 					}
 					return { publicKey };
 				} finally {
-					wipe(secretKey);
+					wipe$1(secretKey);
 				}
 			} finally {
 				master.wipePrivateData();
@@ -42706,7 +47519,7 @@ zoo`.split("\n"));
 		for (let attempt = 0; attempt < MAX_KEY_DRAWS; attempt++) {
 			const draw = platform.random(32);
 			if (secp256k1.utils.isValidSecretKey(draw)) return draw;
-			wipe(draw);
+			wipe$1(draw);
 		}
 		throw new KernelError("integrity", "could not draw a valid session key");
 	};
@@ -42740,7 +47553,7 @@ zoo`.split("\n"));
 		}
 		const records = ctx.image.records.filter((record) => record.kind === SESSION_KIND);
 		if (records.length >= MAX_SESSIONS || records.filter((record) => parseSessionHeader(record.header).scheme === scheme.id).length >= scheme.maxPerVault) throw new KernelError("conflict", "session limit reached");
-		const entropy = findRecord(ctx.image, "entropy", params.owner.walletId);
+		const entropy = findSeedWallet(ctx.image, params.owner.walletId);
 		const owner = await withWalletSeed(ctx.platform.pbkdf2, dek, entropy, (seed) => {
 			const master = HDKey$1.fromMasterSeed(seed);
 			try {
@@ -42775,7 +47588,7 @@ zoo`.split("\n"));
 			}]);
 			return { address };
 		} finally {
-			wipe(priv);
+			wipe$1(priv);
 		}
 	};
 	var listSessions = (ctx, _params, session) => {
@@ -42808,7 +47621,7 @@ zoo`.split("\n"));
 			if (priv.length !== 32 || !secp256k1.utils.isValidSecretKey(priv) || evmAddressFromPublicKey(secp256k1.getPublicKey(priv, true)).toLowerCase() !== record.id) throw new KernelError("integrity", "session key does not match its record", void 0, true);
 			return { signature: signEvmTypedData(typedData, priv) };
 		} finally {
-			wipe(priv);
+			wipe$1(priv);
 		}
 	};
 	// packages/wallet-kernel/src/modules/sessions/index.ts
@@ -42825,7 +47638,7 @@ zoo`.split("\n"));
 							continue;
 						}
 						const matches = record.plaintext.length === 32 && secp256k1.utils.isValidSecretKey(record.plaintext) && evmAddressFromPublicKey(secp256k1.getPublicKey(record.plaintext, true)).toLowerCase() === record.id;
-						wipe(record.plaintext);
+						wipe$1(record.plaintext);
 						if (!matches) throw new KernelError("integrity", "session key does not match its record", void 0, true);
 					}
 					return unclaimed;
@@ -52464,10 +57277,15 @@ zoo`.split("\n"));
 	*/
 	var signerFor = async (state, ctx, account, requestSession) => {
 		const { dek } = ctx.session.require(requestSession);
-		const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
-		if (record === void 0) {
-			disposeWallet(state, account.walletId);
-			throw new KernelError("not-found", "no such wallet");
+		let record;
+		try {
+			record = findSeedWallet(ctx.image, account.walletId);
+		} catch (error) {
+			if (error instanceof KernelError && error.code === "not-found") {
+				disposeWallet(state, account.walletId);
+				throw new KernelError("not-found", "no such wallet");
+			}
+			throw error;
 		}
 		const existing = state.signers.get(poolKey(account));
 		if (existing !== void 0) return existing;
@@ -52492,7 +57310,7 @@ zoo`.split("\n"));
 		} catch (error) {
 			throw mapError(state, error);
 		} finally {
-			wipe(accountKey);
+			wipe$1(accountKey);
 		}
 	};
 	/**
@@ -52584,7 +57402,12 @@ zoo`.split("\n"));
 	};
 	var sparkApprove = async (state, ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
-		if (ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === params.account.walletId) === void 0) throw new KernelError("not-found", "no such wallet");
+		try {
+			findSeedWallet(ctx.image, params.account.walletId);
+		} catch (error) {
+			if (error instanceof KernelError && error.code === "not-found") throw new KernelError("not-found", "no such wallet");
+			throw error;
+		}
 		const key = poolKey(params.account);
 		if (liveApprovals(state, ctx, key).length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
 		const { summary, decoded } = decodeIntent(await sparkRuntime(state), params.account, params.intent);
@@ -52691,12 +57514,13 @@ zoo`.split("\n"));
 			}
 		}
 		for (const record of image.records) try {
-			if (record.kind === "entropy") wallets.push(walletInfo(parseEntropyHeader(record.header)));
+			if (record.kind === "entropy") wallets.push(walletInfo$1(parseEntropyHeader(record.header)));
 			else if (record.kind === "data-key") parseDataKeyHeader(record.header);
 			else if (record.kind === "key") {
 				const header = parseKeyHeader(record.header);
 				importedKeys.push(_objectSpread2({ keyId: record.id }, header));
-			} else if (record.kind === "backup-key") {
+			} else if (record.kind === "card-wallet") wallets.push(cardWalletInfo(parseCardWalletHeader(record.header)));
+			else if (record.kind === "backup-key") {
 				if (record.id === "default") {
 					const header = parseBackupKeyHeader(record.header);
 					backup = {
@@ -52777,10 +57601,10 @@ zoo`.split("\n"));
 		const plaintext = openRecord(dek, record);
 		if (record.kind === "entropy") try {
 			const { entropy, passphrase } = splitWalletSecret(parseEntropyHeader(record.header), plaintext);
-			wipe(entropy);
-			if (passphrase !== void 0) wipe(passphrase);
+			wipe$1(entropy);
+			if (passphrase !== void 0) wipe$1(passphrase);
 		} catch (error) {
-			wipe(plaintext);
+			wipe$1(plaintext);
 			throw error;
 		}
 		return plaintext;
@@ -52813,10 +57637,11 @@ zoo`.split("\n"));
 			});
 		});
 		const nostr = createNostrModule(platform.backends.nostr);
+		const card = createCardModule(platform);
 		const spark = createSparkModule();
-		const chains = createChainsModule();
+		const chains = createChainsModule(card.material);
 		const sessions = createSessionsModule();
-		const HANDLERS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: (ctx) => statusPayload(ctx, nostr) }, CORE_HANDLERS), chains.handlers), nostr.handlers), spark.handlers), sessions.handlers);
+		const HANDLERS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: (ctx) => statusPayload(ctx, nostr) }, CORE_HANDLERS), card.handlers), chains.handlers), nostr.handlers), spark.handlers), sessions.handlers);
 		let dirty = false;
 		let inRequest = false;
 		let pendingLock;
@@ -52869,14 +57694,14 @@ zoo`.split("\n"));
 				let unclaimed = opened;
 				for (const module of ctx.modules) unclaimed = module.claimUnlocked(unclaimed);
 				handedOff = true;
-				for (const record of unclaimed) wipe(record.plaintext);
+				for (const record of unclaimed) wipe$1(record.plaintext);
 				const priorFactors = new Map(prev.factors.map((factor) => [factor.id, factor]));
 				for (const factor of next.factors) {
 					const prior = priorFactors.get(factor.id);
 					if ((prior === void 0 || prior.header !== factor.header || !equalBytes$6(prior.sealed, factor.sealed)) && !factorBindingOk(dek, factor)) throw new KernelError("integrity", "factor binding does not match the vault", void 0, true);
 				}
 			} catch (_unused) {
-				if (!handedOff) for (const record of opened) wipe(record.plaintext);
+				if (!handedOff) for (const record of opened) wipe$1(record.plaintext);
 				integrityFailure = true;
 				setHealth("corrupted");
 			}
@@ -52945,8 +57770,10 @@ zoo`.split("\n"));
 				nostr.vault,
 				spark.vault,
 				chains.vault,
-				sessions.vault
+				sessions.vault,
+				card.vault
 			],
+			cardMaterial: card.material,
 			image: EMPTY_IMAGE,
 			health: "ok",
 			commit: async (ops, options) => {
@@ -53074,6 +57901,7 @@ zoo`.split("\n"));
 			enqueue(reloadAndPost);
 		});
 		port.listen((message) => {
+			if (typeof message === "object" && message !== null && "method" in message && message.method === "card.cancel" && "params" in message && typeof message.params === "object" && message.params !== null && "opId" in message.params && typeof message.params.opId === "string") card.interrupt(message.params.opId);
 			enqueue(async () => handle(message));
 		});
 		enqueue(reloadAndPost);
@@ -53087,6 +57915,87 @@ zoo`.split("\n"));
 	*/
 	function detailOf(detail) {
 		return detail !== void 0 && detail.length <= 80 && /^[A-Za-z0-9_.:-]+$/.test(detail) ? detail : void 0;
+	}
+	// packages/wallet-native/kernel/card.ts
+	var RESPONSE_MIN = 2;
+	var RESPONSE_MAX = 258;
+	var isReaderFailure = (code) => code === "cancelled" || code === "timeout" || code === "tag-lost" || code === "interrupted" || code === "unavailable";
+	function readerOutcome(code, detail) {
+		return {
+			ok: false,
+			failure: isReaderFailure(code) ? code : "unavailable",
+			detail: detailOf(detail)
+		};
+	}
+	function bindNativeCardReader(raw) {
+		return {
+			open: async (prompt) => new Promise((resolve) => {
+				raw.open(prompt, (code, detail) => {
+					resolve(code === void 0 ? {
+						ok: true,
+						value: void 0
+					} : readerOutcome(code, detail));
+				});
+			}),
+			transmit: async (apdu) => new Promise((resolve) => {
+				raw.transmit(apdu, (response, code, detail) => {
+					if (response !== void 0) {
+						resolve(response instanceof Uint8Array && response.length >= RESPONSE_MIN && response.length <= RESPONSE_MAX ? {
+							ok: true,
+							value: response
+						} : {
+							ok: false,
+							failure: "unavailable",
+							detail: void 0
+						});
+						return;
+					}
+					resolve(readerOutcome(code, detail));
+				});
+			}),
+			close: (outcome, text) => {
+				raw.close(outcome, text);
+			}
+		};
+	}
+	/**
+	* The hub's contract for `kind`, rechecked here: an access code is 1..64 printable-ASCII bytes, a
+	* short id is exactly 8 upper-case hex characters. A platform that hands over out-of-shape bytes
+	* gets them wiped, not forwarded.
+	*/
+	function validFor(kind, value) {
+		if (kind === "access-code") return value.length > 0 && value.length <= 64 && value.every((byte) => byte >= 32 && byte <= 126);
+		return value.length === 8 && value.every((byte) => byte >= 48 && byte <= 57 || byte >= 65 && byte <= 70);
+	}
+	function bindNativeSecureInput(raw) {
+		return {
+			request: async (kind, label) => new Promise((resolve) => {
+				raw.request(kind, label, (value, code) => {
+					if (value instanceof Uint8Array) {
+						if (validFor(kind, value)) {
+							resolve({
+								ok: true,
+								value
+							});
+							return;
+						}
+						value.fill(0);
+						resolve({
+							ok: false,
+							failure: "unavailable"
+						});
+						return;
+					}
+					resolve({
+						ok: false,
+						failure: code === "cancelled" ? "cancelled" : "unavailable"
+					});
+				});
+			}),
+			cancel: () => {
+				raw.cancel();
+			}
+		};
 	}
 	// packages/wallet-native/kernel/keystore.ts
 	/**
@@ -56103,6 +61012,11 @@ zoo`.split("\n"));
 		store: createFileStore(__qntx.file),
 		keystore: bindNativeKeystore(__qntx.keystore),
 		passkey: bindNativePasskey(__qntx.passkey, (length) => __qntx.random(length)),
+		card: {
+			reader: bindNativeCardReader(__qntx.cardReader),
+			secureInput: bindNativeSecureInput(__qntx.secureInput),
+			anchors: PRODUCTION_ANCHORS
+		},
 		policy: {
 			maxSessionMs: 864e5,
 			maxScryptLogN: 18

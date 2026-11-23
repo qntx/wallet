@@ -82,7 +82,7 @@ const UNITS: ReadonlyArray<Unit> = [
   {
     name: "card module",
     match: /^packages\/wallet-kernel\/src\/modules\/card\/(?!protocol\/)/,
-    // measured 132647 B; budget from measurement with ≥ 5 % headroom (2026-11-23)
+    // measured 132741 B; budget from measurement with ≥ 5 % headroom (2026-11-23)
     budget: 139_776,
     note: "card operation engine — record, taps, ops, text (the protocol client has its own line)",
   },
