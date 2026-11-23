@@ -518,9 +518,10 @@ describe("a custom endpoint is never its own corroborator", () => {
     expect(networks.independentPinnedTronApi(NILE, undefined)).toStrictEqual({
       kind: "not-needed",
     });
-    expect(
-      networks.independentPinnedTronApi(NILE, `${GATEWAY}/v1/tron/${NILE}`),
-    ).toMatchObject({ kind: "available", source: "host" });
+    expect(networks.independentPinnedTronApi(NILE, `${GATEWAY}/v1/tron/${NILE}`)).toMatchObject({
+      kind: "available",
+      source: "host",
+    });
     await networks.addRpc(NILE, TRON_CUSTOM);
     expect(networks.independentPinnedTronApi(NILE, TRON_CUSTOM)).toMatchObject({
       kind: "available",

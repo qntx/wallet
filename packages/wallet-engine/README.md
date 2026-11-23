@@ -629,7 +629,7 @@ attempt's result rides the outcome as `cancel` — and registers the id for the 
 later-landing first order plus the retry is a duplicate position. A `canceled` outcome or
 correction carries `making`, the row's `size_matched`: `making` > "0" is a partial fill taken
 before the cancel landed, so only the unfilled remainder is free to re-place — and
-`unknown.cancel.kind === "canceled"` only says the defensive DELETE removed the *remaining* size,
+`unknown.cancel.kind === "canceled"` only says the defensive DELETE removed the _remaining_ size,
 never that nothing filled. Cancels
 (`cancel`, `cancelMany` ≤ 500, `cancelAll`, `cancelMarket`) are never eligibility-gated.
 

@@ -479,13 +479,6 @@ describe("a reorged answer must be proven the same way", () => {
 });
 
 describe("the corroborator is never the pinned upstream", () => {
-  const hostApi = (n: Node) => ({
-    post: async (path: string, body: unknown) => {
-      await Promise.resolve();
-      return answer(n, path, body as Record<string, unknown>);
-    },
-  });
-
   it("names the answering endpoint in pinnedUrl once it commits", async () => {
     const w = world();
     const api = pinnedTronCaller([GATEWAY], w.fetchFn);
@@ -516,9 +509,7 @@ describe("the corroborator is never the pinned upstream", () => {
          so the host-only continuity rule decides instead of a second look at itself. */
       independentPinnedTronApi: (_net: string, primaryUrl: string | undefined) => {
         pins.push(primaryUrl);
-        return primaryUrl === HOST
-          ? NOT_NEEDED
-          : { kind: "available", source: "host", client: hostApi(node({ solidTime: EXPIRATION + 1 })) };
+        return NOT_NEEDED;
       },
     });
     const evidence = ev();
@@ -549,9 +540,7 @@ describe("the corroborator is never the pinned upstream", () => {
       pinnedTronApi: api,
       independentPinnedTronApi: (_net: string, primaryUrl: string | undefined) => {
         pins.push(primaryUrl);
-        return primaryUrl === HOST
-          ? NOT_NEEDED
-          : { kind: "available", source: "host", client: hostApi(node({ fullHead: 95 })) };
+        return NOT_NEEDED;
       },
     });
     const evidence = ev();

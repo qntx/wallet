@@ -526,9 +526,9 @@ export class NetworkController extends Controller<NetworkControllerState> {
 
   /**
    * Fresh pinned second-upstream Solana client — for proofs whose reads must all come from one
-   * upstream. Only a different upstream than `primaryUrl` corroborates: when the poll's pin
-   * already landed on a host endpoint, the host-only continuity rule applies instead of a second
-   * read of the same upstream.
+   * upstream. Only a different upstream than `primaryUrl` corroborates: when the poll's pin already
+   * landed on a host endpoint, the host-only continuity rule applies instead of a second read of
+   * the same upstream.
    */
   independentPinnedSolanaRpc(
     network: string,
@@ -547,14 +547,11 @@ export class NetworkController extends Controller<NetworkControllerState> {
 
   /**
    * Fresh pinned second-upstream TRON client — for proofs whose reads must all come from one
-   * upstream. Only a different upstream than `primaryUrl` corroborates: when the poll's pin
-   * already landed on a host endpoint, the host-only continuity rule applies instead of a second
-   * read of the same upstream.
+   * upstream. Only a different upstream than `primaryUrl` corroborates: when the poll's pin already
+   * landed on a host endpoint, the host-only continuity rule applies instead of a second read of
+   * the same upstream.
    */
-  independentPinnedTronApi(
-    network: string,
-    primaryUrl: string | undefined,
-  ): Independent<TronApi> {
+  independentPinnedTronApi(network: string, primaryUrl: string | undefined): Independent<TronApi> {
     if (primaryUrl === undefined || (this.options.rpc[network] ?? []).includes(primaryUrl)) {
       return { kind: "not-needed" };
     }

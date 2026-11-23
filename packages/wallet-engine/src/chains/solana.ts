@@ -799,9 +799,9 @@ export class SolanaChainAdapter {
    * `getFirstAvailableBlock` then `getBlockTime` → the unix seconds of the oldest block the node
    * still serves — how far back `getSignatureStatuses(searchTransactionHistory)` and
    * `getSignaturesForAddress` can reach (Agave rpc/src/rpc.rs: the status read searches the
-   * blockstore then BigTable, and getFirstAvailableBlock is the lower of the two;
-   * minimumLedgerSlot covers the blockstore only, so it cannot express BigTable depth). A
-   * malformed first block or a null/malformed block time is `undefined` — coverage unknown.
+   * blockstore then BigTable, and getFirstAvailableBlock is the lower of the two; minimumLedgerSlot
+   * covers the blockstore only, so it cannot express BigTable depth). A malformed first block or a
+   * null/malformed block time is `undefined` — coverage unknown.
    */
   async historyStart(rpc: SolanaRpc): Promise<number | undefined> {
     const first = await this.rpc(rpc, "getFirstAvailableBlock", []);
