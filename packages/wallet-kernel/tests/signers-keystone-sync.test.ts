@@ -11,6 +11,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { CborMap, Tag, cbor, encodeCbor, taggedValue } from "@blockchaincommons/dcbor";
+import type { CborInput } from "@blockchaincommons/dcbor";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { HDKey } from "@scure/bip32";
@@ -18,15 +20,14 @@ import { mnemonicToSeedSync } from "@scure/bip39";
 import { publicKeyToAddress } from "viem/accounts";
 import { describe, expect, it } from "vite-plus/test";
 
+import { cryptoMultiAccountsCodec } from "@qntx/ur/interop";
 import type { DeviceRequest, DeviceResponse, ProtocolValue } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
 import type { DeviceLink } from "../src/modules/signers/driver.ts";
-import type { Cbor } from "../src/modules/signers/keystone/cbor.ts";
-import { decodeCbor, encodeCbor } from "../src/modules/signers/keystone/cbor.ts";
 import { KEYSTONE_DRIVER } from "../src/modules/signers/keystone/driver.ts";
-import { multiAccounts } from "../src/modules/signers/keystone/registry.ts";
 import { parseSync } from "../src/modules/signers/keystone/sync.ts";
+import { decodeUr, fingerprintBytes } from "../src/modules/signers/keystone/ur.ts";
 import { hardwareWalletId } from "../src/modules/signers/record.ts";
 import type { KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
@@ -81,6 +82,9 @@ const qrResponse = (cbor: Uint8Array, type = "crypto-multi-accounts"): DeviceRes
 const parse = (cbor: Uint8Array, type?: string): ReturnType<typeof parseSync> =>
   parseSync(qrResponse(cbor, type));
 
+const multiAccounts = (bytes: Uint8Array) =>
+  decodeUr("crypto-multi-accounts", bytes, cryptoMultiAccountsCodec);
+
 const code = (run: () => unknown): string => {
   try {
     run();
@@ -102,56 +106,31 @@ const pathNumbers = (path: string): number[] =>
       segment.endsWith("'") ? Number(segment.slice(0, -1)) + HARDENED : Number(segment),
     );
 
-const origin = (path: string): Cbor => ({
-  kind: "tag",
-  tag: 304,
-  item: {
-    kind: "map",
-    entries: [
-      [
-        { kind: "uint", value: 1 },
-        {
-          kind: "array",
-          items: pathNumbers(path).flatMap((index): Cbor[] => [
-            { kind: "uint", value: index % HARDENED },
-            { kind: "bool", value: index >= HARDENED },
-          ]),
-        },
-      ],
-      [
-        { kind: "uint", value: 2 },
-        { kind: "uint", value: new DataView(MFP.buffer).getUint32(0) },
-      ],
-    ],
-  },
-});
+const origin = (path: string): ReturnType<typeof cbor> => {
+  const map = new CborMap();
+  map.set(
+    1,
+    pathNumbers(path).flatMap((index) => [index % HARDENED, index >= HARDENED]),
+  );
+  map.set(2, new DataView(MFP.buffer).getUint32(0));
+  return taggedValue(Tag.from(304), cbor(map));
+};
 
-const hdkey = (path: string, fields: ReadonlyArray<readonly [number, Cbor]>): Cbor => ({
-  kind: "tag",
-  tag: 303,
-  item: {
-    kind: "map",
-    entries: [
-      [{ kind: "uint", value: 6 }, origin(path)],
-      ...fields.map(([n, value]) => [{ kind: "uint", value: n }, value] as readonly [Cbor, Cbor]),
-    ],
-  },
-});
+const hdkey = (path: string, fields: ReadonlyArray<readonly [number, CborInput]>) => {
+  const map = new CborMap();
+  map.set(6, origin(path));
+  for (const [n, value] of fields) {
+    map.set(n, value);
+  }
+  return taggedValue(Tag.from(303), cbor(map));
+};
 
-const syncWith = (keys: ReadonlyArray<Cbor>): Uint8Array =>
-  encodeCbor({
-    kind: "map",
-    entries: [
-      [
-        { kind: "uint", value: 1 },
-        { kind: "uint", value: new DataView(MFP.buffer).getUint32(0) },
-      ],
-      [
-        { kind: "uint", value: 2 },
-        { kind: "array", items: [...keys] },
-      ],
-    ],
-  });
+const syncWith = (keys: ReadonlyArray<ReturnType<typeof cbor>>): Uint8Array => {
+  const map = new CborMap();
+  map.set(1, new DataView(MFP.buffer).getUint32(0));
+  map.set(2, [...keys]);
+  return encodeCbor(cbor(map));
+};
 
 const derivedNode = (path: string): { key: Uint8Array; chainCode: Uint8Array } => {
   const node = HDKey.fromMasterSeed(SEED).derive(path);
@@ -187,10 +166,12 @@ const strField = (value: ProtocolValue, key: string): string => {
 
 describe("the generated sync vector", () => {
   it("parses as crypto-multi-accounts with the device metadata", () => {
-    const accounts = multiAccounts(decodeCbor(SYNC));
-    expect(bytesToHex(accounts.masterFingerprint)).toBe(vectors.sync.masterFingerprint);
+    const accounts = multiAccounts(SYNC);
+    expect(bytesToHex(fingerprintBytes(accounts.masterFingerprint))).toBe(
+      vectors.sync.masterFingerprint,
+    );
     expect(accounts.device).toBe(vectors.sync.device);
-    expect(accounts.deviceVersion).toBe(vectors.sync.deviceVersion);
+    expect(accounts.version).toBe(vectors.sync.deviceVersion);
     expect(accounts.deviceId).toBe(vectors.sync.deviceId);
     expect(accounts.keys).toHaveLength(17);
   });
@@ -223,17 +204,19 @@ describe("the firmware's own test URs", () => {
     if (vector === undefined) {
       throw new Error("missing firmware vector");
     }
-    const accounts = multiAccounts(decodeCbor(hexToBytes(vector.cbor)));
+    const accounts = multiAccounts(hexToBytes(vector.cbor));
     const [first] = accounts.keys;
-    if (first === undefined || first.origin === undefined) {
+    if (first === undefined || first.key.origin === undefined) {
       throw new Error("first key has no origin");
     }
-    const path = first.origin.components
-      .map((component) => `${component.index ?? ""}${component.hardened ? "'" : ""}`)
+    const path = first.key.origin.components
+      .map((component) =>
+        component.kind === "index" ? `${component.index}${component.hardened ? "'" : ""}` : "",
+      )
       .join("/");
     expect(`m/${path}`).toBe(vector.firstKey.path);
-    expect(first.key === undefined ? "" : bytesToHex(first.key)).toBe(vector.firstKey.publicKey);
-    expect(first.chainCode === undefined ? "" : bytesToHex(first.chainCode)).toBe(
+    expect(bytesToHex(first.key.keyData)).toBe(vector.firstKey.publicKey);
+    expect(first.key.chainCode === undefined ? "" : bytesToHex(first.key.chainCode)).toBe(
       vector.firstKey.chainCode,
     );
     // One secp256k1 node and one ed25519 leaf pin; the rest parses and is ignored.
@@ -247,17 +230,19 @@ describe("the firmware's own test URs", () => {
     if (vector === undefined) {
       throw new Error("missing firmware vector");
     }
-    const accounts = multiAccounts(decodeCbor(hexToBytes(vector.cbor)));
+    const accounts = multiAccounts(hexToBytes(vector.cbor));
     expect(accounts.keys).toHaveLength(6);
     const [first] = accounts.keys;
-    if (first === undefined || first.origin === undefined) {
+    if (first === undefined || first.key.origin === undefined) {
       throw new Error("first key has no origin");
     }
-    const path = first.origin.components
-      .map((component) => `${component.index ?? ""}${component.hardened ? "'" : ""}`)
+    const path = first.key.origin.components
+      .map((component) =>
+        component.kind === "index" ? `${component.index}${component.hardened ? "'" : ""}` : "",
+      )
       .join("/");
     expect(`m/${path}`).toBe(vector.firstKey.path);
-    expect(first.origin.depth).toBe(vector.firstKey.depth);
+    expect(first.key.origin.depth).toBe(vector.firstKey.depth);
     const result = parse(hexToBytes(vector.cbor));
     expect(result.nodes).toHaveLength(0);
     expect(result.ed25519.map((e) => e.path)).toStrictEqual([pathNumbers("m/44'/501'/0'/0'")]);
@@ -265,10 +250,10 @@ describe("the firmware's own test URs", () => {
 
   it("parses the crate's encode-test shape but refuses to pin it", () => {
     const encode = vectors.registryEncode;
-    const accounts = multiAccounts(decodeCbor(hexToBytes(encode.cbor)));
-    expect(bytesToHex(accounts.masterFingerprint)).toBe(encode.masterFingerprint);
+    const accounts = multiAccounts(hexToBytes(encode.cbor));
+    expect(bytesToHex(fingerprintBytes(accounts.masterFingerprint))).toBe(encode.masterFingerprint);
     expect(accounts.device).toBe(encode.device);
-    expect(accounts.deviceVersion).toBe(encode.deviceVersion);
+    expect(accounts.version).toBe(encode.deviceVersion);
     expect(accounts.deviceId).toBe(encode.deviceId);
     // A 33-byte secp256k1 key on an ed25519 path is a structural lie — integrity.
     integrity(hexToBytes(encode.cbor));
@@ -332,16 +317,16 @@ describe("malformed sync variants are integrity", () => {
     const first = derivedNode("m/44'/60'/0'");
     const second = derivedNode("m/44'/0'/0'");
     const both = [
-      [3, { kind: "bytes", value: first.key }],
-      [4, { kind: "bytes", value: first.chainCode }],
+      [3, first.key],
+      [4, first.chainCode],
     ] as const;
     // Different material on the same claimed path is still an ambiguity, not a skip.
     integrity(
       syncWith([
         hdkey("m/44'/60'/0'", [...both]),
         hdkey("m/44'/60'/0'", [
-          [3, { kind: "bytes", value: second.key }],
-          [4, { kind: "bytes", value: second.chainCode }],
+          [3, second.key],
+          [4, second.chainCode],
         ]),
       ]),
     );
@@ -350,14 +335,14 @@ describe("malformed sync variants are integrity", () => {
   it("rejects a sync whose only whitelisted keys are private or master", () => {
     const { key, chainCode } = derivedNode("m/44'/0'/0'");
     const asPrivate = hdkey("m/44'/0'/0'", [
-      [2, { kind: "bool", value: true }],
-      [3, { kind: "bytes", value: key }],
-      [4, { kind: "bytes", value: chainCode }],
+      [2, true],
+      [3, key],
+      [4, chainCode],
     ]);
     const asMaster = hdkey("m/44'/0'/0'", [
-      [1, { kind: "bool", value: true }],
-      [3, { kind: "bytes", value: key }],
-      [4, { kind: "bytes", value: chainCode }],
+      [1, true],
+      [3, key],
+      [4, chainCode],
     ]);
     integrity(syncWith([asPrivate]));
     integrity(syncWith([asMaster]));
@@ -367,24 +352,24 @@ describe("malformed sync variants are integrity", () => {
     const { key, chainCode } = derivedNode("m/44'/0'/0'");
     const key32 = key.subarray(0, 32);
     const wrongKeyLength = hdkey("m/44'/0'/0'", [
-      [3, { kind: "bytes", value: key32 }],
-      [4, { kind: "bytes", value: chainCode }],
+      [3, key32],
+      [4, chainCode],
     ]);
     const wrongChainCode = hdkey("m/44'/0'/0'", [
-      [3, { kind: "bytes", value: key }],
-      [4, { kind: "bytes", value: chainCode.subarray(0, 31) }],
+      [3, key],
+      [4, chainCode.subarray(0, 31)],
     ]);
-    const missingChainCode = hdkey("m/44'/0'/0'", [[3, { kind: "bytes", value: key }]]);
+    const missingChainCode = hdkey("m/44'/0'/0'", [[3, key]]);
     const offCurve = new Uint8Array(key);
     offCurve[0] = 0x04; // an uncompressed prefix in a compressed slot is not a point
     const badPoint = hdkey("m/44'/0'/0'", [
-      [3, { kind: "bytes", value: offCurve }],
-      [4, { kind: "bytes", value: chainCode }],
+      [3, offCurve],
+      [4, chainCode],
     ]);
     // A 65-byte uncompressed encoding is a valid point but not the wire form a node pins.
     const uncompressed = hdkey("m/44'/0'/0'", [
-      [3, { kind: "bytes", value: secp256k1.Point.fromBytes(key).toBytes(false) }],
-      [4, { kind: "bytes", value: chainCode }],
+      [3, secp256k1.Point.fromBytes(key).toBytes(false)],
+      [4, chainCode],
     ]);
     integrity(syncWith([wrongKeyLength]));
     integrity(syncWith([wrongChainCode]));
@@ -395,9 +380,7 @@ describe("malformed sync variants are integrity", () => {
     if (ed === undefined) {
       throw new Error("missing ed25519 pin");
     }
-    const wrongEdLength = hdkey(ed.path, [
-      [3, { kind: "bytes", value: hexToBytes(ed.publicKey).subarray(0, 31) }],
-    ]);
+    const wrongEdLength = hdkey(ed.path, [[3, hexToBytes(ed.publicKey).subarray(0, 31)]]);
     integrity(syncWith([wrongEdLength]));
   });
 
@@ -406,8 +389,8 @@ describe("malformed sync variants are integrity", () => {
     integrity(
       syncWith([
         hdkey("m/44'/3'/0'", [
-          [3, { kind: "bytes", value: key }],
-          [4, { kind: "bytes", value: chainCode }],
+          [3, key],
+          [4, chainCode],
         ]),
       ]),
     );
@@ -424,8 +407,8 @@ describe("malformed sync variants are integrity", () => {
     const { key, chainCode } = derivedNode("m/44'/0'/0'");
     const shallow = syncWith([
       hdkey("m/44'/0'/0'", [
-        [3, { kind: "bytes", value: key }],
-        [4, { kind: "bytes", value: chainCode }],
+        [3, key],
+        [4, chainCode],
       ]),
     ]);
     integrity(new Uint8Array([0xd9, 0x04, 0x4f, ...shallow]));
