@@ -46,7 +46,7 @@ import { TEST_MNEMONIC } from "./index.ts";
 const H = 0x80_00_00_00;
 const hex = hexToBytes;
 
-export const DRIVER_SEED = mnemonicToSeedSync(TEST_MNEMONIC);
+export const DRIVER_SEED: Uint8Array = mnemonicToSeedSync(TEST_MNEMONIC);
 
 export const EVM_NETWORK = "eip155:1";
 export const BTC_NETWORK = "bip122:000000000019d6689c085ae165831e93";
@@ -62,9 +62,9 @@ const ACCOUNT = (
   template,
 });
 
-export const EVM_ACCOUNT_PATH = [44 + H, 60 + H, H];
-export const TRON_ACCOUNT_PATH = [44 + H, 195 + H, H];
-export const SOLANA_LEAF_PATH = [44 + H, 501 + H, H, H];
+export const EVM_ACCOUNT_PATH: number[] = [44 + H, 60 + H, H];
+export const TRON_ACCOUNT_PATH: number[] = [44 + H, 195 + H, H];
+export const SOLANA_LEAF_PATH: number[] = [44 + H, 501 + H, H, H];
 
 /** The material pairing pins: the six account nodes and the solana leaf, from the test seed. */
 export const driverPin = (): HardwarePin => ({
