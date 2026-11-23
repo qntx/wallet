@@ -1,15 +1,26 @@
 /**
  * Kernel-owned verification prompt text (WD-065). The keystore shows these strings in the system
  * verification UI; the main runtime can neither choose nor alter them. The language follows the
- * platform's preferred locale, read natively — `zh*` selects Simplified Chinese, anything else
- * English.
+ * platform's preferred locale, read natively — Simplified Chinese for `zh` locales that are not
+ * Traditional-script or Traditional-region, English for everything else.
  */
 import type { KeystorePrompt } from "./platform.ts";
 
 export type PromptLocale = "zh-Hans" | "en";
 
 export function promptLocale(tag: string): PromptLocale {
-  return tag.toLowerCase().startsWith("zh") ? "zh-Hans" : "en";
+  // BCP-47, case-insensitive. There is no Traditional copy, so a Traditional user must not be
+  // shown Simplified text: an explicit script other than Hans, or a Traditional region, is English.
+  const [language, ...subtags] = tag.toLowerCase().split("-");
+  if (language !== "zh") {
+    return "en";
+  }
+  const script = subtags.find((s) => /^[a-z]{4}$/.test(s));
+  if (script !== undefined) {
+    return script === "hans" ? "zh-Hans" : "en";
+  }
+  const region = subtags.find((s) => /^[a-z]{2}$/.test(s) || /^[0-9]{3}$/.test(s));
+  return region === "tw" || region === "hk" || region === "mo" ? "en" : "zh-Hans";
 }
 
 export type CorePromptKind =

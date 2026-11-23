@@ -49,9 +49,18 @@ const ethTransfer: PromptIntent = {
 describe("prompt locale and amounts", () => {
   it.each([
     ["zh", "zh-Hans"],
-    ["zh-TW", "zh-Hans"],
-    ["ZH-hant-HK", "zh-Hans"],
+    ["zh-CN", "zh-Hans"],
+    ["zh-SG", "zh-Hans"],
+    ["zh-Hans-HK", "zh-Hans"],
+    ["zh-TW", "en"],
+    ["zh-HK", "en"],
+    ["zh-MO", "en"],
+    ["zh-Hant", "en"],
+    ["zh-Hant-CN", "en"],
+    ["zh-Latn", "en"],
+    ["ZH-hant-HK", "en"],
     ["en-US", "en"],
+    ["fr", "en"],
     ["ja-JP", "en"],
     ["", "en"],
   ] as const)("%s → %s", (tag, locale) => {
