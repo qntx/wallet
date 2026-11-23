@@ -183,6 +183,15 @@ export type UnlockFactor =
 export type VerifyFactor = Exclude<UnlockFactor, { readonly kind: "device" }>;
 
 /**
+ * A cloud-backup factor. On React Native the kernel collects the backup password through its own
+ * secure input — pass `{ kind: "password" }` there and the user types it into the trusted field; a
+ * `password` string is `unsupported`. On the web the password is required.
+ */
+export type BackupFactorInput =
+  | { readonly kind: "passkey" }
+  | { readonly kind: "password"; readonly password?: string };
+
+/**
  * A factor being created; `name` is the passkey credential's display name — the host validates it
  * before the ceremony (1–64 characters). React Native hosts choose their own vault factors, so an
  * initial factor exists only on hosts without a platform keystore.
@@ -343,13 +352,14 @@ export type DataKeyApi = {
  * Cloud-backup entry points. `enable` re-verifies and retains a fresh BEK in the vault; `update`
  * rewrites the sealed envelope JSON with the retained BEK (no factor ceremony, so an auto-sync can
  * run silently); `disable` re-verifies and drops the retained BEK; `restore` merges an envelope
- * into the vault. Factor inputs reuse `UnlockFactor` — passkey assertions evaluate the PRF over
- * `backupSalt`.
+ * into the vault. Factor inputs are `BackupFactorInput` — passkey assertions evaluate the PRF over
+ * `backupSalt`; on React Native a password factor carries no string, the kernel collects it through
+ * its secure input.
  */
 export type BackupApi = {
   readonly enable: (options: {
     readonly verify: VerifyFactor;
-    readonly factors: ReadonlyArray<UnlockFactor>;
+    readonly factors: ReadonlyArray<BackupFactorInput>;
   }) => Promise<void>;
   readonly update: () => Promise<string>;
   readonly disable: (verify: VerifyFactor) => Promise<void>;
@@ -359,7 +369,7 @@ export type BackupApi = {
    */
   readonly restore: (options: {
     readonly envelope: string;
-    readonly backupFactor: UnlockFactor;
+    readonly backupFactor: BackupFactorInput;
     readonly passphrases?: ReadonlyArray<{
       readonly walletId: string;
       readonly passphrase: string;

@@ -361,6 +361,42 @@
       }
     },
     {
+      "name": "request-backup.enable-kernel-password",
+      "check": "request",
+      "message": {
+        "v": 3,
+        "id": 14,
+        "method": "backup.enable",
+        "params": {
+          "verify": {
+            "kind": "hardware"
+          },
+          "factors": [
+            {
+              "kind": "password",
+              "ceremony": "kernel"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "request-backup.restore-kernel-password",
+      "check": "request",
+      "message": {
+        "v": 3,
+        "id": 15,
+        "method": "backup.restore",
+        "params": {
+          "envelope": "{}",
+          "backupFactor": {
+            "kind": "password",
+            "ceremony": "kernel"
+          }
+        }
+      }
+    },
+    {
       "name": "request-wallet.importMnemonic",
       "check": "request",
       "message": {

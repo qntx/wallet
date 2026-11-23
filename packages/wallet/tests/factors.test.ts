@@ -152,8 +152,42 @@ describe("software host", () => {
   });
 });
 
-it("backup factors are never hardware", async () => {
-  await expect(
-    code(resolveBackupFactor(source("hardware"), { kind: "hardware" }, new SecretWire())),
-  ).resolves.toBe("invalid-input");
+describe("the backup password factor", () => {
+  it("refuses a password string on a hardware host before any ceremony", async () => {
+    await expect(
+      code(
+        resolveBackupFactor(
+          source("hardware"),
+          { kind: "password", password: "a backup password" },
+          new SecretWire(),
+        ),
+      ),
+    ).resolves.toBe("unsupported");
+  });
+
+  it("resolves an absent password to the kernel ceremony arm on a hardware host", async () => {
+    const factor = await resolveBackupFactor(
+      source("hardware"),
+      { kind: "password" },
+      new SecretWire(),
+    );
+    expect(factor).toStrictEqual({ kind: "password", ceremony: "kernel" });
+  });
+
+  it("requires the password string on a software host", async () => {
+    await expect(
+      code(resolveBackupFactor(source("software"), { kind: "password" }, new SecretWire())),
+    ).resolves.toBe("invalid-input");
+  });
+
+  it("resolves a password string to UTF-8 bytes on a software host", async () => {
+    const wire = new SecretWire();
+    const factor = await resolveBackupFactor(
+      source("software"),
+      { kind: "password", password: "a backup password" },
+      wire,
+    );
+    expect(factor.kind).toBe("password");
+    expect(wire.transfer).toHaveLength(1);
+  });
 });
