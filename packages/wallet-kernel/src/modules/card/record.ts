@@ -22,9 +22,10 @@ import {
   headerObject,
 } from "../../vault/header-codec.ts";
 import type { VaultImage } from "../../vault/store.ts";
+import { CARD_WALLET_KIND } from "../../vault/store.ts";
 import { cardId, shortId } from "./protocol/identity.ts";
 
-export const CARD_WALLET_KIND = "card-wallet";
+export { CARD_WALLET_KIND } from "../../vault/store.ts";
 
 const CARD_ID = /^[0-9a-f]{32}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -63,7 +64,7 @@ export type CardWalletBody = {
   readonly ed25519: Readonly<Record<string, string>>;
   /** CardId → the ≤ 16 most recent 8-byte ephemeral tags seen from it (16 hex each). */
   readonly ephemerals: Readonly<Record<string, ReadonlyArray<string>>>;
-  /** CardId → the access hash remembered for it (128 hex), when the owner opted in. */
+  /** CardId → the access hash remembered for it (64 hex), when the owner opted in. */
   readonly access?: Readonly<Record<string, string>>;
 };
 
@@ -315,7 +316,7 @@ export function parseCardWalletBody(text: string, walletId: string): CardWalletB
       if (!CARD_ID.test(id)) {
         throw bodyFailure();
       }
-      asHex(hash, /^[0-9a-f]{128}$/);
+      asHex(hash, HEX64);
     });
   }
   return {

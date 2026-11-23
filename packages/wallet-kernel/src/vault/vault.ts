@@ -31,7 +31,7 @@ import {
 } from "./headers.ts";
 import { isManifestRecord } from "./manifest.ts";
 import type { StoredFactor, StoredRecord, StoreOp, VaultImage, VaultMeta } from "./store.ts";
-import { VAULT_FORMAT } from "./store.ts";
+import { CARD_WALLET_KIND, VAULT_FORMAT } from "./store.ts";
 
 /** Consecutive password failures → enforced wait: 30 s, 60 s, then 300 s from the 5th failure. */
 const BACKOFF_MS = [30_000, 60_000, 300_000];
@@ -659,7 +659,7 @@ export function findRecord(image: VaultImage, kind: string, id: string): StoredR
  * `unsupported` rather than falling through to a missing entropy record.
  */
 export function findSeedWallet(image: VaultImage, walletId: string): StoredRecord {
-  if (image.records.some((r) => r.kind === "card-wallet" && r.id === walletId)) {
+  if (image.records.some((r) => r.kind === CARD_WALLET_KIND && r.id === walletId)) {
     throw new KernelError("unsupported", "card wallets hold no seed on this device");
   }
   return findRecord(image, "entropy", walletId);

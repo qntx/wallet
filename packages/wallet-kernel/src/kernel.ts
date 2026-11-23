@@ -540,6 +540,21 @@ export function startKernel(host: KernelPlatform, port: Port): void {
   });
 
   port.listen((message) => {
+    // A card.cancel while a step is blocked must not queue behind it: interrupt the operation
+    // synchronously so the in-flight secureInput/read resolves and the queued work answers.
+    if (
+      typeof message === "object" &&
+      message !== null &&
+      "method" in message &&
+      message.method === "card.cancel" &&
+      "params" in message &&
+      typeof message.params === "object" &&
+      message.params !== null &&
+      "opId" in message.params &&
+      typeof message.params.opId === "string"
+    ) {
+      card.interrupt(message.params.opId);
+    }
     enqueue(async () => handle(message));
   });
 

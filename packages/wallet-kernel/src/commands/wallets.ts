@@ -26,6 +26,7 @@ import type { PendingFactor } from "../session/session.ts";
 import { factorPublicKey, wrapDek } from "../vault/factors.ts";
 import { encodeHeader } from "../vault/headers.ts";
 import type { EntropyHeader } from "../vault/headers.ts";
+import { CARD_WALLET_KIND } from "../vault/store.ts";
 import type { StoredFactor, StoredRecord } from "../vault/store.ts";
 import {
   establishOps,
@@ -242,9 +243,7 @@ async function establishVault(
 function ensureNewWallet(ctx: KernelContext, material: WalletMaterial): void {
   if (
     ctx.image.records.some(
-      (r) =>
-        r.id === material.walletId &&
-        (r.kind === "entropy" || ctx.modules.some((m) => m.ownsRecord(r.kind))),
+      (r) => r.id === material.walletId && (r.kind === "entropy" || r.kind === CARD_WALLET_KIND),
     )
   ) {
     throw new KernelError("already-exists", "wallet already exists");
@@ -601,9 +600,7 @@ export async function deleteWallet(
   // state. Deleting a card wallet never touches the cards themselves.
   const record = ctx.image.records.find((r) => r.id === params.walletId);
   const kind =
-    record !== undefined && ctx.modules.some((m) => m.ownsRecord(record.kind))
-      ? record.kind
-      : "entropy";
+    record !== undefined && record.kind === CARD_WALLET_KIND ? CARD_WALLET_KIND : "entropy";
   findRecord(ctx.image, kind, params.walletId);
   const extras = ctx.modules.flatMap((module) =>
     module.walletDeleteOps(ctx.image, params.walletId),

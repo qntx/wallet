@@ -1,0 +1,567 @@
+/**
+ * A hostile/configurable software card for kernel tests: the card side of §8 (SELECT, OPEN, the
+ * §8.4 record layer) and the single-card inner commands (STATUS, CREATE, VERIFY, CHANGE, ERASE,
+ * WAIT, PUBLIC_KEY). The honest path mirrors spec/protocol.md (including the VERIFY wait gate and
+ * the `63Cx` countdown); `knobs` flips deviations mid-test — a cert chaining to no anchor, a bad
+ * session signature, a replayed cardEph, STATUS lying about life/tries, corrupted response MACs, or
+ * a tear on the next persistent write. Personalised under the ca1 test CA by default; pass
+ * `cert`/`caPrivate` for other anchors.
+ */
+import { cbc, cmac, ecb } from "@noble/ciphers/aes.js";
+import { equalBytes } from "@noble/ciphers/utils.js";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { sha256, sha512 } from "@noble/hashes/sha2.js";
+import { concatBytes, hexToBytes } from "@noble/hashes/utils.js";
+import { HDKey } from "@scure/bip32";
+import Slip10 from "micro-key-producer/slip10.js";
+
+import { ascii, u16, validUncompressedPoint } from "../../src/modules/card/protocol/bytes.ts";
+import { cardId } from "../../src/modules/card/protocol/identity.ts";
+import { kdf, m2, unM2 } from "../../src/modules/card/protocol/kdf.ts";
+import { loadVectors } from "../helpers.ts";
+
+const INS_OPEN = 0x10;
+const INS_SESSION = 0x12;
+const SELECT_APDU = "00a4040007f0716e7478010100";
+const LABEL_SESSION = ascii("qntx-card/v1/session");
+const LABEL_KDF_SESSION = ascii("qntx-card/v1/kdf-session");
+const LABEL_CERT = ascii("qntx-card/v1/cert");
+const LIMITS = { failures: 10, free: 3, waits: 15 };
+
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the vector shape is pinned
+const CERT_VECTORS = loadVectors("card/cert.json") as {
+  cas: ReadonlyArray<{ name: string; private: string; public: string }>;
+};
+const ca1 = CERT_VECTORS.cas.find((ca) => ca.name === "ca1");
+if (ca1 === undefined) {
+  throw new Error("vectors/card/cert.json has no ca1");
+}
+
+/** The ca1 test-CA secret the bridge personalises under — used to issue fake certs. */
+export const CA1_PRIVATE: Uint8Array = hexToBytes(ca1.private);
+
+/** Issues `cert = A(33) ‖ r‖s(64)` for `identitySecret`'s public key under `caPrivate`. */
+export function issueCert(
+  identitySecret: Uint8Array,
+  caPrivate: Uint8Array = CA1_PRIVATE,
+  extraEntropy?: Uint8Array,
+): Uint8Array {
+  const identity = secp256k1.getPublicKey(identitySecret, true);
+  const digest = sha256(concatBytes(LABEL_CERT, identity));
+  const signature = secp256k1.sign(digest, caPrivate, {
+    prehash: false,
+    lowS: false,
+    ...(extraEntropy === undefined ? {} : { extraEntropy }),
+  });
+  return concatBytes(identity, signature);
+}
+
+const sw = (code: number): Uint8Array => u16(code);
+
+/** Wei25519 constants of §10.4; the fake card maps its edwards point onto W(P). */
+const A3 = BigInt("0x2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad2451");
+const C = BigInt("0x70d9120b9f5ff9442d84f723fc03b0813a5e2c2eb482e57d3391fb5500ba81e7");
+
+/** The inverse of `edwardsEncode` — `W(P) = X‖Y` for an edwards point's affine form. */
+function weiEncode(point: { toAffine: () => { x: bigint; y: bigint } }): Uint8Array {
+  const { Fp } = ed25519.Point;
+  const { x, y } = point.toAffine();
+  const u = Fp.div(Fp.add(Fp.ONE, y), Fp.sub(Fp.ONE, y));
+  const weiX = Fp.add(u, A3);
+  const weiY = Fp.div(Fp.mul(C, u), x);
+  const out = new Uint8Array(64);
+  out.set(be32(weiX), 0);
+  out.set(be32(weiY), 32);
+  return out;
+}
+
+/** Big-endian u256 — the `W(P)` wire format. */
+const be32 = (value: bigint): Uint8Array => {
+  const bytes = new Uint8Array(32);
+  let rest = value;
+  for (let i = 31; i >= 0; i -= 1) {
+    bytes[i] = Number(rest & 0xffn);
+    rest >>= 8n;
+  }
+  return bytes;
+};
+
+export type FakeKnobs = {
+  /** STATUS reports this instead of the real state (a lying card). */
+  statusLife?: number;
+  statusTries?: number;
+  /** STATUS answers this status word instead of a real one (an impossible word → fault). */
+  statusSw?: number;
+  /** The OPEN session signature signs garbage instead of the transcript. */
+  badSignature?: boolean;
+  /** Always this cardEph — replays an ephemeral the host saw before. */
+  fixedEph?: Uint8Array;
+  /** Response-record MACs are corrupted after this many records. */
+  badMacAfter?: number;
+  /** Response records carry wrong padding (unM2 fails). */
+  badPadding?: boolean;
+  /** WalletInfo reports this master key instead of the wallet's. */
+  walletInfoMaster?: Uint8Array;
+  /** WalletInfo reports this member set instead of the wallet's. */
+  walletInfoMembers?: Uint8Array[];
+  /** PUBLIC_KEY answers 65 bytes that are not a curve point. */
+  badPublicKey?: boolean;
+  /** Every failed answer carries a stray data byte before the status word. */
+  dataOnFailure?: boolean;
+  /** From this response counter on, the card resends the previous record. */
+  replayFrom?: number;
+  /** The response at this counter is MACed with the next counter instead. */
+  skipCtrAt?: number;
+};
+
+export type FakeCard = {
+  readonly identity: Uint8Array;
+  /** The identity secret — lets a twin card present the same identity under another cert. */
+  readonly identitySecret: Uint8Array;
+  readonly cert: Uint8Array;
+  readonly cardId: Uint8Array;
+  readonly knobs: FakeKnobs;
+  /** Every inner instruction byte the session layer let through — VERIFY is `0x22`. */
+  readonly received: number[];
+  /** What the last OPEN derived — leak tests assert none of it escapes the kernel. */
+  readonly secrets: {
+    eph?: Uint8Array;
+    shared?: Uint8Array;
+    keys?: Uint8Array;
+  };
+  /** Arm a tear: the `write`-th persistent write of a later command powers the card off. */
+  readonly tearAt: (write: number) => void;
+  /** Power cycle — clears the session, leaves persistent state. */
+  readonly reset: () => void;
+  readonly transmit: (apdu: Uint8Array) => Promise<Uint8Array | "torn">;
+  /** Test view of the persistent state. */
+  readonly state: { life: "blank" | "loaded"; fails: number };
+  /** Plant a wallet without CREATE (a card loaded elsewhere). */
+  readonly load: (seed: Uint8Array, accessHash: Uint8Array, others?: Uint8Array[]) => void;
+};
+
+export function createFakeCard(opts?: {
+  cert?: Uint8Array;
+  identitySecret?: Uint8Array;
+  random?: (n: number) => Uint8Array;
+  knobs?: FakeKnobs;
+}): FakeCard {
+  const random =
+    opts?.random ?? ((n: number) => globalThis.crypto.getRandomValues(new Uint8Array(n)));
+  const knobs: FakeKnobs = { ...opts?.knobs };
+  const identitySecret = opts?.identitySecret ?? random(32);
+  const identity = secp256k1.getPublicKey(identitySecret, true);
+  const ownId = cardId(identity);
+  const cert = opts?.cert ?? issueCert(identitySecret);
+  const state = { life: "blank" as "blank" | "loaded", fails: 0 };
+  let wallet:
+    | { seed: Uint8Array; accessHash: Uint8Array; members: Uint8Array[]; origin: number }
+    | undefined;
+  let session:
+    | { keys: Uint8Array; ctr: number; verified: boolean; seed: Uint8Array | undefined }
+    | undefined;
+  let waited = 0;
+  let torn = false;
+  let tearAt: number | undefined;
+
+  const write = (): boolean => {
+    // A persistent write consumed an armed tear.
+    if (tearAt !== undefined) {
+      tearAt -= 1;
+      if (tearAt === 0) {
+        tearAt = undefined;
+        torn = true;
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const received: number[] = [];
+  const secrets: { eph?: Uint8Array; shared?: Uint8Array; keys?: Uint8Array } = {};
+
+  const walletInfo = (): Uint8Array => {
+    if (wallet === undefined) {
+      throw new Error("walletInfo without wallet");
+    }
+    const master = knobs.walletInfoMaster ?? HDKey.fromMasterSeed(wallet.seed).publicKey;
+    if (master === null) {
+      throw new Error("the planted seed has no valid master key");
+    }
+    const members = knobs.walletInfoMembers ?? wallet.members;
+    return concatBytes(master, new Uint8Array([wallet.origin, members.length]), ...members);
+  };
+
+  const inner = (ins: number, p1: number, p2: number, data: Uint8Array): Uint8Array => {
+    const live = session;
+    const verified = live?.verified === true;
+    received.push(ins);
+    switch (ins) {
+      case 0x20: {
+        // STATUS: no verification needed.
+        if (knobs.statusSw !== undefined) {
+          return sw(knobs.statusSw);
+        }
+        const life = knobs.statusLife ?? (state.life === "blank" ? 0x01 : 0x02);
+        const tries =
+          knobs.statusTries ?? (state.life === "blank" ? 0x00 : LIMITS.failures - state.fails);
+        return concatBytes(new Uint8Array([life & 0xff, tries & 0xff]), sw(0x9000));
+      }
+      case 0x21: {
+        // CREATE — BLANK only.
+        if (state.life !== "blank" || live === undefined) {
+          return sw(0x6985);
+        }
+        if (p1 !== 0x00 && p1 !== 0x01) {
+          return sw(0x6a86);
+        }
+        const min = p1 === 0x00 ? 64 : 96;
+        if (data.length < min || (data.length - min) % 16 !== 0) {
+          return sw(0x6700);
+        }
+        const accessHash = data.subarray(0, 32);
+        const material = data.subarray(32, min);
+        const others: Uint8Array[] = [];
+        for (let off = min; off < data.length; off += 16) {
+          const id = data.subarray(off, off + 16);
+          if (equalBytes(id, ownId) || others.some((o) => equalBytes(o, id))) {
+            return sw(0x6a80);
+          }
+          others.push(new Uint8Array(id));
+        }
+        const seed =
+          p1 === 0x01
+            ? new Uint8Array(material)
+            : sha512(concatBytes(ascii("qntx-card/v1/seed"), random(32), material));
+        if (HDKey.fromMasterSeed(seed).publicKey === null) {
+          return sw(0x6a80);
+        }
+        if (!write()) {
+          return new Uint8Array(0); // torn mid-transaction — transmit turns it into TORN
+        }
+        wallet = {
+          seed,
+          accessHash: new Uint8Array(accessHash),
+          members: [ownId, ...others],
+          origin: p1 === 0x00 ? 0x01 : 0x02,
+        };
+        state.life = "loaded";
+        state.fails = 0;
+        live.verified = true;
+        live.seed = seed;
+        return concatBytes(walletInfo(), sw(0x9000));
+      }
+      case 0x22:
+        // VERIFY — §9.5.
+        if (state.life !== "loaded" || live === undefined || wallet === undefined) {
+          return sw(0x6985);
+        }
+        if (p1 !== 0 || p2 !== 0) {
+          return sw(0x6a86);
+        }
+        if (data.length !== 32) {
+          return sw(0x6700);
+        }
+        live.verified = false;
+        live.seed = undefined;
+        if (state.fails >= LIMITS.failures) {
+          erase();
+          return sw(0x6983);
+        }
+        if (state.fails >= LIMITS.free && waited < LIMITS.waits) {
+          return sw(0x6985);
+        }
+        waited = 0;
+        if (!write()) {
+          return new Uint8Array(0);
+        }
+        state.fails += 1;
+        if (equalBytes(data, wallet.accessHash)) {
+          if (!write()) {
+            return new Uint8Array(0);
+          }
+          state.fails = 0;
+          live.verified = true;
+          live.seed = wallet.seed;
+          return concatBytes(walletInfo(), sw(0x9000));
+        }
+        if (state.fails >= LIMITS.failures) {
+          erase();
+          return sw(0x6983);
+        }
+        return sw(0x63c0 | (LIMITS.failures - state.fails));
+
+      case 0x23:
+        // CHANGE — verified only.
+        if (state.life !== "loaded" || live === undefined) {
+          return sw(0x6985);
+        }
+        if (p1 !== 0 || p2 !== 0) {
+          return sw(0x6a86);
+        }
+        if (data.length !== 32) {
+          return sw(0x6700);
+        }
+        if (!verified || wallet === undefined) {
+          return sw(0x6982);
+        }
+        if (!write()) {
+          return new Uint8Array(0);
+        }
+        wallet.accessHash = new Uint8Array(data);
+        return sw(0x9000);
+
+      case 0x24:
+        // ERASE — verified only.
+        if (state.life !== "loaded" || live === undefined) {
+          return sw(0x6985);
+        }
+        if (p1 !== 0 || p2 !== 0) {
+          return sw(0x6a86);
+        }
+        if (data.length > 0) {
+          return sw(0x6700);
+        }
+        if (!verified) {
+          return sw(0x6982);
+        }
+        if (!write()) {
+          return new Uint8Array(0);
+        }
+        erase();
+        return sw(0x9000);
+
+      case 0x25:
+        // WAIT — LOADED only.
+        if (state.life !== "loaded") {
+          return sw(0x6985);
+        }
+        if (p1 !== 0 || p2 !== 0) {
+          return sw(0x6a86);
+        }
+        if (data.length > 0) {
+          return sw(0x6700);
+        }
+        waited += 1;
+        return sw(0x9000);
+
+      case 0x30: {
+        // PUBLIC_KEY — verified only.
+        if (state.life !== "loaded" || live === undefined) {
+          return sw(0x6985);
+        }
+        if (p1 !== 0x00 && p1 !== 0x01) {
+          return sw(0x6a86);
+        }
+        const parsed = parsePath(data);
+        if (parsed === "error") {
+          return sw(0x6a80);
+        }
+        if (!verified) {
+          return sw(0x6982);
+        }
+        if (knobs.badPublicKey === true) {
+          return concatBytes(new Uint8Array(65), sw(0x9000));
+        }
+        const { seed } = live;
+        if (seed === undefined) {
+          return sw(0x6f00);
+        }
+        if (p1 === 0x00) {
+          let node = HDKey.fromMasterSeed(seed);
+          for (const index of parsed) {
+            const child = node.deriveChild(index);
+            if (child.publicKey === null) {
+              return sw(0x6a80);
+            }
+            node = child;
+          }
+          if (node.publicKey === null || node.chainCode === null) {
+            return sw(0x6a80);
+          }
+          return concatBytes(node.publicKey, node.chainCode, sw(0x9000));
+        }
+        if (parsed.some((index) => index < 0x80000000)) {
+          return sw(0x6a80);
+        }
+        let node = Slip10.fromMasterSeed(seed);
+        for (const index of parsed) {
+          node = node.deriveChild(index);
+        }
+        const point = ed25519.Point.fromBytes(ed25519.getPublicKey(node.privateKey));
+        return concatBytes(weiEncode(point), sw(0x9000));
+      }
+      default:
+        return sw(0x6d00);
+    }
+  };
+
+  const erase = (): void => {
+    wallet = undefined;
+    state.life = "blank";
+    state.fails = 0;
+    if (session !== undefined) {
+      session.verified = false;
+      session.seed = undefined;
+    }
+    waited = 0;
+  };
+
+  const open = (apdu: Uint8Array): Uint8Array => {
+    if (apdu.length < 5 || apdu[4] !== 0x41 || apdu.length < 5 + 65) {
+      return u16(0x6700);
+    }
+    const hostEph = apdu.subarray(5, 70);
+    if (!validUncompressedPoint(hostEph)) {
+      return u16(0x6a80);
+    }
+    const ephSecret = knobs.fixedEph ?? random(32);
+    const cardEph = secp256k1.getPublicKey(ephSecret, false);
+    const transcriptHash = sha256(concatBytes(LABEL_SESSION, hostEph, cardEph, identity));
+    const signed = knobs.badSignature === true ? sha256(ascii("garbage")) : transcriptHash;
+    const signature = secp256k1.sign(signed, identitySecret, { prehash: false, lowS: false });
+    const shared = secp256k1.getSharedSecret(ephSecret, hostEph, true);
+    const keys = kdf(shared.subarray(1, 33), LABEL_KDF_SESSION, transcriptHash, 64);
+    session = { keys, ctr: 0, verified: false, seed: undefined };
+    secrets.eph = new Uint8Array(ephSecret);
+    secrets.shared = shared;
+    secrets.keys = keys;
+    return concatBytes(cardEph, signature, cert, u16(0x9000));
+  };
+
+  const exchange = (apdu: Uint8Array): Uint8Array => {
+    const live = session;
+    if (live === undefined) {
+      return u16(0x6985);
+    }
+    const record = apdu.subarray(5, -1);
+    const { ctr } = live;
+    const tag = record.subarray(-8);
+    const ciphertext = record.subarray(0, -8);
+    const expected = cmac(concatBytes(u16(ctr), ciphertext), live.keys.subarray(16, 32)).subarray(
+      0,
+      8,
+    );
+    if (!equalBytes(tag, expected)) {
+      session = undefined;
+      return u16(0x6982);
+    }
+    const kce = live.keys.subarray(0, 16);
+    const padded = cbc(kce, recordIv(kce, 0x01, ctr), { disablePadding: true }).decrypt(ciphertext);
+    const plain = unM2(padded);
+    if (plain === undefined || plain.length < 3) {
+      session = undefined;
+      return u16(0x6982);
+    }
+    const answer = inner(plain[0] ?? 0, plain[1] ?? 0, plain[2] ?? 0, plain.subarray(3));
+    if (answer.length === 0) {
+      // The command's persistent write was torn.
+      return new Uint8Array(0);
+    }
+    const failed = answer.length < 2 || !equalBytes(answer.subarray(-2), sw(0x9000));
+    const body =
+      knobs.dataOnFailure === true && failed ? concatBytes(new Uint8Array([0x00]), answer) : answer;
+    const response = knobs.badPadding === true ? padded : m2(body);
+    const outCtr = knobs.skipCtrAt === ctr ? ctr + 1 : ctr;
+    const kre = live.keys.subarray(32, 48);
+    const outCt = cbc(kre, recordIv(kre, 0x02, outCtr), { disablePadding: true }).encrypt(response);
+    const macKey = live.keys.subarray(48, 64);
+    let outTag = cmac(concatBytes(u16(outCtr), outCt), macKey).subarray(0, 8);
+    if (knobs.badMacAfter !== undefined && ctr >= knobs.badMacAfter) {
+      outTag = new Uint8Array(outTag);
+      outTag[0] = (outTag[0] ?? 0) ^ 0xff;
+    }
+    live.ctr = ctr + 1;
+    const out = concatBytes(outCt, outTag, u16(0x9000));
+    if (knobs.replayFrom !== undefined && ctr >= knobs.replayFrom && lastResponse !== undefined) {
+      return lastResponse;
+    }
+    lastResponse = out;
+    return out;
+  };
+
+  let lastResponse: Uint8Array | undefined;
+
+  return {
+    identity,
+    identitySecret,
+    cert,
+    cardId: ownId,
+    knobs,
+    received,
+    secrets,
+    tearAt: (write) => {
+      tearAt = write;
+    },
+    reset: () => {
+      torn = false;
+      session = undefined;
+      waited = 0;
+    },
+    state,
+    load: (seed, accessHash, others = []) => {
+      wallet = {
+        seed: new Uint8Array(seed),
+        accessHash: new Uint8Array(accessHash),
+        members: [ownId, ...others],
+        origin: 0x02,
+      };
+      state.life = "loaded";
+      state.fails = 0;
+    },
+    // oxlint-disable-next-line typescript/require-await -- the FieldCard contract is async
+    transmit: async (apdu) => {
+      if (torn) {
+        return "torn" as const;
+      }
+      if (equalBytes(apdu, hexToBytes(SELECT_APDU))) {
+        session = undefined;
+        waited = 0;
+        return u16(0x9000);
+      }
+      if (apdu.length < 4 || apdu[0] !== 0x80) {
+        return u16(0x6e00);
+      }
+      switch (apdu[1]) {
+        case INS_OPEN: {
+          const out = open(apdu);
+          return out;
+        }
+        case INS_SESSION: {
+          const out = exchange(apdu);
+          if (out.length === 0) {
+            return "torn" as const;
+          }
+          return out;
+        }
+        default:
+          return u16(0x6d00);
+      }
+    },
+  };
+}
+
+/** `path = depth(1) ‖ u32(index)…` — §9.2. */
+const parsePath = (data: Uint8Array): number[] | "error" => {
+  if (data.length === 0) {
+    return "error";
+  }
+  const depth = data[0] ?? 0;
+  if (depth < 1 || depth > 10 || data.length !== 1 + 4 * depth) {
+    return "error";
+  }
+  const path: number[] = [];
+  for (let i = 0; i < depth; i += 1) {
+    path.push(new DataView(data.buffer, data.byteOffset + 1 + 4 * i, 4).getUint32(0));
+  }
+  return path;
+};
+
+/** `IV = AES-ECB(key, direction ‖ 13×0x00 ‖ u16(counter))` (§8.4). */
+const recordIv = (key: Uint8Array, direction: number, counter: number): Uint8Array => {
+  const block = new Uint8Array(16);
+  block[0] = direction;
+  block.set(u16(counter), 14);
+  return ecb(key, { disablePadding: true }).encrypt(block);
+};

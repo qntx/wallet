@@ -133,15 +133,10 @@ const bodyInput = {
     [CARD_ID]: ["0011223344556677", "8899aabbccddeeff"],
   },
   access: {
-    [CARD_ID]:
-      sha256(new TextEncoder().encode("access")).reduce(
-        (acc, b) => acc + b.toString(16).padStart(2, "0"),
-        "",
-      ) +
-      sha256(new TextEncoder().encode("hash")).reduce(
-        (acc, b) => acc + b.toString(16).padStart(2, "0"),
-        "",
-      ),
+    [CARD_ID]: sha256(new TextEncoder().encode("access hash")).reduce(
+      (acc, b) => acc + b.toString(16).padStart(2, "0"),
+      "",
+    ),
   },
 };
 
@@ -303,7 +298,7 @@ const rejects: Reject[] = [
     name: "body-access-length",
     side: "body",
     text: mutate(bodyText, (v) => {
-      (v["access"] as Record<string, unknown>)[CARD_ID] = "00".repeat(63);
+      (v["access"] as Record<string, unknown>)[CARD_ID] = "00".repeat(31);
     }),
   },
 ];

@@ -110,6 +110,72 @@ export function corePrompt(locale: PromptLocale, kind: CorePromptKind): Keystore
   return CORE[locale][kind];
 }
 
+/** Verification kinds for card operations — the card namespace of `corePrompt`. */
+export type CardPromptKind =
+  | "card-change-access"
+  | "card-erase"
+  | "card-create"
+  | "card-forget-access";
+
+const CARD: Readonly<
+  Record<PromptLocale, Readonly<Record<CardPromptKind, (cards: string) => KeystorePrompt>>>
+> = {
+  "zh-Hans": {
+    "card-change-access": (cards) => ({
+      title: "更改卡片访问码",
+      description: `验证身份以更改卡 ${cards} 的访问码`,
+    }),
+    "card-erase": (cards) => ({
+      title: "擦除卡上的钱包",
+      description: `验证身份以擦除卡 ${cards} 上的钱包`,
+    }),
+    "card-create": (cards) => ({
+      title: "创建卡钱包",
+      description: `验证身份以将钱包移入卡 ${cards}`,
+    }),
+    "card-forget-access": (cards) => ({
+      title: "遗忘卡访问码",
+      description: `验证身份以删除卡 ${cards} 已保存的访问码`,
+    }),
+  },
+  en: {
+    "card-change-access": (cards) => ({
+      title: "Change card access code",
+      description: `Verify your identity to change the access code on ${cards}`,
+    }),
+    "card-erase": (cards) => ({
+      title: "Erase the card's wallet",
+      description: `Verify your identity to erase the wallet on ${cards}`,
+    }),
+    "card-create": (cards) => ({
+      title: "Create card wallet",
+      description: `Verify your identity to move the wallet onto ${cards}`,
+    }),
+    "card-forget-access": (cards) => ({
+      title: "Forget card access code",
+      description: `Verify your identity to delete the saved access code for ${cards}`,
+    }),
+  },
+};
+
+export function cardPrompt(
+  locale: PromptLocale,
+  kind: CardPromptKind,
+  cards: ReadonlyArray<string>,
+): KeystorePrompt {
+  return CARD[locale][kind](cards.join(", "));
+}
+
+/** A prompt thunk for a card operation — locale and the card list resolve only when it runs. */
+export const cardPromptFor =
+  (
+    keystore: { readonly locale: string } | undefined,
+    kind: CardPromptKind,
+    cards: () => ReadonlyArray<string>,
+  ) =>
+  (): KeystorePrompt =>
+    cardPrompt(promptLocale(keystore?.locale ?? "en"), kind, cards());
+
 /**
  * The display name of a backup protection credential, chosen by the kernel so password managers
  * list it apart from the user's wallet passkeys (the RP and app name are shown next to it).

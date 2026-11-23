@@ -204,24 +204,72 @@ export function serializeCeremonies(
   onCeremony: (active: boolean) => void,
 ): KernelPlatform {
   let tail: Promise<void> = Promise.resolve();
-  const queue = async <T>(work: () => Promise<T>): Promise<T> => {
+  /** Takes the ceremony slot and returns its release — the base of `queue` and `reader.open`. */
+  const acquire = async (): Promise<() => void> => {
     const previous = tail;
     let release: (() => void) | undefined;
     tail = new Promise<void>((resolve) => {
       release = resolve;
     });
-    try {
-      await previous;
-      onCeremony(true);
-      return await work();
-    } finally {
+    await previous;
+    onCeremony(true);
+    let done = false;
+    return () => {
+      if (done) {
+        return;
+      }
+      done = true;
       release?.();
       onCeremony(false);
+    };
+  };
+  const queue = async <T>(work: () => Promise<T>): Promise<T> => {
+    const release = await acquire();
+    try {
+      return await work();
+    } finally {
+      release();
     }
   };
-  const { keystore, passkey } = platform;
+  const { keystore, passkey, card } = platform;
+  // A reader session holds the ceremony slot from `open` until `close` (or a failed `open`) —
+  // the platform's NFC sheet and the secure-input view are one surface.
+  let releaseReader: (() => void) | undefined;
+  const reader: CardReader | undefined =
+    card === undefined
+      ? undefined
+      : {
+          open: async (prompt) => {
+            const release = await acquire();
+            const result = await card.reader.open(prompt);
+            if (!result.ok) {
+              release();
+              return result;
+            }
+            releaseReader = release;
+            return result;
+          },
+          transmit: async (apdu) => card.reader.transmit(apdu),
+          close: (outcome, text) => {
+            card.reader.close(outcome, text);
+            releaseReader?.();
+            releaseReader = undefined;
+          },
+        };
   return {
     ...platform,
+    card:
+      card === undefined || reader === undefined
+        ? card
+        : {
+            anchors: card.anchors,
+            reader,
+            secureInput: {
+              request: async (kind, label) =>
+                queue(async () => card.secureInput.request(kind, label)),
+              cancel: () => card.secureInput.cancel(),
+            },
+          },
     keystore:
       keystore === undefined
         ? undefined
