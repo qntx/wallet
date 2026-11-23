@@ -19,7 +19,11 @@ import {
   PinMatrixRequest,
 } from "../src/modules/signers/onekey/protocol/messages.ts";
 import { decode, defineMessage, encode } from "../src/modules/signers/onekey/protocol/proto.ts";
-import type { FieldSpec, Fields, MessageDef } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type {
+  FieldSpec,
+  Fields,
+  MessageDef,
+} from "../src/modules/signers/onekey/protocol/proto.ts";
 import { loadVectors } from "./helpers.ts";
 import { Success } from "./onekey-emulator/index.ts";
 

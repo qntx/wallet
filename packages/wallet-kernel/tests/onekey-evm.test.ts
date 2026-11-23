@@ -19,7 +19,10 @@ import type { EvmTransaction } from "@qntx/wallet-chains";
 import { initialize } from "../src/modules/signers/onekey/protocol/device.ts";
 import type { DeviceInfo } from "../src/modules/signers/onekey/protocol/device.ts";
 import { OneKeyError } from "../src/modules/signers/onekey/protocol/errors.ts";
-import { signTypedData, typedDataMode } from "../src/modules/signers/onekey/protocol/evm-typed-data.ts";
+import {
+  signTypedData,
+  typedDataMode,
+} from "../src/modules/signers/onekey/protocol/evm-typed-data.ts";
 import {
   evmDisplay,
   signEvmPersonalMessage,
