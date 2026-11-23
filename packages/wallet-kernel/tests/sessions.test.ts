@@ -707,6 +707,34 @@ describe("sessions.sign checks", () => {
     ).toBe("locked");
   });
 
+  it("the first request after the absolute session limit answers locked", async () => {
+    const h = createHarness({ start: T0, maxSessionMs: 60_000 });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: PASSKEY(),
+      }),
+    );
+    const session = strField(res, "session");
+    const walletId = strField(field(res, "wallet"), "walletId");
+    const address = await createSession(h, session, walletId);
+    h.advance(60_001); // past maxSessionMs, well under the idle window
+    await h.settle();
+    // A session that failed to lock routes this request to a prompt the test never answers, so
+    // awaiting the call directly would hang — read the reply the kernel posted instead.
+    void signCall(h, session, {
+      scheme: SCHEME,
+      address,
+      params: { action: orderAction, nonce: T0 },
+    });
+    await h.settle();
+    const reply = h.posted.findLast(
+      (m) => typeof m === "object" && m !== null && ("ok" in m || "err" in m),
+    );
+    expect(reply).toMatchObject({ err: { code: "locked" } });
+  });
+
   it("a session that idled out cannot sign with a previously valid key", async () => {
     const { h, session, walletId } = await setup(T0);
     const address = await createSession(h, session, walletId);

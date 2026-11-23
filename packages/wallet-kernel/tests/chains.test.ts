@@ -14,7 +14,7 @@ import { base58 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { Address, OutScript, p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
-import { Transaction } from "@scure/btc-signer/transaction.js";
+import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
 import {
   AccountRole,
   address,
@@ -40,6 +40,7 @@ import {
 } from "@qntx/wallet-chains/bitcoin";
 import {
   DELEGATION_MANAGER,
+  encodeBatchExecute,
   EVM_DELEGATOR,
   normalizeEvm,
   recoverEvmSigner,
@@ -207,6 +208,14 @@ type PsbtOpts = {
   readonly changeOutput?: boolean;
   readonly foreignOutput?: boolean;
   readonly extraInput?: boolean;
+  /** bip49: keep the our-key prevout and derivation but carry another key's redeemScript. */
+  readonly badRedeem?: boolean;
+  /** bip49: carry no redeemScript at all. */
+  readonly missingRedeem?: boolean;
+  /** Attach a non-default sighash to input 0. */
+  readonly sighash?: number;
+  /** bip86: drop tapInternalKey and carry a script-tree merkle root instead. */
+  readonly tapMerkleRoot?: boolean;
 };
 
 /** A one-input PSBT with correct derivation entries for the vector wallet's account. */
@@ -244,7 +253,13 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
           ? p2pkh(scriptPub)
           : p2wpkh(scriptPub);
   const path = [purpose + HARDENED, coin + HARDENED, HARDENED, change, index];
-  const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+  // A redeemScript that disagrees with the p2sh prevout is unbuildable without skipping the
+  // script-consistency check; the kernel must still refuse the resulting PSBT.
+  const tx = new Transaction({
+    version: 2,
+    allowUnknownOutputs: true,
+    ...(opts.badRedeem === true ? { disableScriptCheck: true } : {}),
+  });
   const input: Record<string, unknown> = {
     txid: hex("0707".repeat(16)),
     index: 0,
@@ -261,7 +276,11 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
   };
 
   if (purpose === 86) {
-    input["tapInternalKey"] = opts.wrongScript === true ? foreignXonly : scriptXonly;
+    if (opts.tapMerkleRoot === true) {
+      input["tapMerkleRoot"] = new Uint8Array(32).fill(0xaa);
+    } else {
+      input["tapInternalKey"] = opts.wrongScript === true ? foreignXonly : scriptXonly;
+    }
     input["tapBip32Derivation"] = [
       [
         opts.wrongPub === true ? foreignPub.slice(1) : xonly,
@@ -273,9 +292,16 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
       [opts.wrongPub === true ? foreignPub : pub, { fingerprint: fp, path }],
     ];
   }
+  if (opts.sighash !== undefined) {
+    input["sighashType"] = opts.sighash;
+  }
   if (purpose === 49) {
-    input["redeemScript"] =
-      opts.wrongScript === true ? p2wpkh(foreignPub).script : p2wpkh(scriptPub).script;
+    if (opts.missingRedeem !== true) {
+      input["redeemScript"] =
+        opts.badRedeem === true || opts.wrongScript === true
+          ? p2wpkh(foreignPub).script
+          : p2wpkh(scriptPub).script;
+    }
     if (opts.wrongScript === true) {
       input["witnessUtxo"] = {
         script: p2sh(p2wpkh(foreignPub)).script,
@@ -1066,6 +1092,93 @@ describe("chain.sign", () => {
     });
     const res = await callSign(h, session, right);
     expect("err" in res).toBe(false);
+  });
+
+  it("rejects a bip49 input whose redeemScript is another key's or absent", async () => {
+    const { h, session, walletId } = await setup();
+    for (const psbt of [
+      btcPsbt({ template: "btc.bip49", badRedeem: true }),
+      btcPsbt({ template: "btc.bip49", missingRedeem: true }),
+    ]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential kernel calls
+      const res = await callSign(h, session, {
+        kind: "bitcoin.psbt",
+        network: BTC_NETWORK,
+        account: grp(walletId),
+        psbt,
+        sign: [entry(0, "btc.bip49")],
+      });
+      expect("err" in res).toBe(true);
+    }
+  });
+
+  it("rejects an input signed under a non-default sighash", async () => {
+    const { h, session, walletId } = await setup();
+    const res = await callSign(h, session, {
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: grp(walletId),
+      psbt: btcPsbt({ template: "btc.bip84", sighash: SigHash.NONE }),
+      sign: [entry(0, "btc.bip84")],
+    });
+    expect("err" in res).toBe(true);
+  });
+
+  it("rejects a bip86 input carrying script-path fields", async () => {
+    const { h, session, walletId } = await setup();
+    const res = await callSign(h, session, {
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: grp(walletId),
+      psbt: btcPsbt({ template: "btc.bip86", tapMerkleRoot: true }),
+      sign: [entry(0, "btc.bip86")],
+    });
+    expect("err" in res).toBe(true);
+  });
+
+  it("rejects a self execute whose calldata is not the canonical batch", async () => {
+    // No vault.setBlindSigning here: the canonical-encoding check is what separates a decoded
+    // batch from a blind account-code call, so the refusal must hold under the default policy.
+    const h = createHarness();
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(vectors.mnemonic),
+        factor: { kind: "passkey", credentialId: CREDENTIAL_ID, prf: new Uint8Array(PRF_VAULT) },
+      }),
+    );
+    const session = strField(res, "session");
+    const walletId = strField(field(res, "wallet"), "walletId");
+    const canonical = encodeBatchExecute([
+      { to: "0x0000000000000000000000000000000000C0FFEE", value: 1n, data: "0x" },
+    ]);
+    // The same batch with the executions tuple shifted one word deeper inside executionData:
+    // decodes to the identical calls but is not the canonical encoding the decoder reads back.
+    const argsEnd = 2 + 8 + 64 + 64; // 0x + selector + mode + executionData offset
+    const inner = canonical.slice(argsEnd + 64); // tuple encoding the offset word points at
+    const shifted = `${"0".repeat(62)}40${"0".repeat(64)}${inner.slice(64)}`;
+    const aliased = `${canonical.slice(0, argsEnd)}${(shifted.length / 2)
+      .toString(16)
+      .padStart(64, "0")}${shifted}`;
+    const req = (data: string): Record<string, unknown> => ({
+      kind: "evm.transaction",
+      network: "eip155:1",
+      account: hd(walletId, "evm.bip44"),
+      tx: {
+        type: "eip1559",
+        chainId: 1,
+        nonce: 0,
+        gas: "0x61a8",
+        value: "0x0",
+        data,
+        to: EVM_ADDRESS,
+        accessList: [],
+        maxFeePerGas: "0x4a817c800",
+        maxPriorityFeePerGas: "0x3b9aca00",
+      },
+    });
+    expect(errCode(await callSign(h, session, req(aliased)))).toBe("blind-signing-disabled");
+    expect("err" in (await callSign(h, session, req(canonical)))).toBe(false);
   });
 
   it("rejects a bip44 input missing nonWitnessUtxo or with the wrong prevout", async () => {
