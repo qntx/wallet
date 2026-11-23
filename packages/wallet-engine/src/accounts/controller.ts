@@ -1,6 +1,7 @@
 import { isAddress } from "viem";
 
 import type { SparkNetwork } from "@qntx/spark";
+import { WalletError } from "@qntx/wallet";
 import type { KeyInfo, Wallet } from "@qntx/wallet";
 import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { isTronAddress } from "@qntx/wallet-chains/tron";
@@ -276,6 +277,11 @@ const check = async (
   try {
     return [family, { used: await run() }] as const;
   } catch (error) {
+    // An externally signed wallet answers `device-required` for material only the device can
+    // derive: the family is provably absent from this group, not an error.
+    if (error instanceof WalletError && error.code === "device-required") {
+      return [family, { used: false }] as const;
+    }
     return [family, { used: false, error: errorMessage(error) }] as const;
   }
 };
@@ -679,6 +685,10 @@ export class AccountTreeController extends Controller<AccountTreeState> {
   /** Sequential inspect from 0 upward; index 0 always included; stop after 2 consecutive unused. */
   async discoverSpark(walletId: string): Promise<number[]> {
     this.mustWallet(walletId);
+    // Only vault wallets carry a seed spark can sign with — nothing to inspect elsewhere.
+    if (!this.isVault(walletId)) {
+      return [0];
+    }
     const found: number[] = [0];
     let index = 0;
     let unused = 0;
@@ -711,6 +721,7 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     this.mustWallet(walletId);
     const apis = this.options.chains ?? chains(this.options.wallet);
     const nets = this.options.networks;
+    const vaultWallet = this.isVault(walletId);
     const found: number[] = [0];
     let index = 0;
     let unused = 0;
@@ -819,6 +830,9 @@ export class AccountTreeController extends Controller<AccountTreeState> {
         return seen.some(Boolean);
       };
       const spark = async (): Promise<boolean> => {
+        if (!vaultWallet) {
+          return false;
+        }
         const ref = {
           walletId,
           groupIndex,
@@ -883,7 +897,9 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     const state = this.getState();
     const sel = state.selected;
     const targets = this.visibleGroups(state).filter(
-      (g) => !(sel !== null && g.walletId === sel.walletId && g.index === sel.groupIndex),
+      (g) =>
+        this.isVault(g.walletId) &&
+        !(sel !== null && g.walletId === sel.walletId && g.index === sel.groupIndex),
     );
     let cursor = 0;
     const worker = async (): Promise<void> => {
@@ -938,7 +954,17 @@ export class AccountTreeController extends Controller<AccountTreeState> {
 
   private driveSpark(selected: AccountTreeState["selected"]): void {
     this.options.spark.setAccounts(
-      selected === null ? [] : [{ ...selected, network: this.options.sparkNetwork }],
+      selected === null || !this.isVault(selected.walletId)
+        ? []
+        : [{ ...selected, network: this.options.sparkNetwork }],
+    );
+  }
+
+  /** Only a vault wallet holds the seed spark/nostr derive from; anything else must never drive them. */
+  private isVault(walletId: string): boolean {
+    return (
+      this.options.wallet.getSnapshot().wallets.find((w) => w.walletId === walletId)?.custody ===
+      "vault"
     );
   }
 
