@@ -44,7 +44,7 @@ import {
   fakeFetch,
   gateway,
   headers,
-  memoryPriceCache,
+  memoryEdgeCache,
   post,
   recordingLimiter,
   allowAll,
@@ -123,7 +123,7 @@ const app = (
   upstream: ReturnType<typeof fakeFetch>,
   extra: {
     readonly coingecko?: boolean;
-    readonly cache?: ReturnType<typeof memoryPriceCache>;
+    readonly cache?: ReturnType<typeof memoryEdgeCache>;
   } = {},
   now: () => number = () => NOW,
 ) =>
@@ -131,7 +131,7 @@ const app = (
     fetch: upstream.fetch,
     now,
     prices: {
-      cache: extra.cache ?? memoryPriceCache(),
+      cache: extra.cache ?? memoryEdgeCache(),
       ...(extra.coingecko === false ? {} : { coingecko: { apiKey: "cg-key" } }),
     },
   });
@@ -197,7 +197,7 @@ describe("POST /v1/prices request validation", () => {
       fetch: upstream.fetch,
       now: () => NOW,
       limiters: { ip: allowAll, rpc: allowAll, default: limiter, share },
-      prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
+      prices: { cache: memoryEdgeCache(), coingecko: { apiKey: "k" } },
     });
     const res = await app.request(prices.path, request(assets));
     expect(res.status).toBe(200);
@@ -248,7 +248,7 @@ describe("POST /v1/prices fan-out accounting", () => {
       fetch: upstream.fetch,
       now: () => NOW,
       limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: limiter },
-      prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
+      prices: { cache: memoryEdgeCache(), coingecko: { apiKey: "k" } },
     });
     for (const [seed, currency] of [
       [0, "usd"],
@@ -274,7 +274,7 @@ describe("POST /v1/prices fan-out accounting", () => {
       fetch: upstream.fetch,
       now: () => NOW,
       limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: denyAll },
-      prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
+      prices: { cache: memoryEdgeCache(), coingecko: { apiKey: "k" } },
     }).request(prices.path, request(spread(0)));
     expect(res.status).toBe(429);
     expect(upstream.calls).toHaveLength(0);
@@ -305,7 +305,7 @@ describe("POST /v1/prices refused charges", () => {
 
   it("keeps an earlier source's paid answer when the next charge is refused", async () => {
     const upstream = upstreams();
-    const cache = memoryPriceCache();
+    const cache = memoryEdgeCache();
     // CoinGecko's two calls are paid; every DefiLlama share charge is refused.
     const llamaDenied: RateLimiter = {
       limit: async ({ key }) => Promise.resolve({ success: !key.startsWith("defillama:") }),
@@ -344,7 +344,7 @@ describe("POST /v1/prices refused charges", () => {
       fetch: upstream.fetch,
       now: () => NOW,
       limiters: { ip: allowAll, rpc: allowAll, default: allowAll, share: denyAll },
-      prices: { cache: memoryPriceCache(), coingecko: { apiKey: "k" } },
+      prices: { cache: memoryEdgeCache(), coingecko: { apiKey: "k" } },
     }).request(prices.path, request([ETH_NATIVE]));
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("60");
@@ -712,7 +712,7 @@ describe("POST /v1/prices attempt cancellation", () => {
 
 describe("POST /v1/prices cache", () => {
   it("serves a cached asset for 30 s, then asks the provider again", async () => {
-    const cache = memoryPriceCache();
+    const cache = memoryEdgeCache();
     const upstream = fakeFetch(primary());
     let now = NOW;
     const served = app(upstream, { cache }, () => now);
@@ -733,7 +733,7 @@ describe("POST /v1/prices cache", () => {
   });
 
   it("caches per currency and asset, never per client", async () => {
-    const cache = memoryPriceCache();
+    const cache = memoryEdgeCache();
     const upstream = fakeFetch(primary({ [CG_SIMPLE]: replay(cgEur) }));
     const served = app(upstream, { cache });
     await served.request(prices.path, {
@@ -746,7 +746,7 @@ describe("POST /v1/prices cache", () => {
   });
 
   it("caches an unpriced asset only when every provider answered", async () => {
-    const cache = memoryPriceCache();
+    const cache = memoryEdgeCache();
     const answered = fakeFetch(
       primary({
         [cgToken("ethereum")]: replay(cgUnknown),
@@ -761,7 +761,7 @@ describe("POST /v1/prices cache", () => {
     await app(answered, { cache }).request(prices.path, request([DEAD]));
     expect(answered.calls).toHaveLength(3);
 
-    const partial = memoryPriceCache();
+    const partial = memoryEdgeCache();
     const failing = fakeFetch(primary({ [cgToken("ethereum")]: replay(cgRateLimited) }));
     await app(failing, { cache: partial }).request(prices.path, request([DEAD, BTC_NATIVE]));
     // CoinGecko's ethereum call 429s, but bitcoin's coin read is kept and DefiLlama prices DEAD.
@@ -787,7 +787,7 @@ describe("POST /v1/prices cache", () => {
       JSON.stringify({ event: "price-cache-failure", op: "put" }),
     ]);
 
-    const corrupt = memoryPriceCache();
+    const corrupt = memoryEdgeCache();
     corrupt.data.set(
       `usd/${BTC_NATIVE}`,
       JSON.stringify({
@@ -921,7 +921,7 @@ describe("quotePrices", () => {
     forwarder: Forwarder = meteringForwarder,
   ): PriceDeps => ({
     forwarder,
-    cache: memoryPriceCache(),
+    cache: memoryEdgeCache(),
     sources,
     now: () => NOW,
     log: () => {},

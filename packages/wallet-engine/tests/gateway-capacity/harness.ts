@@ -499,6 +499,7 @@ export const createWorld = async (opts: {
     corsOrigins: [],
     risk,
     tokens,
+    nfts: { cache: priceCache },
     prices: { cache: priceCache, coingecko: { apiKey: "stub" } },
     budget,
     auth: {

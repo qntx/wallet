@@ -12,7 +12,7 @@ import type { TokenListStore } from "../src/tokens/build.ts";
 import type {
   GatewayNetwork,
   Limiters,
-  PriceCache,
+  EdgeCache,
   ProviderBudget,
   RateLimiter,
   ResolvedProvider,
@@ -227,7 +227,7 @@ export function memoryRiskStore(): RiskStore & { readonly data: Map<string, stri
 }
 
 /** In-memory price cache; records each `put` TTL so a test can assert the cache lifetime. */
-export function memoryPriceCache(): PriceCache & {
+export function memoryEdgeCache(): EdgeCache & {
   readonly data: Map<string, string>;
   readonly ttls: number[];
 } {
@@ -263,6 +263,7 @@ export function gateway(options: {
   readonly jupiter?: { apiKey: string };
   readonly log?: (line: string) => void;
   readonly prices?: Parameters<typeof createGateway>[0]["prices"];
+  readonly nfts?: Parameters<typeof createGateway>[0]["nfts"];
   readonly now?: () => number;
 }): ReturnType<typeof createGateway> {
   return createGateway({
@@ -283,7 +284,8 @@ export function gateway(options: {
     tokenNetworks:
       options.tokenNetworks ?? new Set((options.networks ?? NETWORKS).map((n) => n.id)),
     auth: options.auth ?? {},
-    prices: options.prices ?? { cache: memoryPriceCache() },
+    prices: options.prices ?? { cache: memoryEdgeCache() },
+    nfts: options.nfts ?? { cache: memoryEdgeCache() },
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.zeroEx === undefined ? {} : { zeroEx: options.zeroEx }),
     ...(options.jupiter === undefined ? {} : { jupiter: options.jupiter }),
@@ -346,10 +348,11 @@ export const productionGateway = (options: ProductionGatewayOptions): ReturnType
     },
     jupiter: { apiKey: "gateway-test" },
     prices: {
-      cache: memoryPriceCache(),
+      cache: memoryEdgeCache(),
       // Enables the CoinGecko source so the non-USD path runs; the key is fake.
       coingecko: { apiKey: "gateway-test" },
     },
+    nfts: { cache: memoryEdgeCache() },
     ...(options.budget === undefined ? {} : { budget: options.budget }),
     ...(options.now === undefined ? {} : { now: options.now }),
   });

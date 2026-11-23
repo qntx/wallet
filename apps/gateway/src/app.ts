@@ -25,6 +25,7 @@ import { esploraRoutes } from "./routes/esplora.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { historyRoutes } from "./routes/history.ts";
 import { networksRoutes } from "./routes/networks.ts";
+import { nftRoutes } from "./routes/nfts.ts";
 import { pricesRoutes } from "./routes/prices.ts";
 import { quotesRoutes } from "./routes/quotes.ts";
 import { riskRoutes } from "./routes/risk.ts";
@@ -91,6 +92,7 @@ export function createGateway(
   app.route("/", networksRoutes(served));
   app.route("/", rpcRoutes(deps));
   app.route("/", historyRoutes({ ...deps, log }));
+  app.route("/", nftRoutes({ ...deps, cache: options.nfts.cache, log }));
   app.route("/", esploraRoutes(deps));
   app.route("/", tronRoutes(deps));
   app.route(

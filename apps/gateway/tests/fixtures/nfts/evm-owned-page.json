@@ -1,0 +1,246 @@
+{
+  "ownedNfts": [
+    {
+      "contract": {
+        "address": "0x0000000000696760E15f265e828DB644A0c242EB",
+        "name": "Wei Name Service",
+        "symbol": "WEI",
+        "totalSupply": null,
+        "tokenType": "ERC721",
+        "isSpam": false,
+        "openSeaMetadata": {
+          "collectionName": "Wei Name Service",
+          "safelistRequestStatus": "verified",
+          "description": "a simple namespace on ethereum named after the smallest unit of ether",
+          "imageUrl": "https://raw2.seadn.io/ethereum/0x0000000000696760e15f265e828db644a0c242eb/bc99b847d073818f7d3efa79b04374/e2bc99b847d073818f7d3efa79b04374.svg"
+        }
+      },
+      "tokenId": "34454361969670104802583458346517400542074712368450903800518897101070583190115",
+      "tokenType": "ERC721",
+      "balance": "1",
+      "name": "vitalik.wei",
+      "description": "Wei Name Service: vitalik.wei",
+      "image": {
+        "originalUrl": "data:image/svg+xml;base64,PHN2Zy8+",
+        "cachedUrl": null,
+        "contentType": "image/svg+xml"
+      },
+      "animation": {
+        "originalUrl": null,
+        "cachedUrl": null,
+        "contentType": null
+      },
+      "collection": {
+        "name": "Wei Name Service"
+      },
+      "raw": {
+        "metadata": {
+          "name": "vitalik.wei",
+          "description": "Wei Name Service: vitalik.wei",
+          "attributes": [
+            {
+              "trait_type": "Expires",
+              "display_type": "date",
+              "value": 1801481255
+            }
+          ]
+        }
+      }
+    },
+    {
+      "contract": {
+        "address": "0x0000000000cf80E7Cf8Fa4480907f692177f8e06",
+        "name": "NamefiNFT",
+        "symbol": "NFNFT",
+        "totalSupply": null,
+        "tokenType": "ERC721",
+        "isSpam": true,
+        "openSeaMetadata": {
+          "collectionName": "Namefi (Ethereum)",
+          "safelistRequestStatus": "not_requested",
+          "description": "Namefi.io tokenize DNS domain name ownership on Ethereum.",
+          "imageUrl": "https://i2c.seadn.io/collection/namefinft/image_type_logo/cb852624b6a4ede90d82862bf6f196/a9cb852624b6a4ede90d82862bf6f196.png"
+        }
+      },
+      "tokenId": "73906452355594127029039375271145516945927406532858726769026903911185640775143",
+      "tokenType": "ERC721",
+      "balance": "1",
+      "name": "vitalik.cloud",
+      "description": "vitalik.cloud - Namefi\u2122\ufe0f NFT representing the beneficiary-ship of vitalik.cloud domain. vitalik.cloud is valuable because \"Vitalik\" resonates with Vitalik Buterin, co-founder of Ethereum, linking to technology and innovation. The \".cloud\" TLD emphasizes modern tech, cloud computing, and online solutions, relevant to tech startups or services. This combination could attract businesses in the tech sector or enthusiasts of blockchain technology, increasing its potential for branding and marketability as a domain associated with leading-edge technological solutions and thought leadership in the cloud computing space.",
+      "image": {
+        "originalUrl": "https://md.namefi.io/ethereum/svg/vitalik.cloud/image.svg",
+        "cachedUrl": "https://nft2-cdn.alchemy.com/eth-mainnet/a91d6d9cffbe5426ba8b50de8ced5868",
+        "contentType": "image/svg+xml; charset=utf-8"
+      },
+      "animation": {
+        "originalUrl": null,
+        "cachedUrl": null,
+        "contentType": null
+      },
+      "collection": {
+        "name": "Namefi (Ethereum)"
+      },
+      "raw": {
+        "metadata": {
+          "name": "vitalik.cloud",
+          "description": "vitalik.cloud - Namefi\u2122\ufe0f NFT representing the beneficiary-ship of vitalik.cloud domain. vitalik.cloud is valuable because \"Vitalik\" resonates with Vitalik Buterin, co-founder of Ethereum, linking to technology and innovation. The \".cloud\" TLD emphasizes modern tech, cloud computing, and online solutions, relevant to tech startups or services. This combination could attract businesses in the tech sector or enthusiasts of blockchain technology, increasing its potential for branding and marketability as a domain associated with leading-edge technological solutions and thought leadership in the cloud computing space.",
+          "attributes": [
+            {
+              "trait_type": "Is Locked",
+              "value": "\ud83d\udd13 Unlocked"
+            },
+            {
+              "trait_type": "Is Frozen",
+              "value": false
+            },
+            {
+              "trait_type": "Top Level Domain (TLD)",
+              "value": "cloud"
+            },
+            {
+              "trait_type": "TLD Length",
+              "display_type": "number",
+              "value": 5
+            },
+            {
+              "trait_type": "Second Level Domain (TLD)",
+              "value": "vitalik"
+            },
+            {
+              "trait_type": "SLD Length",
+              "display_type": "number",
+              "value": 7
+            },
+            {
+              "trait_type": "Expiration Date",
+              "display_type": "date",
+              "value": "2026-10-11"
+            }
+          ],
+          "external_url": "https://vitalik.cloud"
+        }
+      }
+    },
+    {
+      "contract": {
+        "address": "0x0000420538CD5AbfBC7Db219B6A1d125f5892Ab0",
+        "name": "Buttpluggy",
+        "symbol": "UwU",
+        "totalSupply": "1024",
+        "tokenType": "ERC721",
+        "isSpam": true,
+        "openSeaMetadata": {
+          "collectionName": "Buttpluggy",
+          "safelistRequestStatus": "not_requested",
+          "description": "**Discover the Future of Gas Efficiency with the First #Huff-Created Collection**\n\nExplore 1024 unique oscilloscope visuals, a breakthrough in CryptoArt by the WebtrES community's Buttplug project. Each piece, a marvel of innovation, is anchored in the Ethereum blockchain, ensuring authentic ownership. This pioneering collection not only showcases artistic finesse but also champions gas efficiency, marking a new era in digital collectibles.\n\n**Join the Evolution**\n\nEmbrace the artistry and technology fusion. Mine your exclusive collectible at [Buttplug Project Homepage](https://www.buttpluggy.com/). To mint one you have to submit a proof of work.\n",
+          "imageUrl": "https://i2c.seadn.io/ethereum/fc2d4f50929c4f73a9e5d0e784bb4693/46e3fd6dca8132b10f52a23d9babfe/f946e3fd6dca8132b10f52a23d9babfe.png"
+        }
+      },
+      "tokenId": "1001",
+      "tokenType": "ERC721",
+      "balance": "1",
+      "name": "Sergeant WhiskerBlast",
+      "description": "Once a decorated soldier in the Meowtary Forces, Sergeant WhiskerBlast was known for his bravery and indomitable spirit. After a fierce battle that left his screen cracked, he was honorably discharged. Unwilling to retire quietly, he equipped himself with rocket arms and legs, ensuring he could still zoom into action whenever needed. His signature shades, a token from his last mission, hide the scars of war but not the fierce determination in his eyes. He now leads a vigilante group known as the WebtrES Club, defending the digital frontier against cyber threats with his cat-like reflexes and explosive agility.",
+      "image": {
+        "originalUrl": "https://gateway.pinata.cloud/ipfs/QmV4s7NMmDh64Z2GkuqbUmRM7XyN5WcbTn9sSAVvCsK4xQ/1001.gif",
+        "cachedUrl": "https://nft2-cdn.alchemy.com/eth-mainnet/3d0532c4cfd14fa15987a5dcb226d522",
+        "contentType": "image/gif"
+      },
+      "animation": {
+        "originalUrl": "https://buttpluggy.com/assets/1001",
+        "cachedUrl": "https://nft2-cdn.alchemy.com/eth-mainnet/3d0532c4cfd14fa15987a5dcb226d522_animation",
+        "contentType": "text/html; charset=utf-8"
+      },
+      "collection": {
+        "name": "Buttpluggy"
+      },
+      "raw": {
+        "metadata": {
+          "name": "Sergeant WhiskerBlast",
+          "description": "Once a decorated soldier in the Meowtary Forces, Sergeant WhiskerBlast was known for his bravery and indomitable spirit. After a fierce battle that left his screen cracked, he was honorably discharged. Unwilling to retire quietly, he equipped himself with rocket arms and legs, ensuring he could still zoom into action whenever needed. His signature shades, a token from his last mission, hide the scars of war but not the fierce determination in his eyes. He now leads a vigilante group known as the WebtrES Club, defending the digital frontier against cyber threats with his cat-like reflexes and explosive agility.",
+          "attributes": [
+            {
+              "trait_type": "Box",
+              "value": "Soldier"
+            },
+            {
+              "trait_type": "Buttons",
+              "value": "Cat"
+            },
+            {
+              "trait_type": "Arms and legs",
+              "value": "Rocket"
+            },
+            {
+              "trait_type": "Screen",
+              "value": "Broken"
+            },
+            {
+              "trait_type": "Addon",
+              "value": "Shades"
+            }
+          ],
+          "external_url": "https://www.buttpluggy.com/buttpluggy/1001"
+        }
+      }
+    },
+    {
+      "contract": {
+        "address": "0x000386E3F7559d9B6a2F5c46B4aD1A9587D59Dc3",
+        "name": "Bored Ape Nike Club",
+        "symbol": "BANC",
+        "totalSupply": null,
+        "tokenType": "ERC721",
+        "isSpam": true,
+        "openSeaMetadata": {
+          "collectionName": "BoredApeNikeClub",
+          "safelistRequestStatus": "not_requested",
+          "description": "COUNTDOWN OVER. MINTING LIVE.\n\n[Mint on the website.](https://nikemetaverse.xyz)\n",
+          "imageUrl": "https://i2c.seadn.io/ethereum/83bf78b80c814fddb778b94dc2357d35/089a27ca53d629213c2af6d81e74af/87089a27ca53d629213c2af6d81e74af.gif"
+        }
+      },
+      "tokenId": "1",
+      "tokenType": "ERC721",
+      "balance": "26",
+      "name": "Bored Ape Nike Club #1",
+      "description": "COUNTDOWN OVER. MINTING LIVE.  [https://nikentfs.xyz](https://nikentfs.xyz)",
+      "image": {
+        "originalUrl": "https://i2c.seadn.io/ethereum/0x000386e3f7559d9b6a2f5c46b4ad1a9587d59dc3/6743ce68c4462269a8332b15ce4ef052.webp",
+        "cachedUrl": "https://nft2-cdn.alchemy.com/eth-mainnet/2177a8af127ea0c58f1615bacb51092b",
+        "contentType": "image/webp"
+      },
+      "animation": {
+        "originalUrl": null,
+        "cachedUrl": null,
+        "contentType": null
+      },
+      "collection": {
+        "name": "BoredApeNikeClub"
+      },
+      "raw": {
+        "metadata": {
+          "name": "Bored Ape Nike Club #1",
+          "description": "COUNTDOWN OVER. MINTING LIVE.  [https://nikentfs.xyz](https://nikentfs.xyz)"
+        }
+      }
+    },
+    {
+      "contract": {
+        "address": "0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d",
+        "name": "X",
+        "tokenType": "OTHER",
+        "isSpam": false,
+        "openSeaMetadata": {}
+      },
+      "tokenId": "7",
+      "tokenType": "OTHER",
+      "balance": "1",
+      "name": "Mystery",
+      "image": null,
+      "animation": null,
+      "collection": null
+    }
+  ],
+  "totalCount": 27613,
+  "pageKey": "c864816d-9b0e-4c8d-ab0b-77ca3676254b"
+}

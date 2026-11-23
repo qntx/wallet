@@ -1,0 +1,14 @@
+{
+  "openSea": {
+    "floorPrice": 5.5e-5,
+    "priceCurrency": "eth",
+    "retrievedAt": "not a date",
+    "error": null
+  },
+  "looksRare": {
+    "floorPrice": 69.0,
+    "priceCurrency": "ETH",
+    "retrievedAt": "2025-01-13T03:42:07.872Z",
+    "error": "unable to fetch floor price"
+  }
+}

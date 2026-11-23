@@ -86,11 +86,11 @@ export type ProviderBudget = {
 };
 
 /**
- * Per-asset price cache shared by every client: keys never carry client identity. `get` answers
+ * A read-path cache shared by every client: keys never carry client identity. `get` answers
  * `undefined` on a miss; entries live at most `ttlSeconds` (the reader also checks the embedded
  * expiry, so a store that keeps entries longer cannot serve them stale).
  */
-export type PriceCache = {
+export type EdgeCache = {
   readonly get: (key: string) => Promise<string | undefined>;
   readonly put: (key: string, value: string, ttlSeconds: number) => Promise<void>;
 };
@@ -145,8 +145,12 @@ export type GatewayOptions = {
    * source. Without the key only the keyless DefiLlama fallback serves, and it quotes USD only.
    */
   readonly prices: {
-    readonly cache: PriceCache;
+    readonly cache: EdgeCache;
     readonly coingecko?: { readonly apiKey: string };
+  };
+  /** NFT reads: the shared per-route cache of upstream answers. */
+  readonly nfts: {
+    readonly cache: EdgeCache;
   };
   /** The wall clock, Unix ms; defaults to `Date.now`. */
   readonly now?: () => number;
