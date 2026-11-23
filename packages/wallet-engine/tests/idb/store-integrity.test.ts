@@ -171,6 +171,7 @@ describe("a poisoned engine-store row", () => {
       now: () => 0,
       logger: LOGGER,
       pollMs: 1,
+      chains: {} as never,
     });
     await transactions.init();
     expect(new Set(Object.keys(transactions.getState().txs))).toStrictEqual(new Set(["t1", "t2"]));

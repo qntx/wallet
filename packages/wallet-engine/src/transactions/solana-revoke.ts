@@ -14,7 +14,6 @@ import { address, createNoopSigner } from "@solana/kit";
 import { ChainError } from "@qntx/wallet-chains";
 import type { ApprovalChange, DisplayIntent } from "@qntx/wallet-chains";
 import { decodeSolana, PROGRAM_IDS } from "@qntx/wallet-chains/solana";
-import { chains } from "@qntx/wallet/chains";
 
 import { SolanaChainAdapter } from "../chains/solana.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
@@ -68,7 +67,7 @@ export const prepareSolanaRevoke = async (
   const { account, network, tokenAccounts, fee } = input;
   const rpc = ctx.options.networks.solanaRpc(network);
   const independent = ctx.options.networks.independentSolanaRpc(network);
-  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const apis = ctx.options.chains;
   const from = await accountAddressOf(ctx, account, "solana.bip44-change", network);
 
   if (tokenAccounts.length === 0 || tokenAccounts.length > SOLANA_REVOKE_MAX) {

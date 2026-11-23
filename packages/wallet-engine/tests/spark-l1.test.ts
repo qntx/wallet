@@ -349,6 +349,7 @@ describe("deposit persistence", () => {
       const store = createMemoryEngineStore(backing);
       return new TransactionController({
         wallet: {} as never,
+        chains: {} as never,
         networks: {} as never,
         openStore: async () => Promise.resolve(store),
         random: (n) => new Uint8Array(n),

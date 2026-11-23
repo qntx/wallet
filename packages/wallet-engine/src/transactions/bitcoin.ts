@@ -9,7 +9,6 @@ import {
   bitcoinPubkeyFromXpub,
 } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
-import { chains } from "@qntx/wallet/chains";
 
 import {
   BitcoinScanStore,
@@ -221,7 +220,7 @@ const nextReceiveAddress = async (
   groupIndex: number,
   network: string,
 ): Promise<string> => {
-  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const apis = ctx.options.chains;
   const account = await apis.account({ walletId, groupIndex, template: "btc.bip84", network });
   if (!("xpub" in account) || account.xpub === undefined) {
     throw new Error("bitcoin account carries no xpub");
@@ -273,7 +272,7 @@ const accountContext = async (
   network: string,
   frozen: ReadonlySet<string>,
 ): Promise<SpendContext> => {
-  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const apis = ctx.options.chains;
   const es = ctx.options.networks.esplora(network);
   const net = bitcoinNetwork(network);
   const { template } = account;
@@ -571,7 +570,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }
     const es = ctx.options.networks.esplora(network);
     const independent = ctx.options.networks.independentEsplora(network);
-    const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+    const apis = ctx.options.chains;
     const template =
       (["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"] as const).find(
         (x) => x === account.template,
@@ -837,7 +836,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     held: ReadonlyArray<string>,
     flags: ReadonlyArray<RequestCheckCode | undefined>,
   ): PreparedRequest => {
-    const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+    const apis = ctx.options.chains;
     const txP = Transaction.fromPSBT(psbt);
     if (account.kind !== "hd") {
       throw new ChainError("unsupported", "imported keys cannot sign bitcoin transactions");

@@ -393,6 +393,7 @@ const rig = async (
   await rpcCall(url, "evm_setAutomine", [false]);
   const ctl = new TransactionController({
     wallet,
+    chains: chains(wallet),
     networks: new NetworkController({
       ...idleNetworkDeps,
       fetch,
@@ -613,6 +614,7 @@ describe.runIf(RUN)("anvil e2e: account discovery", () => {
       const ctl = new AccountTreeController({
         setTimer: () => () => undefined,
         wallet,
+        chains: { account: async (params) => chains(wallet).account(params) },
         spark,
         sparkNetwork: "regtest",
         networks: new NetworkController({
@@ -662,6 +664,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
       const timers = manualTimers();
       const transactions = new TransactionController({
         wallet,
+        chains: chains(wallet),
         networks,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         random,
@@ -835,6 +838,7 @@ describe.runIf(RUN)("anvil e2e: wallet_sendCalls", () => {
       const timers = manualTimers();
       const transactions = new TransactionController({
         wallet,
+        chains: chains(wallet),
         networks,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         random,

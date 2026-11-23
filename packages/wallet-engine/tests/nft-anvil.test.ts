@@ -210,6 +210,7 @@ describe.runIf(RUN)("anvil e2e: NFT sends through the request pipeline", () => {
       });
       const ctl = new TransactionController({
         wallet,
+        chains: chains(wallet),
         networks,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         random: (n) => new Uint8Array(n).fill(7),

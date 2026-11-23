@@ -7,7 +7,6 @@ import type { SignRequest } from "@qntx/wallet-chains";
 import { ChainError } from "@qntx/wallet-chains";
 import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
 import { decodeTron, normalizeTron } from "@qntx/wallet-chains/tron";
-import { chains } from "@qntx/wallet/chains";
 
 import { BITCOIN_TEMPLATES } from "../chains/bitcoin-scan.ts";
 import { Controller } from "../controller.ts";
@@ -635,6 +634,9 @@ export class TransactionController extends Controller<TransactionControllerState
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
+    if (this.options.isWalletIncomplete?.(walletId) === true) {
+      throw new Error("a card wallet with pending members has no receive address");
+    }
     return this.bitcoinRoute.nextReceiveAddress(this.routeCtx(), walletId, groupIndex, network);
   }
 
@@ -774,7 +776,7 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error(`unsupported dApp request ${normalized.kind}`);
     }
     const { kind, network } = normalized;
-    const apis = this.options.chains ?? chains(this.options.wallet);
+    const apis = this.options.chains;
     const signer = await accountAddressOf(this.routeCtx(), account, "evm.bip44", network);
     return {
       account,
@@ -828,7 +830,7 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error(`unsupported dApp request ${normalized.kind}`);
     }
     const { kind, network } = normalized;
-    const apis = this.options.chains ?? chains(this.options.wallet);
+    const apis = this.options.chains;
     const signer = await accountAddressOf(this.routeCtx(), account, "tron.bip44", network);
     return {
       account,

@@ -2,10 +2,10 @@ import { isAddress } from "viem";
 
 import type { SparkNetwork } from "@qntx/spark";
 import { WalletError } from "@qntx/wallet";
-import type { KeyInfo, Wallet } from "@qntx/wallet";
+import type { KeyInfo, Wallet, WalletInfo } from "@qntx/wallet";
 import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { isTronAddress } from "@qntx/wallet-chains/tron";
-import { chains } from "@qntx/wallet/chains";
+import type { ChainAccountsParams } from "@qntx/wallet/protocol";
 
 import { scanChain } from "../chains/bitcoin-scan.ts";
 import type { Esplora } from "../chains/bitcoin.ts";
@@ -25,6 +25,8 @@ export type AccountGroup = {
   /** `discoverGroups` result — family key → used; a family error lives under `errors`. */
   readonly used?: Readonly<Record<string, boolean>>;
   readonly errors?: Readonly<Record<string, string>>;
+  /** Families only the external signer can answer — no material is cached for them. */
+  readonly signer?: Readonly<Record<string, "device-required">>;
   readonly name?: string;
   readonly hidden: boolean;
   /** A social identity (64 lowercase hex) bound to this group; one identity binds one group. */
@@ -39,6 +41,9 @@ export type AccountTreeState = {
     readonly walletId: string;
     readonly name?: string;
     readonly updatedAt: number;
+    readonly custody: WalletInfo["custody"];
+    /** `incomplete` — a card wallet still waiting on a member card — holds no groups. */
+    readonly state: "ready" | "incomplete";
   }>;
   readonly groups: Readonly<Record<string, ReadonlyArray<AccountGroup>>>;
   // oxlint-disable-next-line typescript/no-restricted-types -- spec shape: no wallets → null
@@ -69,13 +74,11 @@ export type AccountTreeControllerOptions = {
   readonly spark: SparkController;
   readonly sparkNetwork: SparkNetwork;
   readonly networks?: DiscoveryNetworks;
-  readonly chains?: {
-    readonly account: (params: {
-      readonly walletId: string;
-      readonly groupIndex: number;
-      readonly template: string;
-      readonly network: string;
-    }) => Promise<{ readonly address?: string; readonly xpub?: string }>;
+  readonly chains: {
+    readonly account: (params: ChainAccountsParams) => Promise<{
+      readonly address?: string;
+      readonly xpub?: string;
+    }>;
   };
   readonly logger: EngineLogger;
   readonly now: () => number;
@@ -273,14 +276,19 @@ function encodeTree(tree: PersistedTree): Uint8Array {
 const check = async (
   family: string,
   run: () => Promise<boolean>,
-): Promise<readonly [string, { readonly used: boolean; readonly error?: string }]> => {
+): Promise<
+  readonly [
+    string,
+    { readonly used: boolean; readonly error?: string; readonly signer?: "device-required" },
+  ]
+> => {
   try {
     return [family, { used: await run() }] as const;
   } catch (error) {
     // An externally signed wallet answers `device-required` for material only the device can
-    // derive: the family is provably absent from this group, not an error.
+    // derive: the family waits on the signer — neither "unused" nor an error.
     if (error instanceof WalletError && error.code === "device-required") {
-      return [family, { used: false }] as const;
+      return [family, { used: false, signer: "device-required" }] as const;
     }
     return [family, { used: false, error: errorMessage(error) }] as const;
   }
@@ -369,15 +377,30 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     const liveSet = new Set(live);
     const state = this.getState();
     const entriesById = new Map(state.wallets.map((w) => [w.walletId, w]));
+    const liveInfo = new Map(snapshot.wallets.map((w) => [w.walletId, w]));
     const wallets = live.map((walletId) => {
       const existing = entriesById.get(walletId);
-      return existing ?? { walletId, updatedAt: 0 };
+      const info = liveInfo.get(walletId);
+      const custody: WalletInfo["custody"] = info === undefined ? "vault" : info.custody;
+      const state: "ready" | "incomplete" =
+        info !== undefined &&
+        info.custody === "card" &&
+        info.cards.some((c) => c.state === "pending")
+          ? "incomplete"
+          : "ready";
+      return existing === undefined
+        ? { walletId, updatedAt: 0, custody, state }
+        : { ...existing, custody, state };
     });
     const groups: Record<string, ReadonlyArray<AccountGroup>> = {};
-    for (const walletId of live) {
-      const existing = state.groups[walletId] ?? [];
-      groups[walletId] =
-        existing.length > 0 ? existing : [{ walletId, index: 0, hidden: false, updatedAt: 0 }];
+    for (const w of wallets) {
+      const existing = state.groups[w.walletId] ?? [];
+      groups[w.walletId] =
+        w.state === "incomplete"
+          ? []
+          : existing.length > 0
+            ? existing
+            : [{ walletId: w.walletId, index: 0, hidden: false, updatedAt: 0 }];
     }
     const totals: Record<string, number> = {};
     for (const [k, v] of Object.entries(state.totals)) {
@@ -403,6 +426,7 @@ export class AccountTreeController extends Controller<AccountTreeState> {
 
   addGroup(walletId: string): number {
     this.mustWallet(walletId);
+    this.mustReady(walletId);
     const groups = this.getState().groups[walletId] ?? [];
     let index = 0;
     for (const g of groups) {
@@ -415,6 +439,7 @@ export class AccountTreeController extends Controller<AccountTreeState> {
 
   addGroups(walletId: string, indices: ReadonlyArray<number>): void {
     this.mustWallet(walletId);
+    this.mustReady(walletId);
     this.mutateGroups(walletId, (list) => {
       const have = new Set(list.map((g) => g.index));
       const added: AccountGroup[] = [];
@@ -436,7 +461,7 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     this.update((s) => ({
       ...s,
       wallets: s.wallets.map((w) =>
-        w.walletId === walletId ? { walletId, name: trimmed, updatedAt } : w,
+        w.walletId === walletId ? { ...w, name: trimmed, updatedAt } : w,
       ),
     }));
     this.persist();
@@ -672,7 +697,9 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     if (changed) {
       this.update((st) => ({
         ...st,
-        wallets: st.wallets.map((w) => (w.walletId === walletId ? wallet : w)),
+        wallets: st.wallets.map((w) =>
+          w.walletId === walletId ? { ...wallet, custody: w.custody, state: w.state } : w,
+        ),
         groups: { ...st.groups, [walletId]: groups },
         selected,
       }));
@@ -713,148 +740,169 @@ export class AccountTreeController extends Controller<AccountTreeState> {
   }
 
   /**
+   * The five family check runnables for one group — shared by `discoverGroups` (which runs all of
+   * them) and `recheckFamily` (which re-runs one after the signer fetched new material).
+   */
+  private familyChecks(
+    walletId: string,
+    groupIndex: number,
+  ): ReadonlyArray<readonly [string, () => Promise<boolean>]> {
+    const apis = this.options.chains;
+    const nets = this.options.networks;
+    const vaultWallet = this.isVault(walletId);
+    const evm = async (): Promise<boolean> => {
+      if (nets === undefined) {
+        return false;
+      }
+      const seen = await Promise.all(
+        nets.enabled("evm").map(async (network) => {
+          const acct = await apis.account({
+            walletId,
+            groupIndex,
+            template: "evm.bip44",
+            network,
+          });
+          const address = "address" in acct ? evmAddress(acct.address) : undefined;
+          if (address === undefined) {
+            return false;
+          }
+          const client = nets.client(network);
+          const [nonce, balance] = await Promise.all([
+            client.getTransactionCount({ address, blockTag: "latest" }),
+            client.getBalance({ address }),
+          ]);
+          return nonce > 0 || balance > 0n;
+        }),
+      );
+      return seen.some(Boolean);
+    };
+    const solana = async (): Promise<boolean> => {
+      if (nets === undefined) {
+        return false;
+      }
+      const seen = await Promise.all(
+        nets.enabled("solana").map(async (network) => {
+          const acct = await apis.account({
+            walletId,
+            groupIndex,
+            template: "solana.bip44-change",
+            network,
+          });
+          const address = "address" in acct ? addressOf(acct.address) : undefined;
+          if (address === undefined) {
+            return false;
+          }
+          const rpc = nets.solanaRpc(network);
+          const sigs: unknown = await rpc.call("getSignaturesForAddress", [address, { limit: 1 }]);
+          return Array.isArray(sigs) && sigs.length > 0;
+        }),
+      );
+      return seen.some(Boolean);
+    };
+    const bitcoin = async (): Promise<boolean> => {
+      if (nets === undefined) {
+        return false;
+      }
+      const combos = nets
+        .enabled("bitcoin")
+        .flatMap((network) =>
+          (["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"] as const).map(
+            (template) => [network, template] as const,
+          ),
+        );
+      const seen = await Promise.all(
+        combos.map(async ([network, template]) => {
+          const net = bitcoinNetwork(network);
+          const es = nets.esplora(network);
+          const acct = await apis.account({ walletId, groupIndex, template, network });
+          const xpub = "xpub" in acct ? acct.xpub : undefined;
+          if (xpub === undefined) {
+            return false;
+          }
+          const [receive, change] = await Promise.all([
+            scanChain(es, xpub, template, network, net.params, 0),
+            scanChain(es, xpub, template, network, net.params, 1),
+          ]);
+          return receive.some((a) => a.used) || change.some((a) => a.used);
+        }),
+      );
+      return seen.some(Boolean);
+    };
+    const tron = async (): Promise<boolean> => {
+      if (nets === undefined) {
+        return false;
+      }
+      const seen = await Promise.all(
+        nets.enabled("tron").map(async (network) => {
+          const acct = await apis.account({
+            walletId,
+            groupIndex,
+            template: "tron.bip44",
+            network,
+          });
+          const address = "address" in acct ? addressOf(acct.address) : undefined;
+          if (address === undefined || !isTronAddress(address)) {
+            return false;
+          }
+          return (await tronAccount(nets.tronApi(network), address)) !== undefined;
+        }),
+      );
+      return seen.some(Boolean);
+    };
+    const spark = async (): Promise<boolean> => {
+      if (!vaultWallet) {
+        return false;
+      }
+      const ref = {
+        walletId,
+        groupIndex,
+        network: this.options.sparkNetwork,
+      } as const;
+      const { used } = await this.options.spark.inspect(ref);
+      return used;
+    };
+    return [
+      ["spark", spark],
+      ["evm", evm],
+      ["solana", solana],
+      ["bitcoin", bitcoin],
+      ["tron", tron],
+    ];
+  }
+
+  /**
    * Per-group chain-family discovery — same stop rule as `discoverSpark`: group 0 always, stop
    * after two consecutive fully-unused groups. A family error is reported on the group and does NOT
    * count as unused (the group stays in `found` — it can't be proven empty).
    */
   async discoverGroups(walletId: string): Promise<number[]> {
     this.mustWallet(walletId);
-    const apis = this.options.chains ?? chains(this.options.wallet);
-    const nets = this.options.networks;
-    const vaultWallet = this.isVault(walletId);
+    this.mustReady(walletId);
     const found: number[] = [0];
     let index = 0;
     let unused = 0;
     while (index < 65) {
       const groupIndex = index;
-      const evm = async (): Promise<boolean> => {
-        if (nets === undefined) {
-          return false;
-        }
-        const seen = await Promise.all(
-          nets.enabled("evm").map(async (network) => {
-            const acct = await apis.account({
-              walletId,
-              groupIndex,
-              template: "evm.bip44",
-              network,
-            });
-            const address = "address" in acct ? evmAddress(acct.address) : undefined;
-            if (address === undefined) {
-              return false;
-            }
-            const client = nets.client(network);
-            const [nonce, balance] = await Promise.all([
-              client.getTransactionCount({ address, blockTag: "latest" }),
-              client.getBalance({ address }),
-            ]);
-            return nonce > 0 || balance > 0n;
-          }),
-        );
-        return seen.some(Boolean);
-      };
-      const solana = async (): Promise<boolean> => {
-        if (nets === undefined) {
-          return false;
-        }
-        const seen = await Promise.all(
-          nets.enabled("solana").map(async (network) => {
-            const acct = await apis.account({
-              walletId,
-              groupIndex,
-              template: "solana.bip44-change",
-              network,
-            });
-            const address = "address" in acct ? addressOf(acct.address) : undefined;
-            if (address === undefined) {
-              return false;
-            }
-            const rpc = nets.solanaRpc(network);
-            const sigs: unknown = await rpc.call("getSignaturesForAddress", [
-              address,
-              { limit: 1 },
-            ]);
-            return Array.isArray(sigs) && sigs.length > 0;
-          }),
-        );
-        return seen.some(Boolean);
-      };
-      const bitcoin = async (): Promise<boolean> => {
-        if (nets === undefined) {
-          return false;
-        }
-        const combos = nets
-          .enabled("bitcoin")
-          .flatMap((network) =>
-            (["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"] as const).map(
-              (template) => [network, template] as const,
-            ),
-          );
-        const seen = await Promise.all(
-          combos.map(async ([network, template]) => {
-            const net = bitcoinNetwork(network);
-            const es = nets.esplora(network);
-            const acct = await apis.account({ walletId, groupIndex, template, network });
-            const xpub = "xpub" in acct ? acct.xpub : undefined;
-            if (xpub === undefined) {
-              return false;
-            }
-            const [receive, change] = await Promise.all([
-              scanChain(es, xpub, template, network, net.params, 0),
-              scanChain(es, xpub, template, network, net.params, 1),
-            ]);
-            return receive.some((a) => a.used) || change.some((a) => a.used);
-          }),
-        );
-        return seen.some(Boolean);
-      };
-      const tron = async (): Promise<boolean> => {
-        if (nets === undefined) {
-          return false;
-        }
-        const seen = await Promise.all(
-          nets.enabled("tron").map(async (network) => {
-            const acct = await apis.account({
-              walletId,
-              groupIndex,
-              template: "tron.bip44",
-              network,
-            });
-            const address = "address" in acct ? addressOf(acct.address) : undefined;
-            if (address === undefined || !isTronAddress(address)) {
-              return false;
-            }
-            return (await tronAccount(nets.tronApi(network), address)) !== undefined;
-          }),
-        );
-        return seen.some(Boolean);
-      };
-      const spark = async (): Promise<boolean> => {
-        if (!vaultWallet) {
-          return false;
-        }
-        const ref = {
-          walletId,
-          groupIndex,
-          network: this.options.sparkNetwork,
-        } as const;
-        const { used } = await this.options.spark.inspect(ref);
-        return used;
-      };
       // oxlint-disable-next-line eslint/no-await-in-loop -- discovery is sequential per spec
-      const results = await Promise.all([
-        check("spark", spark),
-        check("evm", evm),
-        check("solana", solana),
-        check("bitcoin", bitcoin),
-        check("tron", tron),
-      ]);
+      const results = await Promise.all(
+        this.familyChecks(walletId, groupIndex).map(async ([family, run]) => check(family, run)),
+      );
       const usedMap = Object.fromEntries(results.map(([k, v]) => [k, v.used]));
       const errorMap = Object.fromEntries(
         results.flatMap(([k, v]) => (v.error === undefined ? [] : [[k, v.error] as const])),
       );
-      const anyUsed = results.some(([, v]) => v.used);
-      const anyError = results.some(([, v]) => v.error !== undefined);
+      const signerMap = Object.fromEntries(
+        results.flatMap(([k, v]) => (v.signer === undefined ? [] : [[k, v.signer] as const])),
+      );
+      // Signer families are excluded from the decision; a group counts unused when every other
+      // checked family is unused and none errored.
+      const decision = results.filter(([, v]) => v.signer === undefined);
+      const anyUsed = decision.some(([, v]) => v.used);
+      const anyError = decision.some(([, v]) => v.error !== undefined);
+      // Every non-spark family waits on the device — nothing further can be learned without it.
+      const allSigner = (["evm", "solana", "bitcoin", "tron"] as const).every(
+        (f) => signerMap[f] !== undefined,
+      );
       this.mutateGroups(walletId, (list) => {
         const have = list.some((g) => g.index === groupIndex);
         if (!have) {
@@ -866,6 +914,7 @@ export class AccountTreeController extends Controller<AccountTreeState> {
               hidden: false,
               used: usedMap,
               errors: errorMap,
+              signer: signerMap,
               // A scan is not a user edit: appended groups start at 0 like reconcile-created
               // ones, so a real rename elsewhere always wins the LWW merge.
               updatedAt: 0,
@@ -873,9 +922,12 @@ export class AccountTreeController extends Controller<AccountTreeState> {
           ].sort((a, b) => a.index - b.index);
         }
         return list.map((g) =>
-          g.index === groupIndex ? { ...g, used: usedMap, errors: errorMap } : g,
+          g.index === groupIndex ? { ...g, used: usedMap, errors: errorMap, signer: signerMap } : g,
         );
       });
+      if (allSigner) {
+        break;
+      }
       if (anyUsed || anyError) {
         if (index !== 0 && anyUsed) {
           found.push(index);
@@ -890,6 +942,36 @@ export class AccountTreeController extends Controller<AccountTreeState> {
       index += 1;
     }
     return found;
+  }
+
+  /**
+   * Re-runs one family's check for one group after the signer fetched new material — clears the
+   * `signer` mark when the family now answers, records a fresh `device-required` when it still
+   * cannot.
+   */
+  async recheckFamily(walletId: string, groupIndex: number, family: string): Promise<void> {
+    this.mustGroup(walletId, groupIndex);
+    const run = this.familyChecks(walletId, groupIndex).find(([f]) => f === family)?.[1];
+    if (run === undefined) {
+      throw new AccountTreeError("invalid-input", `unknown family ${family}`);
+    }
+    const [, result] = await check(family, run);
+    this.mutateGroups(walletId, (list) =>
+      list.map((g) => {
+        if (g.index !== groupIndex) {
+          return g;
+        }
+        const errors =
+          result.error === undefined
+            ? omitKey(g.errors ?? {}, family)
+            : { ...g.errors, [family]: result.error };
+        const signer =
+          result.signer === undefined
+            ? omitKey(g.signer ?? {}, family)
+            : { ...g.signer, [family]: result.signer };
+        return { ...g, used: { ...g.used, [family]: result.used }, errors, signer };
+      }),
+    );
   }
 
   /** Refresh `totals` for every other visible group; per-group failures are logged and skipped. */
@@ -1027,6 +1109,13 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     this.persist();
   }
 
+  /** A card wallet still waiting on a member card holds no groups — nothing can be added or found. */
+  private mustReady(walletId: string): void {
+    if (this.getState().wallets.find((w) => w.walletId === walletId)?.state === "incomplete") {
+      throw new AccountTreeError("rejected", "a card wallet with pending members has no groups");
+    }
+  }
+
   private mustWallet(walletId: string): void {
     if (this.getState().status !== "ready") {
       throw new AccountTreeError("locked", "account tree is locked");
@@ -1116,18 +1205,20 @@ export class AccountTreeController extends Controller<AccountTreeState> {
   }
 }
 
+const omitKey = <T>(map: Readonly<Record<string, T>>, key: string): Record<string, T> =>
+  Object.fromEntries(Object.entries(map).filter(([k]) => k !== key));
+
 function persistedToState(tree: PersistedTree): Omit<AccountTreeState, "status"> {
-  const wallets: Array<{
-    readonly walletId: string;
-    readonly name?: string;
-    readonly updatedAt: number;
-  }> = [];
+  const wallets: Array<AccountTreeState["wallets"][number]> = [];
   for (const [walletId, w] of Object.entries(tree.wallets)) {
-    if (w.name === undefined) {
-      wallets.push({ walletId, updatedAt: w.updatedAt });
-    } else {
-      wallets.push({ walletId, name: w.name, updatedAt: w.updatedAt });
-    }
+    // custody/state are recomputed from the snapshot at the next reconcile.
+    const entry = {
+      walletId,
+      updatedAt: w.updatedAt,
+      custody: "vault" as const,
+      state: "ready" as const,
+    };
+    wallets.push(w.name === undefined ? entry : { ...entry, name: w.name });
   }
   return {
     wallets,

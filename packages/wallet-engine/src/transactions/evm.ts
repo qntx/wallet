@@ -33,7 +33,6 @@ import {
   CCTP_USDC,
   HYPERLIQUID_DOMAIN,
 } from "@qntx/wallet-chains/evm";
-import { chains } from "@qntx/wallet/chains";
 
 import {
   ERC20_ABI,
@@ -405,7 +404,7 @@ const heldNoncesOf = (tx: TrackedTransaction): ReadonlyArray<number> => {
   return [tx.nonce];
 };
 
-const evmApis = (ctx: RouteContext): ChainApis => ctx.options.chains ?? chains(ctx.options.wallet);
+const evmApis = (ctx: RouteContext): ChainApis => ctx.options.chains;
 
 /** The signer's EVM address for an HD account; throws when the account is imported or has none. */
 const resolveFrom = async (
@@ -2088,7 +2087,7 @@ export const createEvmRoute = (): EvmRoute => {
     const { networks } = ctx.options;
     const client = networks.client(old.network);
     const independent = networks.independentClient(old.network);
-    const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+    const apis = ctx.options.chains;
     const { chainId, feeModel } = networks.info(old.network);
     const original = rebuild(old, record.from, old.raw, chainId);
     const { account } = record;

@@ -108,7 +108,12 @@ const harness = (options: Options = {}) => {
   const enabledMap: Record<string, string[]> = { evm: [EVM], solana: [SOL] };
   const tree: AccountTreeState = {
     status: "ready",
-    wallets: (options.walletIds ?? ["w1"]).map((walletId) => ({ walletId, updatedAt: 0 })),
+    wallets: (options.walletIds ?? ["w1"]).map((walletId) => ({
+      walletId,
+      updatedAt: 0,
+      custody: "vault" as const,
+      state: "ready" as const,
+    })),
     groups: {},
     selected: null,
     totals: {},

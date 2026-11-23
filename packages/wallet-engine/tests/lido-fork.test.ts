@@ -86,6 +86,7 @@ describe.skipIf(!RUN)("lido mainnet fork", () => {
       await rpc(RPC_URL, "anvil_setBalance", [from, "0x56BC75E2D63100000"]);
       const ctl = new TransactionController({
         wallet,
+        chains: chains(wallet),
         networks: new NetworkController({
           ...idleNetworkDeps,
           fetch: globalThis.fetch.bind(globalThis),

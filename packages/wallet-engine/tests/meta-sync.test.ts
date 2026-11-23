@@ -5,6 +5,7 @@ import { verifyEvent } from "@qntx/nostr";
 import type { Event, Filter } from "@qntx/nostr";
 import type { Wallet, WalletInfo } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
+import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
 import type { WalletSyncSigner } from "@qntx/wallet/nostr";
 
@@ -99,6 +100,7 @@ async function rig(
   const accounts = new AccountTreeController({
     setTimer: realTimer,
     wallet,
+    chains: { account: async (params) => chains(wallet).account(params) },
     spark,
     sparkNetwork: NETWORK,
     logger: LOGGER,

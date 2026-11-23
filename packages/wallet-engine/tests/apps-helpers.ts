@@ -11,7 +11,6 @@ import { expect } from "vite-plus/test";
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
-import { chains } from "@qntx/wallet/chains";
 import { sessions } from "@qntx/wallet/sessions";
 import type { SessionInfo } from "@qntx/wallet/sessions";
 
@@ -35,11 +34,13 @@ import {
 } from "../src/apps/polymarket/wallets.ts";
 import { createAppStorage } from "../src/apps/storage.ts";
 import type { AppGroupState } from "../src/apps/types.ts";
+import type { EngineOptions } from "../src/engine.ts";
 import type { EngineLogger } from "../src/events.ts";
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import type { Independent } from "../src/networks/controller.ts";
 import { AcknowledgementRequiredError, RequestController } from "../src/requests/controller.ts";
+import { SignersController } from "../src/signers/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
@@ -530,6 +531,8 @@ export type World = {
   /** The group's `fiat24` app state — undefined until a flow or reconcile writes it. */
   f24State: () => AppGroupState | undefined;
   approve: (id: string) => Promise<void>;
+  /** The one signing path — its `active` mirrors a running device operation. */
+  signers: SignersController;
 };
 
 export const world = async (
@@ -562,6 +565,8 @@ export const world = async (
     timers?: ReturnType<typeof manualTimer>;
     /** Request/record ids — a counter source when a test must tell two requests apart. */
     random?: (length: number) => Uint8Array;
+    /** The host's transport for paired devices — the world's signing path runs through signers. */
+    deviceIo?: EngineOptions["deviceIo"];
     /**
      * Wraps the real `requests` handed to `createApps` — a capture shim for the typed-data
      * documents the flows prepare (approvals still go through `w.requests`).
@@ -616,6 +621,15 @@ export const world = async (
     },
     logger,
   });
+  const signers = new SignersController({
+    wallet,
+    deviceIo: options.deviceIo,
+    recheck: async () => {
+      // Unit fixtures keep no material cache — nothing to recheck.
+    },
+    random: options.random ?? RANDOM,
+    logger,
+  });
   const transactions = new TransactionController({
     wallet,
     networks,
@@ -628,7 +642,7 @@ export const world = async (
     now: () => timers.time,
     logger,
     pollMs: 1,
-    chains: chains(wallet),
+    chains: signers.apis,
   });
   const requests = new RequestController({
     phishing: { check: () => "clear" },
@@ -810,6 +824,7 @@ export const world = async (
     apps: controller,
     destroy,
     requests,
+    signers,
     posted,
     timers,
     hl,
