@@ -126,7 +126,7 @@ export type AppAuthority = {
    * signs HyperCore actions under.
    */
   readonly network: string;
-  /** The account it acts on: the owner, or a venue account (Polymarket deposit wallet). */
+  /** The account it acts on: the owner, or a venue account (a deposit wallet). */
   readonly account: string;
   /** Who holds it: the builder, the spender, the operator. */
   readonly holder: string;
