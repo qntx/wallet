@@ -9,11 +9,17 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
-Hardening and reach. The vault structure is authenticated, the kernel signs what it can describe
-and refuses what it cannot show unless the owner allows blind signing, broadcasts whose outcome is
-unknown are never failed, and the cloud-backup password is stretched with Argon2id. React Native
-gains a silent `device` factor and an optional app lock. TRON joins EVM, Solana and Bitcoin as a
-fourth chain family, the EVM table grows to 41 mainnets, and Solana v1 transactions are supported.
+Hardening and reach. The vault moves to format 6: an authenticated manifest, and a vault anchor
+outside the store that floors the revision and rate-limits password attempts, so a rolled-back
+store cannot replay an old vault. The kernel signs what it can describe and refuses what it
+cannot show unless the owner allows blind signing, broadcasts whose outcome is unknown are never
+failed, and the cloud-backup password is stretched with Argon2id. Hardware signers join software
+wallets — the Keystone 3 Pro pairs and signs over QR while `WalletInfo` becomes a `custody`
+union — and the engine gains an approvals inventory with revocation, an NFT inventory with
+transfer requests, push notifications through the gateway, iCloud and Google Drive backup
+transports with versioned backup files, and a Fiat24 app on Arbitrum One. React Native gains a
+silent `device` factor and an optional app lock. TRON joins EVM, Solana and Bitcoin as a fourth
+chain family, the EVM table grows to 41 mainnets, and Solana v1 transactions are supported.
 The engine adds fiat prices, per-group activity history, Bitcoin coin control, Spark tokens,
 WalletConnect, and opt-in apps (Hyperliquid, Polymarket) whose L1 actions are signed by
 kernel-held session keys. Signing is split into plan → backend → assemble. The qntx card wallet is
