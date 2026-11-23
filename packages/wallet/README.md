@@ -45,6 +45,7 @@ const signer = nostr(wallet).signer(key.ref);
 const event = await signer.signEvent({
   kind: 1,
   created_at: Math.floor(Date.now() / 1000),
+  pubkey: key.publicKey,
   tags: [],
   content: "gm",
 });

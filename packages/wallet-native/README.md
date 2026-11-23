@@ -46,9 +46,25 @@ export default {
 - `android.minSdkVersion: 30` — required: per-use Keystore keys that accept a biometric _or_ the
   device credential need API 30 (`setUserAuthenticationParameters` semantics).
 
-## Card surfaces (NFC reader, secure input)
+## Card surfaces (experimental)
 
-To talk to a qntx card the host app needs, on iOS:
+Card wallets are not available in this release: the kernel's card protocol client is not wired to
+any command or API. `SecureInput` and the native NFC reader are groundwork whose API may change in
+any release without a major bump.
+
+The library's Android manifest merges `android.permission.NFC`,
+`android.permission.HIDE_OVERLAY_WINDOWS` and an optional `android.hardware.nfc` feature into
+every host app; nothing in this release needs them. An app that does not want them removes them in
+its own `AndroidManifest.xml` with `tools:node="remove"`:
+
+```xml
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+  <uses-permission android:name="android.permission.NFC" tools:node="remove" />
+  <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" tools:node="remove" />
+</manifest>
+```
+
+Once card wallets ship, the host app will also need, on iOS:
 
 - The entitlement `com.apple.developer.nfc.readersession.formats` = `["TAG"]`.
 - `ios.infoPlist.NFCReaderUsageDescription` — the purpose string shown under the NFC system
@@ -87,7 +103,7 @@ const wallet = await createNativeWallet({
     backupSalt: "example/backup",
   },
   autoLock: { platform: "native", backgroundSeconds: 60 },
-  verifyEvent, // e.g. createEventVerifier(signing) from @qntx/nostr-native
+  verifyEvent, // e.g. createEventVerifier (@qntx/nostr/core) over signing from @qntx/nostr-native
 });
 ```
 

@@ -1,8 +1,8 @@
 # Migrating from 0.13.0
 
 This guide covers every change a host of `@qntx/wallet`, `@qntx/wallet-engine`,
-`@qntx/wallet-native` and `@qntx/wallet-worker` has to act on between the 0.13.0 release and the
-next one (`main`). [CHANGELOG.md](CHANGELOG.md) lists every change; this file only lists what
+`@qntx/wallet-native` and `@qntx/wallet-worker` has to act on between the 0.13.0 release and
+0.14.0. [CHANGELOG.md](CHANGELOG.md) lists every change; this file only lists what
 needs host work, grouped by task.
 
 Every snippet below is a file under [`tests/migration/`](tests/migration), compiled by
@@ -94,7 +94,9 @@ export async function restoreAfterReset(
   `lock`, `destroy`, `setStore`, `setAccounts`, `lockAll`, `reconcile`, `trigger`,
   `invalidateAll`), `store.setState`, metadata merges and the provider handlers' `options` are
   gone from the engine. A component typed with a controller class (`SparkController`, …) takes
-  `WalletEngine["spark"]` instead.
+  `WalletEngine["spark"]` instead. Build controllers only through `createWalletEngine`: the
+  exported controller classes' constructor options changed (for example `AssetsController` requires
+  `chains`, `gateway`, `fetch` and `now`; `SparkControllerOptions.random` is gone).
 - Every type in the engine's host-facing signatures has a name in `@qntx/wallet-engine`:
   `AccountRef`, `TrackedTransaction`, `TxState`, `PrepareParams`, `ChainRequestInput`,
   `RequestResult`, the request inputs, displays and results, `SparkTokenBalance`, `HistoryGroup`,
@@ -208,6 +210,10 @@ export async function quoteBridge(
   live kernel without recreating the wallet.
 - Only one native kernel may be live per process: `destroy()` the previous wallet before creating
   another, or creation fails `integrity`.
+- On every platform, `WalletSnapshot` / `StatusPayload` gain the required fields `appLock`,
+  `verification` and `blindSigning` (the Web reports `appLock: true`), and the vault API gains
+  `enrolVerification`, `setAppLock` and `setBlindSigning`. Hand-written snapshot literals and
+  `Wallet` test doubles must add them.
 
 [`tests/migration/native-factors.ts`](tests/migration/native-factors.ts):
 
@@ -363,8 +369,8 @@ export async function approveSend(
   messages, 32-byte messages and text that renders a hash or carries unsafe code points; typed
   data that signs only hashes or opaque bytes (ERC-1271 wrappers such as `SafeMessage`), that is
   too large or misformed to show, or that a decoded family (permits, Permit2, Safe, Seaport,
-  built-in tokens) claims in a shape the wallet does not decode, such as EIP-3009 on a built-in
-  token; a Seaport order with more than four offer or consideration items; an unrecognised
+  built-in tokens) claims in a shape the wallet does not decode, such as an ERC-4494 `Permit`; a
+  Seaport order with more than `ORDER_ITEMS` (8) offer or consideration items; an unrecognised
   function of a built-in token; an undecoded System, Token, Token-2022, Stake or Associated Token
   instruction the signer signs; calldata to the signing account itself; a Safe `delegatecall`
   outside MultiSendCallOnly; and a Safe transaction with a gas refund.
@@ -438,7 +444,7 @@ Wallet Standard passes them, instead of compiled messages; `signedTransactions` 
 transactions with the wallet's signature in its own slot, so co-signers' signatures and dApp-paid
 (sponsored) transactions survive. The wallet may be any required signer, not only the fee payer. A
 sign-and-send that still needs other signers is refused before the prompt, and transaction
-versions other than legacy and v0 are refused. The engine's own Wallet Standard handler already
+versions above 1 are refused (v1 is new, §20). The engine's own Wallet Standard handler already
 does this; a host that feeds `requests.prepare` itself must pass the dApp's bytes unchanged.
 
 [`tests/migration/solana-provider.ts`](tests/migration/solana-provider.ts):
@@ -621,6 +627,10 @@ while `setVisible(true)`, so wire it to the app's foreground state. `setCurrency
 `FIAT_CURRENCIES` and persists it. `engine.portfolio.group(group)` values the balances already in
 state as exact decimal strings, with a `stale` flag (quotes older than 10 minutes) and an
 `unpriced` count. Prices are display-only: never use them to build or sign anything.
+`PricesState.errors` marks an asset `unpriced` (no price now; may resolve on the next fetch) or
+`unsupported` (the gateway has no price coverage for it; its stored quote is dropped): render the
+latter permanently absent, not retryable. Hidden tokens are neither priced nor valued
+([`tests/migration/unsupported.ts`](tests/migration/unsupported.ts)).
 
 [`tests/migration/prices.ts`](tests/migration/prices.ts):
 
@@ -661,7 +671,11 @@ Locally tracked sends fold into the matching chain entry. A gateway EVM entry is
 after it was checked against RPC; show `flags` (`zero-value-transfer`, `lookalike-counterparty`,
 `token-impersonation`, `suspicious-token-symbol`, `chain-mismatch`) as warnings and never offer a
 history counterparty as a known recipient. `truncated` names the networks whose provider pages
-dropped entries that could not be paged — show a gap notice while it is non-empty.
+dropped entries that could not be paged — show a gap notice while it is non-empty. `unsupported`
+names the networks the gateway has no history for at all — show a "no history for this network"
+notice, not a load error. `verified` means chain-proven from a host endpoint: entries read only
+through the gateway are never verified, and neither are EVM entries of an account that has code
+(an EIP-7702 delegation included) unless the transaction reverted.
 
 [`tests/migration/history.ts`](tests/migration/history.ts):
 
@@ -702,9 +716,14 @@ export async function showOlder(
 - `AssetsController.refreshBitcoin(xpub, network)` is removed: `refreshBitcoinGroup(group,
   network)` reads every template of the group, with per-template `sources` and the `utxos` list;
   `refresh(address, network)` reads a plain address.
+- Bitcoin balance reads follow BIP-44 account discovery: the change chain of a template whose
+  receive chain has no transactions is not walked, except `btc.bip84`, which receives the change of
+  every `btc.bip44` / `btc.bip49` send. A seed another wallet used only on such a change chain no
+  longer shows that balance. Templates found unused are re-scanned every 10 minutes; in between
+  their `sources` entry reports zero.
 - UTXOs on taproot addresses or worth at most 20,000 sat are `protected` as possible inscription or
   rune carriers: sends do not pick them, the balance counts them in `protected` (0.13.0 named it
-  `frozen`, on `AccountBalances` and per-source totals), and a dApp PSBT spending one raises
+  `AccountBalances.frozen`), and a dApp PSBT spending one raises
   `bitcoin-inscription-input`. Naming one in `inputs` opts into spending it.
 - User freezes: `engine.transactions.setUtxosFrozen` / `frozenUtxos`, per account and network.
   Automatic selection, speed-up and CPFP skip frozen outpoints; a dApp PSBT spending one raises the
@@ -816,7 +835,16 @@ export async function sendFromCoins(
   it in flight and never pay again; `failed` only comes from the operator. `SparkResult` gains
   `pending` and `token`; `SparkDisplay` gains a `token` variant.
 - While a token send with an unknown outcome is open, another send of the same token is refused
-  until it resolves.
+  until it resolves. A new payment with the same kind, receiver and amount (and token) as an
+  `unknown` one fails with category `duplicate` (`error.payment` is the earlier record): offer to
+  open that payment instead of sending again. Retrying the same request is unaffected.
+- A sats payment is `failed` only when the operator lists its transfer as expired or returned; an
+  id the operator does not list stays `unknown` at any age. A shortfall fails `insufficient-funds`
+  before anything is recorded.
+- `engine.spark.archivePayment(account, id)` gives up an open token payment the operator can never
+  answer for (its spent outputs were never reported); ask the user first. The record keeps its
+  history entry (`pending`, flag `unresolved`, `SparkPaymentState` `archived`) and stops blocking
+  new sends.
 - Paying a Bitcoin address from Spark (cooperative exit): `amountSats` is what arrives, the exit
   debits `amountSats + feeSats`, the display carries `feeSats`, and `maxFeeSats` is required — a
   higher quote is refused at prepare.
@@ -832,7 +860,7 @@ import type {
   SparkTokenBalance,
   WalletEngine,
 } from "@qntx/wallet-engine";
-import { requiredAcknowledgement } from "@qntx/wallet-engine";
+import { requiredAcknowledgement, SparkControllerError } from "@qntx/wallet-engine";
 import type { SparkAccountRef } from "@qntx/wallet/spark";
 
 /** Token balances in base units, refreshed with the account; absent until the first read. */
@@ -904,6 +932,65 @@ export async function prepareExit(
   const { display } = request;
   return "feeSats" in display ? display.feeSats : undefined;
 }
+
+/** `SparkErrorCategory` gained `duplicate` — an unresolved open record holds the same intent. */
+// eslint-disable-next-line typescript/consistent-return -- the switch is exhaustive; a new category fails typecheck
+export function sparkErrorMessage(error: unknown): string {
+  if (!(error instanceof SparkControllerError)) {
+    throw error;
+  }
+  switch (error.category) {
+    case "insufficient-funds":
+      return "not enough balance";
+    case "duplicate":
+      return "this payment is still unresolved — wait for it or archive it";
+    case "network":
+      return "the operator did not answer";
+    case "approval-required":
+      return "approval required";
+    case "rejected":
+      return "the payment was rejected";
+    case "unknown":
+      return "the payment's outcome is unknown";
+    case "internal":
+      return "an internal error";
+  }
+}
+
+/**
+ * A token send whose broadcast failed before its spent output ids were known can never be answered
+ * for — `archivePayment` gives it up after the user confirms. The record stays visible: state
+ * `archived`, history status `pending` with the `unresolved` flag, and it never blocks a resend.
+ * Operator history can still replace it later.
+ */
+export function archiveDeadPayment(
+  engine: WalletEngine,
+  ref: SparkAccountRef,
+  payment: SparkPaymentRecord,
+): void {
+  const key = `${ref.walletId}:${String(ref.groupIndex)}:${ref.network}`;
+  const state = engine.spark.getState().accounts[key]?.payments?.[payment.id]?.state;
+  if (state === "unknown") {
+    engine.spark.archivePayment(ref, payment.id);
+  }
+}
+
+/** `SparkPaymentState` gained `archived`; hosts switching on it must add the case. */
+// eslint-disable-next-line typescript/consistent-return -- the switch is exhaustive; a new state fails typecheck
+export function sparkStateLabel(state: SparkPaymentState): string {
+  switch (state) {
+    case "submitted":
+      return "submitted";
+    case "unknown":
+      return "outcome unknown";
+    case "settled":
+      return "settled";
+    case "failed":
+      return "failed";
+    case "archived":
+      return "archived — will never resolve";
+  }
+}
 ```
 
 ## 13. Removed APIs
@@ -925,7 +1012,7 @@ export async function prepareExit(
 | `engine.connections.request`, `authorize`, `touch`                                                                     | nothing — dApp-side steps run inside the provider handlers                           |
 | `engine.accounts.exportMeta` / `mergeMeta`, `engine.addressBook.merge` / `syncEntries`                                 | `engine.metaSync`                                                                    |
 | `engine.networks.ensClient`, `independentClient`, `independentEnsClient`, `independentSolanaRpc`, `independentEsplora` | `engine.names.resolve`; cross-checks run inside the engine                           |
-| `AccountBalances.frozen`, `BitcoinTotals.frozen` (Bitcoin)                                                             | `protected`                                                                          |
+| `AccountBalances.frozen` (Bitcoin)                                                                                     | `protected`                                                                          |
 | `TrackedTransaction.evm.raw`                                                                                           | `TrackedTransaction.raw`                                                             |
 | `EngineOptions.gateway.installId`                                                                                      | nothing                                                                              |
 | `ConnectionController.setActiveGroup`, `activeGroup`, `accounts`, `solanaAccount`, `bitcoinAccounts`, `nostrAccount`   | `engine.accounts.select`, `connections.sessionAccounts`, `connections.nostrIdentity` |
@@ -939,17 +1026,19 @@ export async function prepareExit(
 
 ## 14. New error codes
 
-| Where                            | Code                                                                                                   | Meaning                                                                           |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| `WalletError.code`               | `verification-unavailable`                                                                             | React Native: no factor can verify (no lock screen). No prompt was shown.         |
-| `WalletError.code`               | `blind-signing-disabled`                                                                               | A blind request while the vault setting is off. No prompt was shown.              |
-| `BackupControllerError.category` | `weak-password`                                                                                        | The backup password is too easy to guess.                                         |
-| `SparkControllerError.category`  | `unknown`                                                                                              | The payment may have committed; it settles under `transferId` / `inputOutputIds`. |
-| engine request errors            | `AcknowledgementRequiredError`, `BlindSigningDisabledError` (now on every blind request, at `approve`) | See sections 4 and 5.                                                             |
-| `RiskFinding.code`               | `bitcoin-frozen-input` (danger)                                                                        | A dApp PSBT spends a user-frozen outpoint.                                        |
-| `RequestStage`                   | `signed`                                                                                               | Signed, not yet submitted: no longer invalidated.                                 |
-| EIP-1193 provider                | `-32005`                                                                                               | An `eth_getLogs` filter over the bounds.                                          |
-| gateway                          | `outcome-unknown` (`502`)                                                                              | A broadcast whose outcome is unknown; never retried on another provider.          |
+| Where                            | Code                                                                                                   | Meaning                                                                                                                                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WalletError.code`               | `verification-unavailable`                                                                             | React Native: no factor can verify (no lock screen). No prompt was shown.                                                                                                                       |
+| `WalletError.code`               | `blind-signing-disabled`                                                                               | A blind request while the vault setting is off. No prompt was shown.                                                                                                                            |
+| `BackupControllerError.category` | `weak-password`                                                                                        | The backup password is too easy to guess.                                                                                                                                                       |
+| `SparkControllerError.category`  | `unknown`, `duplicate`                                                                                 | `unknown`: the payment may have committed (`error.payment` is its record). `duplicate`: an unresolved payment with the same intent exists (`error.payment`).                                    |
+| engine request errors            | `AcknowledgementRequiredError`, `BlindSigningDisabledError` (now on every blind request, at `approve`) | See sections 4 and 5.                                                                                                                                                                           |
+| `RiskFinding.code`               | `bitcoin-frozen-input` (danger)                                                                        | A dApp PSBT spends a user-frozen outpoint.                                                                                                                                                      |
+| `RequestStage`                   | `signed`                                                                                               | Signed, not yet submitted: no longer invalidated.                                                                                                                                               |
+| EIP-1193 provider                | `-32005`                                                                                               | An `eth_getLogs` filter over the bounds.                                                                                                                                                        |
+| gateway                          | `outcome-unknown` (`502`), `too-costly` (`413`), `unsupported` (`404`)                                 | A broadcast whose outcome is unknown, never retried on another provider; one request costing more than a client's share window (split it); no coverage for this network or asset (never retry). |
+| `ChainErrorCode`                 | `invalid-signature`                                                                                    | An assembler refused a signature that does not verify under its task key.                                                                                                                       |
+| engine errors                    | `TronThrottledError` (`retryAfterMs`), `SolanaClusterBindingError` (`reason`)                          | See sections 17 and 20.                                                                                                                                                                         |
 
 [`tests/migration/error-codes.ts`](tests/migration/error-codes.ts):
 
@@ -998,6 +1087,7 @@ export const SPARK_ERROR_IS_NEW: Readonly<Record<SparkErrorCategory, boolean>> =
   "insufficient-funds": false,
   rejected: false,
   unknown: true,
+  duplicate: true,
   internal: false,
 };
 
@@ -1017,1003 +1107,418 @@ export const ENGINE_INTEGRITY: EngineErrorCode = "integrity";
   policy.
 - Password re-verification is rate-limited like unlock (`rate-limited` with `retryAt`).
 
-## 16. Built-in EVM networks and fee model
+## 16. Built-in networks and fee model
 
 ### `NetworkInfo.opStack` → `NetworkInfo.feeModel`
 
 `NetworkInfo` (exported from `@qntx/wallet-engine`, `@qntx/wallet-engine/connect` and
-`@qntx/wallet-engine/gateway/contract`) no longer has `opStack?: true`. Every EVM entry now carries
-`feeModel: { kind: "execution" } | { kind: "op-stack" }`.
+`@qntx/wallet-engine/gateway/contract`) no longer has `opStack?: true`. Every EVM entry carries
+`feeModel`; `FeeModel` and `GasPricing` are exported from `@qntx/wallet-engine` and
+`@qntx/wallet-engine/gateway/contract`:
 
 ```ts
-// before
-if (network.opStack === true) showL1Fee();
-// after
-if (network.feeModel?.kind === "op-stack") showL1Fee();
-```
-
-Treat an unknown future `kind` as "charges something beyond gas" rather than as "execution".
-
-### More built-in networks
-
-`BUILT_IN_NETWORKS` / `NETWORKS` grow from 8 + 8 EVM networks to 31 mainnets + 22 testnets in a fixed
-order (existing first). Hosts that hard-code the number of networks, index the array by position, or
-render every network unconditionally should filter by `testnet` and by what `engine.networks.enabled()`
-reports (networks with an endpoint or served by the gateway). Signing chain ids still come only from the
-table; `wallet_addEthereumChain` / `wallet_switchEthereumChain` for ids outside it still answer 4902.
-
-### Gateway
-
-Production now needs the Alchemy app and the dRPC key enabled for the new networks (see the report for
-the list). Staging serves every built-in EVM testnet through public keyless endpoints.
-
-### `FeeModel` gains `pricing`, `operatorFee`, `tokenRatio` and a `scroll` kind
-
-`FeeModel` (exported from `@qntx/wallet-engine` and `@qntx/wallet-engine/gateway/contract`, reachable through
-`NetworkInfo.feeModel` from `@qntx/wallet-engine/connect` too) is now:
-
-```ts
-type GasPricing = "eip1559" | "legacy"; // newly exported
+type GasPricing = "eip1559" | "legacy";
 type FeeModel =
   | { kind: "execution"; pricing: GasPricing }
   | { kind: "op-stack"; pricing: GasPricing; operatorFee: boolean; tokenRatio: boolean }
   | { kind: "scroll"; pricing: GasPricing };
 ```
 
+OP Stack and Scroll networks charge an L1 data fee; legacy-priced networks (opBNB, Fraxtal) sign
+type-0 transactions at `eth_gasPrice`, so show a gas price rather than EIP-1559 caps. Treat an
+unknown future `kind` as "charges something beyond gas", not as `execution`. Code that constructs
+`FeeModel` literals (test fixtures) must set every required field.
+
+[`tests/migration/fee-model.ts`](tests/migration/fee-model.ts):
+
 ```ts
-// before
-if (network.feeModel?.kind === "op-stack") showL1Fee();
-// after — Scroll also charges an L1 data fee
-const model = network.feeModel;
-if (model !== undefined && model.kind !== "execution") showL1Fee();
-// legacy-priced networks (opBNB, Fraxtal) sign type-0 transactions: show a gas price, not 1559 caps
-if (model?.pricing === "legacy") showGasPriceOnly();
+import type { FeeModel, GasPricing, NetworkInfo } from "@qntx/wallet-engine";
+
+/** What a network charges beyond execution gas: nothing, an L1 data fee, or data plus operator fee. */
+export function describeExtraFee(
+  network: NetworkInfo,
+): "none" | "l1-data" | "l1-data-and-operator" {
+  const model: FeeModel | undefined = network.feeModel;
+  switch (model?.kind) {
+    case "scroll":
+      return "l1-data";
+    case "op-stack":
+      return model.operatorFee ? "l1-data-and-operator" : "l1-data";
+    default:
+      return "none";
+  }
+}
+
+/** Chains priced "legacy" sign a type-0 transaction at eth_gasPrice; EIP-1559 chains use fee caps. */
+export function buildsLegacy(network: NetworkInfo): boolean {
+  const pricing: GasPricing = network.feeModel?.pricing ?? "eip1559";
+  return pricing === "legacy";
+}
 ```
 
-Code that constructs `FeeModel` literals (test fixtures) must add the new required fields.
+### `fee.l1Data` is a maximum
 
-### `fee.l1Data` is an upper bound
-
-`DisplayIntent.fee.l1Data` on OP Stack and Scroll networks is now the oracle's L1 data-fee estimate × 5/4
-(rounded up) plus the operator fee at the full gas limit — an upper bound like `fee.max`, not a point estimate.
-Displayed maximum fees and the `fee-exceeds-amount` check move up accordingly; the fee actually charged is
-unchanged. Hosts that labelled `l1Data` "estimated" should label it a maximum. On Mantle the figure was ~4,400×
-too low before (now multiplied by `tokenRatio()`).
-
-### Token table roles
-
-`EvmToken` gains an optional `role: "native-alias" | "wrapped-native"`. Native-alias rows (Celo CELO, Arc USDC,
-Stable USDT0 and testnets) are never returned as token balances; hosts that iterate `evmTokenTable` themselves
-to read balances must skip them to avoid counting the native coin twice. Wrapped-native rows (WETH, WBNB,
-WPOL, … on 24 networks) now appear as ordinary token balances, and `deposit()`/`withdraw(uint256)` calls to them
-are described as a `swap` with `verifiability: "full"` instead of an opaque contract call.
+`DisplayIntent.fee.l1Data` on OP Stack and Scroll networks is an upper bound like `fee.max`: the
+oracle's L1 data-fee estimate × (9/8)³, rounded up, plus the operator fee at the full gas limit
+(Mantle: multiplied by `tokenRatio()`). Displayed maximum fees and the `fee-exceeds-amount` check
+move up accordingly; the fee actually charged is unchanged. Label `l1Data` a maximum, not an
+estimate. The bound is re-read at approval and, when the approval read is older than one L1 slot,
+before broadcast: `approve` can fail with "the L1 data fee rose — start over"; prepare the same
+request again ([`tests/migration/l1-fee-bound.ts`](tests/migration/l1-fee-bound.ts)).
 
 ### More built-in networks
 
-10 mainnets (Ink, Fraxtal, Ronin, Scroll, BOB, opBNB, Arbitrum Nova, Taiko, Flare, Zora) and 4 testnets
-(Ink Sepolia, Fraxtal Hoodi, opBNB Testnet, Zora Sepolia) are appended after the existing entries of each group;
-existing positions do not move.
+The EVM table grows from 8 mainnets + 8 testnets to 41 mainnets + 26 testnets, appended after the
+existing entries (existing positions do not move); TRON adds three more networks (§17).
+`BUILT_IN_NETWORKS` (new `@qntx/wallet-chains/networks` entry) is the single table. Hosts that
+hard-code the number of networks, index the array by position, or render every network
+unconditionally must filter by `family`, by `testnet` and by what `engine.networks.enabled()`
+reports (networks with an endpoint or served by the gateway). Signing chain ids still come only
+from the table; `wallet_addEthereumChain` / `wallet_switchEthereumChain` for ids outside it answer
+4902, and for a listed but disabled network say that it must be enabled in the wallet.
 
-### Gateway operators
+### Token table roles
 
-A new production secret `ANKR_API_KEY` is required (`wrangler.jsonc` `secrets.required`); Ankr serves Arbitrum
-Nova, Taiko and Flare after dRPC. Enable the new networks in the production Alchemy app (`ink-mainnet`,
-`frax-mainnet`, `ronin-mainnet`, `scroll-mainnet`, `bob-mainnet`, `opbnb-mainnet`, `zora-mainnet`) and on the dRPC
-paid plan.
+`EvmToken` gains an optional `role: "native-alias" | "wrapped-native"`. Native-alias rows (Celo
+CELO, Arc USDC, Stable USDT0 and their testnets) are never returned as token balances; a host that
+iterates `evmTokenTable` itself to read balances must skip them or it counts the native coin twice.
+Wrapped-native rows (WETH, WBNB, WPOL, … on 24 networks) appear as ordinary token balances, and
+`deposit()` / `withdraw(uint256)` calls to them are described as a `swap` with
+`verifiability: "full"`.
 
-## 17. TRON family
+## 17. TRON
 
-- `ChainFamily`, `NetworkMeta.family`, `AccountRef` (imported `family`), `KeyInfo.family` and the `keys.import` family parameter now include `"tron"`. Exhaustive `switch`es or `Record<…>` maps over these unions in host code need a `"tron"` case.
-- `ChainTemplate` includes `"tron.bip44"` and `ChainAccount` has a `tron.bip44` arm with a base58 `address`; `ChainSignRequest`/`ChainSignResult` have `tron.transaction` and `tron.message` arms.
-- `BUILT_IN_NETWORKS` (`@qntx/wallet-chains/networks`) contains three TRON entries. Code that iterates it without filtering by `family` will now see them.
-- `@qntx/wallet-engine` `NetworkInfo.family` is typed `EngineFamily`; code that assigned a `NetworkMeta` to `NetworkInfo` must narrow the family first.
-- A TRON private key's text form is 64 hex characters without `0x`; `keys.export` returns it in that form.
+TRON is a fourth chain family across `@qntx/wallet-chains`, `@qntx/wallet` and
+`@qntx/wallet-engine`. Compiled snippets: [`tests/migration/tron.ts`](tests/migration/tron.ts)
+(sends, staking, fees, account view) and
+[`tests/migration/tron-dapp.ts`](tests/migration/tron-dapp.ts) (in-app browser).
 
-## 18. Hyperliquid agent key and app signing
+### Closed unions
 
-### Vault
+Exhaustive `switch`es and `Record<…>` maps over these unions need a `"tron"` case:
+`ChainFamily`, `NetworkMeta.family`, `AccountRef` (imported `family`), `KeyInfo.family`, the
+`keys.import` family parameter, `ChainTemplate` (`"tron.bip44"`), `ChainAccount`,
+`ChainSignRequest` / `ChainSignResult` (`tron.transaction`, `tron.message`, `tron.typed-data`),
+`EngineFamily`, `NetworkInfo.family`, `TrackedTransaction.family`, `HistoryEntry.family`,
+`WatchAccount.family`, `AddressFamily`, `GatewayScope` and the sign-log family. A TRON private key's
+text form is 64 hex characters without `0x`.
 
-Superseded by §28: the agent key this section described is a generic `session-key` record of the
-`hyperliquid-l1-agent` scheme — the record shape, the unknown-scheme rules and the downgrade
-warning live there. `VAULT_FORMAT` stays 5 and the vault manifest covers the new rows like every
-other record.
-
-### Host-visible behaviour
-
-- `chain.sign` of Hyperliquid user-signed typed data and of Polymarket orders, `ClobAuth` and
-  deposit-wallet batches now produces described prompts and `DisplayIntent.message.hyperliquid` /
-  `.polymarket`. Shapes under those domains that are not exactly the described ones are now blind
-  (`typed-data-variant`; `typed-data-commitment` for the Hyperliquid `Exchange`/`Agent` document)
-  and are refused unless the vault's blind-signing policy is on — previously they were shown as a
-  generic field list.
-- `chain.sign` of an `approveAgent` is bound to the held agent — superseded by §28: the check
-  compares the signer and the approval's fields against the held `hyperliquid-l1-agent` session's
-  `scope`, `name` and `validUntil`.
-- New methods `sessions.create`, `sessions.list`, `sessions.delete`, `sessions.sign` (session
-  required) — superseded by §28: generic session keys, the M-1 signing window and the
-  `sessions(wallet)` facade under `@qntx/wallet/sessions`.
-
-## 19. Signing classification: message text, typed-data commitments, orders, Solana program authority
-
-### Message text
-
-- Every valid UTF-8 message decodes to `{ kind: "text" }`. 32-byte messages and text with hidden characters are no longer `{ kind: "bytes" }`. Only invalid UTF-8 is `bytes`.
-- `isReadableText`, `isUnsafeCodePoint` and `isHexRendering` are removed from `@qntx/wallet-chains`. Use `messageTextHazard(text)` (`"digest-length" | "hidden-characters" | "encoded-bytes" | undefined`) to learn whether text is blind and why, `hasHiddenCharacters(text)` to check for deceptive code points, and `isEncodedBytes(text)` to detect text that encodes raw bytes. `messageBlindReason` keeps its signature.
-- Before/after: `tests/migration/message-text.ts`.
-
-### Warnings and limits
-
-- `IntentWarning.kind` is now the closed union `IntentWarningKind`. Code that switches on `kind` gets exhaustiveness checking; code that constructs warnings with arbitrary strings no longer compiles.
-- `SEAPORT_ORDER_ITEMS` (4) is renamed `ORDER_ITEMS` (8) and is shared by Seaport and the new order decoders.
-
-### New intent content (display-only, host-visible)
-
-- `MessageContent` (typed-data) gains `order?: OffchainOrder` for decoded 1inch LOP v4, CoW Protocol and UniswapX orders.
-- `DisplayIntent` gains `programAuthority?: ReadonlyArray<ProgramAuthority>` (Solana).
-- `AssetFlow` gains `tokenAccount?: string` (SPL unchecked `Transfer`).
-- `StakeAction` gains `{ kind: "split" }`.
-- `BlindReason` gains `"program-authority"`. Exhaustive switches over `BlindReason` must handle it.
-
-### Behaviour
-
-- An undecoded typed-data document with any hash/bytes leaf is blind (`typed-data-commitment`). Documents of claimed order protocols (1inch, CoW, 0x v4, Blur, LooksRare v2, Bebop, Paraswap, Velora Delta, KyberSwap, OpenOcean, Odos) that are not decoded are blind (`typed-data-variant`). Hosts that offered these flows with blind signing off will now see `BlindSigningDisabledError` for them.
-- `chains(wallet).sign` throws `integrity` when the kernel's result kind differs from the request kind (previously possible for Solana requests).
-
-## 20. Engine: stopped batches, read-only state, durable nonces
-
-### Batch sends: `refused` → `stopped`
-
-`SolanaSignResult` (`solana-sign` requests with `send: true`) and `BitcoinSignResult`
-(`bitcoin-sign` with `send: true`) no longer report a partial batch as `refused`. The field is
-now `stopped`:
-
-```ts
-readonly stopped?: {
-  readonly index: number;                 // input that did not go out
-  readonly reason: "refused" | "not-sent";
-  readonly error: string;
-};
-```
-
-- `reason: "refused"` — the node itself rejected that input's bytes. It and every later input
-  were not sent; the dApp sees `the network refused transaction ${index}: …`.
-- `reason: "not-sent"` — a local failure (e.g. the durable pre-broadcast write) kept the input
-  from being broadcast at all; the dApp sees `transaction ${index} was not sent: …`. A
-  post-broadcast bookkeeping failure can no longer stop a batch: once bytes are out, the item is
-  reported as sent.
-
-The ids already submitted are still on `signatures` (Solana) / `txids` (Bitcoin) — never
-resubmit them. The first input failing still rejects the whole request as before (nothing went
-out). Snippet: `tests/migration/batch-stopped.ts`.
-
-### Engine state snapshots are deeply read-only
-
-Every controller's `getState()` (and `store.getState()`) on the `WalletEngine` facade now returns
-a deeply frozen snapshot, typed `DeepReadonly<…>` (new exported type). Host code that edited a
-snapshot in place — `delete state.txs[id]`, `rows.sort()`, assigning into `balances` — no longer
-compiles and throws a `TypeError` at runtime. Copy first (`Object.values(...).toSorted(...)`,
-`{ ...state.txs }`). Snippet: `tests/migration/readonly-state.ts`.
-
-### `TrackedTransaction.durableNonce`
-
-Additive: a Solana durable-nonce transaction carries `durableNonce: { account, value }` and no
-`lastValidBlockHeight`; `account` is `undefined` when the message loads the nonce account from an
-address lookup table. Such a transaction is never shown `dropped` by block height. No host change
-is required.
-
-## 21. Gateway coverage: unsupported
-
-The gateway now distinguishes _permanent_ absence of coverage from _temporary_ failure, with a new
-contract error code `"unsupported"` (HTTP 404, appended to `GATEWAY_ERRORS`): **this gateway will
-never serve this resource for this network or asset — do not retry.**
-
-### Before
-
-- `POST /v1/history/:caip2` on a served network whose providers offer no history answered
-  `503 unavailable` with `Retry-After` — clients retried forever for coverage that would never
-  appear.
-- `GET /v1/tokens/:caip2` answered `404 not-found` for every absent list — a network with no
-  configured token source looked exactly like one whose hourly build had not landed yet.
-- `POST /v1/prices` returned assets no provider maps inside `missing` — indistinguishable from
-  assets a provider might price on the next request.
-
-### After
-
-- `POST /v1/history/:caip2` on a served network with no history provider answers `404`
-  `{"error":"unsupported"}` (no `Retry-After`). Unknown or non-EVM networks still answer
-  `404 unknown-network`.
-- `GET /v1/tokens/:caip2`: a served network no configured token source covers → `404`
-  `{"error":"unsupported"}`; a covered network whose stored list is absent → `503`
-  `{"error":"unavailable"}` with `Retry-After` (the hourly build has not landed).
-- `POST /v1/prices` responses carry a third list `unsupported` — every requested asset is in
-  exactly one of `prices`, `missing` (no price now; may change) or `unsupported` (no provider maps
-  it; never sent upstream, never cached). `pricesResponse` requires the field: deploy gateway and
-  engine together.
-
-### Engine surfaces a host sees
-
-- `GroupHistory.unsupported: ReadonlyArray<string>` — sorted network ids the gateway has no
-  history for. The group's entry list is complete for every other network: render a "no history
-  for this network" notice instead of a load error. Lifecycle mirrors `truncated` (reset per
-  load, not persisted).
-- `PricesState.errors` values are now `"unpriced" | "unsupported"`. An asset reported
-  `unsupported` also loses any stored quote — it has no price coverage at all — so a stale
-  number never masquerades as a live one. Render it permanently absent (greyed out), not
-  retryable.
-- `TokenLists`: a 404 `unsupported` or `unknown-network` stores the empty list as before; a bare
-  404 without a recognised code and a 503 are failures — they back off ten minutes and keep any
-  stored list.
-
-See `tests/migration/unsupported.ts` (compiled by `bun run typecheck`) for the snippet.
-
-## 22. TRON in the engine and gateway
-
-The compiled host snippet is `tests/migration/tron.ts`.
-
-### Types
-
-- `EngineFamily`, `NetworkInfo.family`, `TrackedTransaction.family`, `HistoryEntry.family`,
-  `WatchAccount.family`, `AddressFamily`, `GatewayScope` and the sign-log family now include
-  `"tron"`. Exhaustive `switch`es or `Record<…>` maps over these unions need a `"tron"` case.
+- `NetworkInfo.family` is typed `EngineFamily`; code that assigned a `NetworkMeta` to a
+  `NetworkInfo` must narrow the family first.
 - `GatewayConfig.clientIds` has a `tron` entry. `gatewaySession` creates it; a host that builds
-  `clientIds` by hand must add a fresh random 128-bit id for `tron`. Both types are now exported from the package root.
-- `ChainRequestMethod`/`ChainRequestInput` gain `tron-stake` and `tron-approve`;
-  `RequestController.approve(id, "tron-stake" | "tron-approve")` returns the tracked transaction.
-- `PendingRequest.tronFee?: TronFeeQuote` is set on TRON requests; `AccountBalances.tron?:
-  TronAccountView` on TRON balance reads; `TrackedTransaction.tron?: { expiration, from }` on TRON
-  rows. `RiskFinding.code` gains `contract-recipient`, `token-contract-recipient`,
-  `token-recipient-empty`.
+  `clientIds` by hand adds a fresh random 128-bit id. `GatewayConfig` and `GatewayScope` are
+  exported from the package root.
+- `RiskFinding.code` gains `contract-recipient`, `token-contract-recipient`,
+  `token-recipient-empty` and `fee-limit-below-estimate`.
 
 ### Configuration
 
 - Host `rpc` for `tron:728126428` / `tron:3448148188` lists full-node HTTP base URLs (for example
   `https://api.trongrid.io`), not JSON-RPC URLs. A custom endpoint is validated by its block 0 id.
-- `send` with `token` set to a base58 `T…` address sends TRC-20, a 7-digit decimal id sends TRC-10,
-  absent sends TRX; the `fee` tier is ignored on TRON (there is no fee market). Show
-  `tronFee.expected`/`tronFee.max` and the warnings before approval.
-- A TRON transaction expires 60 s after it is built: approving later fails with "transaction
-  expired — start over" before anything is signed.
+- Behind the gateway alone, mainnet sends work and their prepares carry `reads-unverified`; testnet
+  (Nile, Shasta) sends are refused with an error naming the missing `EngineOptions.rpc` entry,
+  because a mainnet reference block would make a testnet signature valid on the mainnet. Configure a
+  host endpoint for every TRON testnet you offer.
+- A TRON transaction expires 60 s after it is built. An engine-built send is rebuilt in place at
+  approval when less than 20 s remain; a dApp transaction is refused then ("the dApp must build it
+  again").
+- `TronFeeQuote` availability fields are `bigint` and `TronAccountView` counters are decimal
+  strings: format them with the decimal helpers, never `Number()` them.
+- A prepare whose pinned TRON reads stay throttled beyond the transaction's validity window rejects
+  with `TronThrottledError` (`retryAfterMs`): retry after that delay.
 
-### Gateway operators
+### In-app browser
 
-- Production needs the secrets `TRONGRID_API_KEY` and `TATUM_API_KEY` (`wrangler secret put`).
-  Staging serves Nile keyless.
-
-## 23. Hyperliquid app provider
-
-### `requests.prepare({ method: "evm-sign" })` — `origin` is optional
-
-`EvmSignInput.origin` is now `origin?: BrowserOrigin`. Absent means the request is the wallet's
-own (`PendingRequest.origin` is `{ kind: "internal" }`), and only `request.kind ===
-"evm.typed-data"` is accepted — a personal message or a transaction still needs a page origin
-(sign-in and phishing checks run on it). Existing callers that pass an origin are unaffected. The
-apps entry uses this for Hyperliquid user-signed actions; hosts showing approval screens must be
-ready for an `evm-sign` request without a page origin (the prompt content is the kernel's decode of
-the typed data, `display.message.hyperliquid`). Requests an app opens now carry
-`{ kind: "app", id }` instead of `{ kind: "internal" }` — superseded by §28.
-
-### New: `@qntx/wallet-engine/apps` and `@qntx/wallet/sessions`
-
-Opt-in entries; a host that does not import them bundles nothing new. The complete host
-composition (engine + apps, terms, enable with the approval request, orders with quote previews,
-a live book, close, withdraw, Bridge2 deposit) is the typechecked file
-`tests/migration/hyperliquid.ts`, compiled by `bun run typecheck`
-(`tsc --noEmit -p tests/migration`). The engine README's "Hyperliquid" section describes every
-option. The kernel-held agent it enables is a `hyperliquid-l1-agent` session key under
-`@qntx/wallet/sessions` — superseded by §28.
-
-Host checklist:
-
-- Pass `requests: engine.requests`, `networks: engine.networks`, a separate `openStore` (its own
-  EngineStore namespace), a `socket: (url) => new WebSocket(url)` factory, the wallet `gateway`
-  URL, and `apps: [hyperliquid({ network, agentName, builder? })]` (no defaults;
-  `builder.feeRateTenthsBps` 1..100; `hyperliquid` comes from `@qntx/wallet-engine/apps/hyperliquid`,
-  see §27).
-- Render `AppsController` state: `status` (`disabled | enabling | enabled | needs-reauthorization
-  | unavailable`), `step` + `requestId` (show that request's approval screen), `renewalDue`,
-  `error`, and `eligibility` (call `refreshEligibility()` on foreground — display only).
-- Market orders return the slippage cap they will post; show it before confirming.
-- Order outcomes include `not-placed` and `unknown` (after a lost POST); nothing is re-sent.
-
-### Gateway
-
-New route `GET /v1/eligibility` (client id required, 1 rate-limit unit, `cache-control: private,
-no-store`); contract `eligibility` in `@qntx/wallet-engine/gateway/contract`. Deploying the gateway
-is required before hosts enable apps: without a `ready` eligibility answer `enable` refuses.
-
-## 24. Spark outcomes, TRON precision, Hyperliquid CCTP deposits and the optional builder fee
-
-Typechecked snippets: `tests/migration/spark-tokens.ts` (archive, `duplicate`), `tests/migration/
-error-codes.ts` (`duplicate` category), `tests/migration/tron.ts` (bigint/string fields),
-`tests/migration/hyperliquid.ts` (CCTP deposit, `builder: "declined"`, `approveBuilder`).
-
-### Spark payments
-
-- A payment whose commit call went out is `failed` only on the operator's word (expired/returned).
-  Expect more `unknown` records that stay `unknown`; show them as "outcome unknown — do not pay
-  again" and let the user retry the **same** request (it resumes under the same transfer id and
-  pays at most once).
-- New `SparkControllerError.category === "duplicate"`: a new payment with the same kind, receiver
-  and amount (and token) as an `unknown` one is refused; `error.payment` is the earlier record.
-  Offer to open that payment instead of sending again.
-- Shortfalls now fail `insufficient-funds` before any record is written.
-- `engine.spark.archivePayment(account, id)`: only for token records the operator can never answer
-  for (no spent output ids). Ask the user first. The record's history entry stays `pending` with
-  flag `unresolved`; it no longer blocks new sends. `SparkPaymentState` gains `"archived"`.
-
-### TRON
-
-- `TronFeeQuote.bandwidth.stakedAvailable`, `.freeAvailable` and `.energy.available` are `bigint`
-  (were `number`). TRON account resource counters in the account view are decimal strings. Format
-  them with the existing decimal helpers; never `Number()` a balance.
-
-### Hyperliquid (`@qntx/wallet-engine/apps`)
-
-- Deposits use CCTP: `depositInfo` describes the CCTP route (TokenMessengerV2, USDC, forwarder,
-  domain 19) instead of Bridge2; there is no 5 USDC minimum, but the amount must exceed the Circle
-  fee cap. `fund.deposit` returns `{ kind: "approval-required", approval }` when
-  the USDC allowance is short (only an exact approval request is opened — the deposit cannot be
-  built before the approval is mined); call `deposit` again once that approval confirmed, which
-  returns `{ kind: "deposit", deposit }`. A `dex: "spot"` parameter funds the spot balance instead
-  of perps. Bridge2 constants and the Bridge2 deposit are removed.
-- `AppGroupState.builder` is `"approved" | "declined" | undefined`. A declined builder still ends
-  `enabled`; trades carry no builder. `controller.approveBuilder(group, "hyperliquid")` asks again
-  (e.g. from settings); a refusal leaves `declined`.
-
-### Signing prompts hosts may notice
-
-- A 32-byte message prompt adds a `Data 0x…` line and omits text that does not print plainly.
-- Raydium AMM v4 / CPMM / CLMM and Orca Whirlpool swaps that used to show program-authority lines
-  (or be blind past the account budget) are now swap prompts with "at most … / at least …" lines.
-- Calls to the CCTP TokenMessengerV2 on Arbitrum other than a described Hyperliquid deposit are
-  blind (`cctp-destination`) — plain CCTP bridging from Arbitrum to other chains now needs blind
-  signing enabled.
-- EVM history: accounts with code (EIP-7702 delegation) show their new history entries as
-  unverified.
-
-## 25. TRON in-app-browser provider, `tron-sign`, memos
-
-Compiled snippet: `tests/migration/tron-dapp.ts`.
-
-1. **Bridge.** `createBrowserBridge` takes a `tron` handler — pass the engine's `tronWallet` next to `solanaWallet`
-   and `bitcoinWallet`. The injected script (`injectedScript(info)`) now also installs `window.tron`,
-   `window.tronLink` and `window.tronWeb` and announces TIP-6963 with the same `ProviderInfo`; nothing else to do.
-
-   ```ts
-   // before
-   createBrowserBridge({ eip1193, nip07, webln, solana, bitcoin, connections, inject, now });
-   // after
-   createBrowserBridge({
-     eip1193,
-     nip07,
-     webln,
-     solana,
-     bitcoin,
-     tron: engine.tronWallet,
-     connections,
-     inject,
-     now,
-   });
-   ```
-
-2. **Connection requests** may carry `namespace: "tron"`. Approve them like a Solana connection; `grant.network` must
-   be an enabled TRON network and becomes the session's `tronNetwork` (the network the page sees as `chainId`).
-3. **Pending requests** gain method `tron-sign`. Approve with `requests.approve(id, "tron-sign", …)`: a dApp
-   transaction settles to a `TrackedTransaction` (state `submitted`, `tron.dappSignature` set — the dApp broadcasts it,
-   the wallet only tracks it); a message or typed data settles to a `SignatureResult` (`kind: "tron.message" |
-   "tron.typed-data"`). Show `pending.tronFee` for transactions as for any TRON send; the new risk code
-   `fee-limit-below-estimate` (warning) means the dApp's `fee_limit` is below the energy estimate.
-4. **Approval timing.** A dApp transaction is refused at approval when less than 20 s of validity remain ("the dApp
-   must build it again"); an engine-built TRON send is rebuilt in place instead. Hosts should not hold a TRON approval
-   sheet open waiting for anything else.
-5. **Memos.** `send` on a TRON network accepts `memo` (≤ 256 UTF-8 bytes, one line); other families throw.
-   `pending.tronFee.memo` is the memo fee in sun.
-6. **`watch-asset`** can now arrive for a TRON network (TRC-20 base58 address).
-7. `engine.connections.setTronNetwork(origin, network)` switches a dApp session's TRON network from the host UI (the
-   TRON counterpart of `setCurrentNetwork`); the page receives `chainChanged { chainId }`.
-
-## 26. WalletConnect
-
-### WalletConnect peers are a new dApp origin kind
-
-`RequestOrigin`, `ConnectionOrigin` (`ConnectionSession.origin`, `PendingConnection.origin`) and the
-`origin` of every dApp request input are now `BrowserOrigin | WalletConnectOrigin`
-(`DappOrigin`). A host that switches on `origin.kind` must handle `"walletconnect"`:
-`origin.origin` is the session key `walletconnect:<topic>` (never a URL), `origin.url` and
-`origin.name` are the peer's self-declared metadata (show them as unverified), `origin.verify` is
-the Verify verdict. Use `dappUrl(origin)` wherever the host displays or checks the site.
-
-### New risk codes
-
-`verify-mismatch` (Verify `INVALID`) and `verify-threat` (Verify `isScam`) are `danger` findings —
-an acknowledgement UI must name them; `requiredAcknowledgement` already includes them.
-
-### `wc:` URIs
-
-`engine.payments.parse` returns `{ kind: "walletconnect", uri }` for a WalletConnect v2 pairing
-URI. Route it to `walletConnect.pair(uri)` (entry `@qntx/wallet-engine/walletconnect`).
-
-### Injected Solana and Bitcoin providers: rejection codes
-
-A rejected, expired or invalidated request now rejects the page's promise with `4001` (and a
-sign-in message for another domain with `-32602`) instead of `-32603 internal error`. Code that
-treated `-32603` as "the user said no" must use `4001`.
-
-### `bitcoin:signAndSendTransaction` results
-
-Each entry is `{ txId, signedPsbt }` (was `{ txId }`).
-
-### Engine surface
-
-`engine.connections` gains `establishWalletConnect`, `previewAccounts`, `authorize`, `touch`;
-`ConnectionState` gains `ready`. Handler requests take an optional `network` the in-app bridge
-never sets.
-
-## 27. Apps sub-entries and the Polymarket provider
-
-Typechecked host code: `tests/migration/hyperliquid.ts` and `tests/migration/polymarket.ts`.
-
-### `createApps` lists app definitions; providers moved to sub-entries
-
-`@qntx/wallet-engine/apps` keeps `createApps`, `AppsController` and the shared types. Each provider
-ships in its own sub-entry and is passed as a definition:
+`BrowserBridgeOptions` requires a `tron` handler: pass `engine.tronWallet` next to `solana` and
+`bitcoin`. The injected script also installs `window.tron`, `window.tronLink` and `window.tronWeb`
+and announces TIP-6963 with the same `ProviderInfo`.
 
 ```ts
 // before
-import { createApps, HyperliquidError } from "@qntx/wallet-engine/apps";
-const apps = createApps({ ...io, hyperliquid: { network: "Mainnet", agentName: "app" } });
-apps.hyperliquid.markets.perps();
-
+createBrowserBridge({ eip1193, nip07, webln, solana, bitcoin, connections, inject, now });
 // after
-import { createApps } from "@qntx/wallet-engine/apps";
-import { hyperliquid, HyperliquidError } from "@qntx/wallet-engine/apps/hyperliquid";
-import { polymarket } from "@qntx/wallet-engine/apps/polymarket";
-
-const apps = createApps({
-  ...io, // wallet, requests, networks, fetch, now, setTimer, random, logger, openStore, socket, gateway
-  apps: [
-    hyperliquid({ network: "Mainnet", agentName: "app" }),
-    polymarket({ builder: { code: BUILDER_CODE, sign: (request) => myServer.sign(request) } }),
-  ],
+createBrowserBridge({
+  eip1193,
+  nip07,
+  webln,
+  solana,
+  bitcoin,
+  tron: engine.tronWallet,
+  connections,
+  inject,
+  now,
 });
-apps.hyperliquid.markets.perps();
-apps.polymarket.markets.events({ limit: 20 });
-await apps.destroy();
 ```
 
-- The result has `controller`, `destroy` and one property per listed app id — an app you do not
-  list is absent (not `undefined`) and its code is not bundled.
-- Config validation (`agentName`, `builder.address`, `builder.feeRateTenthsBps`, Polymarket
-  `builder.code`) throws from the factory call, with the same messages `createApps` used.
-- Every Hyperliquid type/value (`HyperliquidError`, `HYPERLIQUID_DEPOSIT`, `HyperliquidProvider`,
-  `AppsHyperliquidConfig`, `AppsBuilderConfig`, …) is imported from
-  `@qntx/wallet-engine/apps/hyperliquid`; Polymarket ones from `@qntx/wallet-engine/apps/polymarket`.
-- `AppSocket` and the definition types (`AppDefinition`, `AppContext`, `AppStorage`, …) stay in
-  `@qntx/wallet-engine/apps`.
+- Connection requests may carry `namespace: "tron"`; `grant.network` must be an enabled TRON
+  network and becomes the session's `tronNetwork`. `engine.connections.setTronNetwork(origin,
+  network)` switches it from the host UI.
+- Pending requests gain `tron-sign` (dApp transaction, message, typed data), and `watch-asset` can
+  name a TRC-20 token. A dApp transaction settles to a `TrackedTransaction` with
+  `tron.dappSignature` set (the dApp broadcasts it; the wallet tracks it); a message or typed data
+  settles to a `SignatureResult`.
+- `send` on TRON accepts `memo` (≤ 256 UTF-8 bytes, one line); other families throw.
 
-### Polymarket
+## 18. Signing classification hosts may notice
 
-- `builder` is optional. Without it, deposit-wallet deployment, the trading-approvals batch and
-  withdrawals are refused with `PolymarketError("builder-required")`; reads, credentials, orders on
-  an already deployed and approved wallet, and deposits work (engine README §Polymarket table).
-  The `sign` hook must call your own server, which holds the Polymarket Builder API secret,
-  authenticates the caller and only signs `POST /submit`. Never ship the builder secret in the app
-  or the gateway.
-- CLOB API credentials are stored in the store your `openStore` returns (collection
-  `apps.polymarket`, encrypted under the data key like every engine record). Use a store opened
-  with the wallet's data key, as for the engine's own store. Nothing to migrate: the provider is
-  new.
-- `live.account(group)` data is `{ wallet, openOrders, positions, trades, source }`; `source` is
-  `"stream"` while the user WebSocket is up and `"poll"` while the view falls back to REST (status
-  `stale`).
-- `controller.approveBuilder(group, "polymarket")` and `renew(group, "polymarket")` throw
-  `PolymarketError("invalid-input")`: there is no builder fee approval and CLOB credentials do not
-  expire.
+Hosts do not parse kernel prompt text; this section lists what changes in `DisplayIntent` and in
+which requests need the vault's blind-signing setting (§5).
 
-### App state
+### Closed unions and new fields
 
-- `AppGroupState.status` gains `"needs-migration"` (the account resolves to a legacy Polymarket
-  Safe: read-only).
-- `AppStep` gains `"locate-wallet" | "deploy-wallet" | "credentials" | "approvals"`.
-- `AppGroupState.account?: { wallet, kind: "deposit-wallet" | "safe", deployed, legacySafe? }`.
-- Exhaustive `switch`es over `status`/`step` need the new members.
-- Polymarket enable is allowed under `close-only` eligibility (so users can sell); opening
-  positions (BUY) is refused there. Controller errors for Polymarket are `PolymarketError`
-  (`busy`, `unlock-required`, `blocked`, `invalid-input`).
+- `IntentWarning.kind` is the closed union `IntentWarningKind` (it was `string`). Code that switches
+  on it gets exhaustiveness checking; code that constructs warnings with arbitrary strings no
+  longer compiles. `IntentWarning.level` (`"danger"`) marks danger-level warnings.
+- `IntentSummary` gains `"payout"`.
+- New exports `BlindReason`, `isBlindIntent`, `messageBlindReason`, `messageTextHazard`,
+  `hasHiddenCharacters`, `isEncodedBytes`, `displayExcerpt`, `ORDER_ITEMS` and the typed-data
+  family types; `DisplayIntent` gains `blind`, `contract`, `programs`, `programAuthority`,
+  `minimumReceived[].tokenAccount`, `hyperliquidDeposit` and `fiat24`; the typed-data
+  `MessageContent` gains `fields`, `order`, `hyperliquid`, `polymarket`, `authorization`,
+  `authority` and `farcaster`. A host that renders `DisplayIntent` itself should render them; a
+  document carrying a decoded family has no generic `fields`.
 
-### `@qntx/wallet` and the vault
+[`tests/migration/message-text.ts`](tests/migration/message-text.ts),
+[`tests/migration/typed-data-families.ts`](tests/migration/typed-data-families.ts) and
+[`tests/migration/fiat24.ts`](tests/migration/fiat24.ts) compile against these types.
 
-No change from Polymarket itself: it adds no `@qntx/wallet` subpath, protocol method or vault
-record. The kernel bundle does change in this release, but only for §28 (session keys).
+### Requests that are now blind
 
-## 28. Session keys and app-attributed requests
+With blind signing off these fail with `blind-signing-disabled` (`BlindSigningDisabledError` at
+`approve`):
 
-Compiled snippet: `tests/migration/sessions.ts`.
+- Text messages that are 32 bytes long, carry hidden or reordering characters, or encode raw bytes
+  (`messageTextHazard`). They still decode as `{ kind: "text" }` and are shown under a line naming
+  the hazard. EIP-712 / TIP-712 documents with such characters in a value, type name, field name or
+  `primaryType` are blind the same way.
+- Typed data that signs only hashes or opaque bytes (`typed-data-commitment`, e.g. ERC-1271
+  wrappers such as `SafeMessage(bytes)`), near misses of a recognised family
+  (`typed-data-variant`: `Permit*`, `SafeTx`, Seaport, Permit2, built-in-token contracts, the
+  Hyperliquid and Polymarket domains), and documents of claimed off-chain order protocols that are
+  not decoded (1inch with extensions, 0x v4, Blur, LooksRare v2, Bebop, Paraswap, Velora Delta,
+  KyberSwap, OpenOcean, Odos).
+- Undecoded System, Token, Token-2022, Stake or Associated Token instructions the signer signs
+  (`core-instruction`), and undecoded Solana programs that receive the signer through writable
+  lookup-table accounts or more than 12 writable accounts (`program-authority`).
+- On Arbitrum One, calls to the CCTP TokenMessengerV2 other than a described Hyperliquid deposit
+  (`cctp-destination`) and calls to the seven pinned Fiat24 contracts that are not a described
+  Fiat24 action (`fiat24-function`). On every chain, a `personal_sign` text beginning with
+  `I agree to access my profile.` or `I agree to access my Fiat24 profile.`
+  (`fiat24-session-grant`) — the official Fiat24 dApp's sign-in through a dApp browser therefore
+  needs blind signing.
+- A TRON `AccountPermissionUpdateContract` (always blind, `tron-permission-update`), other
+  unmodelled TRON contract types (`tron-contract`) and fields the wallet cannot show (`tron-field`).
 
-### Vault
+### Requests that are now described
 
-- New record kind `session-key` (id: the key's lowercase EVM address; header
-  `{ scheme, walletId, groupIndex, owner, scope, name, validUntil, createdAt }`; sealed payload:
-  the 32-byte secp256k1 private key). `VAULT_FORMAT` stays 5, and the vault manifest covers the new
-  rows like every other record.
-- No data migration: an existing vault is unchanged until its first `sessions.create`.
-- A record whose `scheme` this build does not know stays inert: `sessions.list` shows it with
-  `supported: false`, `sessions.sign` answers `unsupported`, and `sessions.delete` and wallet
-  deletion remove it. The vault stays `ok`. A build older than this change does not know the
-  `session-key` kind at all. Once such a record exists, an older build reports the vault
-  `unsupported` and leaves it untouched, so delete all sessions before downgrading.
-- Backups never contain session keys. After a restore, create and approve a new session.
+Seaport orders (up to `ORDER_ITEMS` = 8 items) and Safe transactions with their inner calls; 1inch
+LOP v4, CoW Protocol, UniswapX and 0x gasless orders; EIP-3009 authorizations; Morpho Blue, Aave
+credit delegation and Snapshot alias authorities (`partial`, summary `authorization`); Farcaster
+signer keys; Snapshot votes; Hyperliquid user-signed actions and Polymarket orders; Raydium, Orca
+Whirlpool and Meteora DLMM swaps; SPL `Transfer`, `Burn`, `Revoke` and Stake `Split` signed by the
+account; Fiat24 transfers, payouts, swaps and top-ups (`partial` with Fiat24 warnings). An ERC-7821
+batch carries its inner calls' warnings.
 
-### Host-visible behaviour
+### Other signing behaviour
 
-- The `chain.sign` prompt bullets about Hyperliquid and Polymarket typed data are unchanged from
-  the current §18 text.
-- `chain.sign` of an `approveAgent` for an address this vault holds as a `hyperliquid-l1-agent`
-  session is refused with `invalid-input` unless the signer is the session's owner and
-  `hyperliquidChain`, the agent name and `valid_until` equal the session's `scope`, `name` and
-  `validUntil`. An address held by a session of another scheme is refused too.
-- New methods `sessions.create`, `sessions.list`, `sessions.delete` and `sessions.sign` (session
-  required), wrapped by `sessions(wallet)` from `@qntx/wallet/sessions`. `sessions.sign` does not
-  refresh the idle timer.
-- `hyperliquid-l1-agent` signing needs `params.expiresAfter`, with `now < expiresAfter ≤ now + 60
-  s`, and a nonce within ±60 s of the kernel clock. A `scheduleCancel` time must be at least 5 s
-  out and no later than the session's `validUntil`. Anything else answers `invalid-input`. The
-  engine's Hyperliquid provider already sends `expiresAfter = now + 15 s`.
+- `chains(wallet).sign` throws `integrity` when the kernel's result kind differs from the
+  request's.
+- PSBT inputs that previously failed only after approval — a taproot input without its internal
+  key, with `tapLeafScript` / `tapMerkleRoot` or with a non-default sighash, a sighash outside the
+  allow-list, scripts other than single-key P2PKH, P2SH-P2WPKH, P2WPKH or P2TR — are refused before
+  the prompt (`invalid-input`; `ChainError` from `signBitcoinPsbt`).
+- `ChainErrorCode` gains `invalid-signature` (an assembler refused a signature that does not verify
+  under its task key; see §23).
 
-### `RequestOrigin` gains `app`
+## 19. Transaction tracking and dApp batch sends
 
-- `RequestOrigin` is now `{ kind: "internal" } | { kind: "app"; id: string } | DappOrigin`.
-  Requests that an in-engine app opens through `createApps` carry `{ kind: "app", id }` on
-  `PendingRequest.origin` and in the sign log — Hyperliquid's user-signed actions and CCTP deposit
-  with `{ kind: "app", id: "hyperliquid" }`, and Polymarket's enable-time credential and approvals
-  requests, orders, deposit and withdraw with `{ kind: "app", id: "polymarket" }`. An exhaustive
-  `switch` over `origin.kind` in host code needs an `"app"` case. Show the app as the requester;
-  it is not a web origin. See `originLabel` in `tests/migration/walletconnect.ts` and the snippet
-  in `tests/migration/sessions.ts`.
-- Sign-log entries written before this change keep their `internal` origin.
-
-### Gateway eligibility
-
-`EligibilityResponse["apps"]` is a map keyed by app id. Treat a missing app as unknown, not as
-available (`tests/migration/sessions.ts`).
-
-## 29. Solana v1 transactions
-
-Compiled snippet: `tests/migration/solana-v1.ts`.
-
-### dApps can now send v1 transactions
-
-The injected provider advertises `supportedTransactionVersions: ["legacy", 0, 1]` for
-`solana:signTransaction` and `solana:signAndSendTransaction`, so Wallet Standard dApps that
-check it start sending SIMD-0385 v1 transactions (message first, signatures last, up to 4096
-bytes). WalletConnect `solana_*` requests accept them as well. Nothing to change in a host that
-forwards the bytes unchanged; a host that pre-checks transaction size or parses the wire itself
-must accept the v1 envelope and the 4096-byte limit.
-
-### Error codes that go away
-
-| Before                                                                                                                                             | Now                                                                    |
-| -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `ChainError("unsupported")` "Solana transaction version 1 is not supported" (`normalizeSolana`, `parseCompiledMessage`, `decodeSolanaTransaction`) | v1 parses; versions ≥ 2 keep the error                                 |
-| `ChainError("invalid-request")` "transaction exceeds the 1232-byte limit" for a v1 wire                                                            | only above 4096 bytes ("… 4096-byte limit")                            |
-| kernel `chain.sign` `invalid-input` for a v1 `solana.transaction`                                                                                  | signed under the vault's blind-signing policy, prompt as for legacy/v0 |
-
-New refusals (`invalid-request` unless noted) are the cluster's own sanitize failures: unknown
-config-mask bits (`unsupported`), a half-set priority-fee pair, invalid heap size, duplicate
-accounts, out-of-range indices, too many signatures/accounts/instructions, trailing bytes, and a
-v1 request carrying `lookupTables`.
-
-### `ParsedSolanaMessage`
-
-`version` is `"legacy" | 0 | 1`; narrow on `version === 1` to read `config`
-(`SolanaTransactionConfig`). Every version carries `lifetimeToken`.
-
-### The maximum fee of a v1 transaction
-
-The prompt's "Max fee" for a v1 transaction is `5000 × signatures + config priority fee`.
-ComputeBudget instructions inside a v1 transaction are no-ops on chain and no longer change the
-displayed fee. Note that on Agave an unset v1 compute-unit limit or loaded-accounts-data-size
-limit is zero, so such a transaction fails at execution (and still pays its fee) — that is the
-dApp's message, the wallet does not rewrite it.
-
-## 30. Typed-data families and requester text
-
-Compiled snippet: `tests/migration/typed-data-families.ts`. Only `@qntx/wallet-chains` changes
-for hosts.
-
-1. `OffchainOrder["protocol"]` gains `"0x"`. A host with an exhaustive `switch` over the protocol
-   must add the case.
-2. The typed-data `MessageContent` alternative gains three optional fields — `authorization`
-   (`TokenAuthorization`), `authority` (`AccountAuthority`) and `farcaster` (`FarcasterKey`). A
-   host that renders recognised typed data from `DisplayIntent.message` should render them;
-   documents carrying them have no generic `fields`.
-3. Classification changes a host may observe: EIP-3009 documents that were blind
-   (`typed-data-variant` / `typed-data-commitment`) are now described when bound to the signer;
-   Morpho/Aave authority documents that were generic `opaque` field lists are now `partial` with
-   summary `authorization`; text carrying non-RGI tag sequences or misplaced variation selectors
-   is now `hidden-characters` (blind); Meteora DLMM `swap`/`swap2` on Solana (legacy, v0 and v1)
-   are described swaps instead of `program-authority`.
-4. The kernel's prompt text marks requester lines with `· ` — hosts never parse prompt text, so
-   nothing to change; listed for completeness.
-
-## 31. Transaction tracking, L1 fees, TRON/Solana host endpoints and Hyperliquid corrections
-
-Compiled snippets: `tests/migration/stuck-transactions.ts`, `tests/migration/l1-fee-bound.ts`
-and `tests/migration/hyperliquid-corrections.ts`.
+Compiled snippets: [`tests/migration/stuck-transactions.ts`](tests/migration/stuck-transactions.ts),
+[`tests/migration/batch-stopped.ts`](tests/migration/batch-stopped.ts) and
+[`tests/migration/readonly-state.ts`](tests/migration/readonly-state.ts).
 
 ### Stuck and never-resent transactions
 
-`dropped` is no longer produced by a timeout on EVM or Bitcoin. A transaction the network has not
-seen for 30 minutes stays `submitted` with `stuck: true`; offer `speed-up` / `cancel` requests for
-it. A row with `rebroadcast: false` was recovered from a broadcast whose outcome never settled: the
-wallet watches it but never resends it.
+`dropped` is no longer produced by a timeout. EVM transactions end only on their receipt, a
+replacement, or their nonce consumed without their receipt; Bitcoin transactions on inclusion, an
+input spent by another confirmed transaction, or their own replacement confirming. A transaction
+the network has not seen for 30 minutes stays `submitted` with `stuck: true`; offer `speed-up` /
+`cancel` for it. A row with `rebroadcast: false` was recovered from a broadcast whose outcome never
+settled: the wallet watches it but never resends it. Rows and call batches are not readable from
+`engine.transactions` while the vault is locked; they return at unlock.
 
-Rows and call batches are no longer readable from `engine.transactions` while the vault is locked;
-they return at unlock.
+### dApp batch sends
 
-### L1 data fee maximum
-
-The displayed `l1Data` maximum on OP Stack and Scroll networks is larger (`raw × (9/8)^3`), and
-`approve` can now fail with "the L1 data fee rose — start over" (also before broadcast, when the
-signature took longer than one L1 slot and the fee rose): prepare the same request again.
-
-### TRON and Solana need a host endpoint behind the gateway
-
-When the gateway serves a TRON or Solana network, sends are refused unless the host passes its own
-endpoint for that network in `rpc` (the reference block / blockhash must be confirmed by it). Hosts
-that relied on the gateway alone must configure one, on testnets too. (§33 relaxes this on
-mainnets: the refusal now applies to testnets only.)
-
-### Hyperliquid
-
-`not-placed` is gone from `HyperliquidOrderOutcome`; after a lost POST the outcome is `unknown`.
-Subscribe to `apps.hyperliquid.trade.corrections` for late answers; `HyperliquidOutcomeCorrection`
-is exported from `@qntx/wallet-engine/apps/hyperliquid`. Account live views report
-`{ status: "stale", data: undefined }` once closed or locked; `apps.controller` state has no
-`groups` while locked.
-
-## 32. Bitcoin account discovery and gateway operators
-
-No host-facing type or export changes, so there is no snippet.
-
-### Engine: Bitcoin balance reads follow BIP-44 account discovery
-
-`assets.refreshBitcoinGroup` and the Bitcoin history stream no longer walk the change chain of a
-template whose receive chain has no transactions — except `btc.bip84`, whose change chain receives
-the change of every `btc.bip44`/`btc.bip49` send. A seed that another wallet used only on the
-change chain of `btc.bip44`, `btc.bip49` or `btc.bip86` (never on the receive chain) no longer
-shows that balance; BIP-44 defines such an account as unused. Templates verified unused are
-re-scanned every discovery interval (10 minutes) instead of on every refresh; within that interval
-their `sources` entry reports zero totals. No host code change is required.
-
-### Gateway operators
-
-- A deployed gateway requires `cf-connecting-ip` (Cloudflare and `wrangler dev` always set it); a
-  request without a usable address answers `400 invalid-request`. In-process embeddings pass
-  `clientAddress: "optional"` to `createGateway`.
-- `Account` rows now carry `clientShare` and `source`; flood limiters use 60-second periods
-  (`Retry-After: 60`).
-- The TRON node route serves a request carrying `x-gateway-provider` (`PROVIDER_PIN_HEADER`) from
-  that provider only, metered and budgeted like any other request; an unknown id answers
-  `400 invalid-request`. CORS allows the header.
-- The first production deploy is a manual operator step (`wrangler deploy --secrets-file`); follow
-  `apps/gateway/README.md` "Operator runbook — first production deploy". The deploy workflow
-  refuses an automatic rollback across a Durable Object migration and alerts instead.
-
-## 33. Gateway-only TRON/Solana sends, TRON throttling, typed-data hidden text and session verification
-
-No `tests/migration/` snippet: nothing a host compiles changes shape.
-
-- **Gateway-only TRON/Solana sends on a mainnet build again** (this relaxes §31 on mainnets).
-  Hosts that added `EngineOptions.rpc` entries only to get past that refusal may keep them (they
-  still corroborate the binding and the fee reads) or drop them; without them mainnet prepares
-  carry `reads-unverified`. Testnet (Nile, Shasta, Solana devnet) sends through the gateway alone
-  are still refused; the error message now names `EngineOptions.rpc["<network>"]`.
-- **New error `TronThrottledError`** (exported from `@qntx/wallet-engine`, field `retryAfterMs`):
-  a TRON prepare whose pinned reads stay throttled beyond the transaction's validity window
-  rejects with it instead of a generic `Error("…: HTTP 503 from …")`. Treat it as retryable
-  (`instanceof TronThrottledError`, wait `retryAfterMs`).
-- **Typed data with hidden characters in a string value is blind** (`message-bytes`). With blind
-  signing off such requests are refused, as hidden-character text messages already are.
-- **`sessions(wallet).sign` may reject `integrity`** when the returned signature is not the
-  session key's over the document its params and the record's scope define. It makes one extra
-  `sessions.list` call per signature.
-- **Types**: `HyperliquidL1Action`, `HyperliquidL1Order`, `HyperliquidL1Params`,
-  `HyperliquidNetwork` are now declared in `@qntx/wallet-chains/evm`; the `@qntx/wallet/protocol`
-  and `@qntx/wallet/sessions` exports are re-exports with identical shapes, so imports keep
-  working.
-
-## 34. Fiat24 decoding and session grants
-
-Compiled snippet: `tests/migration/fiat24.ts`. Changes affect `@qntx/wallet-chains` and
-`@qntx/wallet` hosts. Nothing changes in the vault, the engine API or the engine's request policy.
-
-### Closed unions gained members
-
-An exhaustive `switch` in host code needs a case for each of these:
-
-| Union                                                                               | New members                                                                                                                                                                                                                                       |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SignRequest` (`@qntx/wallet-chains`), `ChainSignRequest` (`@qntx/wallet/protocol`) | `{ kind: "evm.fiat24-session"; network; account; tokenId: string; deadline: number }`                                                                                                                                                             |
-| `ChainSignResult`                                                                   | `kind: "evm.fiat24-session"` (65-byte `signature`)                                                                                                                                                                                                |
-| `IntentSummary`                                                                     | `"payout"`                                                                                                                                                                                                                                        |
-| `BlindReason`                                                                       | `"fiat24-function"`, `"fiat24-session-grant"`                                                                                                                                                                                                     |
-| `IntentWarningKind`                                                                 | `fiat24-internal-account`, `fiat24-card-pull`, `fiat24-unlimited-approval`, `fiat24-issuer-rate`, `fiat24-exact-out-unbounded`, `fiat24-payee-offchain`, `fiat24-swap-quote`, `fiat24-account-link`, `fiat24-account-move`, `fiat24-account-burn` |
-
-A host that renders `DisplayIntent` itself should also render the new optional fields:
-
-- `DisplayIntent.fiat24` (`Fiat24Action`: exchange, payout, top-up, open-account, session-grant).
-- `AssetFlow.fiat24`. When it is set, `to` is the cash-token contract, not the recipient. Show
-  "Fiat24 account #id" or "Fiat24 payee <id>" instead.
-- `ApprovalChange.fiat24Spender`.
-- `IntentWarning.level === "danger"`. Treat it as a danger finding.
-
-### Classification changes a host may observe
-
-On Arbitrum One:
-
-- USD24, EUR24, CHF24 and CNH24 are listed tokens with 2 decimals. Their `transfer` is now `full`
-  and appears in token discovery.
-- Fiat24 calls that used to be generic opaque contract calls are now described (`partial`) with
-  Fiat24 warnings.
-- Any other call to the seven pinned Fiat24 contracts is blind (`fiat24-function`). This includes
-  account `close`, `setNickname`, `mintByWallet`, `depositByWallet`, every card-contract call, and
-  account NFT `approve` / `setApprovalForAll`. So are Fiat24 functions sent to any other address
-  or chain. With blind signing off, these now fail with `blind-signing-disabled`.
-
-On every chain:
-
-- A `personal_sign` text that begins with `I agree to access my profile.` or
-  `I agree to access my Fiat24 profile.` is blind (`fiat24-session-grant`). The official Fiat24
-  dApp's sign-in through a dApp browser therefore needs blind signing.
-- An ERC-7821 batch now carries its inner calls' warnings.
-
-### Granting a Fiat24 API session
-
-Build the grant as a structured request. Do not sign the text yourself:
+Solana `signAndSendTransaction` returns the locally computed fee-payer signatures and Bitcoin
+`signAndSendTransaction` the locally computed txids of what went out, never ids an RPC reports. A
+batch that stops part-way carries `stopped`:
 
 ```ts
-import { chains } from "@qntx/wallet/chains";
-
-await chains(wallet).sign({
-  request: {
-    kind: "evm.fiat24-session",
-    network: "eip155:42161",
-    account,
-    tokenId: "123456",
-    deadline,
-  },
-  verify,
-});
+readonly stopped?: {
+  readonly index: number; // input that did not go out
+  readonly reason: "refused" | "not-sent";
+  readonly error: string;
+};
 ```
 
-- `deadline` is in Unix seconds. The kernel refuses with `invalid-input` unless
-  `0 < deadline − now ≤ 1200`. A prompt left open past the deadline is refused when it would sign.
-- The signed text is `"I agree to access my profile. " + keccak256(label + deadline)`, where
-  `label = "fiat24-session-v1:" + chainId + ":" + tokenId + ":" + deadline + ";"`. Send that
-  `label` as the `hash` header. The grant is a bearer token for the signing address's Fiat24
-  account until `deadline`: the server binds neither the chain nor the account inside `label`. `fiat24SessionMessage` from `@qntx/wallet-chains/evm` rebuilds the text.
-- Only Arbitrum One is accepted: `normalizeEvm` throws `ChainError` `unsupported` on another
-  network, and `chain.sign` reports the refusal as `invalid-input`.
-- The engine does not submit this kind yet: its dApp path refuses it. Apps keep the existing rule
-  that they sign typed data only.
+`reason: "refused"` means the node rejected that input's bytes; `"not-sent"` means a local failure
+kept it from being broadcast. The ids already submitted stay on `signatures` / `txids` — never
+resubmit them. A failing first input still rejects the whole request. Each
+`bitcoin:signAndSendTransaction` result entry is `{ txId, signedPsbt }`.
 
-## 35. Polymarket outcomes and deposit wallets, recipient risk, Solana drop proofs
+### Engine state snapshots are deeply read-only
 
-Compiled snippet: `tests/migration/polymarket-outcome.ts`. Changes affect `@qntx/wallet-engine`
-hosts. Nothing changes in the vault or the kernel protocol.
+Every controller's `getState()` (and `store.getState()`) on the `WalletEngine` facade returns a
+deeply frozen snapshot typed `DeepReadonly<…>`. Code that edited a snapshot in place — `delete
+state.txs[id]`, `rows.sort()`, assigning into `balances` — no longer compiles and throws a
+`TypeError` at runtime. Copy first (`Object.values(…).toSorted(…)`, `{ ...state.txs }`).
 
-### Polymarket `not-found` is gone
+### Durable nonces
 
-`PolymarketOrderOutcome` no longer has `not-found`. A `place` whose POST may have committed and
-whose order no reconcile read saw now resolves `unknown`:
+A Solana durable-nonce transaction carries `durableNonce: { account, value }` and no
+`lastValidBlockHeight`; it is never shown `dropped` by block height. No host change is required.
 
-- Before resolving, the engine sends one `DELETE /order` for the locally computed order id. Its
-  result is `outcome.cancel` (`PolymarketCancelAttempt`: `canceled`, `not-canceled` with the CLOB's
-  reason, or `failed`). `cancel` is absent when a read did see the order.
-- The order keeps reconciling for ten minutes. Subscribe to `trade.corrections` to receive the
-  first provable status as a `PolymarketOutcomeCorrection`. A lock drops every pending order.
-- Never offer "try again" on `unknown`. Polymarket orders sign no expiry, so the first order can
-  still land and a retry would open a second position.
+## 20. Solana: v1 transactions, cluster binding and drop proofs
 
-An exhaustive `switch` over the outcome loses its `not-found` case; see `describeOutcome` in the
-snippet.
+Compiled snippets: [`tests/migration/solana-v1.ts`](tests/migration/solana-v1.ts) and
+[`tests/migration/solana-binding.ts`](tests/migration/solana-binding.ts).
 
-### Polymarket deposit wallets are proven on-chain
+### v1 transactions
 
-`locate`, and with it `trade.place`, `fund.deposit` and the enable flow, reads `eth_getCode` for
-the three account candidates on Polygon and cross-checks it with the host endpoint when one is
-configured. A disagreement between the relayer, the chain RPC and the host endpoint, or code that
-is not the deposit-wallet template, throws `PolymarketError` with the new category
-`deployment-mismatch`. A host endpoint that cannot answer throws `unavailable`. Handle
-`deployment-mismatch` like `unavailable` and do not retry it in a loop.
+The injected provider advertises `supportedTransactionVersions: ["legacy", 0, 1]`, so Wallet
+Standard dApps start sending SIMD-0385 v1 transactions (message first, signatures last, up to 4096
+bytes); WalletConnect `solana_*` requests accept them too. A host that forwards the bytes unchanged
+needs nothing; one that pre-checks size or parses the wire must accept the v1 envelope and the
+4096-byte limit.
 
-`AppContext.networks` and `CreateAppsOptions.networks` now need `independentClient` next to
-`client`. `engine.networks` already has both. Only a host that passes its own object to `createApps`
-has to add it.
+| 0.13.0                                                                                                                  | 0.14.0                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `ChainError("unsupported")` "Solana transaction version 1 is not supported" (`normalizeSolana`, `parseCompiledMessage`) | v1 parses; versions ≥ 2 keep the error                                 |
+| `ChainError("invalid-request")` "transaction exceeds the 1232-byte limit" for a v1 wire                                 | only above 4096 bytes ("… 4096-byte limit")                            |
+| kernel `chain.sign` `invalid-input` for a v1 `solana.transaction`                                                       | signed under the vault's blind-signing policy, prompt as for legacy/v0 |
 
-### Recipient risk covers every request
+New refusals (`invalid-request` unless noted) are the cluster's own sanitize failures: unknown
+config-mask bits (`unsupported`), a half-set priority-fee pair, an invalid heap size, duplicate
+accounts, out-of-range indices, too many signatures, accounts or instructions, trailing bytes, and a
+v1 request carrying `lookupTables`. `ParsedSolanaMessage["version"]` is `"legacy" | 0 | 1`; narrow
+on `version === 1` to read `config`; every version carries `lifetimeToken`. The maximum fee of a v1
+transaction is `5000 × signatures + config priority fee`; ComputeBudget instructions inside it
+configure nothing.
 
-`first-recipient` and `address-poisoning` now also come from `solana-sign` transactions,
-`bitcoin-sign` PSBT outputs, typed-data order receivers, Seaport consideration recipients, Safe
-destinations, Hyperliquid user-signed destinations, swap and bridge settlement recipients and
-staking withdrawals and delegations. The signer's own address and burned outputs are never
-flagged. A host that renders risk findings needs no change. A request that used to arrive without
-findings can now carry these two.
+### dApp transactions are bound to the session's cluster
 
-### Solana `dropped` needs a second source
+A `solana-sign` transaction request (Wallet Standard or WalletConnect) reads the selected cluster
+before the prompt: a recent blockhash must be valid there under the corroboration rule of a wallet
+send, and a durable-nonce account must exist there holding exactly the message's nonce. Anything
+else fails with `SolanaClusterBindingError` (`ChainError` `invalid-request`, `reason:
+SolanaBindingReason`); show the reason and never offer to sign anyway. A devnet session no longer
+signs transactions that are valid on mainnet.
 
-A Solana transaction ends `dropped` only when a configured host endpoint proves the same drop, or,
-without one, after three consecutive polls more than 60 s apart from first to last. It can stay
-`submitted` about a minute longer than before. Gateways must be deployed with the pinned JSON-RPC
-route (`x-gateway-provider`): an older gateway ignores the pin.
+### Endpoints and drop proofs
 
-## 36. Signing plans
+- Behind the gateway alone, Solana mainnet sends and bindings carry `reads-unverified`; devnet
+  sends are refused with an error naming the missing `EngineOptions.rpc` entry.
+- A user-set custom RPC is the primary endpoint, never its own corroborator: the host endpoints in
+  `EngineOptions.rpc` cross-check it, else the gateway; with neither, the network is treated like a
+  gateway-only one. `Independent` (the `NetworkController` cross-check client) gains
+  `source: "host" | "gateway"`.
+- A Solana transaction ends `dropped` only when a configured host endpoint proves the same drop, or,
+  without one, after three consecutive polls spanning more than one blockhash processing age, and
+  only from a node whose history reaches back before the submission. Expect rows to stay
+  `submitted` longer, especially after time offline.
 
-Compiled snippet: `tests/migration/signing-plans.ts`. Changes affect `@qntx/wallet-chains` hosts.
-Nothing changes in the vault, the protocol, `@qntx/wallet` or the engine API; software-wallet
-signatures are byte-identical.
+## 21. dApp origins: WalletConnect peers and in-engine apps
 
-### Closed unions gained members
+Compiled snippets: [`tests/migration/walletconnect.ts`](tests/migration/walletconnect.ts) and
+[`tests/migration/sessions.ts`](tests/migration/sessions.ts).
 
-| Union                                    | New member                                                                                              |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `ChainErrorCode` (`@qntx/wallet-chains`) | `"invalid-signature"` — an assembler refused signature material that does not verify under the task key |
+`RequestOrigin` is now `{ kind: "internal" } | { kind: "app"; id: string } | DappOrigin`, and
+`DappOrigin = BrowserOrigin | WalletConnectOrigin`; `ConnectionOrigin` and the `origin` of every
+dApp request input accept a WalletConnect origin. An exhaustive `switch` over `origin.kind` needs
+`"app"` and `"walletconnect"` cases:
 
-### New exports
+- `walletconnect`: `origin.origin` is the session key `walletconnect:<topic>` (never a URL);
+  `origin.url` and `origin.name` are the peer's self-declared metadata (show them as unverified);
+  `origin.verify` is the Verify verdict. Use `dappUrl(origin)` wherever the host shows or checks the
+  site. New `danger` risk codes `verify-mismatch` and `verify-threat`; `requiredAcknowledgement`
+  includes them.
+- `app`: a request an in-engine app opened (`@qntx/wallet-engine/apps`, §23). Show the app as the
+  requester; it is not a web origin.
 
-- Root: types `KeyPath`, `TaskKey`, `EcdsaTask`, `Bip340Task`, `Ed25519Task`, `SignTask`,
-  `SignScheme`, `Assembled`.
-- `/evm`: `planEvm`, `assembleEvm`, `EvmSignPlan`; `/tron`: `planTron`, `assembleTron`,
-  `TronSignPlan`; `/solana`: `planSolana`, `assembleSolana`, `SolanaSignPlan`; `/bitcoin`:
-  `planBitcoinPsbt`, `planBitcoinMessage`, `assembleBitcoinPsbt`, `assembleBitcoinMessage`,
-  `BitcoinPsbtPlan`, `BitcoinMessagePlan`.
-- `*/sign` (kernel-only by lint): `signEvmTask`, `signTronTask`, `signSolanaTask`,
-  `signBitcoinTask`.
+Related changes:
 
-A host that drives an external digest signer plans the request, sends each task's digest, and
-assembles; see the snippet. Assemble refuses a signature that does not verify, normalises a high
-`s`, and computes the recovery id itself — signers return 64 bytes and never a recovery byte.
+- `requests.prepare({ method: "evm-sign" })`: `origin` is optional. Without it the request is the
+  wallet's own and only `evm.typed-data` is accepted.
+- `engine.payments.parse` returns `{ kind: "walletconnect", uri }` for a `wc:` pairing URI. Route
+  it to `walletConnect.pair(uri)` (§23).
+- The injected Solana and Bitcoin providers reject a refused, expired or invalidated request with
+  `4001` (a sign-in for another domain with `-32602`) instead of `-32603 internal error`. Code that
+  treated `-32603` as "the user said no" must use `4001`.
+- `engine.connections` gains `establishWalletConnect`, `previewAccounts`, `authorize` and `touch`;
+  `ConnectionState` gains `ready`. Handler requests take an optional `network` that the in-app
+  bridge never sets.
+- `first-recipient` and `address-poisoning` now come from every request that moves value or grants
+  authority — typed-data receivers, Seaport considerations, Safe destinations, swap and bridge
+  settlement, staking, `solana-sign` transactions, `bitcoin-sign` PSBT outputs, approval and
+  permission grantees, Spark cooperative exits. A request that arrived without findings can now
+  carry them.
 
-### Behaviour a raw-key caller may observe
+## 22. Gateway operators
 
-`signBitcoinPsbt` (and `chain.sign`) now refuse before signing, with `ChainError`, inputs they
-previously signed or failed on late: a taproot input whose `tapInternalKey` is absent or another
-key's, that carries `tapLeafScript`/`tapMerkleRoot`, or whose prevout is not the key's BIP-86
-output; inputs whose script is not single-key P2PKH, P2SH-P2WPKH, P2WPKH or P2TR (P2PK, bare or
-P2WSH multisig); a sighash other than the input type's default or `SIGHASH_SINGLE|ANYONECANPAY`
-with a same-index output. Signatures for every accepted input are unchanged.
+The gateway is deployed by the operator, not published to npm; `apps/gateway/README.md` is the
+runbook ("Operator runbook — first production deploy"). Deploy the gateway from this release
+together with the apps (§2): the engine and gateway contracts are strict on both sides.
 
-## 37. App provider interface
+- Secrets: `COINGECKO_API_KEY` (prices), `TRONGRID_API_KEY` and `TATUM_API_KEY` (TRON) and
+  `ANKR_API_KEY` (Arbitrum Nova, Taiko and Flare after dRPC) are required in production
+  (`wrangler.jsonc` `secrets.required`; the deploy workflow checks them). Enable the new networks
+  in the production Alchemy app and on the dRPC paid plan.
+- New routes: `POST /v1/prices`, `POST /v1/history/:caip2`, `GET /v1/tokens/:caip2`,
+  `GET /v1/eligibility` and `POST /v1/tron/:caip2/*`. A served network with no coverage answers
+  `404 unsupported` (never retry); a covered network whose token list is not built yet answers
+  `503 unavailable` with `Retry-After`. `pricesResponse` lists every asset in exactly one of
+  `prices`, `missing` and `unsupported`.
+- A deployed gateway requires `cf-connecting-ip` (Cloudflare and `wrangler dev` set it); in-process
+  embeddings pass `clientAddress: "optional"` to `createGateway`. `GatewayOptions` requires `auth`
+  and `prices: { cache, coingecko? }`.
+- Every upstream call is priced in its provider's unit and charged to the client's share of that
+  provider account and to a gateway-wide budget (`PROVIDER_BUDGET` Durable Object); account rows
+  carry `clientShare` and `source`. An ambiguous broadcast answers `502 outcome-unknown` and is never
+  retried on another provider.
+- `x-gateway-provider` (`PROVIDER_PIN_HEADER`) pins a JSON-RPC or TRON node request to one
+  provider; CORS allows it. On a TRON indexer path or the Esplora route it is a `400`. The Solana
+  allow-list drops `getBlock` and gains `getVoteAccounts`, `getStakeMinimumDelegation` and
+  `getFirstAvailableBlock`.
+- The deploy workflow refuses an automatic rollback across a Durable Object migration and alerts
+  instead.
 
-Compiled snippets: `tests/migration/app-provider.ts` (a complete provider written against the
-public entries) and `tests/migration/hyperliquid.ts` (updated host composition).
+## 23. New opt-in surfaces
 
-### Group state is typed per app
+Nothing to migrate: these did not exist in 0.13.0 and a host that does not import them bundles
+nothing new. Each has a compiled example and a README section.
 
-The generic `AppGroupState` holds only the controller's fields: `status`, `termsAcknowledged`,
-`requestId` and `error`. Each app's fields come from its own type, merged flat, so they are read
-the same way as before:
+| Surface                                                             | Example                                                                                                                                                                                                                                            | Notes                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@qntx/wallet-engine/walletconnect`                                 | [`walletconnect.ts`](tests/migration/walletconnect.ts)                                                                                                                                                                                             | WalletConnect Community License: check the commercial terms before shipping it.                                                                                                                                                                                                                                                 |
+| `@qntx/wallet-engine/apps`, `/apps/hyperliquid`, `/apps/polymarket` | [`hyperliquid.ts`](tests/migration/hyperliquid.ts), [`hyperliquid-corrections.ts`](tests/migration/hyperliquid-corrections.ts), [`polymarket.ts`](tests/migration/polymarket.ts), [`polymarket-outcome.ts`](tests/migration/polymarket-outcome.ts) | `createApps({ …, apps: [hyperliquid(…), polymarket(…)] })` needs the gateway's `/v1/eligibility`. Order outcomes can be `unknown`: never re-place, wait for `trade.corrections`; a Polymarket `canceled` carries `making` (filled before the cancel). The Polymarket builder secret stays on your server behind `builder.sign`. |
+| App providers (`AppDefinition`)                                     | [`app-provider.ts`](tests/migration/app-provider.ts)                                                                                                                                                                                               | Engine README "Writing an app provider".                                                                                                                                                                                                                                                                                        |
+| `@qntx/wallet/sessions`                                             | [`sessions.ts`](tests/migration/sessions.ts)                                                                                                                                                                                                       | Kernel-held session keys (`session-key` vault records), never in a backup. Once one exists, a 0.13.0 build reports the vault `unsupported`: delete sessions before downgrading. `sessions(wallet).sign` rejects `integrity` unless the signature is the session key's. `EligibilityResponse["apps"]`: an absent app is unknown. |
+| Fiat24 session grants (`evm.fiat24-session`)                        | [`fiat24.ts`](tests/migration/fiat24.ts)                                                                                                                                                                                                           | Build the grant as this structured request; never sign the text yourself. Arbitrum One only, `0 < deadline − now ≤ 1200` s. The engine's dApp path refuses this kind.                                                                                                                                                           |
+| Signing plans (`plan*` / `assemble*`, `*/sign` task signers)        | [`signing-plans.ts`](tests/migration/signing-plans.ts)                                                                                                                                                                                             | For hosts driving an external digest signer. Software-wallet signatures are byte-identical.                                                                                                                                                                                                                                     |
 
-```ts
-// before
-import type { AppGroupState } from "@qntx/wallet-engine/apps";
-const hl: AppGroupState | undefined = state.groups[key]?.hyperliquid;
-hl?.agent?.address;
+## 24. Card wallet native surfaces (experimental)
 
-// after: `apps.controller` is typed by the definitions you list
-const hl = apps.controller.getState().groups[key]?.hyperliquid; // HyperliquidGroupState | undefined
-hl?.agent?.address;
-```
+The qntx card wallet is not usable in this release: the card protocol client is private to the
+kernel and no kernel command, `@qntx/wallet` API or engine API reaches it. What ships is the
+native groundwork, which a host app may still notice. Compiled snippet:
+[`tests/migration/secure-input.ts`](tests/migration/secure-input.ts).
 
-- Import `HyperliquidGroupState`, `HyperliquidDetail`, `HyperliquidStep` and `HyperliquidGroupAgent`
-  from `@qntx/wallet-engine/apps/hyperliquid`. Import `PolymarketGroupState`, `PolymarketDetail`,
-  `PolymarketStep` and `PolymarketAccountState` from `@qntx/wallet-engine/apps/polymarket`.
-  `AppStep` and `AppAgent` are gone: each app's `step` is now typed with only that app's steps.
-- `renewalDue` is optional. It is absent until the group has been enabled, so read it as
-  `=== true`.
-- If you declare the controller type yourself (`ReturnType<typeof createApps>` widens it), write
-  `AppsController<{ hyperliquid: HyperliquidGroupState }>`.
-- `AppId` is `string`, and `isAppId` is removed. Controller methods accept only the ids you listed.
-
-### `approveBuilder` moved to the Hyperliquid api
-
-```ts
-// before
-await apps.controller.approveBuilder(group, "hyperliquid");
-// after
-await apps.hyperliquid.approveBuilder(group);
-```
-
-Same behaviour: the call needs an enabled group (`HyperliquidError("invalid-input")` otherwise) and
-runs under the same unlock and busy guards. Polymarket never had a builder fee approval, so it has
-no such method.
-
-### Writing or wrapping an `AppDefinition`
-
-- `enableWhen` is required. It lists the eligibility answers (`"available"`, `"close-only"`) under
-  which `enable`/`renew` may start. `createApps` throws if it is empty or contains anything else,
-  and it also throws for an id outside `^[a-z][a-z0-9-]{1,31}$`.
-- `AppDefinition<Id, Api, D>`, `AppContext<D>`, `AppProvider<D>`, `AppFlow<D>` and
-  `AppInstance<Api, D>` take the app's detail type `D`. `D` may not redefine a controller field,
-  and a provider patch cannot write `termsAcknowledged`.
-- `AppProvider.id` and `AppProvider.approveBuilder` are removed.
-- `AppContext.state()` is removed. Use `context.availability()` (this app's availability under the
-  last ready answer), `context.groupState(group)` (this app's state for the group) and
-  `context.flow(group, run)` (an extra action under the controller's guards).
-- See README "Writing an app provider".
-
-### Persisted records
-
-- The controller's `apps` collection now stores exactly `{ "termsAcknowledged": true }` per
-  group and app. Records written by earlier builds also carry `enabledAgent`/`builderDeclined`, so
-  they are rejected as malformed (logged and skipped). There is no migration. Users acknowledge
-  the terms again, and a Hyperliquid group whose agent expired before the upgrade reads `disabled`
-  instead of `needs-reauthorization`.
-- Hyperliquid stores its hints in collection `apps.hyperliquid`, key
-  `<walletId>/<groupIndex>/enablement`. These records are deleted together with their wallet.
-
-### Behaviour
-
-- Flows are guarded per group and app. A running Hyperliquid flow no longer makes a Polymarket
-  `enable`/`disable` on the same group throw `busy`, and a Polymarket `cancel` no longer drops the
-  Hyperliquid flow's writes.
-
-### New main-entry exports
-
-`parseDecimal`, `formatDecimal`, `Decimal`, `SetTimer`, `timeoutSignal`, `readJson`
-(`@qntx/wallet-engine`), and `APP_ID` (`@qntx/wallet-engine/gateway/contract`).
-
-## 38. Card wallet native surfaces
-
-Compiled snippet: `tests/migration/secure-input.ts`. Changes affect `@qntx/wallet-native` host
-apps. No existing host-facing type or call changes; the vault, the kernel protocol and the engine
-are unchanged. Additions a host app may need to act on:
-
-1. **Android permissions merged from the library manifest.** `@qntx/wallet-native` now declares
+1. **Android permissions merged from the library manifest.** `@qntx/wallet-native` declares
    `android.permission.NFC`, `android.permission.HIDE_OVERLAY_WINDOWS` (both normal, install-time
    permissions) and `<uses-feature android:name="android.hardware.nfc" android:required="false"/>`.
-   Apps that must not request them can remove them with `tools:node="remove"`, which disables card
-   wallets on Android.
-2. **iOS configuration for card wallets** (only when the app offers them): the
-   `com.apple.developer.nfc.readersession.formats = ["TAG"]` entitlement,
-   `NFCReaderUsageDescription`, and `com.apple.developer.nfc.readersession.iso7816.select-identifiers
-   = ["F0716E74780101", "D2760000850101"]`. Without them the kernel's reader reports
-   `unavailable`. CoreNFC is weak-linked, so apps without NFC keep loading.
-3. **Secure input.** Collect card access codes and printed short IDs only with
-   `SecureInput` from `@qntx/wallet-native/secure-input` (wrap `onStateChange` with Nitro's
-   `callback`). Never collect them in a JS `TextInput`: the main runtime must never hold them. The
-   component takes no content props and exposes no methods; `onStateChange` receives only
-   `idle | empty | filled | submitted`. The field becomes editable, takes focus and raises the
-   keyboard only when the kernel requests input.
-4. **Card reader transport.** APDUs flow between the kernel runtime and the native reader
-   directly. A host app neither opens NFC sessions for the card nor relays APDUs; it only drives
-   the tap cadence once the card module is wired in.
-
-## 39. Solana dApp cluster binding, custom RPC corroboration, Polymarket partial cancels
-
-Compiled snippets: `tests/migration/solana-binding.ts`, `tests/migration/polymarket-outcome.ts`.
-Changes affect `@qntx/wallet-engine` hosts and gateway operators. Nothing changes in the vault or
-the kernel protocol.
-
-1. **Solana dApp transactions are bound to the cluster.** A `solana-sign` transaction request
-   (Wallet Standard or WalletConnect) now reads the selected cluster before the prompt and can fail
-   with `SolanaClusterBindingError`. Show its `reason` (see `bindingRefusal` in the snippet); never
-   offer to sign anyway. A dApp that builds devnet transactions with a mainnet blockhash, or a
-   testnet session without a host endpoint, is refused. The connector rejects the dApp's call with
-   an error.
-2. **Custom RPC endpoints are cross-checked.** A network with a user-set custom RPC is now
-   corroborated by the host endpoints in `EngineOptions.rpc`, else by the gateway. Configure a host
-   endpoint for every testnet you let users point at a custom RPC: without one and without the
-   gateway, TRON and Solana testnet sends are refused like gateway-only ones. A host that reads
-   `NetworkController` cross-check clients itself sees the new `source` field on `available`.
-3. **Polymarket `canceled` carries `making`.** Read it before offering to place the order again:
-   a value above `"0"` is a partial fill taken before the cancel, so only the unfilled remainder may
-   be placed again. `unknown` with `cancel.kind === "canceled"` does not mean nothing filled — wait
-   for the correction.
-4. **Solana `dropped` can take longer on nodes without history.** A blockhash transaction stays
-   `submitted` until a node whose history reaches back before the submission proves the drop.
-   Gateways must be deployed with `getFirstAvailableBlock` in the Solana allow-list; an older
-   gateway refuses the method and drops are then never proven through it.
-5. **Gateway pins on fixed provider sets are refused.** `x-gateway-provider` on a TRON indexer path
-   or the Esplora route is a `400`. The engine never sends it there; only custom clients notice.
+   They appear in every host app's merged manifest and store listing. Apps that do not want them
+   remove them with `tools:node="remove"`; nothing in this release needs them.
+2. **iOS**: CoreNFC is weak-linked, so apps without NFC keep loading. The NFC entitlement and
+   `Info.plist` keys in the package README are needed only once card wallets ship.
+3. **`@qntx/wallet-native/secure-input`** (`SecureInput`) is experimental: its props and states may
+   change before card wallets ship. Never collect a card access code or short ID in a JS
+   `TextInput`.
