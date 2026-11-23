@@ -66,16 +66,21 @@ export type KernelContext = {
    */
   health: Health;
   /**
-   * Atomically commits `ops`. Unless the commit is the `init`, carries `clear`, or only touches the
-   * failure counters, an `expect-revision` guard is prepended — a stale writer fails with
-   * `conflict` (the image is reloaded best-effort before the error propagates). A commit that
-   * changes the vault's structure also rewrites the manifest, sealed under the rotated DEK, the
-   * establishing DEK or the live session's (`locked` without one). Non-KernelError failures map to
-   * `unavailable`. On success the image reloads and `health` updates.
+   * Atomically commits `ops`. Unless the commit is the `init`, carries `clear`, or is already
+   * guarded, an `expect-revision` guard is prepended — a stale writer fails with `conflict` (the
+   * image is reloaded best-effort before the error propagates). A commit that changes the vault's
+   * structure also rewrites the manifest, sealed under the rotated DEK, the establishing DEK or the
+   * live session's (`locked` without one). Non-KernelError failures map to `unavailable`. On
+   * success the image reloads and `health` updates.
    */
   readonly commit: (ops: ReadonlyArray<StoreOp>, options?: CommitOptions) => Promise<void>;
   /** Reloads the store into `image` and recomputes `health`; throws the classified error. */
   readonly reload: () => Promise<void>;
+  /**
+   * Raises the vault anchor's floor to the loaded image's revision — only while the live session
+   * holds an authenticated, healthy image (an unauthenticated one may never move the floor).
+   */
+  readonly raiseAnchor: () => Promise<void>;
   /**
    * Reconciles live module state from `prev` to the current `image` under the unlocked session: the
    * image must match its manifest, removed records are forgotten, added or changed rows are opened

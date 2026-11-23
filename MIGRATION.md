@@ -33,11 +33,17 @@ wallet.
 
 ## 1. Vault format and data reset
 
-The vault format is 5 and the host/kernel protocol version 3. Vaults of any other format are
+The vault format is 6 and the host/kernel protocol version 3. Vaults of any other format are
 reported as `vault: "unsupported"` and never opened; there is no migration. On the first launch
 after the upgrade, `unsupported` means the 0.13.0 vault: confirm with the user, reset, then
 restore. (Later, `unsupported` keeps its meaning — a newer build wrote the vault — and must not be
 reset.)
+
+Format 5 never shipped: it existed only in development builds between 0.13.0 and this release, and
+this release reports it `unsupported` like every other non-6 format — reset and restore, do not
+try to open it. What changed from the development format: the password failure counters left
+`meta` for the vault anchor (a host-held record the store writer cannot rewind), and the manifest
+now binds `meta.revision`.
 
 `vault.reset()` of an open, healthy vault now needs that vault's live session; a locked or
 unhealthy one resets without a session. On React Native the reset still asks for the device
@@ -1115,8 +1121,8 @@ paid plan.
 
 Superseded by §28: the agent key this section described is a generic `session-key` record of the
 `hyperliquid-l1-agent` scheme — the record shape, the unknown-scheme rules and the downgrade
-warning live there. `VAULT_FORMAT` stays 5 and the vault manifest covers the new rows like every
-other record.
+warning live there. This section does not change the vault format, and the vault manifest
+covers the new rows like every other record.
 
 ### Host-visible behaviour
 
@@ -1534,8 +1540,8 @@ Compiled snippet: `tests/migration/sessions.ts`.
 
 - New record kind `session-key` (id: the key's lowercase EVM address; header
   `{ scheme, walletId, groupIndex, owner, scope, name, validUntil, createdAt }`; sealed payload:
-  the 32-byte secp256k1 private key). `VAULT_FORMAT` stays 5, and the vault manifest covers the new
-  rows like every other record.
+  the 32-byte secp256k1 private key). This does not change the vault format, and the vault manifest
+  covers the new rows like every other record.
 - No data migration: an existing vault is unchanged until its first `sessions.create`.
 - A record whose `scheme` this build does not know stays inert: `sessions.list` shows it with
   `supported: false`, `sessions.sign` answers `unsupported`, and `sessions.delete` and wallet

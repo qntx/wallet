@@ -12,7 +12,7 @@ import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 
 import { nobleBackend, verifyEvent } from "@qntx/nostr";
 import type { Event } from "@qntx/nostr";
-import { createMemoryStore, startKernel } from "../../../packages/wallet-kernel/src/index.ts";
+import { createMemoryAnchor, createMemoryStore, startKernel } from "../../../packages/wallet-kernel/src/index.ts";
 import type {
   Argon2id,
   KernelPlatform,
@@ -98,6 +98,7 @@ function boot(pbkdf2: Pbkdf2): Kernel {
     pbkdf2,
     argon2id: nativeArgon2id,
     store,
+    anchor: createMemoryAnchor(),
     keystore: undefined,
     passkey: undefined,
     policy: { idle: { ms: 15 * 60_000, activity: "presence" }, maxSessionMs: 12 * 3_600_000, maxScryptLogN: 18 },

@@ -424,7 +424,7 @@ describe("record integrity", () => {
         Secret.take(new Uint8Array(DEK)),
       ),
     );
-    const h2 = createHarness({ store: h.store });
+    const h2 = createHarness({ store: h.store, anchor: h.anchor });
     await h2.settle();
     return h2;
   }
@@ -643,7 +643,7 @@ describe("cloud backup", { timeout: 120_000 }, () => {
     );
     // The re-sealed record (backup "none" → "mnemonic") keeps its passphrase.
     expect(bytesField(exported, "passphrase")).toStrictEqual(text(pv.passphrase.normalize("NFKD")));
-    const respawned = createHarness({ store: h.store });
+    const respawned = createHarness({ store: h.store, anchor: h.anchor });
     await respawned.settle();
     const unlocked = ok(await respawned.call("vault.unlock", { factor: passkeyFactor() }));
     await expect(evmAddress(respawned, strField(unlocked, "session"), pv.walletId)).resolves.toBe(

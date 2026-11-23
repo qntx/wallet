@@ -1,12 +1,13 @@
 /**
- * Main-side half of the store RPC: serves the shared in-memory RecordStore to the worker and pushes
- * "changed" notices for commits that did NOT come through this port (the kernel's own commits must
- * not echo back as external changes).
+ * Main-side half of the store RPC: serves the shared in-memory RecordStore and the vault anchor to
+ * the worker — the anchor lives here too, beside the store, so a worker lock loses neither — and
+ * pushes "changed" notices for commits that did NOT come through this port (the kernel's own
+ * commits must not echo back as external changes).
  */
 import type { MessagePort } from "node:worker_threads";
 
 import { KernelError } from "@qntx/wallet-kernel";
-import type { KernelErrorCode, RecordStore } from "@qntx/wallet-kernel";
+import type { KernelErrorCode, RecordStore, VaultAnchor } from "@qntx/wallet-kernel";
 
 import type { StoreReply, StoreRequest } from "../shared.ts";
 import { encodeImage } from "../shared.ts";
@@ -21,10 +22,17 @@ function isStoreRequest(raw: unknown): raw is StoreRequest {
   if (typeof request["id"] !== "number") {
     return false;
   }
-  return request["t"] === "load" || (request["t"] === "commit" && Array.isArray(request["ops"]));
+  return (
+    request["t"] === "load" ||
+    (request["t"] === "commit" && Array.isArray(request["ops"])) ||
+    request["t"] === "anchor-read" ||
+    (request["t"] === "anchor-replace" &&
+      request["next"] instanceof Uint8Array &&
+      (request["expected"] === undefined || request["expected"] instanceof Uint8Array))
+  );
 }
 
-export function serveStore(store: RecordStore, port: MessagePort): () => void {
+export function serveStore(store: RecordStore, anchor: VaultAnchor, port: MessagePort): () => void {
   let ownCommits = 0;
 
   const post = (reply: StoreReply): void => {
@@ -42,6 +50,26 @@ export function serveStore(store: RecordStore, port: MessagePort): () => void {
     if (request.t === "load") {
       try {
         post({ t: "loaded", id: request.id, image: encodeImage(await store.load()) });
+      } catch (error) {
+        failed(request.id, error);
+      }
+      return;
+    }
+    if (request.t === "anchor-read") {
+      try {
+        post({ t: "anchor-loaded", id: request.id, bytes: await anchor.read() });
+      } catch (error) {
+        failed(request.id, error);
+      }
+      return;
+    }
+    if (request.t === "anchor-replace") {
+      try {
+        post({
+          t: "anchor-replaced",
+          id: request.id,
+          ok: await anchor.replace(request.next, request.expected),
+        });
       } catch (error) {
         failed(request.id, error);
       }

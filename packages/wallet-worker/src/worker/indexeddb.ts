@@ -3,8 +3,8 @@
  * The Web vault store, running inside the kernel worker: database `qntx-wallet` v1 with object
  * stores `records` (keyPath ["kind","id"]), `factors` (keyPath "id") and `meta` (key "vault").
  * Every commit runs inside the cross-tab Web Lock `qntx-wallet` so two tabs' workers serialize;
- * preconditions (`init`, `expect-revision`, counter ops on a missing meta) are checked inside that
- * transaction and abort it, so nothing is written. Other tabs' workers learn about commits through
+ * preconditions (`init`, `expect-revision`) are checked inside that transaction and abort it, so
+ * nothing is written. Other tabs' workers learn about commits through
  * `BroadcastChannel("qntx-wallet")` — the channel never echoes to the sender, and own commits are
  * already reloaded by the kernel's commit path.
  *
@@ -230,24 +230,6 @@ export function createIndexedDbStore(): RecordStore {
               if (meta !== undefined) {
                 writeMeta({ ...meta, keyId: op.keyId });
                 bump = true;
-              }
-              break;
-            }
-            case "record-failure": {
-              const meta = await requireMeta();
-              if (meta !== undefined) {
-                writeMeta({
-                  ...meta,
-                  failedAttempts: meta.failedAttempts + 1,
-                  lastFailureAt: op.at,
-                });
-              }
-              break;
-            }
-            case "reset-failures": {
-              const meta = await requireMeta();
-              if (meta !== undefined) {
-                writeMeta({ ...meta, failedAttempts: 0, lastFailureAt: 0 });
               }
               break;
             }

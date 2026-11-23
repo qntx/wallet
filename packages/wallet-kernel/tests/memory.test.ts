@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { createMemoryAnchor } from "../src/vault/anchor.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
 import type { StoredFactor, StoredRecord, VaultImage, VaultMeta } from "../src/vault/store.ts";
 import { VAULT_FORMAT } from "../src/vault/store.ts";
@@ -10,8 +11,6 @@ const meta: VaultMeta = {
   format: VAULT_FORMAT,
   revision: 1,
   keyId: "a".repeat(32),
-  failedAttempts: 0,
-  lastFailureAt: 0,
 };
 
 const record: StoredRecord = {
@@ -91,26 +90,29 @@ describe("memory store", () => {
     await expect(store.load()).resolves.toStrictEqual(before);
   });
 
-  it("counter ops do not bump the revision", async () => {
-    const store = createMemoryStore();
-    await store.commit([{ op: "init", meta }]);
-    await store.commit([{ op: "record-failure", at: 123 }]);
-    await store.commit([{ op: "record-failure", at: 456 }]);
-    const loaded = await store.load();
-    expect(loaded.meta).toStrictEqual({ ...meta, failedAttempts: 2, lastFailureAt: 456 });
-    await store.commit([{ op: "reset-failures" }]);
-    const cleared = await store.load();
-    expect(cleared.meta).toStrictEqual(meta);
+  it("the memory anchor writes only when the expected bytes match", async () => {
+    const anchor = createMemoryAnchor();
+    await expect(anchor.read()).resolves.toBeUndefined();
+    // Nothing stored: only an `undefined` expectation may write.
+    await expect(anchor.replace(new Uint8Array([1]), new Uint8Array(21))).resolves.toBe(false);
+    const first = new Uint8Array(21).fill(9);
+    await expect(anchor.replace(first, undefined)).resolves.toBe(true);
+    const stale = new Uint8Array(21).fill(3);
+    await expect(anchor.replace(stale, new Uint8Array(21).fill(1))).resolves.toBe(false);
+    await expect(anchor.read()).resolves.toStrictEqual(first);
+    await expect(anchor.replace(stale, first)).resolves.toBe(true);
+    await expect(anchor.read()).resolves.toStrictEqual(stale);
   });
 
-  it("counter ops on an empty store fail with conflict", async () => {
-    const store = createMemoryStore();
-    await expect(store.commit([{ op: "record-failure", at: 1 }])).rejects.toMatchObject({
-      code: "conflict",
-    });
-    await expect(store.commit([{ op: "reset-failures" }])).rejects.toMatchObject({
-      code: "conflict",
-    });
+  it("the memory anchor copies bytes in and out", async () => {
+    const anchor = createMemoryAnchor();
+    const written = new Uint8Array(21).fill(5);
+    await anchor.replace(written, undefined);
+    written.fill(0);
+    const read = await anchor.read();
+    expect(read).toStrictEqual(new Uint8Array(21).fill(5));
+    read?.fill(0);
+    await expect(anchor.read()).resolves.toStrictEqual(new Uint8Array(21).fill(5));
   });
 
   it("set-key-id changes keyId and bumps the revision", async () => {

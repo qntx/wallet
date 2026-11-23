@@ -73,11 +73,9 @@ const interleaved = (
 };
 
 const META = {
-  format: 5,
+  format: 6,
   revision: 1,
   keyId: "0123456789abcdef0123456789abcdef",
-  failedAttempts: 0,
-  lastFailureAt: 0,
 };
 
 const RECORD = {

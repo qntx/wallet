@@ -11,7 +11,8 @@ import type { AccountRef } from "@qntx/wallet-chains";
 import { normalizeEvm, recoverEvmSigner } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
-import type { RecordStore } from "../src/vault/store.ts";
+import type { VaultAnchor } from "../src/platform.ts";
+import { decodeAnchor } from "../src/vault/anchor.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
@@ -55,11 +56,11 @@ const str = (value: ProtocolValue, key: string): string => {
 const opens = (calls: ReadonlyArray<KeystoreCall>) =>
   calls.flatMap((call) => (call.op === "open" && call.prompt !== undefined ? [call.prompt] : []));
 
-/** A store view that holds the `reset-failures` commit until released — the post-verify window. */
-const holdResetFailures = (): {
+/** An anchor view that holds the counter-clearing CAS until released — the post-verify window. */
+const holdCounterClear = (): {
   readonly entered: Promise<void>;
   readonly release: () => void;
-  readonly wrap: (inner: RecordStore) => RecordStore;
+  readonly wrap: (inner: VaultAnchor) => VaultAnchor;
 } => {
   let notify: () => void = () => undefined;
   let open: () => void = () => undefined;
@@ -69,17 +70,21 @@ const holdResetFailures = (): {
   const gate = new Promise<void>((resolve) => {
     open = resolve;
   });
+  const clears = (next: Uint8Array, expected: Uint8Array | undefined): boolean =>
+    expected !== undefined &&
+    decodeAnchor(expected).failedAttempts !== 0 &&
+    decodeAnchor(next).failedAttempts === 0;
   return {
     entered,
     release: () => open(),
     wrap: (inner) => ({
       ...inner,
-      commit: async (ops) => {
-        if (ops.some((op) => op.op === "reset-failures")) {
+      replace: async (next, expected) => {
+        if (clears(next, expected)) {
           notify();
           await gate;
         }
-        await inner.commit(ops);
+        return inner.replace(next, expected);
       },
     }),
   };
@@ -229,13 +234,13 @@ describe.each(sources)("chain.sign two-pass flow: %s", (_name, source) => {
     expect(field(ok(await h.call("status")), "vault")).toBe("locked");
   });
 
-  it("a session that ends during the post-verification commit fails locked", async () => {
-    // For a password factor verifyFactor clears a nonzero failure count with a
-    // `reset-failures` commit AFTER its wiped-DEK check: holding that commit leaves a real
-    // await window in which the session can end. Without the post-verification
-    // `session.require`, the sign pass would then open a wiped DEK and fail "integrity".
-    const gate = holdResetFailures();
-    const h = createHarness({ maxSessionMs: 60_000, wrapStore: gate.wrap });
+  it("a session that ends during the post-verification write fails locked", async () => {
+    // For a password factor verifyFactor clears a nonzero failure count with an anchor CAS
+    // AFTER its wiped-DEK check: holding that write leaves a real await window in which the
+    // session can end. Without the post-verification `session.require`, the sign pass would
+    // then open a wiped DEK and fail "integrity".
+    const gate = holdCounterClear();
+    const h = createHarness({ maxSessionMs: 60_000, wrapAnchor: gate.wrap });
     const { session, walletId } = await setup(h, {
       kind: "password",
       password: utf8ToBytes("correct horse battery staple"),

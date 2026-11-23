@@ -16,7 +16,12 @@ import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
 import { nobleBackend, verifyEvent } from "@qntx/nostr";
 import type { Event } from "@qntx/nostr";
-import { VAULT_FORMAT, createMemoryStore, startKernel } from "@qntx/wallet-kernel";
+import {
+  VAULT_FORMAT,
+  createMemoryAnchor,
+  createMemoryStore,
+  startKernel,
+} from "@qntx/wallet-kernel";
 import type { Argon2id, KernelPlatform, Pbkdf2, Port, Random } from "@qntx/wallet-kernel";
 import type { ProtocolValue, WalletErrorCode } from "@qntx/wallet/protocol";
 
@@ -195,6 +200,7 @@ function boot(store: ReturnType<typeof createMemoryStore>): Kernel {
     pbkdf2: noblePbkdf2,
     argon2id: nobleArgon2id,
     store,
+    anchor: createMemoryAnchor(),
     policy: {
       maxSessionMs: 12 * 3_600_000,
       maxScryptLogN: 20,
@@ -597,8 +603,6 @@ export async function main(): Promise<void> {
         format: VAULT_FORMAT,
         revision: 1,
         keyId: "0123456789abcdef0123456789abcdef",
-        failedAttempts: 0,
-        lastFailureAt: 0,
       },
     },
   ]);

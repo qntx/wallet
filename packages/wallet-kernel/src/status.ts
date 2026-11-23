@@ -37,11 +37,7 @@ function metaHealth(image: VaultImage): ImageHealth | undefined {
     !Number.isSafeInteger(meta.revision) ||
     meta.revision < 1 ||
     typeof meta.keyId !== "string" ||
-    !/^[0-9a-f]{32}$/.test(meta.keyId) ||
-    !Number.isSafeInteger(meta.failedAttempts) ||
-    meta.failedAttempts < 0 ||
-    !Number.isSafeInteger(meta.lastFailureAt) ||
-    meta.lastFailureAt < 0
+    !/^[0-9a-f]{32}$/.test(meta.keyId)
   ) {
     return "corrupted";
   }

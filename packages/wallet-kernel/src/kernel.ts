@@ -33,6 +33,8 @@ import { wipe } from "./secret/secret.ts";
 import type { Secret } from "./secret/secret.ts";
 import { Session } from "./session/session.ts";
 import { statusContents, statusPayload } from "./status.ts";
+import { readAnchor, updateAnchor } from "./vault/anchor.ts";
+import type { AnchorState } from "./vault/anchor.ts";
 import { factorBindingOk } from "./vault/factors.ts";
 import { parseEntropyHeader } from "./vault/headers.ts";
 import {
@@ -97,17 +99,11 @@ function isMethodName(method: string): method is MethodName {
   return Object.hasOwn(METHODS, method);
 }
 
-/** Counter ops never fence: they fold into the store atomically against whatever is there. */
-function isCounterOp(op: StoreOp): boolean {
-  return op.op === "record-failure" || op.op === "reset-failures";
-}
-
 /** Whether the commit needs the `expect-revision` guard prepended (see KernelContext.commit). */
 function needsGuard(ops: ReadonlyArray<StoreOp>): boolean {
   return (
     ops[0]?.op !== "init" &&
     !ops.some((op) => op.op === "clear") &&
-    !ops.every(isCounterOp) &&
     !ops.some((op) => op.op === "expect-revision")
   );
 }
@@ -249,12 +245,16 @@ export function startKernel(host: KernelPlatform, port: Port): void {
    * session is unlocked the live module state reconciles against the new image — a corrupted or
    * rotated vault locks it.
    */
-  const applyImage = (image: VaultImage): void => {
+  const applyImage = (image: VaultImage, anchorState: AnchorState): void => {
     const prev = ctx.image;
     ctx.image = image;
     ctx.session.setInitialized(image.meta !== undefined);
     if (image.meta === undefined) {
       integrityFailure = false;
+    }
+    // A store writer put an earlier sealed image back: the anchor's floor is above its revision.
+    if (image.meta !== undefined && image.meta.revision < anchorState.revision) {
+      integrityFailure = true;
     }
     const assessed = statusContents(image, ctx.modules, nostr).health;
     setHealth(assessed === "ok" && integrityFailure ? "corrupted" : assessed);
@@ -289,8 +289,13 @@ export function startKernel(host: KernelPlatform, port: Port): void {
   };
 
   const reload = async (): Promise<void> => {
+    // The anchor moves only after the store commit it vouches for, so a revision read after it can
+    // never be below it — this ordering keeps a concurrent kernel's legal commit from latching a
+    // false corruption here.
+    let anchorState: AnchorState;
     let image: VaultImage;
     try {
+      anchorState = await readAnchor(platform.anchor);
       image = await platform.store.load();
     } catch (error) {
       setHealth(classifyLoadFailure(error));
@@ -298,7 +303,29 @@ export function startKernel(host: KernelPlatform, port: Port): void {
         ? error
         : new KernelError("unavailable", "vault store: load failed");
     }
-    applyImage(image);
+    applyImage(image, anchorState);
+    await raiseAnchor(anchorState);
+  };
+
+  /**
+   * Moves the anchor floor to a revision the live session just sealed or authenticated. Never runs
+   * while locked — an unauthenticated image must not raise the floor, or a store writer could
+   * inflate it and brick the real vault.
+   */
+  const raiseAnchor = async (known: AnchorState): Promise<void> => {
+    if (
+      !ctx.session.unlocked ||
+      ctx.health !== "ok" ||
+      ctx.image.meta === undefined ||
+      ctx.image.meta.revision <= known.revision
+    ) {
+      return;
+    }
+    const { revision } = ctx.image.meta;
+    await updateAnchor(platform.anchor, (state) => ({
+      ...state,
+      revision: Math.max(state.revision, revision),
+    }));
   };
 
   /** The DEK a structural commit's image is sealed under (see KernelContext.commit). */
@@ -355,6 +382,10 @@ export function startKernel(host: KernelPlatform, port: Port): void {
     },
     reload,
     reconcile,
+    raiseAnchor: async () => {
+      // openSession: the session just authenticated the image — raise the floor to its revision.
+      await raiseAnchor(await readAnchor(platform.anchor));
+    },
   };
 
   const dispatch = async <M extends MethodName>(

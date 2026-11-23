@@ -107,6 +107,7 @@ const runtimeSources = [
   resolve(cppDir, "runtime/platform/KernelPbkdf2.cpp"),
   resolve(cppDir, "runtime/platform/KernelArgon2.cpp"),
   resolve(cppDir, "host/KernelFile.cpp"),
+  resolve(cppDir, "host/VaultAnchor.cpp"),
   resolve(cppDir, "host/Lifecycle.cpp"),
   resolve(moduleDir, "tests/host/HostLifecycle.cpp"),
   resolve(moduleDir, "tests/host/HostKeystore.cpp"),
@@ -114,6 +115,7 @@ const runtimeSources = [
   resolve(moduleDir, "tests/host/HostCardReader.cpp"),
   resolve(moduleDir, "tests/host/HostNostrNative.cpp"),
   resolve(moduleDir, "tests/host/HostQntxSpark.cpp"),
+  resolve(moduleDir, "tests/host/HostVaultAnchor.cpp"),
 ];
 // The vendored Argon2 reference implementation is C: compiled apart from the C++ sources, with
 // the same sanitizers, and linked in as objects.

@@ -27,8 +27,6 @@ const META: VaultMeta = {
   format: VAULT_FORMAT,
   revision: 1,
   keyId: "0".repeat(32),
-  failedAttempts: 0,
-  lastFailureAt: 0,
 };
 
 const record = (kind: string, id: string, fill: number) => ({
@@ -57,8 +55,6 @@ function commits(seed: number, count: number): ReadonlyArray<ReadonlyArray<Store
       { op: "init", meta: META },
       { op: "expect-revision", revision: 1 + next(4) },
       { op: "set-key-id", keyId: next(16).toString(16).repeat(32) },
-      { op: "record-failure", at: 1000 + next(1000) },
-      { op: "reset-failures" },
       { op: "put-record", record: record("entropy", `w${next(3)}`, next(255)) },
       { op: "put-record", record: record("key", `k${next(3)}`, next(255)) },
       { op: "delete-record", kind: "entropy", id: `w${next(3)}` },
@@ -66,7 +62,7 @@ function commits(seed: number, count: number): ReadonlyArray<ReadonlyArray<Store
       { op: "delete-factor", id: next(3).toString(16).padStart(32, "0") },
       { op: "clear" },
     ];
-    return choices[next(choices.length)] ?? { op: "reset-failures" };
+    return choices[next(choices.length)] ?? { op: "clear" };
   };
   return Array.from({ length: count }, () => Array.from({ length: 1 + next(3) }, one));
 }
@@ -107,7 +103,7 @@ describe("IndexedDB vault store", () => {
     await store.commit([{ op: "init", meta: META }]);
     await store.commit([
       { op: "put-record", record: record("entropy", "w0", 1) },
-      { op: "record-failure", at: 1 },
+      { op: "set-key-id", keyId: "1".repeat(32) },
       { op: "clear" },
     ]);
     await expect(store.load()).resolves.toStrictEqual({
