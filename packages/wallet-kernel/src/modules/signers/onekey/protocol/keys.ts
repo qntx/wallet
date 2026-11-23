@@ -233,6 +233,8 @@ export async function address(
     readonly showDisplay: boolean;
     readonly scriptType?: number;
     readonly chainId?: bigint;
+    /** The network the bitcoin address derives under — "Bitcoin" or "Testnet" on the wire. */
+    readonly network?: "mainnet" | "testnet";
   },
 ): Promise<string> {
   checkPath(path);
@@ -248,7 +250,7 @@ export async function address(
           def: GetAddress,
           value: {
             addressN: [...path],
-            coinName: "Bitcoin",
+            coinName: options.network === "testnet" ? "Testnet" : "Bitcoin",
             showDisplay: options.showDisplay,
             ...(options.scriptType === undefined ? {} : { scriptType: options.scriptType }),
           },

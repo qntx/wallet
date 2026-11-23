@@ -23,6 +23,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
+import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
 import { createOperationExecutor } from "../src/modules/signers/operation.ts";
 import { hardwareWalletId } from "../src/modules/signers/record.ts";
 import type { KernelPlatform } from "../src/platform.ts";
@@ -106,7 +107,7 @@ const boot = async (
 ): Promise<Boot> => {
   const device = fakeDevice(SEED, deviceOpts);
   const h = createHarness({
-    drivers: { keystone: device.driver },
+    drivers: { keystone: device.driver, onekey: ONEKEY_DRIVER },
     ...harnessOpts,
   });
   await h.settle();

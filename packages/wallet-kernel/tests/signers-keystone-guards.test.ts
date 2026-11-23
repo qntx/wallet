@@ -33,6 +33,7 @@ import type { Cbor } from "../src/modules/signers/keystone/cbor.ts";
 import { derive } from "../src/modules/signers/keystone/derive.ts";
 import { KEYSTONE_DRIVER } from "../src/modules/signers/keystone/driver.ts";
 import { sign } from "../src/modules/signers/keystone/sign.ts";
+import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
 import { keystoneDevice } from "./signers-keystone-device.ts";
 
 const HARDENED = 0x80000000;
@@ -346,9 +347,9 @@ describe("keystone sign stage/request consistency", () => {
       },
     };
     const stage = planEvm({ ...request, tx: { ...request.tx, nonce: 1 } }, EVM_KEY);
-    await expect(code(async () => sign(link(), { request, stage, pin, random }))).resolves.toBe(
-      "integrity",
-    );
+    await expect(
+      code(async () => sign(link(), { request, stage, pin, random, display: "clear" as const })),
+    ).resolves.toBe("integrity");
   });
 
   it("refuses a mismatched stage on every secp256k1 family", async () => {
@@ -452,9 +453,9 @@ describe("keystone sign stage/request consistency", () => {
       format: "raw",
     };
     const stage = planSolana({ ...request, message: utf8ToBytes("different") }, SOLANA_KEY);
-    await expect(code(async () => sign(link(), { request, stage, pin, random }))).resolves.toBe(
-      "integrity",
-    );
+    await expect(
+      code(async () => sign(link(), { request, stage, pin, random, display: "clear" as const })),
+    ).resolves.toBe("integrity");
   });
 
   it("refuses a solana signature that is not 64 bytes", async () => {
@@ -467,7 +468,9 @@ describe("keystone sign stage/request consistency", () => {
     };
     const stage = planSolana(request, SOLANA_KEY);
     await expect(
-      code(async () => sign(link(longSignature), { request, stage, pin, random })),
+      code(async () =>
+        sign(link(longSignature), { request, stage, pin, random, display: "clear" as const }),
+      ),
     ).resolves.toBe("integrity");
   });
 });
@@ -572,7 +575,7 @@ describe("keystone key-derivation answer", () => {
 
 describe("hardware-wallet record id binding", () => {
   it("a header that does not name its record id is integrity", () => {
-    const module = createSignersModule({ keystone: KEYSTONE_DRIVER });
+    const module = createSignersModule({ keystone: KEYSTONE_DRIVER, onekey: ONEKEY_DRIVER });
     const record = {
       kind: "hardware-wallet",
       id: "deadbeefdeadbeef",

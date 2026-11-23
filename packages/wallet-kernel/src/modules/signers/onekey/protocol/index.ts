@@ -40,4 +40,9 @@ export {
   signBitcoinMessage,
   signBitcoinTransaction,
 } from "./bitcoin.ts";
-export type { BitcoinDisplayRequest, BitcoinMessageOptions, BitcoinPrepared } from "./bitcoin.ts";
+export type {
+  BitcoinDisplayRequest,
+  BitcoinMessageOptions,
+  BitcoinPrepared,
+  BitcoinSignEntry,
+} from "./bitcoin.ts";

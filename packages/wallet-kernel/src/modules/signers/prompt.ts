@@ -8,6 +8,7 @@ import type { PromptLocale } from "../../prompts.ts";
 
 const DEVICE_NAME: Readonly<Record<HardwareDevice, string>> = {
   keystone: "Keystone",
+  onekey: "OneKey",
 };
 
 const LINES: Readonly<Record<PromptLocale, Readonly<Record<DeviceDisplay, string>>>> = {
