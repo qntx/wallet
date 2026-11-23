@@ -1843,8 +1843,19 @@ export function boundChainPrompt(
   intent: PromptIntent,
   bound: PromptBound,
 ): { readonly prompt: KeystorePrompt; readonly oversize: boolean } {
+  return boundPrompt(locale, chainPrompt(locale, intent), bound);
+}
+
+/**
+ * The same bound applied to a rendered prompt from outside the chains module (Spark approvals share
+ * the blind rendering: the chains catalog owns the blind title and the count line).
+ */
+export function boundPrompt(
+  locale: PromptLocale,
+  rendered: KeystorePrompt,
+  bound: PromptBound,
+): { readonly prompt: KeystorePrompt; readonly oversize: boolean } {
   const catalog = CATALOGS[locale];
-  const rendered = chainPrompt(locale, intent);
   if (promptFits(rendered, bound)) {
     return { prompt: rendered, oversize: false };
   }

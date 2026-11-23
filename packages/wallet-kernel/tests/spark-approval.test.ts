@@ -26,9 +26,13 @@ import {
 } from "@qntx/spark/signer";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import { CATALOGS } from "../src/modules/chains/prompt.ts";
+import type { KeystorePrompt } from "../src/platform.ts";
+import { codePoints, PROMPT_BOUNDS } from "../src/prompts.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
+import type { FakeKeystore, KeystoreCall } from "./keystore.ts";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -176,6 +180,7 @@ const must = <T>(value: T | undefined): T => {
 
 type SparkTest = {
   readonly h: Harness;
+  readonly keystore: FakeKeystore;
   readonly session: string;
   readonly account: {
     readonly walletId: string;
@@ -186,9 +191,9 @@ type SparkTest = {
   readonly identity: Uint8Array;
 };
 
-const setup = async (): Promise<SparkTest> => {
+const setup = async (keystore: FakeKeystore = fakeKeystore()): Promise<SparkTest> => {
   const h = createHarness({
-    keystore: fakeKeystore().keystore,
+    keystore: keystore.keystore,
     backends: {
       spark: async () => {
         await Promise.resolve();
@@ -211,8 +216,12 @@ const setup = async (): Promise<SparkTest> => {
     network: "regtest" as const,
   };
   const identity = bytesOf(ok(await h.call("spark.identityPublicKey", { account }, session)));
-  return { h, session, account, identity };
+  return { h, keystore, session, account, identity };
 };
+
+const lastPrompt = (keystore: FakeKeystore): KeystorePrompt | undefined =>
+  keystore.calls.findLast((c): c is KeystoreCall & { prompt?: KeystorePrompt } => "prompt" in c)
+    ?.prompt;
 
 const approve = async (t: SparkTest, intent: ProtocolValue): Promise<KernelResponse> =>
   t.h.call("spark.approve", { account: t.account, intent, verify: HARDWARE }, t.session);
@@ -731,5 +740,50 @@ describe("approval expiry", () => {
     expect(errCode(await approveOnchain(t))).toBe("invalid-input");
     t.h.advance(60_000);
     ok(await approveOnchain(t));
+  });
+});
+
+describe("oversize approval prompts", () => {
+  /** Twenty receivers: twenty "Send …" lines, far past the iOS 8-line bound. */
+  const crowdedIntent = (): ProtocolValue => ({
+    kind: "transfer",
+    receivers: Array.from({ length: 20 }, (_, i) => ({
+      identityPublicKey: pubkey(0x41 + i),
+      amountSats: 100,
+    })),
+  });
+
+  it("is refused as blind-signing-disabled before any keystore call while blind signing is off", async () => {
+    const keystore = fakeKeystore();
+    const t = await setup(keystore);
+    const callsBefore = keystore.calls.length;
+    expect(errCode(await approve(t, crowdedIntent()))).toBe("blind-signing-disabled");
+    expect(keystore.calls.slice(callsBefore)).toStrictEqual([]);
+  });
+
+  it("shows the blind title, a whole-line prefix and the count line when blind signing is on", async () => {
+    const keystore = fakeKeystore();
+    const t = await setup(keystore);
+    ok(await t.h.call("vault.setBlindSigning", { enabled: true, verify: HARDWARE }, t.session));
+    ok(await approve(t, crowdedIntent()));
+    const prompt = lastPrompt(keystore);
+    expect(prompt?.title).toBe(CATALOGS.en.blindTitle);
+    const lines = String(prompt?.description).split("\n");
+    expect(lines.length).toBeLessThanOrEqual(PROMPT_BOUNDS.ios.lines);
+    expect(codePoints(lines.join("\n"))).toBeLessThanOrEqual(PROMPT_BOUNDS.ios.characters);
+    expect(lines.at(-1)).toBe(CATALOGS.en.moreLines(21 - lines.length));
+  });
+
+  it("leaves a fitting approval prompt untouched", async () => {
+    const keystore = fakeKeystore();
+    const t = await setup(keystore);
+    ok(
+      await approve(t, {
+        kind: "transfer",
+        receivers: [{ identityPublicKey: RECEIVER, amountSats: 100 }],
+      }),
+    );
+    const prompt = lastPrompt(keystore);
+    expect(prompt?.title).toBe("Confirm Spark transfer");
   });
 });
