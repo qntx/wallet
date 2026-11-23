@@ -2017,3 +2017,32 @@ the kernel protocol.
    gateway refuses the method and drops are then never proven through it.
 5. **Gateway pins on fixed provider sets are refused.** `x-gateway-provider` on a TRON indexer path
    or the Esplora route is a `400`. The engine never sends it there; only custom clients notice.
+
+## 40. Push notifications
+
+Compiled snippet: `tests/migration/push-notifications.ts`. Additive: nothing changes for a host
+that does not opt in. Gateway operators deploy a new Durable Object class.
+
+1. **Wire the key store.** Pass `pushKeys` (`PushKeyStore`) to `createWalletEngine`: `put(id, key)`
+   and `delete(id)` keep each subscription's 32-byte payload key where the notification extension
+   can read it while the app is closed (iOS: an App Group keychain item; Android: app-private
+   storage read by the `FirebaseMessagingService`). Without it, deliveries on a closed app show
+   only the fallback text.
+2. **Register and opt in.** After unlock call `engine.notifications.setToken("apns" | "fcm",
+   token)` whenever the platform hands you a token, then `enable(walletId)` for each wallet the user
+   turns notifications on for. `disable(walletId)` and removing a wallet delete its subscriptions.
+   `engine.notifications.getState()` shows per-wallet, per-family `active` / `pending` / `failed`.
+3. **Handle deliveries.** iOS: ship a Notification Service Extension; the alert carries
+   `mutable-content: 1` and the message under `userInfo.qntx`. Open it with `openPush` from
+   `@qntx/wallet-engine/push` (or a native AES-256-GCM port checked against `vectors/push.json`)
+   using the keys from the key store, and replace the text; on failure leave the alert, whose
+   `title-loc-key` / `loc-key` are `QNTX_PUSH_TITLE` / `QNTX_PUSH_BODY` — add both to
+   `Localizable.strings`. Android: FCM sends a data-only message (`v`, `e`, `c`); build the
+   notification yourself the same way. In the running app pass the message to
+   `engine.notifications.receive(message)`: it returns the display hint and reloads history and
+   balances; never insert the hint into an activity list.
+4. **Gateway operators.** The deploy adds migration `v2` (`PushObject`), the `PUSH` binding and the
+   `PUSH_LIMITER` rate limit; a Durable Object class change makes that deploy non-rollbackable
+   (`deploy-check rollback-plan`). Push stays off until `PUSH_SEAL_KEY`, at least one sender
+   (`APNS_*` or `FCM_SERVICE_ACCOUNT`) and the Alchemy webhook secrets are set
+   (`apps/gateway/README.md` "Push notifications").
