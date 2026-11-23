@@ -75,7 +75,7 @@ const reconcileStatus = (
     case "MATCHED":
       return { kind: "matched", orderId, making: row.sizeMatched };
     case "CANCELED":
-      return { kind: "canceled", orderId };
+      return { kind: "canceled", orderId, making: row.sizeMatched };
     case "DELAYED":
       return { kind: "delayed", orderId };
     case "UNMATCHED":
@@ -113,7 +113,10 @@ export type PolymarketRejectReason =
  * only when the order was never seen by any reconcile read.
  */
 export type PolymarketCancelAttempt =
-  /** The CLOB listed our order id under `canceled`. */
+  /**
+   * The CLOB listed our order id under `canceled` — only the remaining size was canceled; the order
+   * may still have partially filled first (the outcome/correction carries the fill).
+   */
   | { readonly kind: "canceled" }
   /** The CLOB refused — `reason` is its `not_canceled[id]` text, or that it listed neither. */
   | { readonly kind: "not-canceled"; readonly reason: string }
@@ -139,8 +142,11 @@ export type PolymarketOrderOutcome =
       readonly reason: PolymarketRejectReason;
       readonly message: string;
     }
-  /** Reconcile found the order canceled. */
-  | { readonly kind: "canceled"; readonly orderId: string }
+  /**
+   * Reconcile found the order canceled. `making` is the row's `size_matched` — > "0" means the
+   * order partially filled before it was canceled; re-place only the unfilled remainder.
+   */
+  | { readonly kind: "canceled"; readonly orderId: string; readonly making: string }
   /**
    * The POST's fate is unknowable — the order may or may not exist; never blindly re-place (a
    * later-landing first order plus the retry is a duplicate position). `cancel` — present iff the

@@ -626,7 +626,11 @@ saw is **not** proven absent, so the engine attempts `DELETE /order` by id befor
 attempt's result rides the outcome as `cancel` — and registers the id for the late reconcile:
 `trade.corrections` re-asks `order` every 10 s for 10 minutes and emits the eventual status once.
 `unknown` means the order may or may not exist — it MUST NOT be blindly re-placed, because a
-later-landing first order plus the retry is a duplicate position. Cancels
+later-landing first order plus the retry is a duplicate position. A `canceled` outcome or
+correction carries `making`, the row's `size_matched`: `making` > "0" is a partial fill taken
+before the cancel landed, so only the unfilled remainder is free to re-place — and
+`unknown.cancel.kind === "canceled"` only says the defensive DELETE removed the *remaining* size,
+never that nothing filled. Cancels
 (`cancel`, `cancelMany` ≤ 500, `cancelAll`, `cancelMarket`) are never eligibility-gated.
 
 ### Close-only
