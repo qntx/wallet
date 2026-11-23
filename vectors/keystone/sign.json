@@ -73,6 +73,15 @@
       "name": "crypto-psbt",
       "urType": "crypto-psbt",
       "cbor": "582802ef86010a840165536084016553608094deadbeefdeadbeefdeadbeefdeadbeefdeadbeef0180c0"
+    },
+    {
+      "name": "key-derivation-call",
+      "urType": "qr-hardware-call",
+      "cbor": "a3010002d90515a10182d90516a301d90130a201861854f500f501f5021a73c5da0a02000300d90516a301d90130a20188182cf51901f5f501f500f5021a73c5da0a020103000364716e7478",
+      "paths": [
+        "m/84'/0'/1'",
+        "m/44'/501'/1'/0'"
+      ]
     }
   ]
 }

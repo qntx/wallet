@@ -24,7 +24,13 @@ import {
   CryptoHDKey,
   CryptoKeypath,
   CryptoMultiAccounts,
+  Curve,
+  DerivationAlgorithm,
+  KeyDerivation,
+  KeyDerivationSchema,
   PathComponent,
+  QRHardwareCall,
+  QRHardwareCallType,
 } from "@keystonehq/bc-ur-registry";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -516,6 +522,29 @@ const signVectors = {
       name: "crypto-psbt",
       urType: "crypto-psbt",
       cbor: cborOf(new BtcCryptoPSBT(SIGN_DATA)),
+    },
+    {
+      name: "key-derivation-call",
+      urType: "qr-hardware-call",
+      cbor: cborOf(
+        new QRHardwareCall(
+          QRHardwareCallType.KeyDerivation,
+          new KeyDerivation([
+            new KeyDerivationSchema(
+              keypath(CryptoKeypath, PathComponent, "84'/0'/1'"),
+              Curve.secp256k1,
+              DerivationAlgorithm.slip10,
+            ),
+            new KeyDerivationSchema(
+              keypath(CryptoKeypath, PathComponent, "44'/501'/1'/0'"),
+              Curve.ed25519,
+              DerivationAlgorithm.slip10,
+            ),
+          ]),
+          ORIGIN,
+        ),
+      ),
+      paths: ["m/84'/0'/1'", "m/44'/501'/1'/0'"],
     },
   ],
 };

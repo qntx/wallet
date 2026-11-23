@@ -6,7 +6,16 @@
  * the answer with the same classes. Nothing in `src/` is consulted, so a wrong request shape fails
  * the decode here, not in the kernel's own parser.
  */
-import { CryptoKeypath, extend } from "@keystonehq/bc-ur-registry";
+import {
+  CryptoHDKey,
+  CryptoKeypath,
+  CryptoMultiAccounts,
+  Curve,
+  extend,
+  KeyDerivation,
+  PathComponent,
+  QRHardwareCall,
+} from "@keystonehq/bc-ur-registry";
 import type { DataItem } from "@keystonehq/bc-ur-registry";
 import { BtcSignature, BtcSignRequest, CryptoPSBT } from "@keystonehq/bc-ur-registry-btc";
 import {
@@ -52,6 +61,19 @@ export type DeviceMutant = {
   readonly cbor?: (bytes: Uint8Array, urType: string) => Uint8Array;
   /** Answer under a different UR type. */
   readonly urType?: string;
+  /** Knobs for the `qr-hardware-call` answer only. */
+  readonly accounts?: {
+    /** Answer as a device with this master fingerprint instead of the paired one. */
+    readonly fingerprint?: Uint8Array;
+    /** Do not send the key for this path (`m/…` string). */
+    readonly dropPath?: string;
+    /** Send a key for this path too. */
+    readonly extraPath?: string;
+    /** Send the key for this path twice. */
+    readonly duplicatePath?: string;
+    /** Corrupt the public key bytes sent for this path. */
+    readonly badKeyPath?: string;
+  };
 };
 
 const pathNumbers = (rendered: string): number[] =>
@@ -315,6 +337,85 @@ export const keystoneDevice = (
     return answer(vendorBytes(new CryptoPSBT(Buffer.from(tx.toPSBT(0)))), "crypto-psbt");
   };
 
+  /**
+   * The key-derivation call: firmware derives each requested path and answers a
+   * `crypto-multi-accounts` whose hdkeys carry an origin keypath without a source fingerprint.
+   */
+  const hardwareCall = (cbor: Buffer): DeviceResponse => {
+    const call = QRHardwareCall.fromCBOR(cbor);
+    const params = call.getParams();
+    if (!(params instanceof KeyDerivation)) {
+      throw new Error("device: hardware call is not a key derivation");
+    }
+    const schemas = params.getSchemas();
+    const knobs = mutant.accounts ?? {};
+    const mfp = knobs.fingerprint ?? fingerprint;
+
+    const keyFor = (rendered: string, edOnly: boolean): CryptoHDKey => {
+      const components = pathNumbers(rendered).map(
+        (n) =>
+          new PathComponent({ index: n % HARDENED, hardened: n >= HARDENED }),
+      );
+      const origin = new CryptoKeypath(components);
+      if (edOnly) {
+        // micro-key-producer prefixes the ed25519 public key with 0x00 for its extended form;
+        // the wire format carries the bare 32 bytes.
+        const publicKey = slip.derive(rendered).publicKey.subarray(1);
+        return new CryptoHDKey({
+          isMaster: false,
+          key: Buffer.from(
+            knobs.badKeyPath === rendered ? publicKey.subarray(0, -1) : publicKey,
+          ),
+          origin,
+        });
+      }
+      const node = root.derive(rendered);
+      if (node.publicKey === null) {
+        throw new Error(`device: no public key at ${rendered}`);
+      }
+      const parent = Buffer.alloc(4);
+      parent.writeUInt32BE(node.parentFingerprint);
+      const corrupt = knobs.badKeyPath === rendered;
+      const publicKey = corrupt
+        ? Buffer.concat([Buffer.from([0x00]), node.publicKey.subarray(1)])
+        : Buffer.from(node.publicKey);
+      return new CryptoHDKey({
+        isMaster: false,
+        key: publicKey,
+        chainCode: Buffer.from(node.chainCode),
+        origin,
+        parentFingerprint: parent,
+      });
+    };
+
+    const keys: CryptoHDKey[] = [];
+    for (const schema of schemas) {
+      const rendered = renderPath(pathNumbers(schema.getKeypath().getPath() ?? ""));
+      if (knobs.dropPath === rendered) {
+        continue;
+      }
+      keys.push(keyFor(rendered, schema.getCurve() === Curve.ed25519));
+      if (knobs.duplicatePath === rendered) {
+        keys.push(keyFor(rendered, schema.getCurve() === Curve.ed25519));
+      }
+    }
+    if (knobs.extraPath !== undefined) {
+      keys.push(keyFor(knobs.extraPath, false));
+    }
+    return answer(
+      vendorBytes(
+        new CryptoMultiAccounts(
+          Buffer.from(mfp),
+          keys,
+          "Keystone 3 Pro",
+          undefined,
+          "3.2.2",
+        ),
+      ),
+      "crypto-multi-accounts",
+    );
+  };
+
   return {
     respond: (request: DeviceRequest): DeviceResponse => {
       if (request.kind !== "qr" || request.show === undefined) {
@@ -332,6 +433,8 @@ export const keystoneDevice = (
           return bitcoinMessage(cbor);
         case "crypto-psbt":
           return psbt(cbor);
+        case "qr-hardware-call":
+          return hardwareCall(cbor);
         default:
           throw new Error(`device: unknown UR type ${request.show.type}`);
       }

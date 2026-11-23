@@ -40,7 +40,7 @@ function fail(): never {
 }
 
 /** The derivation path a keypath claims, or `undefined` when a wildcard makes it unpinnable. */
-const pathOf = (keyPath: CryptoKeyPath): KeyPath | undefined => {
+export const pathOf = (keyPath: CryptoKeyPath): KeyPath | undefined => {
   const components: number[] = [];
   for (const component of keyPath.components) {
     if (component.index === undefined || component.index > 0x7fffffff) {
@@ -51,7 +51,7 @@ const pathOf = (keyPath: CryptoKeyPath): KeyPath | undefined => {
   return components;
 };
 
-const samePath = (a: KeyPath, b: KeyPath): boolean =>
+export const samePath = (a: KeyPath, b: KeyPath): boolean =>
   a.length === b.length && a.every((v, i) => v === b[i]);
 
 /** Parses the QR response: exactly a `crypto-multi-accounts` UR or `integrity`. */

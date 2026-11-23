@@ -11,6 +11,7 @@ import { resolve } from "node:path";
 
 import { CryptoPSBT } from "@keystonehq/bc-ur-registry-btc";
 import { ed25519 } from "@noble/curves/ed25519.js";
+import { base58 } from "@scure/base";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { HDKey } from "@scure/bip32";
@@ -32,6 +33,7 @@ import type { DeviceRequest, DeviceResponse, ProtocolValue } from "@qntx/wallet/
 
 import { KernelError } from "../src/errors.ts";
 import { decodeCbor, encodeCbor } from "../src/modules/signers/keystone/cbor.ts";
+import { derive } from "../src/modules/signers/keystone/derive.ts";
 import {
   btcSignature,
   btcSignRequest,
@@ -39,6 +41,7 @@ import {
   cryptoPsbtBytes,
   ethSignature,
   ethSignRequest,
+  hardwareCall,
   solSignature,
   solSignRequest,
   tronSignature,
@@ -92,6 +95,7 @@ const signVectors = JSON.parse(
     chainId?: number;
     signType?: number;
     path?: string;
+    paths?: ReadonlyArray<string>;
     cbor: string;
   }>;
 };
@@ -378,6 +382,15 @@ describe("keystone sign requests encode like the vendor SDK's", () => {
         });
       case "crypto-psbt":
         return cryptoPsbt(signData);
+      case "qr-hardware-call": {
+        const [secp, ed] = c.paths ?? [];
+        return hardwareCall({
+          secp256k1: [path(secp ?? "")],
+          ed25519: [path(ed ?? "")],
+          fingerprint,
+          origin: signVectors.origin,
+        });
+      }
       default:
         throw new Error(c.urType);
     }
@@ -789,5 +802,182 @@ describe("the response parser only ever throws KernelError", () => {
       }),
       { numRuns: 300 },
     );
+  });
+});
+
+describe("keystone accounts over qr-hardware-call", () => {
+  const accountsOp = (walletId: string, groupIndex: number) => ({
+    kind: "accounts" as const,
+    walletId,
+    groupIndex,
+    templates: ["btc.bip84", "solana.bip44-change"],
+    network: BTC_NETWORK,
+  });
+
+  const runAccounts = async (
+    h: Harness,
+    session: string,
+    op: unknown,
+    mutant: DeviceMutant = {},
+  ): Promise<KernelResponse> => {
+    const device = keystoneDevice(SEED, MFP, mutant);
+    const begin = await h.call("hardware.begin", { op }, session);
+    if ("err" in begin) {
+      return begin;
+    }
+    const opId = strField(begin.ok, "opId");
+    let step = field(begin.ok, "step");
+    for (let guard = 0; strField(step, "kind") === "exchange" && guard < 8; guard++) {
+      const deviceRequest = field(step, "request") as DeviceRequest;
+      if (deviceRequest.kind !== "qr" || deviceRequest.show?.type !== "qr-hardware-call") {
+        throw new Error("accounts asked for a non hardware-call exchange");
+      }
+      // oxlint-disable-next-line no-await-in-loop -- the coroutine advances one turn per step
+      const next = await h.call(
+        "hardware.step",
+        { opId, response: device.respond(deviceRequest) },
+        session,
+      );
+      if ("err" in next) {
+        return next;
+      }
+      step = next.ok;
+    }
+    if (strField(step, "kind") !== "done") {
+      throw new Error("accounts did not finish");
+    }
+    return { id: 0, ok: field(field(step, "result"), "accounts") };
+  };
+
+  const walletAccounts = async (
+    h: Harness,
+    session: string,
+    walletId: string,
+    template: string,
+    network: string,
+    groupIndex: number,
+  ) =>
+    h.call(
+      "wallet.accounts",
+      { walletId, groupIndex, template, network },
+      session,
+    );
+
+  it("pins exactly the missing group keys, then wallet.accounts answers", async () => {
+    const { h, session, hwId } = await boot();
+    // Group 1 has not been derived yet: both families miss their hardened nodes.
+    expect(
+      errCode(await walletAccounts(h, session, hwId, "btc.bip84", BTC_NETWORK, 1)),
+    ).toBe("device-required");
+    expect(
+      errCode(await walletAccounts(h, session, hwId, "solana.bip44-change", SOLANA_NETWORK, 1)),
+    ).toBe("device-required");
+
+    const done = await runAccounts(
+      h,
+      session,
+      { ...accountsOp(hwId, 1), templates: ["btc.bip84"], network: BTC_NETWORK },
+    );
+    expect(errCode(done)).toBeUndefined();
+
+    const btc = await walletAccounts(h, session, hwId, "btc.bip84", BTC_NETWORK, 1);
+    const node = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/1'");
+    const [account] = done.ok as ProtocolValue[];
+    expect(strField(account, "xpub")).toBe(node.publicExtendedKey);
+    expect(strField(btc.ok, "xpub")).toBe(node.publicExtendedKey);
+  });
+
+  it("derives the solana group-1 leaf and refuses hostile answers", async () => {
+    const { h, session, hwId } = await boot();
+    const solana = (mutant: DeviceMutant = {}) =>
+      runAccounts(h, session, {
+        kind: "accounts",
+        walletId: hwId,
+        groupIndex: 1,
+        templates: ["solana.bip44-change"],
+        network: SOLANA_NETWORK,
+      }, mutant);
+
+    // The honest answer pins m/44'/501'/1'/0' — the group-1 account leaf.
+    const done = await solana();
+    expect(errCode(done)).toBeUndefined();
+    const account = await walletAccounts(
+      h,
+      session,
+      hwId,
+      "solana.bip44-change",
+      SOLANA_NETWORK,
+      1,
+    );
+    const leaf = Slip10.fromMasterSeed(SEED).derive("m/44'/501'/1'/0'").publicKey;
+    expect(strField(account.ok, "address")).toBe(base58.encode(leaf.subarray(1)));
+
+    // Hostile variants against a fresh wallet each miss the same gap and must fail closed.
+    const hostile = async (mutant: DeviceMutant) => {
+      const again = await boot();
+      return runAccounts(
+        again.h,
+        again.session,
+        {
+          kind: "accounts",
+          walletId: again.hwId,
+          groupIndex: 1,
+          templates: ["solana.bip44-change"],
+          network: SOLANA_NETWORK,
+        },
+        mutant,
+      );
+    };
+    expect(errCode(await hostile({ accounts: { fingerprint: new Uint8Array([9, 9, 9, 9]) } }))).toBe(
+      "wrong-device",
+    );
+    expect(errCode(await hostile({ accounts: { dropPath: "m/44'/501'/1'/0'" } }))).toBe(
+      "integrity",
+    );
+    expect(errCode(await hostile({ accounts: { extraPath: "m/44'/60'/9'" } }))).toBe("integrity");
+    expect(errCode(await hostile({ accounts: { duplicatePath: "m/44'/501'/1'/0'" } }))).toBe(
+      "integrity",
+    );
+    expect(errCode(await hostile({ accounts: { badKeyPath: "m/44'/501'/1'/0'" } }))).toBe(
+      "integrity",
+    );
+
+    // A secp256k1 answer whose point is not on the curve is refused the same way.
+    const btc = await boot();
+    expect(
+      errCode(
+        await runAccounts(
+          btc.h,
+          btc.session,
+          {
+            kind: "accounts",
+            walletId: btc.hwId,
+            groupIndex: 1,
+            templates: ["btc.bip84"],
+            network: BTC_NETWORK,
+          },
+          { accounts: { badKeyPath: "m/84'/0'/1'" } },
+        ),
+      ),
+    ).toBe("integrity");
+  });
+
+  it("refuses a path the firmware cannot derive before any exchange", async () => {
+    let asked = false;
+    const link = {
+      exchange: (): Promise<DeviceResponse> => {
+        asked = true;
+        return Promise.reject(new Error("unreachable"));
+      },
+    };
+    // m/44'/1' is not in the firmware allow-list.
+    await expect(
+      derive(
+        link,
+        { secp256k1: [[44 + HARDENED, 1 + HARDENED, HARDENED]], ed25519: [] },
+        { fingerprint: MFP },
+      ),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    expect(asked).toBe(false);
   });
 });

@@ -28,6 +28,8 @@ export const TAG_HD_KEY = 303;
 export const TAG_KEY_PATH = 304;
 export const TAG_COIN_INFO = 305;
 export const TAG_MULTI_ACCOUNTS = 1103;
+const TAG_KEY_DERIVATION_CALL = 1301;
+const TAG_KEY_DERIVATION_SCHEMA = 1302;
 
 function fail(): never {
   throw new KernelError("integrity", "malformed registry item");
@@ -423,6 +425,56 @@ export const btcSignRequest = (
 
 /** A `crypto-psbt` payload is the bare PSBT byte string — the UR type carries tag 310. */
 export const cryptoPsbt = (psbt: Uint8Array): Uint8Array => encodeCbor(cborBytes(psbt));
+
+const derivationSchema = (path: KeyPath, curve: 0 | 1, fingerprint: Uint8Array): Cbor => ({
+  kind: "tag",
+  tag: TAG_KEY_DERIVATION_SCHEMA,
+  item: cborMap([
+    [1, keyPathCbor(path, fingerprint)],
+    [2, cborUint(curve)],
+    // 0 = slip10 — the only algo this wallet requests.
+    [3, cborUint(0)],
+  ]),
+});
+
+/**
+ * A `qr-hardware-call` key-derivation request: call-type 0, #1301 key-derivation-call wrapping the
+ * schemas and the wallet origin string. Version stays absent — V0 is the default every client
+ * sends (the vendor encoder drops a falsy version), which is what firmware 3.2.2 parses.
+ */
+export const hardwareCall = (fields: {
+  readonly secp256k1: ReadonlyArray<KeyPath>;
+  readonly ed25519: ReadonlyArray<KeyPath>;
+  readonly fingerprint: Uint8Array;
+  readonly origin: string;
+}): Uint8Array =>
+  encodeCbor(
+    cborMap([
+      [1, cborUint(0)],
+      [
+        2,
+        {
+          kind: "tag",
+          tag: TAG_KEY_DERIVATION_CALL,
+          item: cborMap([
+            [
+              1,
+              {
+                kind: "array",
+                items: [
+                  ...fields.secp256k1.map((path) =>
+                    derivationSchema(path, 0, fields.fingerprint),
+                  ),
+                  ...fields.ed25519.map((path) => derivationSchema(path, 1, fields.fingerprint)),
+                ],
+              },
+            ],
+          ]),
+        },
+      ],
+      [3, cborText(fields.origin)],
+    ]),
+  );
 
 const requestId = (entries: ReadonlyArray<readonly [Cbor, Cbor]>): Uint8Array | undefined => {
   const taggedId = entries.find(([key]) => key.kind === "uint" && key.value === 1)?.[1];
