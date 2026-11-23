@@ -289,8 +289,8 @@ const forwardedRoutes = Object.entries(ROUTES).filter(
 
 /**
  * The contract endpoints (`METHOD path`) no registered route serves. A `…/*` route serves every
- * narrower contract path under it — esplora's `/tx`, tron's method paths — so coverage is an
- * exact match or a wildcard prefix.
+ * narrower contract path under it — esplora's `/tx`, tron's method paths — so coverage is an exact
+ * match or a wildcard prefix.
  */
 const uncoveredContractRoutes = (routeKeys: ReadonlyArray<string>): string[] =>
   Object.values(contract as Record<string, unknown>)

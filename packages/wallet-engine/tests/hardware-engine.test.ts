@@ -1,9 +1,8 @@
 /* oxlint-disable vitest/expect-expect -- assertions run inside expectDeviceRejected */
 /**
- * Engine features against a paired hardware wallet in a real Node wallet: every signing path
- * fails with a typed `device-required` WalletError and the request ends terminally (rejected),
- * nothing is tracked, and a Hyperliquid enable ends in a typed, resumable state rather than a
- * stuck flow.
+ * Engine features against a paired hardware wallet in a real Node wallet: every signing path fails
+ * with a typed `device-required` WalletError and the request ends terminally (rejected), nothing is
+ * tracked, and a Hyperliquid enable ends in a typed, resumable state rather than a stuck flow.
  */
 import { readFileSync } from "node:fs";
 
@@ -41,9 +40,7 @@ const pairKeystone = async (w: Awaited<ReturnType<typeof world>>): Promise<strin
     if (!(error instanceof WalletError && error.code === "already-exists")) {
       throw error;
     }
-    const existing = w.wallet
-      .getSnapshot()
-      .wallets.find((entry) => entry.custody === "hardware");
+    const existing = w.wallet.getSnapshot().wallets.find((entry) => entry.custody === "hardware");
     return existing?.walletId ?? "";
   }
 };
@@ -225,9 +222,9 @@ describe("hardware wallet × engine features", () => {
       "evm-nft-send",
     );
     /* No raw transaction ever left for the wire. */
-    expect(
-      w.posted.filter((p) => String(p.body).includes("eth_sendRawTransaction")),
-    ).toStrictEqual([]);
+    expect(w.posted.filter((p) => String(p.body).includes("eth_sendRawTransaction"))).toStrictEqual(
+      [],
+    );
     await w.destroy();
   });
 

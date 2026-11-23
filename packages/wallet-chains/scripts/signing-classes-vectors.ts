@@ -717,7 +717,9 @@ const cases: VectorCase[] = [
     request: tx({
       to: OS_1155,
       data: encodeFunctionData({
-        abi: parseAbi(["function safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)"]),
+        abi: parseAbi([
+          "function safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)",
+        ]),
         args: [SIGNER, TO, [42n, 7n], [1n, 2n], "0x"],
       }),
     }),

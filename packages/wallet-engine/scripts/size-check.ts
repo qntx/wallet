@@ -157,7 +157,15 @@ const ENTRIES: ReadonlyArray<Entry> = [
        gateway app and a validating host pay for the wire contract alone. */
     budget: 42 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
-    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com", "@qntx/fiat24", "api.fiat24", "@walletconnect/", "@reown/"],
+    forbidden: [
+      "@nktkas/hyperliquid",
+      "api.hyperliquid",
+      "polymarket.com",
+      "@qntx/fiat24",
+      "api.fiat24",
+      "@walletconnect/",
+      "@reown/",
+    ],
   },
   {
     name: "idb",
@@ -166,7 +174,13 @@ const ENTRIES: ReadonlyArray<Entry> = [
        durable-store entry. */
     budget: 10 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
-    forbidden: ["@nktkas/hyperliquid", "polymarket.com", "@qntx/fiat24", "@walletconnect/", "@reown/"],
+    forbidden: [
+      "@nktkas/hyperliquid",
+      "polymarket.com",
+      "@qntx/fiat24",
+      "@walletconnect/",
+      "@reown/",
+    ],
   },
   {
     name: "connect",
@@ -175,7 +189,15 @@ const ENTRIES: ReadonlyArray<Entry> = [
        Solana, Bitcoin, TRON and Nostr surfaces plus the codecs they pull. */
     budget: 136 * 1024,
     external: ["@qntx/wallet", "@qntx/wallet/chains", "@qntx/wallet/sessions"],
-    forbidden: ["@nktkas/hyperliquid", "api.hyperliquid", "polymarket.com", "@qntx/fiat24", "api.fiat24", "@walletconnect/", "@reown/"],
+    forbidden: [
+      "@nktkas/hyperliquid",
+      "api.hyperliquid",
+      "polymarket.com",
+      "@qntx/fiat24",
+      "api.fiat24",
+      "@walletconnect/",
+      "@reown/",
+    ],
   },
   {
     name: "walletconnect",
