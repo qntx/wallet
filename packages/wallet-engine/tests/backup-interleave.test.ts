@@ -18,10 +18,12 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import type {
   BackupInfo,
   FactorInfo,
+  HardwareWalletInfo,
   KeyInfo,
   NostrKeyInfo,
   VaultWalletInfo,
   Wallet,
+  WalletInfo,
 } from "@qntx/wallet";
 import { parseBackupHeader } from "@qntx/wallet";
 
@@ -43,7 +45,7 @@ type FakeVault = {
   appLock: false;
   verification: "available";
   factors: FactorInfo[];
-  wallets: VaultWalletInfo[];
+  wallets: WalletInfo[];
   nostr: { keys: NostrKeyInfo[] };
   importedKeys: KeyInfo[];
   backup: BackupInfo | null;
@@ -53,12 +55,15 @@ type FakeVault = {
 /** A structurally valid envelope whose header covers `state` — everything the controller parses. */
 function fabricateEnvelope(state: FakeVault, createdAt: number): string {
   const header = JSON.stringify({
-    wallets: state.wallets.map((w) => ({
-      walletId: w.walletId,
-      origin: w.origin,
-      words: w.words,
-      ...(w.passphrase ? { passphrase: true } : {}),
-    })),
+    // Only entropy records serialise — the kernel can never emit a hardware wallet here.
+    wallets: state.wallets
+      .filter((w): w is VaultWalletInfo => w.custody === "vault")
+      .map((w) => ({
+        walletId: w.walletId,
+        origin: w.origin,
+        words: w.words,
+        ...(w.passphrase ? { passphrase: true } : {}),
+      })),
     keys: state.importedKeys.map((k) => ({ keyId: k.keyId, family: k.family })),
   });
   return JSON.stringify({
@@ -334,6 +339,17 @@ function addKey(d: Device, keyId: string): void {
   d.state.importedKeys.push({ keyId, family: "evm", address: "0x0000", createdAt: 1 });
 }
 
+function addHardwareWallet(d: Device, walletId: string): void {
+  const info: HardwareWalletInfo = {
+    walletId,
+    custody: "hardware",
+    device: "keystone",
+    fingerprint: "0123abcd",
+    createdAt: 1,
+  };
+  d.state.wallets.push(info);
+}
+
 function singleFile(files: Map<string, string>): string {
   if (files.size !== 1) {
     throw new Error(`expected exactly one cloud file, got ${[...files.keys()].join(",")}`);
@@ -356,7 +372,9 @@ function cloudFiles(files: Map<string, string>): ReadonlyArray<CloudFile> {
 
 function deviceCoverage(d: Device): { wallets: Set<string>; keys: Set<string> } {
   return {
-    wallets: new Set(d.state.wallets.map((w) => w.walletId)),
+    wallets: new Set(
+      d.state.wallets.filter((w) => w.custody === "vault").map((w) => w.walletId),
+    ),
     keys: new Set(d.state.importedKeys.map((k) => k.keyId)),
   };
 }
@@ -596,6 +614,46 @@ describe("two devices, one shared cloud", () => {
     const name = singleFile(files);
     const header = parseBackupHeader(files.get(name)!);
     expect(header.keys.map((k) => k.keyId)).toStrictEqual(["aa".repeat(8)]);
+  });
+
+  it("a hardware wallet stays out of coverage, unprotected, uploads and conflicts", async () => {
+    const files = new Map<string, string>();
+    const inner = createMemoryCloudStore(files);
+    const sched = new Scheduler();
+    const a = device("A", sched.wrap(inner, "A"));
+    const b = device("B", sched.wrap(inner, "B"), { fresh: true });
+
+    // A pairs a hardware wallet next to its seed wallet; the cloud may only see the seed one.
+    addWallet(a, "w-a");
+    addHardwareWallet(a, "hw-a");
+
+    await sched.drive([a.backup.sync()]);
+    const a0 = singleFile(files);
+    expect(cloudFiles(files)).toStrictEqual([{ name: a0, wallets: ["w-a"], keys: [] }]);
+    // A hardware wallet holds no seed material, so it can never wait for a backup.
+    expect(a.backup.getState().unprotected.walletIds).toStrictEqual([]);
+
+    // The next pass confirms the head instead of re-uploading: coverage matches without hw-a.
+    await sched.drive([a.backup.sync()]);
+    expect(files.size).toBe(1);
+    expect(a.backup.getState().status).toBe("synced");
+
+    // B adopts the version, adds its own seed wallet and uploads the union. A merge-restores:
+    // its coverage becomes the union and it adopts B's head — synced, not conflict, because no
+    // file is ever expected to cover the hardware wallet.
+    await sched.drive([b.backup.restore({ name: a0, backupFactor: { kind: "passkey" } })]);
+    addWallet(b, "w-b");
+    await sched.drive([b.backup.sync()]);
+    const union = singleFile(files);
+    await sched.drive([a.backup.restore({ name: union, backupFactor: { kind: "passkey" } })]);
+    await sched.drive([a.backup.sync(), b.backup.sync()]);
+    expect(a.backup.getState().status).toBe("synced");
+    expect(b.backup.getState().status).toBe("synced");
+    expect(files.size).toBe(1);
+    // The adopted head covers A's seed wallets, so A wrote exactly its first upload — a
+    // coverage leak (the hardware wallet counted) would re-upload a version no file can match.
+    expect(sched.calls("A:write")).toBe(1);
+    expect(unionCoverage(cloudFiles(files)).wallets).toStrictEqual(new Set(["w-a", "w-b"]));
   });
 
   it("random op-level interleavings preserve the union and synced invariants", async () => {
