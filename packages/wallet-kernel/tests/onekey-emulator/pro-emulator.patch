@@ -1729,22 +1729,6 @@ index 527f179..db74eb3 100644
      from trezorio import fingerprint
  
      from trezor.lvglui.scrs import fingerprints
-diff --git a/core/src/trezor/wire/codec_v1.py b/core/src/trezor/wire/codec_v1.py
-index ff826bc..2e63e54 100644
---- a/core/src/trezor/wire/codec_v1.py
-+++ b/core/src/trezor/wire/codec_v1.py
-@@ -98,6 +98,11 @@ async def write_message(iface: WireInterface, mtype: int, mdata: bytes) -> None:
- 
-     nwritten = 0
-     while True:
-+        # emulator: clear the report tail so the final report's padding is
-+        # zeroed instead of leaking bytes from the previous report
-+        if __debug__:
-+            for i in range(repofs, _REP_LEN):
-+                report[i] = 0
-         # copy as much as possible to the report buffer
-         nwritten += utils.memcpy(report, repofs, mdata, nwritten)
- 
 diff --git a/crypto/bip32.c b/crypto/bip32.c
 index cd8f225..c41f4e6 100644
 --- a/crypto/bip32.c

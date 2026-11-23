@@ -1,13 +1,13 @@
 /**
  * Protocol V1 message framing (firmware `common/protob/protocol.md`). Host→device bytes are a
  * sequence of 64-byte reports — `3f 23 23` + BE u16 type + BE u32 length + 55 payload bytes on the
- * first, `3f` + 63 payload bytes on each continuation, zero padded — for both transports (the BLE
- * chip consumes concatenated reports inside any GATT write; research.md "BLE host→device").
- * Device→host bytes come in two forms the same function detects structurally: the BLE stream (`3f
- * 23 23` + type + length + contiguous payload, reassembled by the host from notifications) and the
- * USB report sequence above. The forms never conflict: m USB reports carry at most 64m − m − 8
- * payload bytes, so a USB sequence of length 64m = 9 + L would need L = 64m − 9 ≤ 64m − m − 8, i.e.
- * m ≤ 1 — and at m = 1 the two forms are byte-identical.
+ * first, `3f` + 63 payload bytes on each continuation — for both transports (the BLE chip consumes
+ * concatenated reports inside any GATT write; research.md "BLE host→device"). Device→host bytes
+ * come in two forms the same function detects structurally: the BLE stream (`3f 23 23` + type +
+ * length + contiguous payload, reassembled by the host from notifications) and the USB report
+ * sequence above. The forms never conflict: m USB reports carry at most 64m − m − 8 payload bytes,
+ * so a USB sequence of length 64m = 9 + L would need L = 64m − 9 ≤ 64m − m − 8, i.e. m ≤ 1 — and at
+ * m = 1 the two forms are byte-identical.
  */
 import { OneKeyError } from "./errors.ts";
 
@@ -93,10 +93,9 @@ export function decodeMessage(data: Uint8Array): Message {
       FIRST_PAYLOAD + (r - 1) * CONT_PAYLOAD,
     );
   }
-  for (let i = length; i < gathered.length; i++) {
-    if (gathered[i] !== 0) {
-      throw frame("non-zero padding after the payload");
-    }
-  }
+  // Bytes after the payload in the last report are padding with no meaning: legacy firmware
+  // zeroes them (firmware-classic1s legacy/firmware/messages.c msg_out_pad) while core firmware
+  // reuses the report buffer and leaks bytes from the previous report (firmware-pro
+  // core/src/trezor/wire/codec_v1.py write_message). Never read them.
   return { type, payload: gathered.slice(0, length) };
 }

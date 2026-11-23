@@ -127,6 +127,9 @@ function checkXpub(xpub: string, node: HDNode): Uint8Array {
     throw fault("xpub depth does not match the node");
   }
   const view = new DataView(payload.buffer, payload.byteOffset, payload.length);
+  if (view.getUint32(5) !== node.fingerprint) {
+    throw fault("xpub parent fingerprint does not match the node");
+  }
   if (view.getUint32(9) !== node.childNum) {
     throw fault("xpub child number does not match the node");
   }
@@ -219,8 +222,8 @@ export async function evmPublicNode(
 
 /**
  * The address string the device derives at `path` for the family. Only the wire format is checked
- * (non-empty ASCII within the message-size budget); the driver compares the value against a locally
- * derived address.
+ * (non-empty printable ASCII within the message-size budget); the driver compares the value against
+ * a locally derived address.
  */
 export async function address(
   exchange: Exchange,
@@ -301,8 +304,8 @@ export async function address(
   }
   for (const char of value) {
     const code = char.codePointAt(0);
-    if (code === undefined || code > 0x7f) {
-      throw fault("address is not ASCII");
+    if (code === undefined || code < 0x21 || code > 0x7e) {
+      throw fault("address is not printable ASCII");
     }
   }
   return value;

@@ -13,6 +13,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { initialize } from "../src/modules/onekey/protocol/device.ts";
 import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
+import { decodeMessage } from "../src/modules/onekey/protocol/frame.ts";
 import {
   address,
   evmPublicNode,
@@ -259,6 +260,10 @@ describe("pro emulator replay", () => {
         "addr-tron",
         "sol-account0",
         "sol-account1",
+        "addr-bip84-show",
+        "addr-evm-show",
+        "addr-tron-show",
+        "sol-account0-show",
       ].toSorted(),
     );
   });
@@ -344,5 +349,47 @@ describe("pro emulator replay", () => {
     );
     expect(key).toStrictEqual(solanaDerived1.subarray(1));
     expect(bytesToHex(key)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  // Rule 2: a first-use address must be confirmable on the device itself. The show sessions were
+  // recorded with showDisplay: true and their type-26 responses prove the device asked; replay
+  // asserts each produced at least one ButtonRequest round and the same address as the hidden call.
+  const buttonRequests = (name: string): number =>
+    transcriptSession(proTranscript, name).exchanges.filter(
+      (exchange) => decodeMessage(hexToBytes(exchange.response)).type === 26,
+    ).length;
+
+  it.each([
+    [
+      "addr-bip84-show",
+      "bitcoin",
+      [H + 84, H, H, 0, 0],
+      { showDisplay: true, scriptType: 3 },
+      p2wpkh(bip84Receive0).address,
+    ],
+    [
+      "addr-evm-show",
+      "evm",
+      [H + 44, H + 60, H, 0, 0],
+      { showDisplay: true, chainId: 1n },
+      evmExpected,
+    ],
+    ["addr-tron-show", "tron", [H + 44, H + 195, H, 0, 0], { showDisplay: true }, tronExpected],
+  ] as const)(
+    "%s asked the device and returned the same address",
+    async (name, family, path, options, expected) => {
+      await expect(address(proSession(name), family, path, options)).resolves.toBe(expected);
+      expect(buttonRequests(name)).toBeGreaterThan(0);
+    },
+  );
+
+  it("sol-account0-show asked the device and returned the same key", async () => {
+    const key = await solanaPublicKey(
+      proSession("sol-account0-show"),
+      [H + 44, H + 501, H, H],
+      true,
+    );
+    expect(key).toStrictEqual(solanaDerived0.subarray(1));
+    expect(buttonRequests("sol-account0-show")).toBeGreaterThan(0);
   });
 });

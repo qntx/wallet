@@ -131,10 +131,14 @@ describe("hostile frames", () => {
     expect(frame(() => decodeMessage(data))).toBeDefined();
   });
 
-  it("rejects non-zero padding after the payload", () => {
+  it("accepts stale padding after the payload (core firmware leaks the previous report)", () => {
+    // firmware-pro core/src/trezor/wire/codec_v1.py write_message reuses the report buffer, so
+    // real device responses carry non-zero bytes past the payload end.
     const data = encodeMessage(17, hex("0801"));
-    data[63] = 0x01;
-    expect(frame(() => decodeMessage(data))).toBeDefined();
+    data[63] = 0xaa;
+    const message = decodeMessage(data);
+    expect(message.type).toBe(17);
+    expect(message.payload).toStrictEqual(hex("0801"));
   });
 
   it("rejects a BLE stream with one extra byte", () => {

@@ -181,6 +181,33 @@ for (const [name, path] of [
   sessions.push(session);
   console.log(`${name}: pub=${bytesToHex(key)}`);
 }
+// Rule 2: a first-use address must be confirmable on the device itself. The same calls with
+// showDisplay: true — each raises ButtonRequest rounds the DebugLink answers (type-26 responses
+// in the transcript prove the device asked). Only on Pro: the Classic 1S emulator acknowledges
+// the first ButtonRequest but then runs a multi-screen protectWaitKey/keyScan loop that needs
+// SDL arrow-key events DebugLink cannot inject, so its shown-address exchanges never complete.
+if (DEVICE === "pro") {
+  for (const [name, family, path, extra] of [
+    ["addr-bip84-show", "bitcoin", [H + 84, H, H, 0, 0], { scriptType: 3 }],
+    ["addr-evm-show", "evm", [H + 44, H + 60, H, 0, 0], { chainId: 1n }],
+    ["addr-tron-show", "tron", [H + 44, H + 195, H, 0, 0], {}],
+  ] as const) {
+    const session = { name, exchanges: [] as Step[] };
+    // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+    const value = await address(recording(session), family, path, {
+      showDisplay: true,
+      ...extra,
+    });
+    sessions.push(session);
+    console.log(`${name}: ${value}`);
+  }
+  {
+    const session = { name: "sol-account0-show", exchanges: [] as Step[] };
+    const key = await solanaPublicKey(recording(session), [H + 44, H + 501, H, H], true);
+    sessions.push(session);
+    console.log(`sol-account0-show: pub=${bytesToHex(key)}`);
+  }
+}
 const SOURCES = {
   classic1s: {
     repository: "https://github.com/OneKeyHQ/firmware-classic1s",
@@ -199,11 +226,11 @@ const SOURCES = {
     recorder: "bun scripts/vectors/onekey-emulator.ts --device pro",
   },
 } as const;
-if (!(DEVICE in SOURCES)) {
+if (DEVICE !== "classic1s" && DEVICE !== "pro") {
   throw new Error(`unknown --device ${DEVICE}`);
 }
 const transcript = {
-  source: SOURCES[DEVICE as keyof typeof SOURCES],
+  source: SOURCES[DEVICE],
   sessions,
 };
 writeFileSync(OUT, `${JSON.stringify(transcript, null, 1)}\n`);

@@ -259,6 +259,20 @@ describe("publicNode response checks", () => {
     expect(error.code).toBe("device-fault");
   });
 
+  it("rejects an xpub whose parent fingerprint differs", async () => {
+    const error = await errorOf(async () =>
+      publicNode(serve({ ...DEVICE_PK, xpub: tamperedXpub(5, 0xff) }), PATH),
+    );
+    expect(error.code).toBe("device-fault");
+  });
+
+  it("rejects a node fingerprint that disagrees with the xpub", async () => {
+    const error = await errorOf(async () =>
+      publicNode(serve(publicNodeOf({ fingerprint: 0 })), PATH),
+    );
+    expect(error.code).toBe("device-fault");
+  });
+
   it("rejects an xpub whose depth differs", async () => {
     const error = await errorOf(async () =>
       publicNode(serve({ ...DEVICE_PK, xpub: tamperedXpub(4, 2) }), PATH),
@@ -392,6 +406,21 @@ describe("address", () => {
       address(exchange, "bitcoin", PATH, { showDisplay: false }),
     );
     expect(error.code).toBe("device-fault");
+  });
+
+  it("faults on a space or control character in the address", async () => {
+    const space = await errorOf(async () =>
+      address(scripted([reply(Address, { address: "bc1q cr8te4k" })]).exchange, "bitcoin", PATH, {
+        showDisplay: false,
+      }),
+    );
+    expect(space.code).toBe("device-fault");
+    const control = await errorOf(async () =>
+      address(scripted([reply(Address, { address: "bc1q\tcr8te4k" })]).exchange, "bitcoin", PATH, {
+        showDisplay: false,
+      }),
+    );
+    expect(control.code).toBe("device-fault");
   });
 
   it("returns a valid solana address string", async () => {
