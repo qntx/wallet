@@ -391,13 +391,13 @@ describe("card operations (fake card)", () => {
     expect(field(first.step, "result")).toMatchObject({ kind: "forget-access" });
   });
 
-  it("transfer and reseal are unsupported", async () => {
+  it("unknown op kinds are rejected", async () => {
     const r = await rig();
     await expect(
       errCode(
-        r.h.call("card.begin", { op: { kind: "transfer", walletId: "ab".repeat(8) } }, r.session),
+        r.h.call("card.begin", { op: { kind: "not-an-op", walletId: "ab".repeat(8) } }, r.session),
       ),
-    ).resolves.toBe("unsupported");
+    ).resolves.toBe("integrity");
   });
 
   it("a wrong code re-asks with the remaining count; the right one then succeeds", async () => {

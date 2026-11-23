@@ -414,6 +414,10 @@ export type CardPlatform = {
   readonly reader: CardReader;
   readonly secureInput: SecureInput;
   readonly anchors: ReadonlyArray<Anchor>;
-  /** Per-tap command budget in ms — tests only; production leaves it at the protocol default. */
+  /**
+   * The host's real per-tap reader budget in ms — how long one card connection may run. iOS plans
+   * 18 seconds per connection (§8); a host with a different reader budget sets it here. The kernel
+   * plans each tap's commands inside this budget; when unset the protocol default applies.
+   */
   readonly planMs?: number;
 };

@@ -28,6 +28,10 @@ const SELECT_APDU = "00a4040007f0716e7478010100";
 const LABEL_SESSION = ascii("qntx-card/v1/session");
 const LABEL_KDF_SESSION = ascii("qntx-card/v1/kdf-session");
 const LABEL_CERT = ascii("qntx-card/v1/cert");
+const LABEL_OFFER = ascii("qntx-card/v1/offer");
+const LABEL_EXPORT = ascii("qntx-card/v1/export");
+const LABEL_KDF_TRANSFER = ascii("qntx-card/v1/kdf-transfer");
+const LABEL_FP = ascii("qntx-card/v1/fingerprint");
 const LIMITS = { failures: 10, free: 3, waits: 15 };
 
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the vector shape is pinned
@@ -41,6 +45,9 @@ if (ca1 === undefined) {
 
 /** The ca1 test-CA secret the bridge personalises under — used to issue fake certs. */
 export const CA1_PRIVATE: Uint8Array = hexToBytes(ca1.private);
+
+/** The ca1 anchor public key — the fake card trusts peer certs chaining to it. */
+const CA1_ANCHOR_PUBLIC: Uint8Array = hexToBytes(ca1.public);
 
 /** Issues `cert = A(33) ‖ r‖s(64)` for `identitySecret`'s public key under `caPrivate`. */
 export function issueCert(
@@ -148,6 +155,12 @@ export type FakeKnobs = {
   ed25519BadS?: boolean;
   /** SIGN_ED25519 begin returns 64 bytes that are not a Wei25519 point. */
   ed25519BadWei?: boolean;
+  /** OFFER signs garbage instead of the link key — the host must refuse to export to it. */
+  offerBadSignature?: boolean;
+  /** EXPORT head signs garbage instead of the transcript — the host must refuse the import. */
+  exportBadSignature?: boolean;
+  /** The next persistent write commits and the card loses power before it can respond. */
+  dieAfterCommit?: boolean;
 };
 
 export type FakeCard = {
@@ -174,6 +187,34 @@ export type FakeCard = {
   readonly state: { life: "blank" | "loaded"; fails: number };
   /** Plant a wallet without CREATE (a card loaded elsewhere). */
   readonly load: (seed: Uint8Array, accessHash: Uint8Array, others?: Uint8Array[]) => void;
+  /** T-ERASE without going through the ERASE command — models the failure-limit wipe. */
+  readonly wipe: () => void;
+};
+
+/** §5.2 — a peer cert must chain to the CA this card was personalised under (ca1). */
+const peerIdentity = (peerCert: Uint8Array): Uint8Array | undefined => {
+  if (peerCert.length !== 97) {
+    return undefined;
+  }
+  const peer = peerCert.subarray(0, 33);
+  try {
+    if (
+      secp256k1.verify(
+        peerCert.subarray(33, 97),
+        sha256(concatBytes(LABEL_CERT, peer)),
+        CA1_ANCHOR_PUBLIC,
+        {
+          prehash: false,
+          lowS: false,
+        },
+      )
+    ) {
+      return new Uint8Array(peer);
+    }
+  } catch {
+    // not a point — falls through
+  }
+  return undefined;
 };
 
 export function createFakeCard(opts?: {
@@ -196,6 +237,10 @@ export function createFakeCard(opts?: {
   let session:
     | { keys: Uint8Array; ctr: number; verified: boolean; seed: Uint8Array | undefined }
     | undefined;
+  let offerValid = false;
+  let linkSecret: Uint8Array | undefined;
+  let pendingExport: { kte: Uint8Array; ktm: Uint8Array } | undefined;
+  let pendingImport: { kte: Uint8Array; ktm: Uint8Array; sender: Uint8Array } | undefined;
   let waited = 0;
   let torn = false;
   let tearAt: number | undefined;
@@ -282,10 +327,18 @@ export function createFakeCard(opts?: {
           members: [ownId, ...others],
           origin: p1 === 0x00 ? 0x01 : 0x02,
         };
+        offerValid = false;
+        linkSecret = undefined;
+        pendingImport = undefined;
         state.life = "loaded";
         state.fails = 0;
         live.verified = true;
         live.seed = seed;
+        if (knobs.dieAfterCommit === true) {
+          knobs.dieAfterCommit = false;
+          torn = true;
+          return new Uint8Array(0);
+        }
         return concatBytes(walletInfo(), sw(0x9000));
       }
       case 0x22:
@@ -559,6 +612,242 @@ export function createFakeCard(opts?: {
         edStream = undefined;
         return concatBytes(le32(s), sw(0x9000));
       }
+      case 0x40: {
+        // OFFER — §9.12: BLANK or LOADED; a valid offer re-answers the same link key.
+        if (data.length > 0) {
+          return sw(0x6700);
+        }
+        if (!offerValid) {
+          if (!write()) {
+            return new Uint8Array(0);
+          }
+          linkSecret = random(32);
+          offerValid = true;
+          if (knobs.dieAfterCommit === true) {
+            knobs.dieAfterCommit = false;
+            torn = true;
+            return new Uint8Array(0);
+          }
+        }
+        if (linkSecret === undefined) {
+          return sw(0x6985);
+        }
+        const linkKey = secp256k1.getPublicKey(linkSecret, false);
+        const digest =
+          knobs.offerBadSignature === true
+            ? sha256(ascii("garbage"))
+            : sha256(concatBytes(LABEL_OFFER, linkKey));
+        const signature = secp256k1.sign(digest, identitySecret, {
+          prehash: false,
+          lowS: false,
+        });
+        return concatBytes(linkKey, signature, sw(0x9000));
+      }
+      case 0x41:
+        // EXPORT — §9.13: verified LOADED card only.
+        if (state.life !== "loaded" || live === undefined || !verified || wallet === undefined) {
+          return sw(0x6985);
+        }
+        if (p1 === 0x00) {
+          if (data.length !== 226) {
+            return sw(0x6700);
+          }
+          const certT = data.subarray(0, 97);
+          const linkT = data.subarray(97, 162);
+          const sigT = data.subarray(162, 226);
+          const aT = peerIdentity(certT);
+          if (aT === undefined || equalBytes(aT, identity)) {
+            return sw(0x6a80);
+          }
+          if (!wallet.members.some((m) => equalBytes(m, cardId(aT)))) {
+            return sw(0x6a80);
+          }
+          if (
+            linkT[0] !== 0x04 ||
+            !secp256k1.verify(sigT, sha256(concatBytes(LABEL_OFFER, linkT)), aT, {
+              prehash: false,
+              lowS: false,
+            })
+          ) {
+            return sw(0x6a80);
+          }
+          const e = random(32);
+          const E = secp256k1.getPublicKey(e, false);
+          let Z: Uint8Array;
+          try {
+            Z = secp256k1.getSharedSecret(e, linkT, false).subarray(1, 33);
+          } catch {
+            return sw(0x6a80);
+          }
+          const TH = sha256(concatBytes(LABEL_EXPORT, identity, aT, linkT, E));
+          const sigS = secp256k1.sign(
+            knobs.exportBadSignature === true ? sha256(ascii("garbage")) : TH,
+            identitySecret,
+            { prehash: false, lowS: false },
+          );
+          const K = kdf(Z, LABEL_KDF_TRANSFER, TH, 32);
+          pendingExport = { kte: K.subarray(0, 16), ktm: K.subarray(16, 32) };
+          return concatBytes(E, sigS, sw(0x9000));
+        }
+        if (p1 === 0x01) {
+          if (data.length !== 32) {
+            return sw(0x6700);
+          }
+          const keys = pendingExport;
+          if (keys === undefined) {
+            return sw(0x6985);
+          }
+          const payload = concatBytes(
+            new Uint8Array([wallet.origin & 0xff]),
+            wallet.seed,
+            data,
+            new Uint8Array([wallet.members.length]),
+            ...wallet.members,
+          );
+          const ct = cbc(keys.kte, new Uint8Array(16), { disablePadding: true }).encrypt(
+            m2(payload),
+          );
+          const tag = cmac(ct, keys.ktm);
+          pendingExport = undefined;
+          return concatBytes(ct, tag, sw(0x9000));
+        }
+        return sw(0x6a86);
+
+      case 0x42:
+        // IMPORT — §9.14: BLANK installs, LOADED re-seals the same wallet.
+        if (p1 === 0x00) {
+          if (data.length !== 226) {
+            return sw(0x6700);
+          }
+          if (!offerValid || linkSecret === undefined) {
+            return sw(0x6985);
+          }
+          const certS = data.subarray(0, 97);
+          const E = data.subarray(97, 162);
+          const sigS = data.subarray(162, 226);
+          const aS = peerIdentity(certS);
+          if (aS === undefined || equalBytes(aS, identity)) {
+            return sw(0x6a80);
+          }
+          if (
+            state.life === "loaded" &&
+            (wallet === undefined || !wallet.members.some((m) => equalBytes(m, cardId(aS))))
+          ) {
+            return sw(0x6a80);
+          }
+          const linkKey = secp256k1.getPublicKey(linkSecret, false);
+          const TH = sha256(concatBytes(LABEL_EXPORT, aS, identity, linkKey, E));
+          if (!secp256k1.verify(sigS, TH, aS, { prehash: false, lowS: false })) {
+            return sw(0x6a80);
+          }
+          if (!validUncompressedPoint(E)) {
+            return sw(0x6a80);
+          }
+          const Z = secp256k1.getSharedSecret(linkSecret, E, false).subarray(1, 33);
+          const K = kdf(Z, LABEL_KDF_TRANSFER, TH, 32);
+          pendingImport = {
+            kte: K.subarray(0, 16),
+            ktm: K.subarray(16, 32),
+            sender: cardId(aS),
+          };
+          return sw(0x9000);
+        }
+        if (p1 === 0x01) {
+          if (data.length !== 160 && data.length !== 176) {
+            return sw(0x6700);
+          }
+          const keys = pendingImport;
+          if (!offerValid || keys === undefined) {
+            return sw(0x6985);
+          }
+          const ct = data.subarray(0, -16);
+          const tag = data.subarray(-16);
+          if (!equalBytes(cmac(ct, keys.ktm), tag)) {
+            return sw(0x6a80);
+          }
+          const padded = cbc(keys.kte, new Uint8Array(16), {
+            disablePadding: true,
+          }).decrypt(ct);
+          const payload = unM2(padded);
+          if (
+            payload === undefined ||
+            payload.length < 98 + 32 ||
+            (payload.length - 98) % 16 !== 0
+          ) {
+            return sw(0x6a80);
+          }
+          const origin = payload[0] ?? 0;
+          const seed = payload.subarray(1, 65);
+          const hashT = payload.subarray(65, 97);
+          const c = payload[97] ?? 0;
+          if (
+            (origin !== 0x01 && origin !== 0x02) ||
+            c < 2 ||
+            c > 3 ||
+            payload.length !== 98 + 16 * c
+          ) {
+            return sw(0x6a80);
+          }
+          const ids: Uint8Array[] = [];
+          for (let i = 0; i < c; i += 1) {
+            ids.push(payload.subarray(98 + 16 * i, 98 + 16 * (i + 1)));
+          }
+          if (
+            ids.some((id, i) => ids.slice(i + 1).some((o) => equalBytes(o, id))) ||
+            !ids.some((id) => equalBytes(id, ownId)) ||
+            !ids.some((id) => equalBytes(id, keys.sender))
+          ) {
+            return sw(0x6a80);
+          }
+          if (HDKey.fromMasterSeed(seed).publicKey === null) {
+            return sw(0x6a80);
+          }
+          if (state.life === "loaded") {
+            if (wallet === undefined || origin !== wallet.origin) {
+              return sw(0x6a80);
+            }
+            if (
+              wallet.members.length !== c ||
+              !wallet.members.every((m, i) => equalBytes(m, ids[i] ?? m))
+            ) {
+              return sw(0x6a80);
+            }
+            if (
+              !equalBytes(
+                sha256(concatBytes(LABEL_FP, seed)),
+                sha256(concatBytes(LABEL_FP, wallet.seed)),
+              )
+            ) {
+              return sw(0x6a80);
+            }
+          }
+          if (!write()) {
+            return new Uint8Array(0);
+          }
+          wallet = {
+            seed: new Uint8Array(seed),
+            accessHash: new Uint8Array(hashT),
+            members: ids.map((id) => new Uint8Array(id)),
+            origin,
+          };
+          state.life = "loaded";
+          state.fails = 0;
+          offerValid = false;
+          linkSecret = undefined;
+          pendingImport = undefined;
+          if (live !== undefined) {
+            live.verified = false;
+            live.seed = undefined;
+          }
+          if (knobs.dieAfterCommit === true) {
+            knobs.dieAfterCommit = false;
+            torn = true;
+            return new Uint8Array(0);
+          }
+          return concatBytes(walletInfo(), sw(0x9000));
+        }
+        return sw(0x6a86);
+
       default:
         return sw(0x6d00);
     }
@@ -568,6 +857,10 @@ export function createFakeCard(opts?: {
     wallet = undefined;
     state.life = "blank";
     state.fails = 0;
+    offerValid = false;
+    linkSecret = undefined;
+    pendingExport = undefined;
+    pendingImport = undefined;
     if (session !== undefined) {
       session.verified = false;
       session.seed = undefined;
@@ -665,6 +958,8 @@ export function createFakeCard(opts?: {
       torn = false;
       session = undefined;
       edStream = undefined;
+      pendingExport = undefined;
+      pendingImport = undefined;
       waited = 0;
     },
     state,
@@ -678,6 +973,9 @@ export function createFakeCard(opts?: {
       state.life = "loaded";
       state.fails = 0;
     },
+    wipe: () => {
+      erase();
+    },
     // oxlint-disable-next-line typescript/require-await -- the FieldCard contract is async
     transmit: async (apdu) => {
       if (torn) {
@@ -686,6 +984,8 @@ export function createFakeCard(opts?: {
       if (equalBytes(apdu, hexToBytes(SELECT_APDU))) {
         session = undefined;
         edStream = undefined;
+        pendingExport = undefined;
+        pendingImport = undefined;
         waited = 0;
         return u16(0x9000);
       }

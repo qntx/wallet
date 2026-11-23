@@ -16,6 +16,8 @@ export type CardOpName =
   | "change-access"
   | "erase"
   | "create"
+  | "transfer"
+  | "reseal"
   | "sign";
 
 const OP_NAME: Readonly<Record<PromptLocale, Readonly<Record<CardOpName, string>>>> = {
@@ -27,6 +29,8 @@ const OP_NAME: Readonly<Record<PromptLocale, Readonly<Record<CardOpName, string>
     "change-access": "修改访问码",
     erase: "抹掉卡片",
     create: "创建卡钱包",
+    transfer: "迁入卡钱包",
+    reseal: "重写访问码",
     sign: "签名",
   },
   en: {
@@ -37,6 +41,8 @@ const OP_NAME: Readonly<Record<PromptLocale, Readonly<Record<CardOpName, string>
     "change-access": "Change access code",
     erase: "Erase card",
     create: "Create card wallet",
+    transfer: "Provision card",
+    reseal: "Reseal card",
     sign: "Sign",
   },
 };

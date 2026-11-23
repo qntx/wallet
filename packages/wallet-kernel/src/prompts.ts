@@ -115,6 +115,8 @@ export type CardPromptKind =
   | "card-change-access"
   | "card-erase"
   | "card-create"
+  | "card-transfer"
+  | "card-reseal"
   | "card-forget-access";
 
 const CARD: Readonly<
@@ -133,6 +135,14 @@ const CARD: Readonly<
       title: "创建卡钱包",
       description: `验证身份以将钱包移入卡 ${cards}`,
     }),
+    "card-transfer": (cards) => ({
+      title: "写入成员卡",
+      description: `验证身份以把钱包写入卡 ${cards}`,
+    }),
+    "card-reseal": (cards) => ({
+      title: "重写卡访问码",
+      description: `验证身份以给卡 ${cards} 设置新的访问码`,
+    }),
     "card-forget-access": (cards) => ({
       title: "遗忘卡访问码",
       description: `验证身份以删除卡 ${cards} 已保存的访问码`,
@@ -150,6 +160,14 @@ const CARD: Readonly<
     "card-create": (cards) => ({
       title: "Create card wallet",
       description: `Verify your identity to move the wallet onto ${cards}`,
+    }),
+    "card-transfer": (cards) => ({
+      title: "Provision member card",
+      description: `Verify your identity to write the wallet onto ${cards}`,
+    }),
+    "card-reseal": (cards) => ({
+      title: "Reseal card",
+      description: `Verify your identity to set a new access code on ${cards}`,
     }),
     "card-forget-access": (cards) => ({
       title: "Forget card access code",

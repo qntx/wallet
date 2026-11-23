@@ -101,6 +101,11 @@ export type TapSession = {
   readonly send: (inner: Inner) => Promise<Uint8Array>;
   /** The §7.3 gate: WAITs the counter demands, then VERIFY; `wrong-card` on a record mismatch. */
   readonly verify: (accessHash: Uint8Array) => Promise<VerifyOutcome>;
+  /**
+   * T-INSTALL just ran (§9.14): the card holds the wallet with a fresh failure count — the tap's
+   * bookkeeping records it ready with full tries, the same way a VERIFY would.
+   */
+  readonly installed: (info: WalletInfo) => void;
   /** Estimated milliseconds this session has spent so far (budget.ts). */
   readonly cost: () => number;
   /** Stages record work applied in this tap's single commit (new nodes, saved hash, …). */
@@ -399,7 +404,7 @@ export async function runTap(
       throw new KernelError("card-id-mismatch", "this tap expects a blank card");
     }
     const recorded = entry?.tries;
-    if (recorded !== undefined && status.tries < recorded) {
+    if (recorded !== undefined && status.life === "loaded" && status.tries < recorded) {
       throw new KernelError("card-tampered", "the card's failure count dropped since the last tap");
     }
     if (status.life === "loaded" && status.tries === 0) {
@@ -452,6 +457,11 @@ export async function runTap(
       memberOf,
       send,
       verify,
+      installed: (info) => {
+        // T-INSTALL resets the counter and lands the wallet — same record effect as VERIFY.
+        triesNow = ACCESS_LIMITS.failures;
+        verifyInfo = info;
+      },
       cost: () => spent.ms,
       update: (fn) => {
         updates.push(fn);

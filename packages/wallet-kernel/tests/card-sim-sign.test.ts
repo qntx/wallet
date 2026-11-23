@@ -1071,6 +1071,9 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card sign (simulator)", () => {
       send,
       verify: async (): Promise<VerifyOutcome> =>
         Promise.reject(new Error("verify is not used by the task functions")),
+      installed: () => {
+        throw new Error("installed is not used by the task functions");
+      },
       cost: () => 0,
       update: () => undefined,
     };

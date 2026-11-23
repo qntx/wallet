@@ -56,7 +56,9 @@ export type Needed = { readonly curve: "secp256k1" | "ed25519"; readonly path: C
 export type RunOutcome =
   | { readonly status: "done" }
   | { readonly status: "need-code"; readonly card: string }
-  | { readonly status: "wrong-code"; readonly remaining: number };
+  | { readonly status: "wrong-code"; readonly remaining: number }
+  /** A target card lost its offer — the source must re-export before the import retries. */
+  | { readonly status: "reexport"; readonly remaining: 0 };
 
 export const badStep = (): KernelError =>
   new KernelError("integrity", "a card step resolved with the wrong outcome");
@@ -68,6 +70,9 @@ export const asRunOutcome = (value: unknown): RunOutcome => {
   }
   if (value.status === "done") {
     return { status: "done" };
+  }
+  if (value.status === "reexport") {
+    return { status: "reexport", remaining: 0 };
   }
   if (value.status === "need-code" && "card" in value && typeof value.card === "string") {
     return { status: "need-code", card: value.card };
@@ -276,8 +281,12 @@ export const missingIn = (
  * a lost session keeps what already landed, so the retry never refetches it. secp256k1 keeps key +
  * chainCode of the 65-byte response, ed25519 keeps the RFC 8032 encoding.
  */
-export const fetchNodes = async (tap: TapSession, paths: ReadonlyArray<Needed>): Promise<void> => {
-  const room = Math.floor((PLAN_MS - tap.cost() - PLAN_MARGIN_MS) / priceOf("public-key"));
+export const fetchNodes = async (
+  tap: TapSession,
+  paths: ReadonlyArray<Needed>,
+  plan: number = PLAN_MS,
+): Promise<void> => {
+  const room = Math.floor((plan - tap.cost() - PLAN_MARGIN_MS) / priceOf("public-key"));
   const batch = paths.slice(0, Math.max(0, room));
   for (const needed of batch) {
     const key = pathString(needed.path);

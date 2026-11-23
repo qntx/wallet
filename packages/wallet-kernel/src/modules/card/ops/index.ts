@@ -17,11 +17,13 @@ import { createOp } from "./create.ts";
 import { eraseOp } from "./erase.ts";
 import { forgetAccessOp } from "./forget-access.ts";
 import { healthOp } from "./health.ts";
+import { resealOp } from "./reseal.ts";
 import type { OpEnv } from "./shared.ts";
 import { pinnedShortId } from "./shared.ts";
 import { signOp } from "./sign.ts";
 import type { SignPrepared } from "./sign.ts";
 import { statusOp } from "./status.ts";
+import { transferOp } from "./transfer.ts";
 
 export type { OpEnv } from "./shared.ts";
 export { registrationPaths } from "./shared.ts";
@@ -73,11 +75,14 @@ export const checkOperation = (ctx: KernelContext, op: CardOperation): void => {
       return;
     }
     case "create": {
-      if (op.cards !== 1) {
-        throw new KernelError("unsupported", "multiple-card wallets arrive in a later build");
-      }
-      if (op.source.kind !== "wallet") {
-        throw new KernelError("unsupported", "card-generated wallets arrive in a later build");
+      if (op.source.kind === "generate") {
+        if (op.cards === 1) {
+          throw new KernelError(
+            "invalid-input",
+            "a card-generated wallet needs at least two cards",
+          );
+        }
+        break;
       }
       const sourceId = op.source.walletId;
       const source = ctx.image.records.find((r) => r.id === sourceId);
@@ -89,12 +94,56 @@ export const checkOperation = (ctx: KernelContext, op: CardOperation): void => {
       }
       break;
     }
+    case "transfer": {
+      const record = cardRecord(op.walletId);
+      if (record === undefined) {
+        throw new KernelError("not-found", "no such card wallet");
+      }
+      const header = parseCardWalletHeader(record.header);
+      if (header.cards.every((c) => c.state === "ready")) {
+        throw new KernelError(
+          "invalid-input",
+          "every member of this wallet is already provisioned",
+        );
+      }
+      if (!header.cards.some((c) => c.state === "ready")) {
+        throw new KernelError("invalid-input", "no ready member can export this wallet");
+      }
+      break;
+    }
+    case "reseal": {
+      const record = cardRecord(op.walletId);
+      if (record === undefined) {
+        throw new KernelError("not-found", "no such card wallet");
+      }
+      const header = parseCardWalletHeader(record.header);
+      const target = header.cards.find((c) => c.cardId === op.card);
+      if (target === undefined) {
+        throw new KernelError("not-found", "no such card in this wallet");
+      }
+      if (op.member !== undefined) {
+        const member = header.cards.find((c) => c.cardId === op.member);
+        if (member === undefined) {
+          throw new KernelError("not-found", "no such card in this wallet");
+        }
+        if (op.member === op.card) {
+          throw new KernelError("invalid-input", "the resealing member must be another card");
+        }
+        if (member.state !== "ready") {
+          throw new KernelError("invalid-input", "the resealing member is not ready");
+        }
+      } else if (!header.cards.some((c) => c.state === "ready" && c.cardId !== op.card)) {
+        throw new KernelError("invalid-input", "no other ready member can reseal this card");
+      }
+      break;
+    }
     default:
       break;
   }
 };
 
 /** Whether the op takes a `verify`, forbids one, or is not in this layer. */
+// oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
 export const verifyGate = (op: CardOperation): "required" | "forbidden" | "unsupported" => {
   switch (op.kind) {
     case "status":
@@ -105,23 +154,33 @@ export const verifyGate = (op: CardOperation): "required" | "forbidden" | "unsup
     case "change-access":
     case "erase":
     case "create":
+    case "transfer":
+    case "reseal":
     case "forget-access":
     case "sign":
       return "required";
-    default:
-      return "unsupported";
   }
 };
 
 /** Which prompt kind a verify-bearing op uses. */
 export const promptKind = (
   op: CardOperation,
-): "card-change-access" | "card-erase" | "card-create" | "card-forget-access" => {
+):
+  | "card-change-access"
+  | "card-erase"
+  | "card-create"
+  | "card-transfer"
+  | "card-reseal"
+  | "card-forget-access" => {
   switch (op.kind) {
     case "change-access":
       return "card-change-access";
     case "erase":
       return "card-erase";
+    case "transfer":
+      return "card-transfer";
+    case "reseal":
+      return "card-reseal";
     case "forget-access":
       return "card-forget-access";
     default:
@@ -166,6 +225,7 @@ export const promptCards = (ctx: KernelContext, op: CardOperation): ReadonlyArra
 };
 
 /** Builds the op's generator — thrown precondition failures happen before any yield. */
+// oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
 export const makeOp = (env: OpEnv, op: CardOperation, prepared?: SignPrepared): CardOp => {
   switch (op.kind) {
     case "status":
@@ -182,6 +242,10 @@ export const makeOp = (env: OpEnv, op: CardOperation, prepared?: SignPrepared): 
       return eraseOp(env, op);
     case "create":
       return createOp(env, op);
+    case "transfer":
+      return transferOp(env, op);
+    case "reseal":
+      return resealOp(env, op);
     case "forget-access":
       return forgetAccessOp(env, op);
     case "sign":
@@ -189,7 +253,5 @@ export const makeOp = (env: OpEnv, op: CardOperation, prepared?: SignPrepared): 
         throw new KernelError("integrity", "the sign operation was not prepared");
       }
       return signOp(env, op, prepared);
-    default:
-      throw new KernelError("unsupported", "card operations arrive in a later build");
   }
 };
