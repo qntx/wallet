@@ -631,7 +631,9 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   request-id binding, `samePsbtContent` on returned PSBTs. `vectors/keystone/` +
   `scripts/vectors/keystone.ts` pin sync, sign and hardware-call frames against the vendor
   encoders.
-- **OneKey Classic 1S / Pro over USB or BLE** (`modules/signers/onekey/`): `"onekey"` in
+- **OneKey hardware wallets over USB or BLE** (`modules/signers/onekey/`; emulator-tested on Classic 1S
+  3.21.0 and Pro 4.21.0; Classic, Mini and Touch follow the same protocol under firmware gates from
+  source, untested on hardware): `"onekey"` in
   `HARDWARE_DEVICES` and a Protocol-V1 wire client with the driver over it. Pairing pins six
   secp256k1 account nodes (BIP-44/49/84/86, EVM, TRON) and the SLIP-10 ed25519 Solana leaf with
   root-fingerprint agreement and host-side address cross-checks; `sign` re-probes the pinned

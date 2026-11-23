@@ -152,7 +152,7 @@ if (last.type !== 17) {
 
 sessions.push(uninitialized, load, initialized);
 
-// Layer 2: public nodes and addresses through the keys.ts API. Every exchange is recorded;
+// Public nodes and addresses through the keys.ts API. Every exchange is recorded;
 // while one is open the recorder keeps pressing YES on the debug link, which is what both a
 // ButtonAck-gated protectButton and an ack-round-gated protectWaitKey consume.
 const H = 0x80_00_00_00;
@@ -359,7 +359,7 @@ if (DRIVER_MODE) {
       console.log(`sol-account0-show: pub=${bytesToHex(key)}`);
     }
   }
-  // Layer 3: EVM signing. Plan inputs come from vectors/chains/signing-plans.json so the
+  // EVM signing. Plan inputs come from vectors/chains/signing-plans.json so the
   // replayed signatures verify against the plan digests; the big-data, contract-creation,
   // unregistered-delegator and array/nested typed-data sessions are extras the tests verify
   // independently. On the Classic 1S each signing wizard consumes one DebugLink YES per
@@ -563,7 +563,7 @@ if (DRIVER_MODE) {
     }
   }
 
-  // Layer 4: Solana + TRON. The solana plan cases carry a fee payer that is not the
+  // Solana + TRON. The solana plan cases carry a fee payer that is not the
   // device's key (GmaDrppBC7…), so the plan vectors are refusal recordings; the self-payer
   // variants patch the payer to the device's ed25519 key and produce real signatures. Both
   // firmwares refuse version 1 — the client makes that `unsupported` before any exchange,
@@ -728,7 +728,7 @@ if (DRIVER_MODE) {
     }
   }
 
-  // Layer 5: Bitcoin. The `bitcoin-psbt-every-template` plan vector mixes a taproot input
+  // Bitcoin. The `bitcoin-psbt-every-template` plan vector mixes a taproot input
   // that carries only witness_utxo — but in a mixed transaction both firmwares verify EVERY
   // input against its full previous transaction (core bitcoin.py step3_verify_inputs /
   // legacy signing.c), so the client refuses it `unsupported` before any exchange (empty

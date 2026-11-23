@@ -690,7 +690,7 @@ const dispatch = async (
         request.psbt,
         psbtEntries(request, stage),
         btcCoinName(request.network),
-        // Phase 2 declares no change: the device shows every output.
+        // No change is declared: the device shows every output.
         [],
       );
       return signBitcoinTransaction(exchange, info, prepared);
