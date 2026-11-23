@@ -1,5 +1,6 @@
 import { PUSH_FAMILIES, PUSH_PLATFORMS } from "@qntx/wallet-engine/gateway/contract";
 
+import type { WorkerEnv } from "./env.ts";
 import { zeroExConfig } from "./providers/zerox.ts";
 import type { PushNamespace, PushService } from "./push/backend.ts";
 import { pushRuntimeFor } from "./push/runtime.ts";
@@ -9,28 +10,6 @@ import { tokenListSources } from "./tokens/sources.ts";
 import type { TokenListUpstream } from "./tokens/sources.ts";
 import type { GatewayOptions, PriceCache } from "./types.ts";
 import { upstreamFor } from "./upstream.ts";
-
-/**
- * Optional values no environment requires: the 0x integrator fee, staging's Jupiter and CoinGecko
- * keys, and the push secrets — absent ones disable the feature rather than failing a deploy
- * (`secrets.required` stays push-free so deploy-check has nothing new to demand).
- */
-type OptionalEnv = {
-  readonly ZEROX_FEE_RECIPIENT?: string;
-  readonly ZEROX_FEE_BPS?: string;
-  readonly JUPITER_API_KEY?: string;
-  readonly COINGECKO_API_KEY?: string;
-  readonly PUSH_SEAL_KEY?: string;
-  readonly APNS_KEY?: string;
-  readonly APNS_KEY_ID?: string;
-  readonly APNS_TEAM_ID?: string;
-  readonly APNS_TOPIC?: string;
-  readonly FCM_SERVICE_ACCOUNT?: string;
-  readonly ALCHEMY_NOTIFY_TOKEN?: string;
-  readonly ALCHEMY_WEBHOOKS?: string;
-};
-
-export type WorkerEnv = (Cloudflare.StagingEnv | Cloudflare.ProductionEnv) & OptionalEnv;
 
 /**
  * The configured token-list sources — one call shared by `gatewayFor` (which networks the route can

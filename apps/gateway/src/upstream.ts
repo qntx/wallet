@@ -8,9 +8,9 @@ import { durableBudget } from "./budget/leased.ts";
 import { PRODUCTION_ACCOUNTS, STAGING_ACCOUNTS } from "./config/accounts.ts";
 import type { Account } from "./config/accounts.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "./config/networks.ts";
+import type { WorkerEnv } from "./env.ts";
 import { bearer, blockstreamAuth, header } from "./providers/auth.ts";
 import type { ProviderBudget, GatewayNetwork, UpstreamAuth, UpstreamAuthId } from "./types.ts";
-import type { WorkerEnv } from "./worker.ts";
 
 export type Upstream = {
   readonly networks: ReadonlyArray<GatewayNetwork>;

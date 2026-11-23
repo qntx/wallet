@@ -14,10 +14,11 @@ import {
   swapQuoteSolana,
 } from "@qntx/wallet-engine/gateway/contract";
 
+import type { RateLimiter } from "../src/limits.ts";
 import { UPSTREAM_TIMEOUT_MS } from "../src/providers/forward.ts";
 import { COINGECKO_API } from "../src/providers/prices-coingecko.ts";
 import { DEFILLAMA_API } from "../src/providers/prices-defillama.ts";
-import type { GatewayNetwork, RateLimiter } from "../src/types.ts";
+import type { GatewayNetwork } from "../src/types.ts";
 import {
   SEPOLIA,
   SIGNET,

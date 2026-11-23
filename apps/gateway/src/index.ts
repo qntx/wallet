@@ -1,9 +1,9 @@
 import { createGateway } from "./app.ts";
 import { PHISHING_SOURCES } from "./config/phishing.ts";
+import type { WorkerEnv } from "./env.ts";
 import { buildPhishingList } from "./risk/phishing.ts";
 import { buildTokenLists } from "./tokens/build.ts";
 import { gatewayFor, pushServiceFor, riskStoreOf, tokenSourcesFor } from "./worker.ts";
-import type { WorkerEnv } from "./worker.ts";
 
 // The PROVIDER_BUDGET and PUSH bindings resolve these classes by name.
 export { ProviderBudgetObject } from "./budget/durable.ts";

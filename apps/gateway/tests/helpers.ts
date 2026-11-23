@@ -7,14 +7,13 @@ import { ALCHEMY_COSTS } from "../src/budget/costs.ts";
 import type { Account } from "../src/config/accounts.ts";
 import { PRODUCTION_ACCOUNTS } from "../src/config/accounts.ts";
 import { PRODUCTION_NETWORKS } from "../src/config/networks.ts";
+import type { Limiters, RateLimiter } from "../src/limits.ts";
 import type { RiskStore } from "../src/risk/phishing.ts";
 import type { TokenListStore } from "../src/tokens/build.ts";
 import type {
   GatewayNetwork,
-  Limiters,
   PriceCache,
   ProviderBudget,
-  RateLimiter,
   ResolvedProvider,
   UpstreamAuthId,
 } from "../src/types.ts";

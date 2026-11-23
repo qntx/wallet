@@ -5,9 +5,9 @@ import { PROVIDERS_HEADER, networkById } from "@qntx/wallet-engine/gateway/contr
 
 import { createGateway } from "../src/app.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
+import type { WorkerEnv } from "../src/env.ts";
 import { bearer, blockstreamAuth, header } from "../src/providers/auth.ts";
 import { gatewayFor } from "../src/worker.ts";
-import type { WorkerEnv } from "../src/worker.ts";
 import {
   allowAll,
   call,

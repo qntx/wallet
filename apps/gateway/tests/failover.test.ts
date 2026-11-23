@@ -10,7 +10,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { PROVIDERS_HEADER, gatewayError } from "@qntx/wallet-engine/gateway/contract";
 
 import type { Account } from "../src/config/accounts.ts";
-import type { GatewayNetwork, Limiters, ProviderBudget, RateLimiter } from "../src/types.ts";
+import type { Limiters, RateLimiter } from "../src/limits.ts";
+import type { GatewayNetwork, ProviderBudget } from "../src/types.ts";
 import {
   SEPOLIA,
   SIGNET,

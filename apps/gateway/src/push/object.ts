@@ -16,8 +16,8 @@ import { DurableObject } from "cloudflare:workers";
 
 import type { PushFamily, PushSubscriptionResponse } from "@qntx/wallet-engine/gateway/contract";
 
+import type { WorkerEnv } from "../env.ts";
 import { GatewayHttpError } from "../middleware/errors.ts";
-import type { WorkerEnv } from "../worker.ts";
 import { pushFamilyOf } from "./backend.ts";
 import type { PushResult } from "./backend.ts";
 import { PushCore, UNSERVED_FAMILY, sweepExpired } from "./core.ts";

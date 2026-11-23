@@ -19,10 +19,10 @@ import { durableBudget } from "../../src/budget/leased.ts";
 import type { Account } from "../../src/config/accounts.ts";
 import { PRODUCTION_ACCOUNTS } from "../../src/config/accounts.ts";
 import { PRODUCTION_NETWORKS } from "../../src/config/networks.ts";
+import type { WorkerEnv } from "../../src/env.ts";
 import { PushObject as PushObjectBase } from "../../src/push/object.ts";
 import { pushRuntimeFor } from "../../src/push/runtime.ts";
 import type { UpstreamAuthId } from "../../src/types.ts";
-import type { WorkerEnv } from "../../src/worker.ts";
 import { pushServiceFor } from "../../src/worker.ts";
 import { upstreamAnswer } from "../upstream-stub.ts";
 

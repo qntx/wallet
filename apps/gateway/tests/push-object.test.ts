@@ -8,11 +8,11 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { PushFamily } from "@qntx/wallet-engine/gateway/contract";
 
+import type { WorkerEnv } from "../src/env.ts";
 import type { PushFamilyConfig } from "../src/push/core.ts";
 import { PushObject } from "../src/push/object.ts";
 import { pushMaterials } from "../src/push/runtime.ts";
 import type { PushRuntime } from "../src/push/runtime.ts";
-import type { WorkerEnv } from "../src/worker.ts";
 import {
   ADDRESS,
   EVM,

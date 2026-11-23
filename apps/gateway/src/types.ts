@@ -1,5 +1,6 @@
 import type { CostModel } from "./budget/costs.ts";
 import type { Account } from "./config/accounts.ts";
+import type { Limiters } from "./limits.ts";
 import type { PushService } from "./push/backend.ts";
 import type { RiskStore } from "./risk/phishing.ts";
 import type { TokenListStore } from "./tokens/build.ts";
@@ -20,22 +21,6 @@ export type UpstreamRequest = {
    * bounds once the attempt has returned.
    */
   readonly bodyDeadlineMs?: number;
-};
-
-export type RateLimiter = {
-  limit: (options: { key: string; delta?: number }) => Promise<{ success: boolean }>;
-};
-
-export type Limiters = {
-  /** Per IP prefix across every client id — the ceiling rotating client ids cannot escape. */
-  readonly ip: RateLimiter;
-  readonly rpc: RateLimiter;
-  readonly default: RateLimiter;
-  /**
-   * Shares of each provider account's per-minute budget, keyed `account:ip-prefix`: one client's
-   * traffic is bounded in the provider's own units even when its calls are cheap per request.
-   */
-  readonly share: RateLimiter;
 };
 
 /** The provider account an upstream authenticates against, by name — never a secret. */

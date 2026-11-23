@@ -9,7 +9,7 @@ import {
   servedNetworksResponse,
 } from "@qntx/wallet-engine/gateway/contract";
 
-import type { RateLimiter } from "../src/types.ts";
+import type { RateLimiter } from "../src/limits.ts";
 import {
   DEVNET,
   CLIENT_ID,

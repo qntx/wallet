@@ -12,8 +12,8 @@ import type {
   PushTransactionRequest,
 } from "@qntx/wallet-engine/gateway/contract";
 
+import type { RateLimiter } from "../limits.ts";
 import type { ErrorStatus } from "../middleware/errors.ts";
-import type { RateLimiter } from "../types.ts";
 import type { IngestItem, SubscribeRequest, WatchRequest } from "./core.ts";
 import type { AlchemyHook } from "./watch-alchemy.ts";
 

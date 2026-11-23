@@ -7,10 +7,10 @@
  */
 import type { PushFamily, PushPlatform } from "@qntx/wallet-engine/gateway/contract";
 
+import type { WorkerEnv } from "../env.ts";
 import { indexNetworks } from "../middleware/network.ts";
 import { createForwarder } from "../providers/forward.ts";
 import { upstreamFor } from "../upstream.ts";
-import type { WorkerEnv } from "../worker.ts";
 import type { PushFamilyConfig } from "./core.ts";
 import { importSealKey } from "./seal.ts";
 import {
