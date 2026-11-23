@@ -19,12 +19,11 @@ import type { EvmTransaction } from "@qntx/wallet-chains";
 import { initialize } from "../src/modules/onekey/protocol/device.ts";
 import type { DeviceInfo } from "../src/modules/onekey/protocol/device.ts";
 import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
+import { signTypedData, typedDataMode } from "../src/modules/onekey/protocol/evm-typed-data.ts";
 import {
   evmDisplay,
   signEvmPersonalMessage,
   signEvmTransaction,
-  signTypedData,
-  typedDataMode,
 } from "../src/modules/onekey/protocol/evm.ts";
 import { decodeMessage, encodeMessage } from "../src/modules/onekey/protocol/frame.ts";
 import {
@@ -507,7 +506,7 @@ describe("evm display classification", () => {
     expect(evmDisplay(INFO, { kind: "evm.transaction", tx: BIG_TX })).toBe("blind");
   });
 
-  it("classifies eip7702 by delegator registration", () => {
+  it("classifies eip7702 clear — the device names or refuses the delegator itself", () => {
     expect(evmDisplay(INFO, { kind: "evm.transaction", tx: planTx("evm-eip7702-upgrade") })).toBe(
       "clear",
     );
@@ -515,6 +514,8 @@ describe("evm display classification", () => {
     if (upgrade.type !== "eip7702") {
       throw new Error("evm-eip7702-upgrade is not an eip7702 transaction");
     }
+    // An unregistered target is still "clear" from the wallet's side: the device shows a
+    // whitelist warning and refuses with Failure_DataError before signing.
     expect(
       evmDisplay(INFO, {
         kind: "evm.transaction",
@@ -523,7 +524,7 @@ describe("evm display classification", () => {
           authorization: { address: "0x00000000000000000000000000000000dEaDbEEF" },
         },
       }),
-    ).toBe("blind");
+    ).toBe("clear");
   });
 
   it("classifies typed data by mode", () => {
@@ -636,6 +637,18 @@ describe("hostile transaction responses", () => {
   ] as const)("a %s derivation path is invalid-input before any exchange", async (_name, path) => {
     const { exchange, writes } = scripted([]);
     const error = await thrown(async () => signEvmTransaction(exchange, INFO, path, legacy));
+    expect(error.code).toBe("invalid-input");
+    expect(writes).toHaveLength(0);
+  });
+
+  it.each([
+    ["odd-length", "0xabc"],
+    ["non-hex", "0xzz"],
+  ] as const)("tx data with %s hex is invalid-input before any exchange", async (_n, data) => {
+    const { exchange, writes } = scripted([]);
+    const error = await thrown(async () =>
+      signEvmTransaction(exchange, INFO, EVM_PATH, { ...legacy, data }),
+    );
     expect(error.code).toBe("invalid-input");
     expect(writes).toHaveLength(0);
   });

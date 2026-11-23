@@ -8,14 +8,9 @@ export { initialize, supports } from "./device.ts";
 export type { DeviceInfo, OneKeyFeature, OneKeyModel } from "./device.ts";
 export { OneKeyError } from "./errors.ts";
 export type { OneKeyErrorCode } from "./errors.ts";
-export {
-  evmDisplay,
-  signEvmPersonalMessage,
-  signEvmTransaction,
-  signTypedData,
-  typedDataMode,
-} from "./evm.ts";
+export { evmDisplay, signEvmPersonalMessage, signEvmTransaction } from "./evm.ts";
 export type { EvmAuthorizationSignature, EvmDisplayRequest, EvmTransactionOptions } from "./evm.ts";
+export { signTypedData, typedDataMode } from "./evm-typed-data.ts";
 export { decodeMessage, encodeMessage, MAX_MESSAGE, REPORT_SIZE } from "./frame.ts";
 export type { Message } from "./frame.ts";
 export { address, evmPublicNode, publicNode, solanaPublicKey } from "./keys.ts";
