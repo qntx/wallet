@@ -52,9 +52,23 @@ const SIGNERS_FILES = [
   "keystone/registry.ts",
   "keystone/sign.ts",
   "keystone/sync.ts",
+  "onekey/driver.ts",
+  "onekey/protocol/bitcoin.ts",
+  "onekey/protocol/device.ts",
+  "onekey/protocol/errors.ts",
+  "onekey/protocol/evm-typed-data.ts",
+  "onekey/protocol/evm.ts",
+  "onekey/protocol/frame.ts",
+  "onekey/protocol/index.ts",
+  "onekey/protocol/keys.ts",
+  "onekey/protocol/messages.ts",
+  "onekey/protocol/proto.ts",
+  "onekey/protocol/session.ts",
+  "onekey/protocol/solana.ts",
+  "onekey/protocol/tron.ts",
 ];
-// measured 63384 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
-const SIGNERS_BUDGET = 66_560;
+// measured 201808 B (OneKey driver + protocol client); raise pending owner decision
+const SIGNERS_BUDGET = 211_968;
 
 type Unit = {
   readonly name: string;
