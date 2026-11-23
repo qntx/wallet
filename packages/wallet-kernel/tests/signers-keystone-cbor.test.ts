@@ -129,6 +129,10 @@ describe("decodeCbor malformed input is integrity", () => {
     integrity("1c");
     integrity("1d");
     integrity("1e");
+    integrity("1c20");
+    integrity("1dff");
+    integrity("1eaa");
+    integrity("1f20");
   });
 
   it("rejects types outside the subset", () => {

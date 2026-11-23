@@ -645,6 +645,29 @@ describe("hardware wallet refusals", () => {
     expect(errCode(res)).toBe("device-required");
   });
 
+  it("a sign op needs a factor and a non-sign op refuses one", async () => {
+    const { h, session } = await boot();
+    const hwId = await pairDevice(h, session);
+    expect(
+      errCode(
+        await h.call(
+          "hardware.begin",
+          { op: { kind: "pair", device: "keystone" }, verify: PASSKEY() },
+          session,
+        ),
+      ),
+    ).toBe("invalid-input");
+    const request = {
+      kind: "evm.personal-message",
+      network: EVM_NETWORK,
+      account: { kind: "hd", walletId: hwId, groupIndex: 0, template: "evm.bip44" },
+      message: utf8ToBytes("hello"),
+    };
+    expect(
+      errCode(await h.call("hardware.begin", { op: { kind: "sign", request } }, session)),
+    ).toBe("invalid-input");
+  });
+
   it("wallet.accounts serves a pinned path and misses are device-required", async () => {
     const { h, session } = await boot();
     const hwId = await pairDevice(h, session);

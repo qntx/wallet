@@ -381,10 +381,16 @@ describe("malformed sync variants are integrity", () => {
       [3, { kind: "bytes", value: offCurve }],
       [4, { kind: "bytes", value: chainCode }],
     ]);
+    // A 65-byte uncompressed encoding is a valid point but not the wire form a node pins.
+    const uncompressed = hdkey("m/44'/0'/0'", [
+      [3, { kind: "bytes", value: secp256k1.Point.fromBytes(key).toBytes(false) }],
+      [4, { kind: "bytes", value: chainCode }],
+    ]);
     integrity(syncWith([wrongKeyLength]));
     integrity(syncWith([wrongChainCode]));
     integrity(syncWith([missingChainCode]));
     integrity(syncWith([badPoint]));
+    integrity(syncWith([uncompressed]));
     const [ed] = vectors.sync.pinned.ed25519;
     if (ed === undefined) {
       throw new Error("missing ed25519 pin");

@@ -186,6 +186,14 @@ describe("hardware-wallet body codec", () => {
     }
   });
 
+  it("rejects depth 0 and 11 node paths", () => {
+    for (const path of ["m", "m/1/2/3/4/5/6/7/8/9/10/11"]) {
+      expect(
+        code(() => parseHardwareBody(body({ nodes: { [path]: nodeEntry() }, ed25519: {} }))),
+      ).toBe("integrity");
+    }
+  });
+
   it("rejects more than 512 nodes or 256 ed25519 entries", () => {
     const nodes: Record<string, unknown> = {};
     for (let i = 0; i < 513; i++) {
