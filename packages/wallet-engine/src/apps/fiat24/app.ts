@@ -199,6 +199,9 @@ export function fiat24(config: Fiat24Config = {}): AppDefinition<"fiat24", Fiat2
           storage: context.storage,
           onDisable: flows.dropGroup,
           onEnabled: (group) => void flows.reconcileGroup(group),
+          owner,
+          client,
+          account,
         }),
         unlock: async () => {
           await live.unlock();

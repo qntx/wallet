@@ -1,6 +1,7 @@
 import { mnemonicToAccount } from "viem/accounts";
 import { describe, expect, it } from "vite-plus/test";
 
+import { arbitrum } from "@qntx/fiat24/deployments";
 /**
  * `AppsController.authorities` end to end: the Hyperliquid builder-fee approval surfaces as a
  * display-only `builder-fee` authority, Polymarket's trading approvals as `token-allowance` and
@@ -9,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
  */
 import { chains } from "@qntx/wallet/chains";
 
+import type { AppAuthorityRow } from "../src/apps/index.ts";
 import {
   CLOB_HOST,
   CTF_EXCHANGE_V3,
@@ -18,9 +20,19 @@ import {
   RELAYER_HOST,
 } from "../src/apps/polymarket/constants.ts";
 import { derivePolymarketWallets } from "../src/apps/polymarket/wallets.ts";
-import type { AppAuthorityRow } from "../src/apps/index.ts";
 import { MNEMONIC, pmChainCode, world } from "./apps-helpers.ts";
 import type { World } from "./apps-helpers.ts";
+import {
+  accountEntries,
+  allowanceEntries,
+  availabilityEntries,
+  balanceEntries,
+  honestStorage,
+  makeFiat24Chain,
+  mergeCalls,
+  proxyAdminEntry,
+  SENDER_ID,
+} from "./support/fiat24-chain.ts";
 
 const BUILDER = {
   address: "0xABCDEF0123456789abCDEf0123456789abcdef01",
@@ -87,7 +99,7 @@ describe("apps.authorities", () => {
   });
 
   it("contributes nothing for an app without the member", async () => {
-    const w = await world(73, { hyperliquid: false, fiat24: true });
+    const w = await world(73, { hyperliquid: false, fiat24: false });
     try {
       await expect(rows(w)).resolves.toStrictEqual([]);
     } finally {
@@ -144,8 +156,7 @@ const pmFetch =
   (feed: { contracts: ReadonlyArray<ReturnType<typeof pmApprovalRow>> }) =>
   async (input: string | URL | Request): Promise<Response> => {
     await Promise.resolve();
-    const raw =
-      typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(raw);
     if (url.pathname === "/v1/eligibility") {
       return Response.json({
@@ -239,13 +250,150 @@ describe("apps.authorities — polymarket", () => {
       hyperliquid: false,
       polymarket: {},
       fetch: pmFetch({ contracts: [] }),
-      polyCode: pmChainCode(
-        () => false,
-        mnemonicToAccount(MNEMONIC, { addressIndex: 81 }).address,
-      ),
+      polyCode: pmChainCode(() => false, mnemonicToAccount(MNEMONIC, { addressIndex: 81 }).address),
     });
     try {
       await expect(rows(w)).resolves.toStrictEqual([]);
+    } finally {
+      await w.destroy();
+    }
+  });
+});
+
+const F24_GROUP_INDEX = 90;
+const F24_OWNER = mnemonicToAccount(MNEMONIC, { addressIndex: F24_GROUP_INDEX }).address;
+
+/** `loadAccount`'s live-account reads plus `getAllowances`' ten pairs, all zero. */
+const f24Calls = (owner: `0x${string}`) =>
+  mergeCalls(
+    proxyAdminEntry(),
+    availabilityEntries({}),
+    accountEntries(owner, { owner, historic: SENDER_ID, rounds: 4 }),
+    balanceEntries(owner),
+    allowanceEntries(owner),
+  );
+
+const f24World = async (
+  calls: Parameters<typeof makeFiat24Chain>[0]["calls"],
+): Promise<{ w: World; chain: ReturnType<typeof makeFiat24Chain> }> => {
+  const chain = makeFiat24Chain({ calls, storage: honestStorage() });
+  const w = await world(F24_GROUP_INDEX, {
+    hyperliquid: false,
+    fiat24: true,
+    arb1: chain.arb1,
+  });
+  return { w, chain };
+};
+
+describe("apps.authorities — fiat24", () => {
+  it("lists the non-zero owner-EOA allowances the flows grant", async () => {
+    const { w, chain } = await f24World(f24Calls(F24_OWNER));
+    try {
+      chain.setCall(arbitrum.tokens.EUR24.proxy, "allowance", [F24_OWNER, arbitrum.card.proxy], {
+        result: 500n,
+      });
+      chain.setCall(arbitrum.usdc, "allowance", [F24_OWNER, arbitrum.deposit.proxy], {
+        result: 100_000n,
+      });
+      chain.setCall(arbitrum.f24.address, "allowance", [F24_OWNER, arbitrum.account.proxy], {
+        result: 2n ** 256n - 1n,
+      });
+      const result = await rows(w);
+      expect(result).toStrictEqual([
+        {
+          app: "fiat24",
+          authority: {
+            kind: "token-allowance",
+            network: "eip155:42161",
+            account: F24_OWNER,
+            holder: arbitrum.card.proxy,
+            asset: arbitrum.tokens.EUR24.proxy,
+            limit: "500",
+            revoke: "approvals",
+          },
+        },
+        {
+          app: "fiat24",
+          authority: {
+            kind: "token-allowance",
+            network: "eip155:42161",
+            account: F24_OWNER,
+            holder: arbitrum.deposit.proxy,
+            asset: arbitrum.usdc,
+            limit: "100000",
+            revoke: "approvals",
+          },
+        },
+        {
+          app: "fiat24",
+          authority: {
+            kind: "token-allowance",
+            network: "eip155:42161",
+            account: F24_OWNER,
+            holder: arbitrum.account.proxy,
+            asset: arbitrum.f24.address,
+            revoke: "approvals",
+          },
+        },
+      ]);
+    } finally {
+      await w.destroy();
+    }
+  });
+
+  it("omits zero allowances — a group holding none reports nothing", async () => {
+    const { w } = await f24World(f24Calls(F24_OWNER));
+    try {
+      await expect(rows(w)).resolves.toStrictEqual([]);
+    } finally {
+      await w.destroy();
+    }
+  });
+
+  it("reports nothing for a group with no Fiat24 account", async () => {
+    const owner91 = mnemonicToAccount(MNEMONIC, { addressIndex: 91 }).address;
+    const chain = makeFiat24Chain({
+      calls: mergeCalls(
+        proxyAdminEntry(),
+        availabilityEntries({}),
+        accountEntries(owner91, { owner: owner91, historic: 0n, balance: 0n }),
+      ),
+      storage: honestStorage(),
+    });
+    const w = await world(91, {
+      hyperliquid: false,
+      fiat24: true,
+      arb1: chain.arb1,
+    });
+    try {
+      await expect(rows(w)).resolves.toStrictEqual([]);
+    } finally {
+      await w.destroy();
+    }
+  });
+
+  it("turns a failed chain read into the app's own error row", async () => {
+    const chain = makeFiat24Chain({
+      calls: f24Calls(F24_OWNER),
+      storage: honestStorage(),
+    });
+    const w = await world(92, {
+      hyperliquid: false,
+      fiat24: true,
+      arb1: ({ method }) => {
+        if (method === "eth_call") {
+          throw new Error("arbitrum rpc down");
+        }
+        return chain.arb1({ method });
+      },
+    });
+    try {
+      await expect(rows(w)).resolves.toStrictEqual([
+        {
+          app: "fiat24",
+          error: { category: "protocol", message: "rpc request failed" },
+        },
+      ]);
     } finally {
       await w.destroy();
     }

@@ -408,8 +408,9 @@ included. Every runtime value the SPI re-exports is also a public export of
 package.
 
 A provider may also expose `authorities(group)`: the standing authorities its venue holds over
-the group's funds outside the kernel's session keys (the Hyperliquid builder-fee approval on
-HyperCore). `AppsController.authorities(group)` collects every app's rows — display-only, one
+the group's funds outside the kernel's session keys — the Hyperliquid builder-fee approval on
+HyperCore, Polymarket's trading approvals on the deposit wallet, Fiat24's owner-EOA allowances.
+`AppsController.authorities(group)` collects every app's rows — display-only, one
 `{ app, error }` row per failed read.
 
 ## Hyperliquid

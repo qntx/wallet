@@ -589,8 +589,9 @@ Gateway (operators):
     request → verification on Hyperliquid); renew and disable (with optional deregistration on
     Hyperliquid). Agents created but never approved are deleted. `authorities(group)` lists the
     standing authorities an app's venue holds over the group's funds — display-only rows with a
-    `revoke` hint; today the Hyperliquid builder-fee approval on HyperCore, one `{ app, error }`
-    row per failed app read.
+    `revoke` hint; the Hyperliquid builder-fee approval on HyperCore, Polymarket's trading
+    approvals on the deposit wallet, and Fiat24's owner-EOA allowances, one `{ app, error }` row
+    per failed app read.
   - `HyperliquidProvider`: market and account reads, live views (order book, trades, candles,
     account, spot balances, open orders, fills) with reconnect, resubscribe and stale marking,
     order placement (limit, market with a computed slippage cap, stop/take-profit, attached and

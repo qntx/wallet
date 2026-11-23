@@ -1626,11 +1626,16 @@ operators deploy the new route. Nothing changes in the vault or the kernel proto
 4. **Kernel prompt lines.** `ApprovalChange` has two more variants (`approval-cleared`,
    `delegate-revoked`). A host that switches over `ApprovalChange.kind` must handle them.
 5. **Venue-held authorities.** `AppsController.authorities(group)` lists the standing
-   authorities an app's venue holds over the group's funds outside the approvals inventory —
-   today the Hyperliquid builder-fee approval on HyperCore — its `network` names the venue
-   network (`Mainnet` | `Testnet`), not a chain (`revoke: "none"`; the app removes it only by
-   signing `approveBuilderFee` to zero, which no engine surface reaches). One app's
-   failed read lands as its own `{ app, error }` row.
+   authorities an app's venue holds over the group's funds outside the approvals inventory.
+   On-chain authorities carry their CAIP-2 `network`; a venue-ledger authority names the venue
+   network its kernel sessions use instead — the Hyperliquid builder-fee approval lives on
+   HyperCore, so its `network` is `Mainnet` | `Testnet`, not a chain (`revoke: "none"`; the app
+   removes it only by signing `approveBuilderFee` to zero, which no engine surface reaches).
+   Polymarket's trading approvals on the deposit wallet (pUSD spenders and ERC-1155 operators on
+   Polygon) are reported `revoke: "none"` too — disabling the app leaves them on-chain. Fiat24's
+   owner-EOA allowances on Arbitrum One (cash-token card caps, deposit top-ups, the F24 account
+   grant) are `revoke: "approvals"`: ordinary allowances the approvals inventory revokes. One
+   app's failed read lands as its own `{ app, error }` row.
 
 [`tests/migration/app-authorities.ts`](tests/migration/app-authorities.ts):
 
