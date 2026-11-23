@@ -5,12 +5,14 @@
  * oracle — plus a cross-implementation check that `sealEvent` output opens under the engine's
  * `openPush`, and `openTarget`'s never-throw contract on malformed input.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vite-plus/test";
 
 import type { PushEventKind, PushFamily } from "@qntx/wallet-engine/gateway/contract";
 import { openPush } from "@qntx/wallet-engine/push";
 
-import vectors from "../../../vectors/push.json" with { type: "json" };
 import { base64urlBytes, base64urlOf, bytesOfHex } from "../src/push/encoding.ts";
 import {
   eventIdOf,
@@ -21,6 +23,38 @@ import {
   subscriptionIdOf,
 } from "../src/push/seal.ts";
 import type { SealedTarget } from "../src/push/seal.ts";
+
+type PushVectors = {
+  readonly subscriptionIds: ReadonlyArray<{ readonly secret: string; readonly id: string }>;
+  readonly eventIds: ReadonlyArray<{
+    readonly key: string;
+    readonly network: string;
+    readonly hash: string;
+    readonly kind: string;
+    readonly generation: number;
+    readonly eventId: string;
+  }>;
+  readonly messages: ReadonlyArray<{
+    readonly key: string;
+    readonly eventId: string;
+    readonly nonce: string;
+    readonly plaintext: string;
+    readonly message: { readonly e: string; readonly c: string };
+  }>;
+  readonly seals: ReadonlyArray<{
+    readonly sealKey: string;
+    readonly family: string;
+    readonly id: string;
+    readonly nonce: string;
+    readonly plaintext: string;
+    readonly sealed: string;
+  }>;
+};
+
+/* The vector file is canonical across packages — read it, never copy it into a fixture. */
+const vectors = JSON.parse(
+  readFileSync(join(import.meta.dirname, "../../../vectors/push.json"), "utf8"),
+) as PushVectors;
 
 const hex = (value: string): Uint8Array => {
   const bytes = bytesOfHex(value);

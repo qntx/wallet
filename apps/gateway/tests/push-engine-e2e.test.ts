@@ -10,18 +10,20 @@ import { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it } from "vite-plus/test";
 
-import { openPush } from "@qntx/wallet-engine/push";
-
-import type { AccountTreeState } from "../../../packages/wallet-engine/src/accounts/controller.ts";
 import {
+  createMemoryEngineStore,
   gatewayFetch,
   gatewaySession,
-} from "../../../packages/wallet-engine/src/gateway/client.ts";
-import type { NetworkControllerState } from "../../../packages/wallet-engine/src/networks/controller.ts";
-import { NotificationsController } from "../../../packages/wallet-engine/src/notifications/controller.ts";
-import type { NotificationEvent } from "../../../packages/wallet-engine/src/notifications/controller.ts";
-import { createMemoryEngineStore } from "../../../packages/wallet-engine/src/store/memory.ts";
-import type { TransactionControllerState } from "../../../packages/wallet-engine/src/transactions/controller.ts";
+  NotificationsController,
+} from "@qntx/wallet-engine";
+import type {
+  AccountTreeState,
+  NetworkControllerState,
+  NotificationEvent,
+  TransactionControllerState,
+} from "@qntx/wallet-engine";
+import { openPush } from "@qntx/wallet-engine/push";
+
 import { GatewayHttpError } from "../src/middleware/errors.ts";
 import { indexNetworks } from "../src/middleware/network.ts";
 import { createForwarder } from "../src/providers/forward.ts";
