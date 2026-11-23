@@ -24,13 +24,9 @@ import {
 import type { BitcoinSignEntry } from "../src/modules/onekey/protocol/bitcoin.ts";
 import type { DeviceInfo } from "../src/modules/onekey/protocol/device.ts";
 import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
-import { decodeMessage, encodeMessage } from "../src/modules/onekey/protocol/frame.ts";
-import {
-  BtcMessageSignature,
-  BtcTxAckPrevMeta,
-  BtcTxRequest,
-} from "../src/modules/onekey/protocol/messages.ts";
-import { decode, encode } from "../src/modules/onekey/protocol/proto.ts";
+import { encodeMessage } from "../src/modules/onekey/protocol/frame.ts";
+import { BtcMessageSignature, BtcTxRequest } from "../src/modules/onekey/protocol/messages.ts";
+import { encode } from "../src/modules/onekey/protocol/proto.ts";
 import type { Decoded, MessageDef } from "../src/modules/onekey/protocol/proto.ts";
 import type { Exchange } from "../src/modules/onekey/protocol/session.ts";
 import { loadVectors } from "./helpers.ts";
@@ -242,42 +238,66 @@ const schnorrOk = (digest: Uint8Array, sig: Uint8Array, tweakedXonly: Uint8Array
 const SPENDTAPROOT = 5;
 
 /** The mixed-template PSBT with the synthesized taproot prev tx, exactly as the recorder built it. */
-/** Splice a PSBT_IN_WITNESS_UTXO record into input 0 of a PSBTv0 blob. */
-const injectWitnessUtxo = (psbt: Uint8Array, value: Uint8Array): Uint8Array => {
-  const readVarint = (offset: number): [number, number] => {
-    const first = psbt[offset];
-    if (first === undefined) {
-      throw new Error("psbt truncated");
-    }
-    if (first < 0xfd) {
-      return [first, offset + 1];
-    }
-    if (first === 0xfd) {
-      return [(psbt[offset + 1] ?? 0) | ((psbt[offset + 2] ?? 0) << 8), offset + 3];
-    }
-    if (first === 0xfe) {
-      return [
-        (psbt[offset + 1] ?? 0) |
-          ((psbt[offset + 2] ?? 0) << 8) |
-          ((psbt[offset + 3] ?? 0) << 16) |
-          ((psbt[offset + 4] ?? 0) << 24),
-        offset + 5,
-      ];
-    }
-    throw new Error("64-bit varints not supported");
-  };
+const psbtVarint = (psbt: Uint8Array, offset: number): [number, number] => {
+  const first = psbt[offset];
+  if (first === undefined) {
+    throw new Error("psbt truncated");
+  }
+  if (first < 0xfd) {
+    return [first, offset + 1];
+  }
+  if (first === 0xfd) {
+    return [(psbt[offset + 1] ?? 0) | ((psbt[offset + 2] ?? 0) << 8), offset + 3];
+  }
+  if (first === 0xfe) {
+    return [
+      (psbt[offset + 1] ?? 0) |
+        ((psbt[offset + 2] ?? 0) << 8) |
+        ((psbt[offset + 3] ?? 0) << 16) |
+        ((psbt[offset + 4] ?? 0) << 24),
+      offset + 5,
+    ];
+  }
+  throw new Error("64-bit varints not supported");
+};
+
+/** Offset of input 0's key-value map inside a PSBTv0 blob (right after the global map). */
+const psbtInputMapOffset = (psbt: Uint8Array): number => {
   let offset = 5; // magic
   for (;;) {
-    const [keyLength, after] = readVarint(offset);
+    const [keyLength, after] = psbtVarint(psbt, offset);
     if (keyLength === 0) {
-      break;
+      return after;
     }
-    const [valueLength, valueStart] = readVarint(after + keyLength);
+    const [valueLength, valueStart] = psbtVarint(psbt, after + keyLength);
     offset = valueStart + valueLength;
   }
-  // offset is now the start of input 0's map — the new record goes first.
+};
+
+/** Splice a PSBT_IN_WITNESS_UTXO record into input 0 of a PSBTv0 blob. */
+const injectWitnessUtxo = (psbt: Uint8Array, value: Uint8Array): Uint8Array => {
+  const offset = psbtInputMapOffset(psbt);
   const record = Uint8Array.of(0x01, 0x01, value.length, ...value);
   return Uint8Array.of(...psbt.slice(0, offset), ...record, ...psbt.slice(offset));
+};
+
+/** Flip the last byte of input 0's PSBT_IN_NON_WITNESS_UTXO value, breaking its txid. */
+const corruptPrevTx = (psbt: Uint8Array): Uint8Array => {
+  let offset = psbtInputMapOffset(psbt);
+  for (;;) {
+    const [keyLength, after] = psbtVarint(psbt, offset);
+    if (keyLength === 0) {
+      throw new Error("input map carries no non_witness_utxo");
+    }
+    const [valueLength, valueStart] = psbtVarint(psbt, after + keyLength);
+    offset = valueStart + valueLength;
+    if (psbt[after] === 0x00 && keyLength === 1) {
+      const out = new Uint8Array(psbt);
+      const last = offset - 1;
+      out[last] = (out[last] ?? 0) ^ 0xff;
+      return out;
+    }
+  }
 };
 
 /** One-input PSBT spending the every-template vector's first prevout with custom outputs. */
@@ -575,6 +595,15 @@ describe("bitcoinPrepare refusals", () => {
     expect(error.code).toBe("invalid-input");
   });
 
+  it("rejects a non_witness_utxo whose txid differs from the outpoint", async () => {
+    const { psbt } = mixedFixture();
+    const corrupted = corruptPrevTx(psbt);
+    const error = await thrown(() =>
+      bitcoinPrepare(corrupted, signPlan("bitcoin-psbt-every-template"), "mainnet", []),
+    );
+    expect(error.code).toBe("invalid-input");
+  });
+
   it.each([2, 3])("rejects %i OP_RETURN outputs", async (count) => {
     const psbt = psbtWithOutputs(
       Array.from({ length: count }, () => ({
@@ -613,19 +642,13 @@ describe("signBitcoinTransaction hostile", () => {
     return thrown(async () => signBitcoinTransaction(exchange, CLASSIC_INFO, prepared()));
   };
 
-  it("answers a TXMETA without tx_hash with the main transaction metadata", async () => {
-    const { exchange, writes } = scripted([
+  // Neither firmware ever sends a hashless TXMETA (main-tx meta went out in SignTx; every
+  // metadata request carries a previous/original tx hash), so the client refuses it.
+  it("rejects a TXMETA without tx_hash", async () => {
+    const error = await run([
       txRequest({ requestType: 2, details: { requestIndex: 0, extraDataLen: 0 } }),
-      txRequest({ requestType: 99 }),
     ]);
-    await thrown(async () => signBitcoinTransaction(exchange, CLASSIC_INFO, prepared()));
-    const meta = decodeMessage(writes[1]!);
-    expect(meta.type).toBe(BtcTxAckPrevMeta.typeId);
-    const value = decode(BtcTxAckPrevMeta, meta.payload);
-    const expected = prepared();
-    expect(value.tx?.inputsCount).toBe(expected.inputs.length);
-    expect(value.tx?.outputsCount).toBe(expected.outputs.length);
-    expect(value.tx?.extraDataLen).toBe(0);
+    expect(error.code).toBe("device-fault");
   });
 
   it("rejects a request for an unknown previous transaction hash", async () => {

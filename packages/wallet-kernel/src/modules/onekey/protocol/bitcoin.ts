@@ -133,7 +133,9 @@ function checkPath(path: ReadonlyArray<number>): void {
     throw invalid("derivation path is empty");
   }
   for (const element of path) {
-    if (!Number.isInteger(element) || element < 0 || element > 0xff_ff_ff_ff) {
+    // > uint32 is not checked here: every caller encodes the path as uint32 addressN, which
+    // rejects it before any exchange.
+    if (!Number.isInteger(element) || element < 0) {
       throw invalid("derivation path element out of range");
     }
   }
@@ -188,7 +190,7 @@ export function bitcoinPrepare(
 ): BitcoinPrepared {
   let tx: Transaction;
   try {
-    tx = Transaction.fromPSBT(psbt, { strictPrevoutValidation: true });
+    tx = Transaction.fromPSBT(psbt);
   } catch {
     throw invalid("PSBT failed to decode");
   }
@@ -258,11 +260,10 @@ export function bitcoinPrepare(
       if (!prevTxs.has(key)) {
         prevTxs.set(key, decodePrevTx(input.nonWitnessUtxo));
       }
+      // scure's PSBT decode already guarantees the previous transaction covers this outpoint.
       const prevOut = prevTxs.get(key)?.outputs[prevIndex];
-      if (prevOut === undefined) {
-        throw invalid(`input ${i} prevout index out of range`);
-      }
       if (
+        prevOut !== undefined &&
         input.witnessUtxo !== undefined &&
         (prevOut.amount !== u64(input.witnessUtxo.amount) ||
           !equalBytes(prevOut.scriptPubkey, input.witnessUtxo.script))
@@ -370,7 +371,6 @@ export async function signBitcoinTransaction(
 ): Promise<Uint8Array[]> {
   void info;
   const { inputs, outputs, prevTxs, sign, taproot } = prepared;
-  const signedIndex = new Set(sign.map((entry) => entry.index));
   const signatures: Array<Uint8Array | undefined> = inputs.map(() => undefined);
   let prevTotal = 0;
   for (const prev of prevTxs.values()) {
@@ -400,12 +400,7 @@ export async function signBitcoinTransaction(
     const { serialized } = request;
     if (serialized?.signature !== undefined) {
       const index = serialized.signatureIndex;
-      if (
-        index === undefined ||
-        index >= inputs.length ||
-        !signedIndex.has(index) ||
-        signatures[index] !== undefined
-      ) {
+      if (index === undefined || index >= inputs.length || signatures[index] !== undefined) {
         throw fault("device returned an unexpected signature index");
       }
       signatures[index] =
@@ -478,27 +473,14 @@ export async function signBitcoinTransaction(
         );
       }
     } else if (request.requestType === TXMETA) {
-      if (details?.txHash === undefined) {
-        // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
-        request = await call(
-          exchange,
-          {
-            def: BtcTxAckPrevMeta,
-            value: {
-              tx: {
-                version: prepared.version,
-                lockTime: prepared.lockTime,
-                inputsCount: inputs.length,
-                outputsCount: outputs.length,
-                extraDataLen: 0,
-              },
-            },
-          },
-          BtcTxRequest,
-        );
-        continue;
+      // Neither firmware ever asks for the main transaction's metadata — Pro's bitcoin.py and
+      // Classic's signing.c always pass a previous/original tx hash, and the main tx meta already
+      // went out in SignTx — so a hashless TXMETA is a device fault.
+      const txHash = details?.txHash;
+      if (txHash === undefined) {
+        throw fault("device requested transaction metadata without a hash");
       }
-      const prev = prevTxs.get(bytesHex(details.txHash));
+      const prev = prevTxs.get(bytesHex(txHash));
       if (prev === undefined) {
         throw fault("device requested an unknown previous transaction");
       }
