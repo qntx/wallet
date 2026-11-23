@@ -511,12 +511,13 @@ export const newRequestId = (random: (n: number) => Uint8Array): string => hexId
  */
 export const assertGatewayOnlyBinding = (info: NetworkInfo, binding: string): void => {
   if (info.testnet) {
-    throw new ChainError(
-      "invalid-request",
-      `only the gateway vouches for the ${binding} on ${info.id}; on a testnet a signature over another network's ${binding} could be valid there — configure a host endpoint in EngineOptions.rpc["${info.id}"]`,
-    );
+    throw new ChainError("invalid-request", gatewayOnlyBindingMessage(info, binding));
   }
 };
+
+/** The refusal {@link assertGatewayOnlyBinding} throws — shared by typed binding errors. */
+export const gatewayOnlyBindingMessage = (info: NetworkInfo, binding: string): string =>
+  `only the gateway vouches for the ${binding} on ${info.id}; on a testnet a signature over another network's ${binding} could be valid there — configure a host endpoint in EngineOptions.rpc["${info.id}"]`;
 
 const TEMPLATE_FAMILY = {
   "evm.bip44": "evm",

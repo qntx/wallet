@@ -137,6 +137,12 @@ const solanaRpc = (method: string, params: unknown[]): unknown => {
     const sigs = Array.isArray(params[0]) ? params[0] : [];
     return { context: { slot: 1 }, value: sigs.map(() => null) };
   }
+  if (method === "isBlockhashValid") {
+    return {
+      context: { slot: 1 },
+      value: params[0] === "11111111111111111111111111111111",
+    };
+  }
   if (method === "sendTransaction") {
     return RPC_SIG;
   }
@@ -511,9 +517,9 @@ const transferIx = (from: string, to: string, lamports: bigint): Instruction => 
 const DEST = "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR";
 
 /** An unsigned wire transaction the wallet's solana account is the fee payer of. */
-const solTx = (feePayer: string): Uint8Array => {
+const solTx = (feePayer: string, lifetime = "11111111111111111111111111111111"): Uint8Array => {
   const message = setTransactionMessageLifetimeUsingBlockhash(
-    { blockhash: blockhash("11111111111111111111111111111111"), lastValidBlockHeight: 1000n },
+    { blockhash: blockhash(lifetime), lastValidBlockHeight: 1000n },
     setTransactionMessageFeePayer(
       address(feePayer),
       createTransactionMessage({ version: "legacy" }),
@@ -878,6 +884,79 @@ describe("walletconnect solana", () => {
       expect(result.signature).toBe(
         getSignatureFromTransaction(getTransactionDecoder().decode(sent)),
       );
+      await r.wc.dispose();
+    },
+  );
+
+  /* A lifetime the dApp chose binds to the session's cluster before the prompt exists — the
+     request never reaches the pipeline, and nothing is signed or broadcast. */
+  it(
+    "refuses a transaction whose blockhash is not on this cluster before any prompt",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { session, live } = await established(r, client, solanaNamespaces([SOL_MAIN]));
+      const account = accountOf(session, SOL_MAIN);
+      const refused = client
+        .request({
+          topic: live.topic,
+          chainId: SOL_MAIN,
+          request: {
+            method: "solana_signTransaction",
+            params: { transaction: base64.encode(solTx(account, DEST)), pubkey: account },
+          },
+        })
+        .then(() => ({ ok: true as const }))
+        .catch((error: unknown) => ({ error: error as { code?: number } }));
+      await expect(refused).resolves.toMatchObject({ error: { code: -32_602 } });
+      expect(
+        Object.values(r.engine.requests.getState().requests).some(
+          (entry) => entry.method === "solana-sign",
+        ),
+      ).toBe(false);
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "refuses a batch and a sign-and-send whose blockhash is not on this cluster",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { session, live } = await established(r, client, solanaNamespaces([SOL_MAIN]));
+      const account = accountOf(session, SOL_MAIN);
+      solanaWires.length = 0;
+      const batch = client
+        .request({
+          topic: live.topic,
+          chainId: SOL_MAIN,
+          request: {
+            method: "solana_signAllTransactions",
+            params: {
+              transactions: [base64.encode(solTx(account)), base64.encode(solTx(account, DEST))],
+            },
+          },
+        })
+        .then(() => ({ ok: true as const }))
+        .catch((error: unknown) => ({ error: error as { code?: number } }));
+      await expect(batch).resolves.toMatchObject({ error: { code: -32_602 } });
+      const send = client
+        .request({
+          topic: live.topic,
+          chainId: SOL_MAIN,
+          request: {
+            method: "solana_signAndSendTransaction",
+            params: { transaction: base64.encode(solTx(account, DEST)), pubkey: account },
+          },
+        })
+        .then(() => ({ ok: true as const }))
+        .catch((error: unknown) => ({ error: error as { code?: number } }));
+      await expect(send).resolves.toMatchObject({ error: { code: -32_602 } });
+      expect(solanaWires).toHaveLength(0);
       await r.wc.dispose();
     },
   );

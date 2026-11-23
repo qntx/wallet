@@ -29,6 +29,7 @@ import { STAKE_ACCOUNT_BYTES, SolanaChainAdapter } from "../chains/solana.ts";
 import type { SolanaIntent, SolanaUnsignedTransaction } from "../chains/solana.ts";
 import { SOLANA_MAINNET } from "../gateway/contract/quotes.ts";
 import type { Independent, PinnedSolanaRpc, SolanaRpc } from "../networks/controller.ts";
+import type { NetworkInfo } from "../networks/registry.ts";
 import {
   collectChecks,
   exceedsNetworkCap,
@@ -61,8 +62,8 @@ import type {
 } from "./route.ts";
 import {
   accountAddressOf,
-  assertGatewayOnlyBinding,
   errorMessage,
+  gatewayOnlyBindingMessage,
   includedPoll,
   newId,
   failTx,
@@ -82,6 +83,90 @@ const str = (v: unknown, fallback = "0"): string => {
 };
 
 const solana = new SolanaChainAdapter();
+
+/** Why a message's lifetime could not be bound to the configured cluster. */
+export type SolanaBindingReason =
+  | "genesis-mismatch"
+  | "blockhash-unknown"
+  | "nonce-account-missing"
+  | "nonce-mismatch"
+  | "nonce-account-in-lookup-table"
+  | "unconfirmed"
+  | "testnet-gateway-only";
+
+/**
+ * A `solana-sign` lifetime that cannot be proven to belong to the session's cluster. `code` is
+ * `invalid-request` like every other binding refusal; `reason` names which check failed.
+ */
+export class SolanaClusterBindingError extends ChainError {
+  readonly reason: SolanaBindingReason;
+
+  constructor(reason: SolanaBindingReason, message: string) {
+    super("invalid-request", message);
+    this.name = "SolanaClusterBindingError";
+    this.reason = reason;
+  }
+}
+
+/* The recent blockhash is the chain binding of the signed bytes: when the primary is not trusted
+   configuration it has to be confirmed by a second upstream, and both endpoints' genesis must be
+   the configured cluster's — a provider on another cluster would otherwise sign a valid-looking
+   wire for the wrong chain. A wallet `build` read the blockhash at `confirmed`; `isBlockhashValid`
+   is asked at `processed`, the freshest bank, so a host a few slots behind still knows it. On a
+   host-only list (`not-needed`) the primary already is trusted configuration and nothing more is
+   needed. */
+const bindBlockhashToCluster = async (
+  info: NetworkInfo,
+  rpc: SolanaRpc,
+  independent: Independent<SolanaRpc>,
+  blockhash: string,
+): Promise<void> => {
+  if (independent.kind === "unavailable") {
+    if (info.testnet) {
+      throw new SolanaClusterBindingError(
+        "testnet-gateway-only",
+        gatewayOnlyBindingMessage(info, "recent blockhash"),
+      );
+    }
+    if ((await solana.genesisHash(rpc)) !== info.genesisHash) {
+      throw new SolanaClusterBindingError(
+        "genesis-mismatch",
+        `the endpoint serves another chain than ${info.id}`,
+      );
+    }
+  }
+  if (independent.kind === "available") {
+    if ((await solana.genesisHash(rpc)) !== info.genesisHash) {
+      throw new SolanaClusterBindingError(
+        "genesis-mismatch",
+        `the endpoint serves another chain than ${info.id}`,
+      );
+    }
+    let hostGenesis: string | undefined;
+    let hostValid: { readonly valid: boolean; readonly slot: bigint | undefined } | undefined;
+    try {
+      hostGenesis = await solana.genesisHash(independent.client);
+      hostValid = await solana.blockhashValid(independent.client, blockhash);
+    } catch {
+      throw new SolanaClusterBindingError(
+        "unconfirmed",
+        "the host endpoint could not confirm the recent blockhash",
+      );
+    }
+    if (hostGenesis !== info.genesisHash) {
+      throw new SolanaClusterBindingError(
+        "genesis-mismatch",
+        `the endpoint serves another chain than ${info.id}`,
+      );
+    }
+    if (hostValid !== undefined && !hostValid.valid) {
+      throw new SolanaClusterBindingError(
+        "blockhash-unknown",
+        "the host endpoint does not know the recent blockhash — try again",
+      );
+    }
+  }
+};
 
 /** Agave `TransactionError::AlreadyProcessed`: this exact transaction has already landed. */
 const SOLANA_HELD = /already been processed/i;
@@ -290,44 +375,8 @@ const finishPrepared = async (
   },
 ): Promise<PreparedRequest> => {
   const { account, network, from, fee, unsigned, rpc, independent, apis, intentOf } = args;
-  /* The recent blockhash is the chain binding of the signed bytes: when the primary is not
-     trusted configuration it has to be confirmed by a second upstream, and both endpoints'
-     genesis must be the configured cluster's — a provider on another cluster would otherwise
-     sign a valid-looking wire for the wrong chain. `build` read the blockhash at `confirmed`;
-     `isBlockhashValid` is asked at `processed`, the freshest bank, so a host a few slots behind
-     still knows it. */
   const info = ctx.options.networks.info(network);
-  if (independent.kind === "unavailable") {
-    assertGatewayOnlyBinding(info, "recent blockhash");
-    if ((await solana.genesisHash(rpc)) !== info.genesisHash) {
-      throw new ChainError("invalid-request", `the endpoint serves another chain than ${network}`);
-    }
-  }
-  if (independent.kind === "available") {
-    if ((await solana.genesisHash(rpc)) !== info.genesisHash) {
-      throw new ChainError("invalid-request", `the endpoint serves another chain than ${network}`);
-    }
-    let hostGenesis: string | undefined;
-    let hostValid: { readonly valid: boolean; readonly slot: bigint | undefined } | undefined;
-    try {
-      hostGenesis = await solana.genesisHash(independent.client);
-      hostValid = await solana.blockhashValid(independent.client, unsigned.blockhash);
-    } catch {
-      throw new ChainError(
-        "invalid-request",
-        "the host endpoint could not confirm the recent blockhash",
-      );
-    }
-    if (hostGenesis !== info.genesisHash) {
-      throw new ChainError("invalid-request", `the endpoint serves another chain than ${network}`);
-    }
-    if (hostValid !== undefined && !hostValid.valid) {
-      throw new ChainError(
-        "invalid-request",
-        "the host endpoint does not know the recent blockhash — try again",
-      );
-    }
-  }
+  await bindBlockhashToCluster(info, rpc, independent, unsigned.blockhash);
   const quotes = await solana.estimateFee(rpc, unsigned.writable);
   let quote = quotes.find((q) => q.tier === fee) ?? quotes[1];
   if (quote === undefined) {
@@ -890,6 +939,128 @@ export const submitDappSolana = async (
   return signature;
 };
 
+/* A dApp `solana-sign` message's lifetime — a recent blockhash or durable nonce the dApp chose —
+   is the only thing binding the signature to a cluster, and the wallet never vetted it. Proven
+   here, for every message, before anything is signed: a blockhash must live on this cluster and
+   satisfy the same corroboration a wallet send does; a durable nonce must sit in a real nonce
+   account still holding the message's value, confirmed by the second upstream where one exists.
+   On a host-only list the primary already is trusted configuration; on a mainnet with no second
+   upstream the build carries `reads-unverified` like every other gateway-bound read. */
+export const bindDappSolana = async (
+  ctx: RouteContext,
+  network: string,
+  messages: ReadonlyArray<Uint8Array>,
+): Promise<ReadonlyArray<RequestCheckCode>> => {
+  const info = ctx.options.networks.info(network);
+  const rpc = ctx.options.networks.solanaRpc(network);
+  const independent = ctx.options.networks.independentSolanaRpc(network);
+  for (const message of messages) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- each message binds in order.
+    await bindDappMessage(info, rpc, independent, message);
+  }
+  return independent.kind === "unavailable" ? ["reads-unverified"] : [];
+};
+
+/** One dApp message's lifetime, bound like {@link bindDappSolana} describes. */
+const bindDappMessage = async (
+  info: NetworkInfo,
+  rpc: SolanaRpc,
+  independent: Independent<SolanaRpc>,
+  message: Uint8Array,
+): Promise<void> => {
+  const durable = durableNonceOfMessage(new Uint8Array(message));
+  if (durable === undefined) {
+    const blockhash = getCompiledTransactionMessageDecoder().decode(message).lifetimeToken;
+    /* The blockhash came from the dApp, not this wallet's build — the primary must know it on
+       this cluster before any corroboration means anything. */
+    const primaryValid = await solana.blockhashValid(rpc, blockhash);
+    if (!primaryValid.valid) {
+      throw new SolanaClusterBindingError(
+        "blockhash-unknown",
+        "the endpoint does not know the transaction's recent blockhash",
+      );
+    }
+    await bindBlockhashToCluster(info, rpc, independent, blockhash);
+    return;
+  }
+  if (durable.account === undefined) {
+    throw new SolanaClusterBindingError(
+      "nonce-account-in-lookup-table",
+      "the nonce account resolves into a lookup table — its value cannot be verified",
+    );
+  }
+  let nonce;
+  try {
+    nonce = await solana.nonceValue(rpc, durable.account);
+  } catch (error) {
+    /* An account that is not System-owned or not decodable is not a nonce account — the same
+       refusal as one that does not exist. */
+    if (error instanceof TypeError) {
+      throw new SolanaClusterBindingError(
+        "nonce-account-missing",
+        "the transaction's nonce account is not a nonce account on this cluster",
+      );
+    }
+    throw error;
+  }
+  if (nonce.value === undefined) {
+    throw new SolanaClusterBindingError(
+      "nonce-account-missing",
+      "the transaction's nonce account is not a nonce account on this cluster",
+    );
+  }
+  if (nonce.value !== durable.value) {
+    throw new SolanaClusterBindingError(
+      "nonce-mismatch",
+      "the nonce account no longer holds the transaction's durable nonce",
+    );
+  }
+  if (independent.kind === "available") {
+    if ((await solana.genesisHash(rpc)) !== info.genesisHash) {
+      throw new SolanaClusterBindingError(
+        "genesis-mismatch",
+        `the endpoint serves another chain than ${info.id}`,
+      );
+    }
+    let hostGenesis: string | undefined;
+    let hostNonce: { readonly value: string | undefined } | undefined;
+    try {
+      hostGenesis = await solana.genesisHash(independent.client);
+      hostNonce = await solana.nonceValue(independent.client, durable.account);
+    } catch {
+      throw new SolanaClusterBindingError(
+        "unconfirmed",
+        "the host endpoint could not confirm the durable nonce",
+      );
+    }
+    if (hostGenesis !== info.genesisHash) {
+      throw new SolanaClusterBindingError(
+        "genesis-mismatch",
+        `the endpoint serves another chain than ${info.id}`,
+      );
+    }
+    if (hostNonce === undefined || hostNonce.value !== durable.value) {
+      throw new SolanaClusterBindingError(
+        "unconfirmed",
+        "the host endpoint could not confirm the durable nonce",
+      );
+    }
+  } else if (independent.kind === "unavailable") {
+    if (info.testnet) {
+      throw new SolanaClusterBindingError(
+        "testnet-gateway-only",
+        gatewayOnlyBindingMessage(info, "durable nonce"),
+      );
+    }
+    if ((await solana.genesisHash(rpc)) !== info.genesisHash) {
+      throw new SolanaClusterBindingError(
+        "genesis-mismatch",
+        `the endpoint serves another chain than ${info.id}`,
+      );
+    }
+  }
+};
+
 /**
  * What one endpoint's reads settle a poll to: an inclusion it observed, the `dropped` verdict it
  * claims — or nothing proven — plus whether the transaction can still land on its view, in which
@@ -1027,8 +1198,7 @@ const proveBlockhashDrop = async (
     status.slot >= bankFloor
   ) {
     const start = await solana.historyStart(rpc).catch(() => undefined);
-    const covered =
-      start !== undefined && start * 1000 < tx.submittedAt - SOLANA_HISTORY_SKEW_MS;
+    const covered = start !== undefined && start * 1000 < tx.submittedAt - SOLANA_HISTORY_SKEW_MS;
     return {
       poll: covered ? { kind: "ended", state: "dropped" } : undefined,
       rebroadcast: false,

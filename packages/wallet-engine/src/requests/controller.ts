@@ -1221,6 +1221,12 @@ export class RequestController extends Controller<RequestControllerState> {
               (wire) => decodeSolanaTransaction(wire, input.account.address).message,
             )
           : [];
+      /* Every lifetime the dApp chose binds to this session's cluster before the Built — and
+         with it the prompt — exists. A message that cannot be proven ends the request here. */
+      const binding =
+        input.request.kind === "transactions"
+          ? await this.options.transactions.bindDappSolana(input.network, txs)
+          : [];
       const [only] = txs;
       const intents = txs.map((tx) => solanaIntent(input.account, input.network, tx));
       const [decoded] = intents;
@@ -1251,6 +1257,7 @@ export class RequestController extends Controller<RequestControllerState> {
             ? "decode-partial"
             : undefined,
           ...(intents.some(feeExceedsLamports) ? (["fee-exceeds-amount"] as const) : []),
+          ...binding,
         ]),
         risk: mergeRisk(
           mergeRisk(
