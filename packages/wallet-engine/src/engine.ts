@@ -50,6 +50,8 @@ import type { MetaSyncConfig } from "./meta/controller.ts";
 import { resolveEns } from "./names/ens.ts";
 import type { EnsResolution } from "./names/ens.ts";
 import { NetworkController } from "./networks/controller.ts";
+import { NotificationsController } from "./notifications/controller.ts";
+import type { PushKeyStore } from "./notifications/controller.ts";
 import { parsePayment } from "./payments/parse.ts";
 import type { PaymentParse } from "./payments/parse.ts";
 import { withdrawLnurl } from "./payments/pay.ts";
@@ -134,6 +136,12 @@ export type EngineOptions = {
   readonly setTimer?: (ms: number, fn: () => void) => () => void;
   /** Kind-30078 wallet-metadata sync; absent → no wallet metadata is synced. */
   readonly metaSync?: MetaSyncConfig;
+  /**
+   * Where the notification extension reads payload keys (iOS App Group keychain, Android app
+   * storage). Absent → the extension cannot decrypt and shows the generic text; in-app
+   * `notifications.receive` still works.
+   */
+  readonly pushKeys?: PushKeyStore;
   /** Test seam — defaults to the wallet's real spark proxy. */
   readonly sparkApis?: SparkControllerOptions["spark"];
 };
@@ -236,6 +244,10 @@ export type WalletEngine = {
     "add" | "rename" | "setNote" | "remove"
   >;
   readonly history: HostController<HistoryController, "load" | "loadMore">;
+  readonly notifications: HostController<
+    NotificationsController,
+    "setToken" | "enable" | "disable" | "receive"
+  >;
   /** DApp sessions; `checkOrigin` and `invalidateOrigin` are what `createBrowserBridge` needs. */
   readonly connections: HostController<
     ConnectionController,
@@ -856,6 +868,51 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       return [];
     }
   };
+  const notifications = new NotificationsController({
+    gateway:
+      options.gateway === undefined
+        ? undefined
+        : { url: options.gateway.url, fetch: gatewayFetch(options.fetch, gateway) },
+    openStore: sessionStore,
+    random: options.random,
+    now: options.now,
+    setTimer,
+    logger: options.logger,
+    keys: options.pushKeys,
+    accounts,
+    networks,
+    transactions,
+    addresses: async (walletId, family) => {
+      // A bitcoin receive chain needs a gap-limit policy; the gateway has no watcher either.
+      if (family === "bitcoin") {
+        return [];
+      }
+      const out: string[] = [];
+      for (const group of accounts.getState().groups[walletId] ?? []) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- groups derive serially, like portfolio
+        for (const { address } of await groupAddresses(
+          { walletId, groupIndex: group.index },
+          family,
+        )) {
+          out.push(address);
+        }
+      }
+      return out;
+    },
+    reconcile: async (event) => {
+      const loaded = history.getState().groups;
+      await Promise.all([
+        ...(accounts.getState().groups[event.walletId] ?? [])
+          .filter((group) => loaded[`${event.walletId}:${group.index}`] !== undefined)
+          .map(async (group) =>
+            history.load({ walletId: event.walletId, groupIndex: group.index }),
+          ),
+        event.family === "bitcoin"
+          ? Promise.resolve()
+          : assets.refresh(event.address, event.network),
+      ]);
+    },
+  });
   const connections = new ConnectionController({
     phishing,
     setTimer,
@@ -1017,6 +1074,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     watch.lock();
     transactions.lock();
     history.lock();
+    notifications.lock();
     prices.lock();
     assets.lock();
     networks.lock();
@@ -1067,6 +1125,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         await prices.init();
         await transactions.init();
         await history.init();
+        await notifications.init();
         await requests.init();
         await connections.init();
         depositClaimer.start();
@@ -1134,6 +1193,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     transactions,
     requests,
     history,
+    notifications,
     watch: {
       add: async (input) => watch.add(input),
       rename: async (id, name) => watch.rename(id, name),

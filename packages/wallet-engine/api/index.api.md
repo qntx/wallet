@@ -1041,6 +1041,7 @@ export type EngineOptions = {
     readonly allowLocalhostOrigins?: boolean;
     readonly setTimer?: (ms: number, fn: () => void) => () => void;
     readonly metaSync?: MetaSyncConfig;
+    readonly pushKeys?: PushKeyStore;
     readonly sparkApis?: SparkControllerOptions["spark"];
 };
 
@@ -1524,6 +1525,76 @@ export type NostrSignResult = {
     readonly event: Event_2;
 };
 
+// @public
+export type NotificationEvent = {
+    readonly walletId: string;
+    readonly family: PushFamily;
+    readonly kind: PushEventKind;
+    readonly network: string;
+    readonly hash: string;
+    readonly address: string;
+    readonly observedAt: number;
+    readonly transfer?: {
+        readonly amount: string;
+        readonly decimals?: number;
+        readonly symbol?: string;
+        readonly contract?: string;
+    };
+};
+
+// @public (undocumented)
+export class NotificationsController extends Controller<NotificationsState> {
+    constructor(options: NotificationsControllerOptions);
+    // (undocumented)
+    destroy(): Promise<void>;
+    // (undocumented)
+    disable(walletId: string): Promise<void>;
+    // (undocumented)
+    enable(walletId: string): Promise<void>;
+    // (undocumented)
+    init(): Promise<void>;
+    // (undocumented)
+    lock(): void;
+    receive(message: unknown): Promise<NotificationEvent | undefined>;
+    // (undocumented)
+    setToken(platform: PushPlatform, token: string): Promise<void>;
+}
+
+// @public (undocumented)
+export type NotificationsControllerOptions = {
+    readonly gateway: {
+        readonly url: string;
+        readonly fetch: typeof globalThis.fetch;
+    } | undefined;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly random: (length: number) => Uint8Array;
+    readonly now: () => number;
+    readonly setTimer: (ms: number, fn: () => void) => () => void;
+    readonly logger: EngineLogger;
+    readonly keys: PushKeyStore | undefined;
+    readonly accounts: Pick<AccountTreeController, "getState" | "store">;
+    readonly networks: Pick<NetworkController, "enabled" | "store">;
+    readonly transactions: Pick<TransactionController, "store">;
+    readonly addresses: (walletId: string, family: PushFamily) => Promise<ReadonlyArray<string>>;
+    readonly reconcile: (event: NotificationEvent) => Promise<void>;
+};
+
+// @public (undocumented)
+export type NotificationsState = {
+    readonly status: "locked" | "ready";
+    readonly platform: PushPlatform | undefined;
+    readonly capabilities: {
+        readonly platforms: ReadonlyArray<PushPlatform>;
+        readonly families: ReadonlyArray<PushFamily>;
+    } | undefined;
+    readonly wallets: Readonly<Record<string, {
+        readonly families: Readonly<Partial<Record<PushFamily, NotificationStatus>>>;
+    }>>;
+};
+
+// @public (undocumented)
+export type NotificationStatus = "active" | "pending" | "failed";
+
 // @public (undocumented)
 type Options$1 = {
     readonly fetch: typeof globalThis.fetch;
@@ -1953,6 +2024,30 @@ export type PublicStore = {
     readonly get: (key: string) => Promise<Uint8Array | undefined>;
     readonly put: (key: string, bytes: Uint8Array) => Promise<void>;
 };
+
+// @public (undocumented)
+const PUSH_EVENT_KINDS: readonly ["received", "sent", "failed", "reverted"];
+
+// @public (undocumented)
+const PUSH_FAMILIES: readonly ["evm", "solana", "bitcoin", "tron"];
+
+// @public (undocumented)
+const PUSH_PLATFORMS: readonly ["apns", "fcm"];
+
+// @public (undocumented)
+type PushEventKind = (typeof PUSH_EVENT_KINDS)[number];
+
+// @public (undocumented)
+type PushFamily = (typeof PUSH_FAMILIES)[number];
+
+// @public
+export type PushKeyStore = {
+    readonly put: (id: string, key: Uint8Array) => Promise<void>;
+    readonly delete: (id: string) => Promise<void>;
+};
+
+// @public (undocumented)
+type PushPlatform = (typeof PUSH_PLATFORMS)[number];
 
 // @public
 export const readJson: (bytes: Uint8Array) => unknown;
@@ -3281,6 +3376,7 @@ export type WalletEngine = {
     readonly requests: HostController<RequestController, "prepare" | "approve" | "reject" | "outcome" | "signLog" | "clearSignLog">;
     readonly addressBook: HostController<AddressBookController, "add" | "rename" | "setNote" | "remove">;
     readonly history: HostController<HistoryController, "load" | "loadMore">;
+    readonly notifications: HostController<NotificationsController, "setToken" | "enable" | "disable" | "receive">;
     readonly connections: HostController<ConnectionController, "checkOrigin" | "invalidateOrigin" | "session" | "pending" | "sessionAccounts" | "previewAccounts" | "nostrIdentity" | "isEnabled" | "approveConnection" | "rejectConnection" | "revoke" | "setCurrentNetwork" | "setTronNetwork" | "activeIdentity" | "setActiveIdentity" | "nostrPolicy" | "lightningPolicy" | "establishWalletConnect" | "authorize" | "touch">;
     readonly eip1193: Pick<Eip1193Handler, "handle" | "subscribe">;
     readonly nip07: Pick<Nip07Handler, "handle">;

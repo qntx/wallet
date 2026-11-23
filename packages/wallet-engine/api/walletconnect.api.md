@@ -61,12 +61,6 @@ type AccountBalances = {
 // @public (undocumented)
 type AccountGroup = {
     readonly walletId: string;
-    readonly groupIndex: number;
-};
-
-// @public (undocumented)
-type AccountGroup_2 = {
-    readonly walletId: string;
     readonly index: number;
     readonly used?: Readonly<Record<string, boolean>>;
     readonly errors?: Readonly<Record<string, string>>;
@@ -74,6 +68,12 @@ type AccountGroup_2 = {
     readonly hidden: boolean;
     readonly boundPubkey?: string;
     readonly updatedAt: number;
+};
+
+// @public (undocumented)
+type AccountGroup_2 = {
+    readonly walletId: string;
+    readonly groupIndex: number;
 };
 
 // @public (undocumented)
@@ -151,7 +151,7 @@ type AccountTreeState = {
         readonly name?: string;
         readonly updatedAt: number;
     }>;
-    readonly groups: Readonly<Record<string, ReadonlyArray<AccountGroup_2>>>;
+    readonly groups: Readonly<Record<string, ReadonlyArray<AccountGroup>>>;
     readonly selected: {
         readonly walletId: string;
         readonly groupIndex: number;
@@ -747,11 +747,11 @@ type ConnectionControllerOptions = {
     readonly now: () => number;
     readonly logger: EngineLogger;
     readonly allowLocalhost: boolean;
-    readonly selectedGroup: () => AccountGroup | undefined;
-    readonly evmAddress: (group: AccountGroup, network: string) => Promise<string>;
-    readonly solanaAddress: (group: AccountGroup, network: string) => Promise<string>;
-    readonly tronAddress: (group: AccountGroup, network: string) => Promise<string>;
-    readonly bitcoinAddress: (group: AccountGroup, network: string, purpose: BitcoinPurpose) => Promise<string>;
+    readonly selectedGroup: () => AccountGroup_2 | undefined;
+    readonly evmAddress: (group: AccountGroup_2, network: string) => Promise<string>;
+    readonly solanaAddress: (group: AccountGroup_2, network: string) => Promise<string>;
+    readonly tronAddress: (group: AccountGroup_2, network: string) => Promise<string>;
+    readonly bitcoinAddress: (group: AccountGroup_2, network: string, purpose: BitcoinPurpose) => Promise<string>;
     readonly enabledNetworks: () => ReadonlyArray<string>;
     readonly nostrPubkey: (ref: NostrKeyRef) => Promise<string>;
     readonly invalidate: (origin: string) => void;
@@ -784,7 +784,7 @@ type ConnectionSession = {
     readonly id: string;
     readonly origin: ConnectionOrigin;
     readonly scopes: Readonly<Record<string, ConnectionScope>>;
-    readonly group?: AccountGroup;
+    readonly group?: AccountGroup_2;
     readonly identity?: NostrKeyRef;
     readonly currentNetwork: string;
     readonly tronNetwork?: string;
@@ -1375,6 +1375,76 @@ type NostrSignResult = {
     readonly event: Event_2;
 };
 
+// @public
+type NotificationEvent = {
+    readonly walletId: string;
+    readonly family: PushFamily;
+    readonly kind: PushEventKind;
+    readonly network: string;
+    readonly hash: string;
+    readonly address: string;
+    readonly observedAt: number;
+    readonly transfer?: {
+        readonly amount: string;
+        readonly decimals?: number;
+        readonly symbol?: string;
+        readonly contract?: string;
+    };
+};
+
+// @public (undocumented)
+class NotificationsController extends Controller<NotificationsState> {
+    constructor(options: NotificationsControllerOptions);
+    // (undocumented)
+    destroy(): Promise<void>;
+    // (undocumented)
+    disable(walletId: string): Promise<void>;
+    // (undocumented)
+    enable(walletId: string): Promise<void>;
+    // (undocumented)
+    init(): Promise<void>;
+    // (undocumented)
+    lock(): void;
+    receive(message: unknown): Promise<NotificationEvent | undefined>;
+    // (undocumented)
+    setToken(platform: PushPlatform, token: string): Promise<void>;
+}
+
+// @public (undocumented)
+type NotificationsControllerOptions = {
+    readonly gateway: {
+        readonly url: string;
+        readonly fetch: typeof globalThis.fetch;
+    } | undefined;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly random: (length: number) => Uint8Array;
+    readonly now: () => number;
+    readonly setTimer: (ms: number, fn: () => void) => () => void;
+    readonly logger: EngineLogger;
+    readonly keys: PushKeyStore | undefined;
+    readonly accounts: Pick<AccountTreeController, "getState" | "store">;
+    readonly networks: Pick<NetworkController, "enabled" | "store">;
+    readonly transactions: Pick<TransactionController, "store">;
+    readonly addresses: (walletId: string, family: PushFamily) => Promise<ReadonlyArray<string>>;
+    readonly reconcile: (event: NotificationEvent) => Promise<void>;
+};
+
+// @public (undocumented)
+type NotificationsState = {
+    readonly status: "locked" | "ready";
+    readonly platform: PushPlatform | undefined;
+    readonly capabilities: {
+        readonly platforms: ReadonlyArray<PushPlatform>;
+        readonly families: ReadonlyArray<PushFamily>;
+    } | undefined;
+    readonly wallets: Readonly<Record<string, {
+        readonly families: Readonly<Partial<Record<PushFamily, NotificationStatus>>>;
+    }>>;
+};
+
+// @public (undocumented)
+type NotificationStatus = "active" | "pending" | "failed";
+
 // @public (undocumented)
 type Options$1 = {
     readonly fetch: typeof globalThis.fetch;
@@ -1743,6 +1813,30 @@ type PublicStore = {
     readonly put: (key: string, bytes: Uint8Array) => Promise<void>;
 };
 
+// @public (undocumented)
+const PUSH_EVENT_KINDS: readonly ["received", "sent", "failed", "reverted"];
+
+// @public (undocumented)
+const PUSH_FAMILIES: readonly ["evm", "solana", "bitcoin", "tron"];
+
+// @public (undocumented)
+const PUSH_PLATFORMS: readonly ["apns", "fcm"];
+
+// @public (undocumented)
+type PushEventKind = (typeof PUSH_EVENT_KINDS)[number];
+
+// @public (undocumented)
+type PushFamily = (typeof PUSH_FAMILIES)[number];
+
+// @public
+type PushKeyStore = {
+    readonly put: (id: string, key: Uint8Array) => Promise<void>;
+    readonly delete: (id: string) => Promise<void>;
+};
+
+// @public (undocumented)
+type PushPlatform = (typeof PUSH_PLATFORMS)[number];
+
 // @public
 type ReadonlyStore<S> = Pick<StoreApi<S>, "getState" | "getInitialState" | "subscribe">;
 
@@ -1869,7 +1963,7 @@ type SendParams = {
 
 // @public
 type SessionAccounts = {
-    readonly group: AccountGroup;
+    readonly group: AccountGroup_2;
     readonly addresses: ReadonlyArray<string>;
 };
 
@@ -3079,6 +3173,7 @@ type WalletEngine = {
     readonly requests: HostController<RequestController, "prepare" | "approve" | "reject" | "outcome" | "signLog" | "clearSignLog">;
     readonly addressBook: HostController<AddressBookController, "add" | "rename" | "setNote" | "remove">;
     readonly history: HostController<HistoryController, "load" | "loadMore">;
+    readonly notifications: HostController<NotificationsController, "setToken" | "enable" | "disable" | "receive">;
     readonly connections: HostController<ConnectionController, "checkOrigin" | "invalidateOrigin" | "session" | "pending" | "sessionAccounts" | "previewAccounts" | "nostrIdentity" | "isEnabled" | "approveConnection" | "rejectConnection" | "revoke" | "setCurrentNetwork" | "setTronNetwork" | "activeIdentity" | "setActiveIdentity" | "nostrPolicy" | "lightningPolicy" | "establishWalletConnect" | "authorize" | "touch">;
     readonly eip1193: Pick<Eip1193Handler, "handle" | "subscribe">;
     readonly nip07: Pick<Nip07Handler, "handle">;

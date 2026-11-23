@@ -78,7 +78,8 @@ const ENTRIES: ReadonlyArray<Entry> = [
     source: "src/index.ts",
     /* 139 kB with the TRON family and its dApp provider, the extra EVM fee models, the CCTP
        deposit and the nonce/tracking fixes. */
-    budget: 144 * 1024,
+    /* measured 149071 B gzipped — the notifications controller adds the reconcile loop. */
+    budget: 146 * 1024,
     external: true,
     forbidden: [
       "@nktkas/hyperliquid",
