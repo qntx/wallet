@@ -551,7 +551,7 @@ const otherBlock = (w: World & { api: TronApi }): TronApi => ({
 describe("cross-check and tracking", () => {
   it("refuses when the endpoints disagree on the reference block", async () => {
     const w = world();
-    w.independent = { kind: "available", client: otherBlock(w) };
+    w.independent = { kind: "available", source: "host", client: otherBlock(w) };
     await expect(
       prepareTronStake(
         ctx(w).ctx,

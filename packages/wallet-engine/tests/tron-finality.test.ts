@@ -326,7 +326,7 @@ describe("pollTron", () => {
     const e = env({ solidTime: 1_060_001 });
     const ie = env({ solidTime: 1_060_001 });
     const answer = await pollTron(
-      ctx(e, { kind: "available", client: apiOf(ie) }),
+      ctx(e, { kind: "available", source: "host", client: apiOf(ie) }),
       tx(),
       new Map(),
     );
@@ -338,7 +338,7 @@ describe("pollTron", () => {
     const e = env({ solidTime: 1_060_001 });
     const ie = env({ solidTime: 1_060_000 }); // not yet past expiration
     const answer = await pollTron(
-      ctx(e, { kind: "available", client: apiOf(ie) }),
+      ctx(e, { kind: "available", source: "host", client: apiOf(ie) }),
       tx(),
       new Map(),
     );
@@ -351,7 +351,7 @@ describe("pollTron", () => {
     const e = env({ solidTime: 1_060_001 });
     const ie = env({ solidTime: 1_060_001, solidInfo: info() });
     const answer = await pollTron(
-      ctx(e, { kind: "available", client: apiOf(ie) }),
+      ctx(e, { kind: "available", source: "host", client: apiOf(ie) }),
       tx(),
       new Map(),
     );
@@ -364,7 +364,11 @@ describe("pollTron", () => {
     const broken: TronApi = {
       post: async () => Promise.reject(new Error("endpoint down")),
     };
-    const answer = await pollTron(ctx(e, { kind: "available", client: broken }), tx(), new Map());
+    const answer = await pollTron(
+      ctx(e, { kind: "available", source: "host", client: broken }),
+      tx(),
+      new Map(),
+    );
     expect(answer).toBeUndefined();
     expect(e.broadcasts).toHaveLength(0);
   });

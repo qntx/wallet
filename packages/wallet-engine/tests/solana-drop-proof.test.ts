@@ -522,7 +522,7 @@ describe("with a host endpoint configured", () => {
   it("a host endpoint agreeing on the drop proves it in one poll", async () => {
     const w = world();
     const host = hostApi(dropNode());
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     const answer1 = await pollSolana(ctx(w, independent), tx(), ev());
     expect(answer1).toStrictEqual({ kind: "ended", state: "dropped" });
     // The host ran the whole proof too: tip, validity, status.
@@ -532,7 +532,7 @@ describe("with a host endpoint configured", () => {
   it("a host endpoint that knows the transaction lands the row instead", async () => {
     const w = world();
     const host = hostApi(dropNode({ entry: FINALIZED_ENTRY }));
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     const answer1 = await pollSolana(ctx(w, independent), tx(), ev());
     expect(answer1).toStrictEqual({
       kind: "included",
@@ -545,21 +545,21 @@ describe("with a host endpoint configured", () => {
   it("a host whose blockhash is still valid keeps the transaction submitted", async () => {
     const w = world();
     const host = hostApi(dropNode({ blockhashAlive: true }));
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     await expect(pollSolana(ctx(w, independent), tx(), ev())).resolves.toBeUndefined();
   });
 
   it("a host read failure keeps the transaction submitted", async () => {
     const w = world();
     const host = hostApi(dropNode({ failing: new Set(["isBlockhashValid"]) }));
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     await expect(pollSolana(ctx(w, independent), tx(), ev())).resolves.toBeUndefined();
   });
 
   it("the host sees the durable-nonce drop proof in one poll", async () => {
     const w = world();
     const host = hostApi(dropNode());
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     const answer1 = await pollSolana(ctx(w, independent), durableTx(), ev());
     expect(answer1).toStrictEqual({ kind: "ended", state: "dropped" });
     // Nonce account, status, then the nonce account's own history — the same reads the
@@ -586,7 +586,7 @@ describe("with a host endpoint configured", () => {
         ],
       }),
     );
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     const answer1 = await pollSolana(ctx(w, independent), durableTx(), ev());
     expect(answer1).toStrictEqual({
       kind: "included",
@@ -601,7 +601,7 @@ describe("with a host endpoint configured", () => {
     const host = hostApi(
       dropNode({ history: [{ ...HISTORY_BEFORE_SUBMISSION, blockTime: 999_999 }] }),
     );
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     await expect(pollSolana(ctx(w, independent), durableTx(), ev())).resolves.toBeUndefined();
   });
 
@@ -609,7 +609,7 @@ describe("with a host endpoint configured", () => {
     const w = world();
     w.nodes.a.statusSlot = 4999; // the status answer predates the finalized nonce read's slot
     const host = hostApi(dropNode({ statusSlot: 4999 }));
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     await expect(pollSolana(ctx(w, independent), durableTx(), ev())).resolves.toBeUndefined();
     // The primary never claimed the drop — the host is never asked, and nothing went out again:
     // the nonce may already be consumed.

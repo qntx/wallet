@@ -138,11 +138,11 @@ const paramsEqual = (a: TronChainParams, b: TronChainParams): boolean =>
 
 /**
  * The independent-endpoint cross-check (invariant 2): the reference block id — the chain binding —
- * must be confirmed by the host endpoint when there is one, and its read failure is refused too.
- * Without a host endpoint the shared rule decides: a testnet prepare is refused, a mainnet prepare
- * proceeds flagged `reads-unverified`. The fee-model chain parameters and `extra` (recipient
- * existence, energy estimate) share the failure umbrella: a disagreement refuses the prepare, any
- * other read failure degrades to a `reads-unverified` flag.
+ * must be confirmed by a second upstream when there is one, and its read failure is refused too.
+ * Without one the shared rule decides: a testnet prepare is refused, a mainnet prepare proceeds
+ * flagged `reads-unverified`. The fee-model chain parameters and `extra` (recipient existence,
+ * energy estimate) share the failure umbrella: a disagreement refuses the prepare, any other read
+ * failure degrades to a `reads-unverified` flag.
  */
 const crossCheckTron = async (
   info: NetworkInfo,
@@ -189,11 +189,11 @@ const crossCheckTron = async (
 };
 
 /**
- * The solidified head from one pinned upstream, anchored to the configured chain. When the gateway
- * may be answering — `independent` anything but `not-needed`, since a host primary is trusted
- * configuration — the same upstream's block 0 must be the network's genesis, and an `available`
- * host endpoint's block 0 is checked the same way: a provider answering for another chain would
- * otherwise feed a valid-looking reference block from the wrong network.
+ * The solidified head from one pinned upstream, anchored to the configured chain. When the primary
+ * may be something other than trusted configuration — `independent` anything but `not-needed`,
+ * since a host-only list is already trusted — the same upstream's block 0 must be the network's
+ * genesis, and an `available` corroborator's block 0 is checked the same way: a provider answering
+ * for another chain would otherwise feed a valid-looking reference block from the wrong network.
  */
 const anchoredSolidHead = async (
   ctx: RouteContext,

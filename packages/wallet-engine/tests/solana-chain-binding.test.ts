@@ -155,7 +155,7 @@ const world = (over: Partial<World> = {}): World & { api: SolanaRpc; hostApi: So
 };
 
 const withHost = (w: World & { hostApi: SolanaRpc }): void => {
-  w.independent = { kind: "available", client: w.hostApi };
+  w.independent = { kind: "available", source: "host", client: w.hostApi };
 };
 
 const DEVNET = { id: NET, genesisHash: GENESIS, testnet: true } as const;

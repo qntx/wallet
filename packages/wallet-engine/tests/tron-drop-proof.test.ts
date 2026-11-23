@@ -362,7 +362,7 @@ describe("with a host endpoint configured", () => {
     const w = world();
     w.nodes.a.solidTime = EXPIRATION + 1;
     const host = hostApi(node({ solidTime: EXPIRATION + 1, solidInfo: info() }));
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     const c = ctx(w, independent);
     await expect(polls(c, tx(), ev(), { t: 1_000_000 }, 3)).resolves.toBeUndefined();
   });
@@ -371,7 +371,7 @@ describe("with a host endpoint configured", () => {
     const w = world();
     w.nodes.a.solidTime = EXPIRATION + 1;
     const host = hostApi(node({ solidTime: EXPIRATION + 1 }));
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     const answer1 = await pollTron(ctx(w, independent), tx(), ev());
     expect(answer1).toStrictEqual({ kind: "ended", state: "dropped" });
   });
@@ -380,7 +380,7 @@ describe("with a host endpoint configured", () => {
     const w = world();
     w.nodes.a.solidTime = EXPIRATION + 1;
     const host = hostApi(node({ solidTime: EXPIRATION }));
-    const independent = { kind: "available", client: host.api };
+    const independent = { kind: "available", source: "host", client: host.api };
     await expect(pollTron(ctx(w, independent), tx(), ev())).resolves.toBeUndefined();
   });
 });
@@ -438,7 +438,7 @@ describe("a reorged answer must be proven the same way", () => {
         return answer(node({ fullHead: 95 }), path, body as Record<string, unknown>);
       },
     };
-    const independent = { kind: "available", client: host };
+    const independent = { kind: "available", source: "host", client: host };
     const answer1 = await pollTron(ctx(w, independent), tx({ ...included }), ev());
     expect(answer1).toStrictEqual({ kind: "reorged" });
   });
@@ -456,7 +456,7 @@ describe("a reorged answer must be proven the same way", () => {
         );
       },
     };
-    const independent = { kind: "available", client: host };
+    const independent = { kind: "available", source: "host", client: host };
     await expect(pollTron(ctx(w, independent), tx({ ...included }), ev())).resolves.toBeUndefined();
   });
 });

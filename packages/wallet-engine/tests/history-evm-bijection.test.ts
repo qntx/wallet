@@ -131,7 +131,7 @@ const verifiedStream = (options: { items: HistoryItem[]; answers: Record<string,
       gateway: { url: "https://gateway.test", fetch },
       networks: {
         client: () => rpc,
-        independentClient: () => ({ kind: "available", client: rpc }),
+        independentClient: () => ({ kind: "available", source: "host", client: rpc }),
       },
       setTimer: () => () => {},
     } as never,

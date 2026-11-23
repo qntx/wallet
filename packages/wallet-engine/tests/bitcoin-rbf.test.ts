@@ -89,7 +89,7 @@ let route = createBitcoinRoute();
 let independentMode:
   | { kind: "not-needed" }
   | { kind: "unavailable" }
-  | { kind: "available"; client: typeof esploraStub } = { kind: "not-needed" };
+  | { kind: "available"; source: "host"; client: typeof esploraStub } = { kind: "not-needed" };
 let id = 0;
 const nextId = (): string => {
   id += 1;
@@ -442,7 +442,7 @@ describe("bitcoin rbf", () => {
     it("cpfp records fee-above-network past 2x the independent fastest estimate", async () => {
       const c = ctx();
       const parent = await send(c);
-      independentMode = { kind: "available", client: independentFees(5) };
+      independentMode = { kind: "available", source: "host", client: independentFees(5) };
       const high = await route.prepareCpfp(c, parent, 11, "req-high");
       expect(high.checks).toContain("fee-above-network");
       high.release();
@@ -490,7 +490,7 @@ describe("bitcoin rbf", () => {
     it("a replacement's fee floor applies after the independent merge", async () => {
       const c = ctx();
       const original = await send(c);
-      independentMode = { kind: "available", client: independentFees(1) };
+      independentMode = { kind: "available", source: "host", client: independentFees(1) };
       const prepared = await route.prepareReplace(c, original, "speed-up", "req-1");
       expect(prepared.checks).toContain("fee-mismatch");
       const bumped = await prepared.submit(verify, () => undefined);

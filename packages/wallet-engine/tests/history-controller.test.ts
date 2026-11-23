@@ -142,9 +142,10 @@ const make = (options: {
             ? [SOL_NET]
             : [],
       client: () => client,
+      gatewayFirst: () => options.evmIndependent !== "not-needed",
       independentClient: () =>
         options.evmIndependent === "available"
-          ? { kind: "available", client }
+          ? { kind: "available", source: "host", client }
           : { kind: options.evmIndependent ?? "unavailable" },
       independentSolanaRpc: () => options.solanaIndependent ?? { kind: "unavailable" },
       independentEsplora: () => ({ kind: "unavailable" }),
@@ -507,7 +508,7 @@ describe("HistoryController", () => {
     const trusted = make({
       solana: true,
       solanaRpc: rpc,
-      solanaIndependent: { kind: "available", client: rpc },
+      solanaIndependent: { kind: "available", source: "host", client: rpc },
     });
     await trusted.controller.init();
     await trusted.controller.load(GROUP);

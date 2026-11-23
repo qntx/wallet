@@ -203,7 +203,7 @@ describe("evmHistoryStream verification", () => {
       network: "eip155:1",
       page: ETH_PAGE,
       client: rpcClient("eip155:1", primaryCalls),
-      independent: { kind: "available", client: rpcClient("eip155:1", hostCalls) },
+      independent: { kind: "available", source: "host", client: rpcClient("eip155:1", hostCalls) },
     });
     await s.next();
     expect(hostCalls.length).toBeGreaterThan(0);

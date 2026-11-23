@@ -545,7 +545,7 @@ describe("prepareTron", () => {
   it("cross-checks the reference block and chain parameters on the independent endpoint", async () => {
     const calls: string[] = [];
     const w = world({
-      independent: { kind: "available", client: independentApi({ calls }) },
+      independent: { kind: "available", source: "host", client: independentApi({ calls }) },
       accounts: new Map([
         [FROM, { address: FROM, balance: 100_000_000 }],
         [TO, { address: TO, balance: 0 }],
@@ -561,6 +561,7 @@ describe("prepareTron", () => {
     const w = world({
       independent: {
         kind: "available",
+        source: "host",
         client: independentApi({ blockId: "ff".repeat(32), account: {} }),
       },
     });
@@ -571,6 +572,7 @@ describe("prepareTron", () => {
     const w = world({
       independent: {
         kind: "available",
+        source: "host",
         client: independentApi({
           account: {},
           params: {
@@ -591,6 +593,7 @@ describe("prepareTron", () => {
     const w = world({
       independent: {
         kind: "available",
+        source: "host",
         client: independentApi({
           account: {},
           params: {
@@ -611,6 +614,7 @@ describe("prepareTron", () => {
     const w = world({
       independent: {
         kind: "available",
+        source: "host",
         client: { post: async () => Promise.reject(new TypeError("fetch failed")) },
       },
     });
@@ -624,6 +628,7 @@ describe("prepareTron", () => {
     const w = world({
       independent: {
         kind: "available",
+        source: "host",
         client: independentApi({
           reject: new Set(["/wallet/getchainparameters", "/wallet/getaccount"]),
         }),
@@ -645,6 +650,7 @@ describe("prepareTron", () => {
     const w = world({
       independent: {
         kind: "available",
+        source: "host",
         client: independentApi({
           trigger: { result: { result: true }, energy_used: 20_000, energy_penalty: 0 },
         }),
@@ -663,7 +669,7 @@ describe("prepareTron", () => {
 
   it("treats the recipient as unactivated when the independent endpoint says absent", async () => {
     const w = world({
-      independent: { kind: "available", client: independentApi({ account: {} }) },
+      independent: { kind: "available", source: "host", client: independentApi({ account: {} }) },
     });
     const prepared = await prepareTron(ctx(w).ctx, params({ amount: 3_000_000n }));
     expect(prepared.tronFee?.activation).toBeDefined();
@@ -676,6 +682,7 @@ describe("prepareTron", () => {
       accounts: new Map([[FROM, { address: FROM, balance: 100_000_000 }]]),
       independent: {
         kind: "available",
+        source: "host",
         client: independentApi({ account: { address: TO } }),
       },
     });

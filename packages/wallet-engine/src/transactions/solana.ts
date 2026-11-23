@@ -290,11 +290,12 @@ const finishPrepared = async (
   },
 ): Promise<PreparedRequest> => {
   const { account, network, from, fee, unsigned, rpc, independent, apis, intentOf } = args;
-  /* The recent blockhash is the chain binding of the signed bytes: when the gateway may be
-     answering it has to be confirmed by a host endpoint, and both endpoints' genesis must be the
-     configured cluster's — a provider on another cluster would otherwise sign a valid-looking
-     wire for the wrong chain. `build` read the blockhash at `confirmed`; `isBlockhashValid` is
-     asked at `processed`, the freshest bank, so a host a few slots behind still knows it. */
+  /* The recent blockhash is the chain binding of the signed bytes: when the primary is not
+     trusted configuration it has to be confirmed by a second upstream, and both endpoints'
+     genesis must be the configured cluster's — a provider on another cluster would otherwise
+     sign a valid-looking wire for the wrong chain. `build` read the blockhash at `confirmed`;
+     `isBlockhashValid` is asked at `processed`, the freshest bank, so a host a few slots behind
+     still knows it. */
   const info = ctx.options.networks.info(network);
   if (independent.kind === "unavailable") {
     assertGatewayOnlyBinding(info, "recent blockhash");

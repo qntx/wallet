@@ -357,9 +357,25 @@ describe("independent clients", () => {
     n.lock();
     expect(n.independentSolanaRpc(DEVNET)).toStrictEqual({ kind: "not-needed" });
     await n.init();
-    await n.addRpc(SEPOLIA, "https://custom.test/rpc");
-    expect(n.independentClient(SEPOLIA)).toStrictEqual({ kind: "not-needed" });
     expect(controller(w).n.independentEsplora(SIGNET)).toStrictEqual({ kind: "not-needed" });
+  });
+
+  it("a custom endpoint never disables the cross-check", async () => {
+    const w = world();
+    const { n } = controller(w);
+    await n.init();
+    await n.addRpc(SEPOLIA, "https://custom.test/rpc");
+    // Host endpoints configured: they corroborate the custom endpoint's reads.
+    const independent = n.independentClient(SEPOLIA);
+    expect(independent).toMatchObject({ kind: "available", source: "host" });
+    await available(independent).getChainId();
+    expect(w.hostCalls.at(-1)?.url).toBe(`${HOST}/evm`);
+    // A custom endpoint on a network without host endpoints corroborates on the gateway.
+    const { n: hostless } = controller(w, { rpc: {} });
+    await hostless.init();
+    await hostless.addRpc(SEPOLIA, "https://custom.test/rpc");
+    const viaGateway = hostless.independentClient(SEPOLIA);
+    expect(viaGateway).toMatchObject({ kind: "available", source: "gateway" });
   });
 
   it("are unavailable when a gateway-served network has no host endpoint", async () => {

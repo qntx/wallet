@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { BUILT_IN_NETWORKS } from "@qntx/wallet-chains/networks";
 
 import { NetworkController } from "../src/networks/controller.ts";
+import type { Independent } from "../src/networks/controller.ts";
 import type { FeeModel, NetworkInfo } from "../src/networks/registry.ts";
 import {
   BITCOIN_NETWORKS,
@@ -324,5 +325,157 @@ describe("NetworkController", () => {
     });
     await n.init();
     expect(n.endpoints("eip155:1")).toStrictEqual(["https://host.example"]);
+  });
+});
+
+describe("a custom endpoint is never its own corroborator", () => {
+  const GATEWAY = "https://gateway.test";
+  const NILE = "tron:3448148188";
+  const NILE_GENESIS = "0000000000000000d698d4192c56cb6be724a558448e2684802de4d6cd8690dc";
+  const SOL_CUSTOM = "https://sol-custom.example";
+  const TRON_CUSTOM = "https://tron-custom.example";
+  const SOL_HOST = "https://sol-host.example";
+
+  type Seen = { readonly url: string; readonly method: string; readonly clientId: string | null };
+
+  const available = <T>(independent: Independent<T>): T => {
+    if (independent.kind !== "available") {
+      throw new Error(`expected an available independent, got ${independent.kind}`);
+    }
+    return independent.client;
+  };
+
+  /* A fetch that answers the served-networks list, the custom endpoints' add-time probes, and
+     the corroborator's calls — recording the URL, the JSON-RPC method and the client id each
+     saw. */
+  const rig = async (options: {
+    served: ReadonlyArray<string>;
+    rpc?: Readonly<Record<string, ReadonlyArray<string>>>;
+    gateway?: boolean;
+  }) => {
+    const seen: Seen[] = [];
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      await Promise.resolve();
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const base = url.endsWith("/") ? url.slice(0, -1) : url;
+      if (url === `${GATEWAY}/v1/networks`) {
+        return Response.json({ networks: options.served });
+      }
+      const body =
+        init?.body === undefined
+          ? undefined
+          : (JSON.parse(String(init.body)) as { method?: string });
+      seen.push({
+        url,
+        method: body?.method ?? "",
+        clientId: new Headers(init?.headers).get("x-client-id"),
+      });
+      if (base === SOL_CUSTOM || base === SOL_HOST || base === `${GATEWAY}/v1/rpc/${DEVNET}`) {
+        return Response.json({ jsonrpc: "2.0", id: 1, result: DEVNET_GENESIS });
+      }
+      if (
+        base === `${TRON_CUSTOM}/wallet/getblockbynum` ||
+        base === `${GATEWAY}/v1/tron/${NILE}/wallet/getblockbynum`
+      ) {
+        return Response.json({ blockID: NILE_GENESIS });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    };
+    const networks = new NetworkController({
+      ...idleNetworkDeps,
+      fetch,
+      rpc: options.rpc ?? {},
+      openStore,
+      logger,
+      ...(options.gateway === false
+        ? {}
+        : {
+            gateway: {
+              url: GATEWAY,
+              clientIds: { evm: "e", solana: "s", bitcoin: "b", tron: "t", service: "svc" },
+            },
+          }),
+    });
+    await networks.init();
+    return { networks, seen };
+  };
+
+  it("a custom endpoint is corroborated by the host endpoint, never by itself", async () => {
+    const { networks, seen } = await rig({
+      served: [DEVNET, NILE],
+      rpc: { [DEVNET]: [SOL_HOST] },
+    });
+    await networks.addRpc(DEVNET, SOL_CUSTOM);
+    const independent = networks.independentSolanaRpc(DEVNET);
+    expect(independent).toMatchObject({ kind: "available", source: "host" });
+    await expect(available(independent).call("getGenesisHash", [])).resolves.toBe(DEVNET_GENESIS);
+    // The corroborating read went to the host URL on the plain fetch — no client id.
+    expect(seen.at(-1)).toStrictEqual({
+      url: SOL_HOST,
+      method: "getGenesisHash",
+      clientId: null,
+    });
+    // The primary reads still belong to the custom endpoint alone.
+    expect(networks.endpoints(DEVNET)).toStrictEqual([SOL_CUSTOM, SOL_HOST]);
+  });
+
+  it("a custom endpoint on a host-less network is corroborated by the gateway it bypassed", async () => {
+    const { networks, seen } = await rig({ served: [DEVNET, NILE] });
+    await networks.addRpc(DEVNET, SOL_CUSTOM);
+    await networks.addRpc(NILE, TRON_CUSTOM);
+    const solana = networks.independentSolanaRpc(DEVNET);
+    const tron = networks.independentTronApi(NILE);
+    expect(solana).toMatchObject({ kind: "available", source: "gateway" });
+    expect(tron).toMatchObject({ kind: "available", source: "gateway" });
+    await available(solana).call("getGenesisHash", []);
+    await available(tron).post("/wallet/getblockbynum", { num: 0 });
+    expect(seen.at(-2)).toStrictEqual({
+      url: `${GATEWAY}/v1/rpc/${DEVNET}`,
+      method: "getGenesisHash",
+      clientId: "s",
+    });
+    expect(seen.at(-1)).toStrictEqual({
+      url: `${GATEWAY}/v1/tron/${NILE}/wallet/getblockbynum`,
+      method: "",
+      clientId: "t",
+    });
+    expect(networks.endpoints(DEVNET)).toStrictEqual([SOL_CUSTOM]);
+    expect(networks.endpoints(NILE)).toStrictEqual([TRON_CUSTOM]);
+  });
+
+  it("a custom endpoint with neither host nor gateway leaves the cross-check unavailable", async () => {
+    const { networks } = await rig({ served: [] });
+    await networks.addRpc(DEVNET, SOL_CUSTOM);
+    await networks.addRpc(NILE, TRON_CUSTOM);
+    expect(networks.independentSolanaRpc(DEVNET).kind).toBe("unavailable");
+    expect(networks.independentTronApi(NILE).kind).toBe("unavailable");
+  });
+
+  it("without a gateway a custom endpoint corroborates on the host or stays unavailable", async () => {
+    const { networks } = await rig({
+      served: [],
+      gateway: false,
+      rpc: { [DEVNET]: [SOL_HOST] },
+    });
+    expect(networks.independentSolanaRpc(DEVNET).kind).toBe("not-needed");
+    await networks.addRpc(DEVNET, SOL_CUSTOM);
+    expect(networks.independentSolanaRpc(DEVNET)).toMatchObject({
+      kind: "available",
+      source: "host",
+    });
+
+    const hostless = await rig({ served: [], gateway: false });
+    await hostless.networks.addRpc(DEVNET, SOL_CUSTOM);
+    expect(hostless.networks.independentSolanaRpc(DEVNET).kind).toBe("unavailable");
+  });
+
+  it("a gateway-first network still corroborates on the host or stays unavailable", async () => {
+    const { networks } = await rig({ served: [DEVNET], rpc: { [DEVNET]: [SOL_HOST] } });
+    expect(networks.independentSolanaRpc(DEVNET)).toMatchObject({
+      kind: "available",
+      source: "host",
+    });
+    const hostless = await rig({ served: [DEVNET] });
+    expect(hostless.networks.independentSolanaRpc(DEVNET).kind).toBe("unavailable");
   });
 });
