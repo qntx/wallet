@@ -26,7 +26,7 @@ import type { WalletInfo } from "../protocol/decode.ts";
 import { decode } from "../protocol/decode.ts";
 import { shortId } from "../protocol/identity.ts";
 import { ACCESS_LIMITS } from "../protocol/status.ts";
-import type { CardWalletBody, CardWalletHeader } from "../record.ts";
+import type { CardWalletBody, CardWalletHeader, CardWalletNode } from "../record.ts";
 import { parseCardWalletHeader } from "../record.ts";
 import type { PendingInput, PendingTap, StepOutcome, TapSession } from "../tap.ts";
 // oxlint-disable typescript/require-await -- op bodies are async generators whose own code
@@ -303,27 +303,34 @@ export const fetchNodes = async (
 ): Promise<void> => {
   const room = Math.floor((plan - tap.cost() - PLAN_MARGIN_MS) / priceOf("public-key"));
   const batch = paths.slice(0, Math.max(0, room));
+  const staged = {
+    nodes: {} as Record<string, CardWalletNode>,
+    ed25519: {} as Record<string, string>,
+  };
   for (const needed of batch) {
     const key = pathString(needed.path);
     // oxlint-disable-next-line eslint/no-await-in-loop -- PUBLIC_KEYs are strictly sequential
     const data = await tap.send(cmd.publicKey(needed.curve, needed.path));
     if (needed.curve === "secp256k1") {
       const { publicKey, chainCode } = decode.publicKey(data);
-      const node = { key: bytesToHex(publicKey), chainCode: bytesToHex(chainCode) };
-      tap.update((d) => {
-        if (d.body !== undefined) {
-          d.body = { ...d.body, nodes: { ...d.body.nodes, [key]: node } };
-        }
-      });
+      staged.nodes[key] = { key: bytesToHex(publicKey), chainCode: bytesToHex(chainCode) };
     } else {
-      const encoded = bytesToHex(decode.weiPoint(data));
-      tap.update((d) => {
-        if (d.body !== undefined) {
-          d.body = { ...d.body, ed25519: { ...d.body.ed25519, [key]: encoded } };
-        }
-      });
+      staged.ed25519[key] = bytesToHex(decode.weiPoint(data));
     }
   }
+  // One stage for the whole batch: the commit lands every node this tap fetched.
+  if (batch.length === 0) {
+    return;
+  }
+  tap.update((d) => {
+    if (d.body !== undefined) {
+      d.body = {
+        ...d.body,
+        nodes: { ...d.body.nodes, ...staged.nodes },
+        ed25519: { ...d.body.ed25519, ...staged.ed25519 },
+      };
+    }
+  });
 };
 
 /** A record a `VERIFY`/`CREATE` just proved: members in the card's order, this card ready. */

@@ -19,6 +19,7 @@ import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/sola
 import type { WalletInfo } from "@qntx/wallet/types";
 
 import { walletIdOf } from "../src/derive/wallet-id.ts";
+import { DEFAULT_GROUPS, registrationPaths } from "../src/modules/card/ops/shared.ts";
 import { accessHash } from "../src/modules/card/protocol/access.ts";
 import { shortId } from "../src/modules/card/protocol/identity.ts";
 import { encodeCardWalletBody, encodeCardWalletHeader } from "../src/modules/card/record.ts";
@@ -231,6 +232,29 @@ describe("card operations (fake card)", () => {
     // The code buffers the kernel held are wiped after the op.
     expect(c1.every((b) => b === 0)).toBe(true);
     expect(c2.every((b) => b === 0)).toBe(true);
+  });
+
+  it("create registers every public key in one member tap", async () => {
+    // Regression: under Hermes a per-iteration `tap.update` closure captured the last path, so
+    // only one node landed per tap — a real phone tapped once per registration path.
+    const r = await rig();
+    const source = await vaultWalletId(r);
+    const card = createFakeCard();
+    const c1 = utf8ToBytes("correct horse");
+    const c2 = utf8ToBytes("correct horse");
+    const result = await drive(
+      r,
+      { kind: "create", cards: 1, source: { kind: "wallet", walletId: source } },
+      { codes: [c1, c2], cards: Array.from({ length: 10 }, () => card) },
+      verifyPasskey(),
+    );
+    expect(result["kind"]).toBe("create");
+    // One CREATE tap, then a single member tap that registers all registrationPaths keys.
+    expect(r.reader.prompts).toHaveLength(2);
+    expect(r.reader.sessionLengths).toStrictEqual([
+      4,
+      4 + registrationPaths(DEFAULT_GROUPS).length,
+    ]);
   });
 
   it("add registers a loaded card that belongs to no record and fetches public keys", async () => {
