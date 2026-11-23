@@ -2017,3 +2017,34 @@ the kernel protocol.
    gateway refuses the method and drops are then never proven through it.
 5. **Gateway pins on fixed provider sets are refused.** `x-gateway-provider` on a TRON indexer path
    or the Esplora route is a `400`. The engine never sends it there; only custom clients notice.
+
+## 40. Hardware signers (Keystone 3 Pro over QR)
+
+Compiled snippet: `tests/migration/hardware-wallets.ts`. Changes affect every host that reads
+`WalletInfo` or switches on `WalletErrorCode`, and every host that wants hardware wallets.
+Nothing changes in the vault format for software wallets; a `hardware-wallet` record joins the
+vault alongside them.
+
+1. **`WalletInfo` is a `custody` union.** The 0.13.0 shape is `VaultWalletInfo`
+   (`custody: "vault"`); a paired device produces `HardwareWalletInfo` (`custody: "hardware"`,
+   `device`, `fingerprint`, `model`, `firmware`). Every read of `origin`, `words`, `backup` or
+   `passphrase` must narrow on `custody` first — `walletBadge` in the snippet. Anywhere a list of
+   wallets feeds an action only a seed wallet can do (export mnemonic, passphrase, cloud backup),
+   filter `custody === "vault"` instead of assuming the shape (`requiresSeed`).
+2. **Five new error codes.** `device-required` (the kernel has no public material for the path —
+   run `hardware().accounts` first), `device-locked`, `device-app-closed`, `device-rejected`,
+   `wrong-device` (the answering device's fingerprint is not the wallet's — the user picked up a
+   different unit). `deviceErrorHint` in the snippet maps them to host hints; the exhaustive map
+   in `tests/migration/error-codes.ts` flags them as new.
+3. **Seed-bound calls refuse cleanly.** For a hardware wallet `exportMnemonic`, Nostr key
+   derivation and sync, Spark and `sessions.create` answer `unsupported`; `chain.sign` answers
+   `device-required` (sign through the device instead); `wallet.accounts` answers
+   `device-required` for a group the device has not exported yet. A host must not offer these on
+   a `custody: "hardware"` wallet.
+4. **Driving a device.** `@qntx/wallet/hardware` exports `hardware(wallet)` with `pair`,
+   `accounts`, `sign` and `verifyAddress`, each taking a host `DeviceIo`. The kernel validates
+   and decodes everything; the host only transports: for an air-gapped Keystone, `qrParts`
+   produces the cyclic UR frames to animate and `qrReader` folds scanned frames back into the
+   payload (`keystoneQrIo` in the snippet). `sign` takes the same `verify` factor as
+   `chains().sign` and its result passes the same verification. `pairKeystone` and
+   `signOnDevice` show the two calls a host makes.
