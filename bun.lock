@@ -58,7 +58,7 @@
       "name": "@qntx/playground",
       "version": "0.0.0",
       "dependencies": {
-        "@qntx/nostr": "0.15.4",
+        "@qntx/nostr": "0.16.0",
         "@qntx/wallet": "workspace:*",
         "@qntx/wallet-engine": "workspace:*",
         "@qntx/wallet-worker": "workspace:*",
@@ -78,7 +78,7 @@
       },
       "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",
-        "@qntx/nostr": "0.15.4",
+        "@qntx/nostr": "0.16.0",
         "@qntx/spark": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
         "@qntx/ur": "3.0.0",
@@ -92,7 +92,7 @@
         "vite-plus": "1.4.0",
       },
       "peerDependencies": {
-        "@qntx/nostr": "~0.15.4",
+        "@qntx/nostr": "~0.16.0",
         "@qntx/spark": "~0.5.2",
         "@qntx/ur": "3.0.0",
         "@qntx/wallet-chains": "0.13.0",
@@ -169,7 +169,7 @@
       "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",
         "@playwright/test": "1.64.1",
-        "@qntx/nostr": "0.15.4",
+        "@qntx/nostr": "0.16.0",
         "@qntx/spark": "0.5.2",
         "@qntx/spark-wasm": "0.5.2",
         "@qntx/wallet": "0.13.0",
@@ -192,7 +192,7 @@
         "publint": "0.3.25",
       },
       "peerDependencies": {
-        "@qntx/nostr": "~0.15.4",
+        "@qntx/nostr": "~0.16.0",
         "@qntx/spark": "~0.5.2",
         "@qntx/wallet": "0.13.0",
         "@qntx/wallet-chains": "0.13.0",
@@ -215,7 +215,7 @@
         "@noble/ciphers": "2.4.0",
         "@noble/curves": "2.4.0",
         "@noble/hashes": "2.4.0",
-        "@qntx/nostr": "0.15.4",
+        "@qntx/nostr": "0.16.0",
         "@qntx/siwx": "0.8.0",
         "@qntx/spark": "0.5.2",
         "@qntx/wallet": "0.13.0",
@@ -249,8 +249,8 @@
       },
       "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",
-        "@qntx/nostr": "0.15.4",
-        "@qntx/nostr-native": "0.15.4",
+        "@qntx/nostr": "0.16.0",
+        "@qntx/nostr-native": "0.16.0",
         "@qntx/spark": "0.5.2",
         "@qntx/spark-native": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
@@ -261,7 +261,7 @@
         "react-native-nitro-modules": "0.37.1",
       },
       "peerDependencies": {
-        "@qntx/nostr-native": "0.15.4",
+        "@qntx/nostr-native": "0.16.0",
         "@qntx/spark-native": "0.5.2",
         "@qntx/wallet": "0.13.0",
         "@qntx/wallet-engine": "0.13.0",
@@ -283,7 +283,7 @@
         "@arethetypeswrong/cli": "0.18.5",
         "@noble/hashes": "2.4.0",
         "@playwright/test": "1.64.1",
-        "@qntx/nostr": "0.15.4",
+        "@qntx/nostr": "0.16.0",
         "@qntx/spark": "0.5.2",
         "@qntx/spark-wasm": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
@@ -734,9 +734,9 @@
 
     "@qntx/gateway": ["@qntx/gateway@workspace:apps/gateway"],
 
-    "@qntx/nostr": ["@qntx/nostr@0.15.4", "", { "dependencies": { "@noble/ciphers": "^2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0" }, "peerDependencies": { "ws": "^8.18.0" }, "optionalPeers": ["ws"] }, "sha512-kxWfN3HxKm7bTDn7Mzd+X80J74fbzNwUHOx8in5qMcb89/FgytR0jXllnF6eqGyO7VYG3pKSj94JnhgbkV73BQ=="],
+    "@qntx/nostr": ["@qntx/nostr@0.16.0", "", { "dependencies": { "@noble/ciphers": "^2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0" }, "peerDependencies": { "ws": "^8.18.0" }, "optionalPeers": ["ws"] }, "sha512-52tWXXYutmDisBRVJ2+b5mgIHlKufXzV4zBQ1LlKKPmUsHeSVr214R25GKh9QF2bNfOnkik10j3SZjEZ8O2ytA=="],
 
-    "@qntx/nostr-native": ["@qntx/nostr-native@0.15.4", "", { "peerDependencies": { "@qntx/nostr": "^0.15.4", "react-native": "*", "react-native-nitro-modules": "^0.37.1" } }, "sha512-CUBflKqmXeIMyZbm4FP0ssZRmbtbu1IXfsuDso9nxLekPsnXYfo+0gzQNKNxpYTwvQ5ay608nmLsSQ4PV4soMw=="],
+    "@qntx/nostr-native": ["@qntx/nostr-native@0.16.0", "", { "peerDependencies": { "@qntx/nostr": "^0.16.0", "react-native": "*", "react-native-nitro-modules": "^0.37.1" } }, "sha512-qJsZpSeCyywolLSgbFD/62XTbugR6FgGJLIl5PpGZedv8kFrZxBT4Oneg9fcDTW7KZehk19Ti6Wf/SVc3qM19g=="],
 
     "@qntx/oxfmt": ["@qntx/oxfmt@1.1.1", "", { "peerDependencies": { "oxfmt": ">=0.66.0 <1.0.0" }, "optionalPeers": ["oxfmt"] }, "sha512-i/+3GBLZlwDNW6gT1Z76LKEfPBm4LMSjee0URPRn5YeILbEtGQtMuUNNLcfabYpGPZI4wGL3YyPjdD3/Abf9Kw=="],
 
