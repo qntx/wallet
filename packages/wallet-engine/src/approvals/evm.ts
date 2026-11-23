@@ -316,12 +316,14 @@ export const evmApprovals = async (
 ): Promise<ChainResult> => {
   const primary = deps.networks.client(network);
   const independent = deps.networks.independentClient(network);
-  const primaryHead = await primary.getBlockNumber();
+  /* The client caches eth_blockNumber (viem cacheTime ≈ polling interval) — a cached head can sit
+   * behind blocks the next reads must see, so the head itself is always fetched fresh. */
+  const primaryHead = await primary.getBlockNumber({ cacheTime: 0 });
   let head = primaryHead;
   let independentFailed = false;
   if (independent.kind === "available") {
     try {
-      const secondaryHead = await independent.client.getBlockNumber();
+      const secondaryHead = await independent.client.getBlockNumber({ cacheTime: 0 });
       head = primaryHead < secondaryHead ? primaryHead : secondaryHead;
     } catch {
       // The corroborator cannot answer at any height — every row it could have proven stays unverified.

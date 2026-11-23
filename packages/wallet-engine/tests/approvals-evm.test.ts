@@ -234,6 +234,23 @@ describe("evm approvals reads", () => {
     expect(result.dropped).toBe(EVM_PROBE_MAX);
   });
 
+  it("reads at a fresh head, never the client's cached block number", async () => {
+    /* viem caches eth_blockNumber per client for its cacheTime — a cached head behind the blocks
+     * a refresh must see would resurrect or hide rows, so the head read bypasses the cache. */
+    const live = { head: 100n };
+    const primary = client({
+      get head() {
+        return live.head;
+      },
+      call: erc20Call(0n, 500n),
+    });
+    const deps_ = deps(primary, unavailable);
+    await evmApprovals(deps_, NETWORK, OWNER, []);
+    live.head = 200n;
+    const second = await evmApprovals(deps_, NETWORK, OWNER, []);
+    expect(second.at?.height).toBe("200");
+  });
+
   it("the primary lying about an allowance while the host says zero is disputed", async () => {
     const primary = client({ call: erc20Call(100n, 500n) });
     const independent = client({ call: erc20Call(0n, 500n) });

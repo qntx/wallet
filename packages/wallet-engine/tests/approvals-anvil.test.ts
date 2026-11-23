@@ -126,15 +126,17 @@ const realTimer = (ms: number, fn: () => unknown): (() => void) => {
 const waitUntil = async (
   check: () => boolean | Promise<boolean>,
   deadline = Date.now() + 20_000,
+  describe?: () => string,
 ): Promise<void> => {
   if (await check()) {
     return;
   }
   if (Date.now() >= deadline) {
-    throw new Error("waitUntil timed out");
+    const state = describe === undefined ? "" : ` — last state: ${describe()}`;
+    throw new Error(`waitUntil timed out${state}`);
   }
   await sleep(150);
-  return waitUntil(check, deadline);
+  return waitUntil(check, deadline, describe);
 };
 
 /** Anvil takes a moment to bind its port on a loaded machine — wait for a real JSON-RPC answer. */
@@ -325,6 +327,17 @@ describe.runIf(RUN)("anvil e2e: approvals inventory and revocation", () => {
     }
     return found;
   };
+  /** The view's failure shape for a timed-out wait: status/error, read height, counters, rows. */
+  const describeView = (): string => {
+    const v = view();
+    const rows = v.rows.map((r) => r.id).join(", ");
+    const sources = v.sources.map((s) => `${s.source}:${s.status}`).join(", ");
+    return (
+      `status=${v.status} error=${v.error ?? "-"} at=${v.at?.height ?? "-"} ` +
+      `dropped=${v.dropped} disputed=${v.disputed} unread=${v.unread} unverified=${v.unverified} ` +
+      `sources=[${sources}] rows=[${rows}]`
+    );
+  };
   const hasRow = (pred: RowPred): boolean => findRow(view(), pred) !== undefined;
   const rowSourced = (pred: RowPred): boolean => {
     const found = findRow(view(), pred);
@@ -407,7 +420,7 @@ describe.runIf(RUN)("anvil e2e: approvals inventory and revocation", () => {
 
   /** The row must vanish once the confirmed-transaction subscription re-reads the view. */
   const expectRowGone = async (pred: RowPred): Promise<void> =>
-    waitUntil(() => !hasRow(pred), Date.now() + 30_000);
+    waitUntil(() => !hasRow(pred), Date.now() + 30_000, describeView);
 
   beforeAll(async () => {
     if (keccak256(PERMIT2_CODE) !== PERMIT2_CODE_HASH) {
@@ -422,7 +435,11 @@ describe.runIf(RUN)("anvil e2e: approvals inventory and revocation", () => {
       "--hardfork",
       "prague",
     ]);
-    await waitUntil(async () => rpcReady(url), Date.now() + 20_000);
+    await waitUntil(
+      async () => rpcReady(url),
+      Date.now() + 20_000,
+      () => "anvil never answered eth_blockNumber",
+    );
     client = createPublicClient({ transport: http(url) });
 
     const { wallet: node, walletId } = await realWallet();
@@ -556,7 +573,7 @@ describe.runIf(RUN)("anvil e2e: approvals inventory and revocation", () => {
 
   it("lists every live approval and counts the invented candidates as dropped", async () => {
     key = await approvals.load(acct, NETWORK);
-    await waitUntil(() => view().status === "ready");
+    await waitUntil(() => view().status === "ready", Date.now() + 20_000, describeView);
 
     const listed = view();
     const liveHead = await block();
@@ -604,7 +621,7 @@ describe.runIf(RUN)("anvil e2e: approvals inventory and revocation", () => {
     await commit(pending);
     /* The gateway's frozen candidate list never names this spender — local discovery must, and
      * the confirmed-transaction subscription refreshes the view once the send is in a block. */
-    await waitUntil(() => rowSourced(erc20Row(spender)), Date.now() + 30_000);
+    await waitUntil(() => rowSourced(erc20Row(spender)), Date.now() + 30_000, describeView);
     await expect(allowanceRead(spender)).resolves.toBe(42n);
   }, 120_000);
 
@@ -676,8 +693,8 @@ describe.runIf(RUN)("anvil e2e: approvals inventory and revocation", () => {
       { kind: "erc20", token, spender: h, block: head },
     ];
     await approvals.refresh(key);
-    await waitUntil(() => hasRow(erc20Row(g)));
-    await waitUntil(() => hasRow(erc20Row(h)));
+    await waitUntil(() => hasRow(erc20Row(g)), Date.now() + 20_000, describeView);
+    await waitUntil(() => hasRow(erc20Row(h)), Date.now() + 20_000, describeView);
 
     const ids = [idOf(view(), erc20Row(g)), idOf(view(), erc20Row(h))];
     await expect(approvals.revokeBatch(key, ids)).rejects.toThrow(/delegated/);
@@ -690,7 +707,11 @@ describe.runIf(RUN)("anvil e2e: approvals inventory and revocation", () => {
       fee: "normal",
     });
     await commit(upgrade);
-    await waitUntil(() => hasRow((r) => r.kind === "delegation"), Date.now() + 30_000);
+    await waitUntil(
+      () => hasRow((r) => r.kind === "delegation"),
+      Date.now() + 30_000,
+      describeView,
+    );
     expect(findRow(view(), (r) => r.kind === "delegation")).toMatchObject({
       kind: "delegation",
       ours: true,
