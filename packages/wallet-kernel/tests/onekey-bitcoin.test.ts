@@ -35,7 +35,7 @@ import {
   buildMixedPsbt,
   scriptTypeFor,
 } from "./onekey-emulator/bitcoin-fixtures.ts";
-import { replayExchange, transcriptSession } from "./onekey-emulator/index.ts";
+import { replayExchange, loadTranscript, transcriptSession } from "./onekey-emulator/index.ts";
 import type { Transcript } from "./onekey-emulator/index.ts";
 
 initEccLib(ecc);
@@ -44,8 +44,8 @@ const H = 0x80_00_00_00;
 const hex = hexToBytes;
 
 const transcripts: Record<"classic1s" | "pro", Transcript> = {
-  classic1s: loadVectors("onekey/emulator-classic1s.json") as Transcript,
-  pro: loadVectors("onekey/emulator-pro.json") as Transcript,
+  classic1s: loadTranscript("classic1s"),
+  pro: loadTranscript("pro"),
 };
 
 type PlanTask = { path: number[]; publicKey: string; digest?: string; message?: string };

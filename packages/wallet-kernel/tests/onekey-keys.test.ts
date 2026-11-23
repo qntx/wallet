@@ -29,9 +29,7 @@ import {
 import type { Decoded, Fields, MessageDef } from "../src/modules/onekey/protocol/proto.ts";
 import { decode, encode } from "../src/modules/onekey/protocol/proto.ts";
 import type { Exchange } from "../src/modules/onekey/protocol/session.ts";
-import { loadVectors } from "./helpers.ts";
-import { transcriptSession } from "./onekey-emulator/index.ts";
-import type { Transcript } from "./onekey-emulator/index.ts";
+import { loadTranscript, transcriptSession } from "./onekey-emulator/index.ts";
 
 const hex = hexToBytes;
 const base58check = createBase58check(sha256);
@@ -39,7 +37,7 @@ const base58check = createBase58check(sha256);
 const H = 0x80_00_00_00;
 const PATH = [H + 84, H, H];
 
-const transcript = loadVectors("onekey/emulator-classic1s.json") as Transcript;
+const transcript = loadTranscript("classic1s");
 
 /** The recorded node-bip84 exchange: request bytes oracle and response decode fixture. */
 const NODE_BIP84 = (() => {

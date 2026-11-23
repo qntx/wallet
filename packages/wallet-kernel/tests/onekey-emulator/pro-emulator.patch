@@ -1746,3 +1746,34 @@ index cd8f225..c41f4e6 100644
    /* get uncompressed public key */
    ecdsa_uncompress_pubkey(node->curve->params, node->public_key, buf);
  
+diff --git a/vendor/lvgl_mp/lvgl/src/extra/libs/png/lv_png.c b/vendor/lvgl_mp/lvgl/src/extra/libs/png/lv_png.c
+index 87db4aa7f1..361cc84237 100644
+--- a/vendor/lvgl_mp/lvgl/src/extra/libs/png/lv_png.c
++++ b/vendor/lvgl_mp/lvgl/src/extra/libs/png/lv_png.c
+@@ -16,8 +16,10 @@
+ /*********************
+  *      DEFINES
+  *********************/
+ #ifdef LODEPNG_NO_COMPILE_ALLOCATORS
++/* provided by vendor/lvgl_mp/driver/png/mp_lodepng.c */
++void lodepng_free(void *ptr);
+ #define m_free  lodepng_free
+ #else
+ #define m_free lv_mem_free
+ #endif
+diff --git a/vendor/lvgl_mp/lvgl/src/extra/libs/gif/gifdec.c b/vendor/lvgl_mp/lvgl/src/extra/libs/gif/gifdec.c
+index 97b1ec744c..b1536b17e4 100644
+--- a/vendor/lvgl_mp/lvgl/src/extra/libs/gif/gifdec.c
++++ b/vendor/lvgl_mp/lvgl/src/extra/libs/gif/gifdec.c
+@@ -9,6 +9,11 @@
+ #include <stdbool.h>
+ #include "py/mpstate.h"
+ 
++/* provided by vendor/lvgl_mp/driver/png/mp_lodepng.c */
++void *lodepng_malloc(size_t size);
++void *lodepng_realloc(void *ptr, size_t new_size);
++void lodepng_free(void *ptr);
++
+ #define lv_mem_alloc  lodepng_malloc
+ #define lv_mem_realloc  lodepng_realloc
+ #define lv_mem_free  lodepng_free

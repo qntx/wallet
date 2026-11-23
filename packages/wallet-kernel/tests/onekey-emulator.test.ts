@@ -29,12 +29,12 @@ import {
   TEST_MNEMONIC,
   replayExchange,
   Success,
+  loadTranscript,
   transcriptSession,
 } from "./onekey-emulator/index.ts";
-import type { Transcript } from "./onekey-emulator/index.ts";
 
-const transcript = loadVectors("onekey/emulator-classic1s.json") as Transcript;
-const proTranscript = loadVectors("onekey/emulator-pro.json") as Transcript;
+const transcript = loadTranscript("classic1s");
+const proTranscript = loadTranscript("pro");
 
 function session(name: string): Exchange {
   return replayExchange(transcriptSession(transcript, name));

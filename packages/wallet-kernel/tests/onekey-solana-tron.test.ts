@@ -49,7 +49,7 @@ import {
   tronDisplay,
 } from "../src/modules/onekey/protocol/tron.ts";
 import { loadVectors } from "./helpers.ts";
-import { replayExchange, transcriptSession } from "./onekey-emulator/index.ts";
+import { replayExchange, loadTranscript, transcriptSession } from "./onekey-emulator/index.ts";
 import type { Transcript } from "./onekey-emulator/index.ts";
 
 const H = 0x80_00_00_00;
@@ -59,8 +59,8 @@ const OUR_TRON = "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH";
 const hex = hexToBytes;
 
 const transcripts: Record<"classic1s" | "pro", Transcript> = {
-  classic1s: loadVectors("onekey/emulator-classic1s.json") as Transcript,
-  pro: loadVectors("onekey/emulator-pro.json") as Transcript,
+  classic1s: loadTranscript("classic1s"),
+  pro: loadTranscript("pro"),
 };
 
 type PlanCase = {

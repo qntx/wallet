@@ -3,6 +3,9 @@
  * descriptor (seed loading is a debug-build facility, not part of the client), the transcript
  * shape, and the replay Exchange that asserts requests and serves recorded responses.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
 import { defineMessage } from "../../src/modules/onekey/protocol/proto.ts";
@@ -53,6 +56,20 @@ export type Transcript = {
   readonly source: Record<string, unknown>;
   readonly sessions: ReadonlyArray<TranscriptSession>;
 };
+
+/**
+ * The emulator transcript for `model` from ONEKEY_TRANSCRIPTS when set (CI's fresh recordings),
+ * otherwise the committed vectors/onekey directory.
+ */
+export function loadTranscript(model: "classic1s" | "pro"): Transcript {
+  const dir = process.env["ONEKEY_TRANSCRIPTS"];
+  const path =
+    dir === undefined || dir === ""
+      ? join(import.meta.dirname, `../../../../vectors/onekey/emulator-${model}.json`)
+      : join(dir, `emulator-${model}.json`);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the JSON transcript is untyped
+  return JSON.parse(readFileSync(path, "utf8")) as Transcript;
+}
 
 export function transcriptSession(transcript: Transcript, name: string): TranscriptSession {
   const session = transcript.sessions.find((s) => s.name === name);

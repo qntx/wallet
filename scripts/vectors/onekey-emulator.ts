@@ -13,7 +13,7 @@
  * -p 127.0.0.1:54945-54946:54935-54936/udp onekey-emu-classic1s
  * bun scripts/vectors/onekey-emulator.ts --port 54945 --debug-port 54946
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
@@ -77,8 +77,11 @@ function arg(name: string, fallback: string): string {
 const HOST = arg("host", "127.0.0.1");
 const PORT = Number(arg("port", "54935"));
 const DEBUG_PORT = Number(arg("debug-port", "54936"));
-const DEVICE = arg("device", "classic1s");
-const OUT = resolve(import.meta.dirname, `../../vectors/onekey/emulator-${DEVICE}.json`);
+const DEVICE = arg("model", "classic1s");
+const OUT = resolve(
+  arg("out", resolve(import.meta.dirname, "../../vectors/onekey")),
+  `emulator-${DEVICE}.json`,
+);
 
 const exchange = udpExchange(HOST, PORT);
 
@@ -734,16 +737,17 @@ const SOURCES = {
     tag: "v4.21.0",
     emulator:
       "onekey-emu-pro docker image (tests/onekey-emulator/Dockerfile.pro): PYOPT=0 make build_unix, SDL_VIDEODRIVER=dummy, TREZOR_UDP_IP=0.0.0.0, -X heapsize=32M, UDP 54935 main / 54936 debug link; LoadDevice confirmed via DebugLinkDecision YES on the debug link",
-    recorder: "bun scripts/vectors/onekey-emulator.ts --device pro",
+    recorder: "bun scripts/vectors/onekey-emulator.ts --model pro",
   },
 } as const;
 if (DEVICE !== "classic1s" && DEVICE !== "pro") {
-  throw new Error(`unknown --device ${DEVICE}`);
+  throw new Error(`unknown --model ${DEVICE}`);
 }
 const transcript = {
   source: SOURCES[DEVICE],
   sessions,
 };
+mkdirSync(resolve(OUT, ".."), { recursive: true });
 writeFileSync(OUT, `${JSON.stringify(transcript, null, 1)}\n`);
 console.log(`wrote ${OUT}`);
 exchange.close();

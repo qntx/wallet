@@ -29,6 +29,7 @@ RUN if [ -n "${APT_MIRROR}" ]; then \
         ca-certificates \
         curl \
         git \
+        libclang-dev \
         libsdl2-dev \
         libsdl2-image-dev \
         pkg-config \
@@ -136,21 +137,28 @@ RUN git init /src && cd /src && \
 COPY pro-emulator.patch /tmp/pro-emulator.patch
 RUN git -C /src apply -p1 /tmp/pro-emulator.patch
 
-# The LVGL font assets the unix emulator loads (*-emu.bin) are Git LFS pointer
-# files in the checkout; pull the real objects or the display driver crashes
-# on a NULL font. Only the emulator variants are needed at runtime.
+# PYOPT=0 keeps __debug__ code paths compiled in (debug link interface is
+# enabled at runtime via `trezor-emu-core -O0`). embed/rust is a no_std
+# crate gated on `#![feature(lang_items)]`, which needs nightly rustc — the
+# project itself uses RUSTC_BOOTSTRAP to build it on stable (SConscript.unix
+# does the same for the sanitizer profile).
+RUN cd /src/core && RUSTC_BOOTSTRAP=1 PYOPT=0 make build_unix
+
+# The LVGL font assets the unix emulator loads are Git LFS pointer files in
+# the checkout; pull the real objects or the display driver crashes on a NULL
+# font. The emulator loads the *-emu.bin variants plus the mono-38 keypad font
+# (only built into hardware firmware, so the patch loads it from res/). Kept
+# after the build so an asset-list change does not re-run the compile.
 RUN for f in \
         Geist-Regular-20-emu.bin Geist-Regular-26-emu.bin Geist-Regular-30-emu.bin \
         Geist-SemiBold-26-emu.bin Geist-SemiBold-30-emu.bin Geist-SemiBold-38-emu.bin \
-        Geist-SemiBold-48-emu.bin Geist-SemiBold-64-emu.bin GeistMono-Regular-28-emu.bin; do \
+        Geist-SemiBold-48-emu.bin Geist-SemiBold-64-emu.bin GeistMono-Regular-28-emu.bin \
+        GeistMono-SemiBold-38.bin; do \
         curl --retry 5 --retry-all-errors -fsSL -o \
             "/src/core/src/trezor/lvglui/res/${f}" \
             "https://github.com/OneKeyHQ/firmware-pro/raw/${PRO_COMMIT}/core/src/trezor/lvglui/res/${f}" || exit 1; \
+        ! head -c 40 "/src/core/src/trezor/lvglui/res/${f}" | grep -q "git-lfs" || exit 1; \
     done
-
-# PYOPT=0 keeps __debug__ code paths compiled in (debug link interface is
-# enabled at runtime via `trezor-emu-core -O0`).
-RUN cd /src/core && PYOPT=0 make build_unix
 
 # ---------------------------------------------------------------------------
 
@@ -166,20 +174,23 @@ RUN if [ -n "${APT_MIRROR}" ]; then \
     && rm -rf /var/lib/apt/lists/*
 
 # The unix port is a MicroPython interpreter that imports main.py from the
-# core/src tree at runtime, so ship both binary and sources.
+# core/src tree at runtime, so ship both binary and sources. The tree must
+# keep the build-time layout — LVGL resolves font/image assets relative to
+# the compile-time CURRENT_DIR (/src/core/src/trezor/lvglui), and missing
+# font files segfault the display driver on first render.
 WORKDIR /opt/onekey
 COPY --from=build /src/core/build/unix/trezor-emu-core /opt/onekey/trezor-emu-core
-COPY --from=build /src/core/src /opt/onekey/src
+COPY --from=build /src/core/src /src/core/src
 
 # Flash profile lives in $TREZOR_PROFILE_DIR (onekey.flash / onekey.sdcard);
 # mount a volume there to persist, or delete the files for a clean state.
 ENV TREZOR_PROFILE_DIR=/data \
     SDL_VIDEODRIVER=dummy \
-    MICROPYPATH=/opt/onekey/src \
+    MICROPYPATH=/src/core/src \
     TREZOR_UDP_IP=0.0.0.0 \
     ONEKEY_UDP_PORT=54935
 VOLUME /data
-WORKDIR /opt/onekey/src
+WORKDIR /src/core/src
 
 EXPOSE 54935/udp 54936/udp
 
