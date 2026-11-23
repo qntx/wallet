@@ -14,6 +14,7 @@ import { toHex } from "viem";
 
 import { RequestEndedError } from "../spi.ts";
 import type {
+  AppAuthority,
   AppFlow,
   AppGroup,
   AppProvider,
@@ -467,6 +468,48 @@ export function createPolymarketEnable(
         options.requests.reject(requestId);
       }
       await reconcileFlow(group, flow);
+    },
+    authorities: async (group): Promise<ReadonlyArray<AppAuthority>> => {
+      const account = await options.account.locate(group);
+      if (account.kind !== "deposit-wallet" || !account.deployed) {
+        return [];
+      }
+      const { contracts } = await options.account.approvals(account.wallet);
+      const approved = new Map(
+        contracts
+          .filter((contract) => contract.approved)
+          .map((contract) => [
+            `${contract.token.toLowerCase()}/${contract.spender.toLowerCase()}`,
+            contract,
+          ]),
+      );
+      /* Rows come only from the table — an answer naming anything else adds nothing. `disable`
+         keeps the on-chain approvals (enabling again reuses them), so nothing here is revocable
+         from this wallet. */
+      return APPROVALS.flatMap((row): ReadonlyArray<AppAuthority> => {
+        const hit = approved.get(`${row.token}/${row.spender}`.toLowerCase());
+        if (hit === undefined) {
+          return [];
+        }
+        const base = {
+          network: "eip155:137",
+          account: account.wallet,
+          holder: row.spender,
+          asset: row.token,
+          revoke: "none" as const,
+        };
+        return row.data.startsWith("0x095ea7b3")
+          ? [
+              {
+                kind: "token-allowance" as const,
+                ...base,
+                ...(hit.amount === undefined || hit.amount === "max"
+                  ? {}
+                  : { limit: hit.amount }),
+              },
+            ]
+          : [{ kind: "operator" as const, ...base }];
+      });
     },
   };
 }
