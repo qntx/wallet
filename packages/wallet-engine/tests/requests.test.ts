@@ -134,6 +134,7 @@ function fake(
   const txs: Record<string, TrackedTransaction> = {};
   const transactions = {
     getState: () => ({ txs }),
+    bindDappSolana: async () => Promise.resolve([]),
     prepareDappTron: async (
       ref: AccountRef,
       request: SignRequest,

@@ -259,6 +259,7 @@ const rig = (over: {
     prepareSend: over.prepareSend ?? unwired("send"),
     prepareEvmInternal: over.prepareEvmInternal ?? unwired("internal"),
     prepareSolanaSwap: over.prepareSolanaSwap ?? unwired("solana-swap"),
+    bindDappSolana: async () => Promise.resolve([]),
   } as unknown as TransactionController;
   const addressBook = new AddressBookController({
     openStore,

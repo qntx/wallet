@@ -75,7 +75,9 @@ const solanaResult = (method: string): unknown =>
       ? `sig${"a".repeat(80)}`
       : method === "getBlockHeight"
         ? 1
-        : null;
+        : method === "isBlockhashValid"
+          ? { context: { slot: 1 }, value: true }
+          : null;
 
 const payerAddress = (account: unknown): string =>
   typeof account === "object" &&

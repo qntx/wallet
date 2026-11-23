@@ -193,6 +193,7 @@ function solanaRig(outcomes: ReadonlyArray<SimulationOutcome>) {
     },
     transactions: {
       getState: () => ({ txs: {} }),
+      bindDappSolana: async () => Promise.resolve([]),
     } as unknown as TransactionController,
     ...bookDeps(),
     spark: {} as unknown as SparkController,
