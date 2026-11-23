@@ -45,7 +45,8 @@ function arg(name: string, fallback: string): string {
 const HOST = arg("host", "127.0.0.1");
 const PORT = Number(arg("port", "54935"));
 const DEBUG_PORT = Number(arg("debug-port", "54936"));
-const OUT = resolve(import.meta.dirname, "../../vectors/onekey/emulator-classic1s.json");
+const DEVICE = arg("device", "classic1s");
+const OUT = resolve(import.meta.dirname, `../../vectors/onekey/emulator-${DEVICE}.json`);
 
 const exchange = udpExchange(HOST, PORT);
 
@@ -180,8 +181,8 @@ for (const [name, path] of [
   sessions.push(session);
   console.log(`${name}: pub=${bytesToHex(key)}`);
 }
-const transcript = {
-  source: {
+const SOURCES = {
+  classic1s: {
     repository: "https://github.com/OneKeyHQ/firmware-classic1s",
     commit: "be08c78d2230f11028bca55ae65469e64ad45e4a",
     tag: "v3.21.0",
@@ -189,6 +190,20 @@ const transcript = {
       "onekey-emu-classic1s docker image (tests/onekey-emulator/Dockerfile.classic1s): EMULATOR=1 DEBUG_LINK=1 PRODUCTION=0 cibuild, SDL_VIDEODRIVER=dummy, UDP 54935 main / 54936 debug link; LoadDevice confirmed via DebugLinkDecision YES on the debug link",
     recorder: "bun scripts/vectors/onekey-emulator.ts",
   },
+  pro: {
+    repository: "https://github.com/OneKeyHQ/firmware-pro",
+    commit: "251a1b762065357059f80f32b28cb502609510d3",
+    tag: "v4.21.0",
+    emulator:
+      "onekey-emu-pro docker image (tests/onekey-emulator/Dockerfile.pro): PYOPT=0 make build_unix, SDL_VIDEODRIVER=dummy, TREZOR_UDP_IP=0.0.0.0, -X heapsize=32M, UDP 54935 main / 54936 debug link; LoadDevice confirmed via DebugLinkDecision YES on the debug link",
+    recorder: "bun scripts/vectors/onekey-emulator.ts --device pro",
+  },
+} as const;
+if (!(DEVICE in SOURCES)) {
+  throw new Error(`unknown --device ${DEVICE}`);
+}
+const transcript = {
+  source: SOURCES[DEVICE as keyof typeof SOURCES],
   sessions,
 };
 writeFileSync(OUT, `${JSON.stringify(transcript, null, 1)}\n`);

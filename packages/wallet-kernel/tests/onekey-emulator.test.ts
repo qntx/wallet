@@ -33,9 +33,14 @@ import {
 import type { Transcript } from "./onekey-emulator/index.ts";
 
 const transcript = loadVectors("onekey/emulator-classic1s.json") as Transcript;
+const proTranscript = loadVectors("onekey/emulator-pro.json") as Transcript;
 
 function session(name: string): Exchange {
   return replayExchange(transcriptSession(transcript, name));
+}
+
+function proSession(name: string): Exchange {
+  return replayExchange(transcriptSession(proTranscript, name));
 }
 
 // Independent oracles: vectors/templates/chains.json was produced by the chains package, and the
@@ -205,6 +210,138 @@ describe("classic1s emulator replay", () => {
 
   it("sol-account1 returns the second account key", async () => {
     const key = await solanaPublicKey(session("sol-account1"), [H + 44, H + 501, H + 1, H], false);
+    expect(key).toStrictEqual(solanaDerived1.subarray(1));
+    expect(bytesToHex(key)).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("pro emulator replay", () => {
+  it("fresh device initialize is not-initialized", async () => {
+    const error = await thrown(async () => initialize(proSession("uninitialized")));
+    expect(error.code).toBe("not-initialized");
+  });
+
+  it("replays LoadDevice with the button confirm round", async () => {
+    const success = await call(
+      proSession("load-device"),
+      { def: LoadDevice, value: { mnemonics: [TEST_MNEMONIC], label: "OneKey" } },
+      Success,
+    );
+    expect(success.message).toBe("Device loaded");
+  });
+
+  it("initialize returns the loaded pro DeviceInfo", async () => {
+    const info = await initialize(proSession("initialized"));
+    expect(info.model).toBe("pro");
+    expect(info.firmware).toStrictEqual([4, 21, 0]);
+    expect(info.pinProtection).toBe(false);
+    expect(info.passphraseProtection).toBe(false);
+    expect(info.unlocked).toBe(true);
+    expect(info.bitcoinOnly).toBe(false);
+    expect(info.deviceId).toBe("EA91F3434198CAFBAC94BB9C");
+    expect(info.sessionId).toHaveLength(32);
+  });
+
+  it("records exactly the sessions the replay asserts", () => {
+    expect(proTranscript.sessions.map((s) => s.name).toSorted()).toStrictEqual(
+      [
+        "uninitialized",
+        "load-device",
+        "initialized",
+        "node-bip44",
+        "node-bip49",
+        "node-bip84",
+        "node-bip86",
+        "node-tron",
+        "node-evm",
+        "addr-bip84",
+        "addr-evm",
+        "addr-tron",
+        "sol-account0",
+        "sol-account1",
+      ].toSorted(),
+    );
+  });
+
+  it.each([
+    ["node-bip44", [H + 44, H, H], { scriptType: 0 }, "m/44'/0'/0'"],
+    ["node-bip49", [H + 49, H, H], { scriptType: 4 }, "m/49'/0'/0'"],
+    ["node-bip84", [H + 84, H, H], { scriptType: 3 }, "m/84'/0'/0'"],
+    ["node-bip86", [H + 86, H, H], { scriptType: 5 }, "m/86'/0'/0'"],
+    ["node-tron", [H + 44, H + 195, H], undefined, "m/44'/195'/0'"],
+  ] as const)("%s returns the derived account node", async (name, path, options, derive) => {
+    const node = await publicNode(proSession(name), path, options);
+    expectNode(node, derive);
+    expect(node.path).toStrictEqual(path);
+    expect(node.rootFingerprint).toStrictEqual(hexToBytes(chains.master.fingerprint));
+  });
+
+  it("node-evm returns the derived node with no root fingerprint", async () => {
+    const node = await evmPublicNode(proSession("node-evm"), [H + 44, H + 60, H]);
+    expectNode(node, "m/44'/60'/0'");
+    expect("rootFingerprint" in node).toBe(false);
+  });
+
+  const bip84Receive0 = master.derive("m/84'/0'/0'/0/0").publicKey;
+  if (bip84Receive0 === null) {
+    throw new Error("oracle derivation produced no public key");
+  }
+  const evmExpected = chains.evm.accounts[0]?.address;
+  if (evmExpected === undefined) {
+    throw new Error("chains.json expectation missing");
+  }
+  const tronExpected = chains.tron.accounts[0]?.address;
+  if (tronExpected === undefined) {
+    throw new Error("chains.json expectation missing");
+  }
+
+  it.each([
+    [
+      "addr-bip84",
+      "bitcoin",
+      [H + 84, H, H, 0, 0],
+      { showDisplay: false, scriptType: 3 },
+      p2wpkh(bip84Receive0).address,
+    ],
+    [
+      "addr-evm",
+      "evm",
+      [H + 44, H + 60, H, 0, 0],
+      { showDisplay: false, chainId: 1n },
+      evmExpected,
+    ],
+    ["addr-tron", "tron", [H + 44, H + 195, H, 0, 0], { showDisplay: false }, tronExpected],
+  ] as const)("%s returns the published address", async (name, family, path, options, expected) => {
+    await expect(address(proSession(name), family, path, options)).resolves.toBe(expected);
+  });
+
+  const solanaExpected = chains.solana.accounts[0]?.address;
+  if (solanaExpected === undefined) {
+    throw new Error("chains.json expectation missing");
+  }
+  const solanaDerived0 = slip10.derive("m/44'/501'/0'/0'").publicKey;
+  if (solanaDerived0 === null) {
+    throw new Error("oracle derivation produced no public key");
+  }
+
+  it("sol-account0 returns the pinned ed25519 key", async () => {
+    const key = await solanaPublicKey(proSession("sol-account0"), [H + 44, H + 501, H, H], false);
+    expect(key).toStrictEqual(base58.decode(solanaExpected));
+    // slip10 carries a leading 0x00 marker byte; the device returns the raw 32-byte key.
+    expect(key).toStrictEqual(solanaDerived0.subarray(1));
+  });
+
+  const solanaDerived1 = slip10.derive("m/44'/501'/1'/0'").publicKey;
+  if (solanaDerived1 === null) {
+    throw new Error("oracle derivation produced no public key");
+  }
+
+  it("sol-account1 returns the second account key", async () => {
+    const key = await solanaPublicKey(
+      proSession("sol-account1"),
+      [H + 44, H + 501, H + 1, H],
+      false,
+    );
     expect(key).toStrictEqual(solanaDerived1.subarray(1));
     expect(bytesToHex(key)).toMatch(/^[0-9a-f]{64}$/);
   });
