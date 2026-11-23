@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import { gatewayFetch, gatewayScope, gatewaySession } from "../src/gateway/client.ts";
+import * as contract from "../src/gateway/contract/index.ts";
 import {
   CLIENT_ID_HEADER,
   accepts,
@@ -424,6 +425,19 @@ describe("independent clients", () => {
   });
 });
 
+/** The contract module's scoped endpoints (`:caip2`/`:family` in the path), as `it.each` rows. */
+const SCOPED_CONTRACT_ROUTES = Object.values(contract as Record<string, unknown>)
+  .filter(
+    (value): value is { readonly method: string; readonly path: string } =>
+      typeof value === "object" &&
+      value !== null &&
+      "method" in value &&
+      "path" in value &&
+      typeof value.path === "string" &&
+      value.path.includes(":"),
+  )
+  .map((route) => [route.path, route] as const);
+
 describe("gatewayScope", () => {
   const scope = (path: string) => gatewayScope(new URL(`${GATEWAY}${path}`));
 
@@ -471,6 +485,15 @@ describe("gatewayScope", () => {
     ["/v1/unknown", "service"],
   ])("maps %s to %s", (path, expected) => {
     expect(scope(path)).toBe(expected);
+  });
+
+  /* Every contract route whose path selects a `:caip2` network or `:family` — the routes whose
+     request carries an address, owner, asset or subscription — must resolve to a family scope:
+     a miss would meter the call under the shared "service" client id. Enumerating the contract
+     module means a new scoped route joins this table without being listed. */
+  it.each(SCOPED_CONTRACT_ROUTES)("scoped route %s resolves to a family", (_name, route) => {
+    const path = route.path.replace(":caip2", "eip155:1").replace(":family", "evm");
+    expect(scope(path)).not.toBe("service");
   });
 
   it("scopes ids per family under a gateway mounted on a base path", async () => {

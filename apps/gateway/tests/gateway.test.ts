@@ -3,13 +3,19 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   PROVIDER_PIN_HEADER,
   PROVIDERS_HEADER,
+  approvalsPath,
   gatewayError,
   health,
+  nftCollectionPath,
+  nftFloorPath,
+  nftItemPath,
+  nftItemsPath,
   rpcResponse,
   servedNetworksResponse,
 } from "@qntx/wallet-engine/gateway/contract";
 
 import type { RateLimiter } from "../src/limits.ts";
+import type { GatewayNetwork } from "../src/types.ts";
 import {
   DEVNET,
   CLIENT_ID,
@@ -939,6 +945,79 @@ describe("esplora forwarding", () => {
       );
       deadline.abort();
       await expect(read).resolves.toBe("aborted");
+    },
+  );
+});
+
+describe("provider pin rule", () => {
+  /* The `x-gateway-provider` rule per route kind: rpc and tron honour the pin, esplora (and the
+     tron indexer paths) refuse it before any upstream call, and the fixed-provider data reads —
+     history, prices, tokens, and the newer approvals and NFT routes — forward regardless, the
+     same as every pre-existing data route. */
+  const PIN_ETH = "eip155:1";
+  const PIN_OWNER = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+  const PIN_USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+  const PIN_RPC = "https://eth.alchemy.test/v2";
+  const PIN_NFT = "https://eth.alchemy.test/nft/v3";
+  const PIN_NETWORKS: ReadonlyArray<GatewayNetwork> = [
+    { id: PIN_ETH, providers: [{ id: "alchemy", url: PIN_RPC }] },
+  ];
+  const PIN_CASES: ReadonlyArray<{
+    readonly name: string;
+    readonly path: string;
+    readonly body: unknown;
+    readonly upstream: string;
+    readonly answer: () => Response;
+  }> = [
+    {
+      name: "approvals",
+      path: approvalsPath(PIN_ETH),
+      body: { address: PIN_OWNER },
+      upstream: PIN_RPC,
+      answer: () => Response.json({ jsonrpc: "2.0", id: 1, result: [] }),
+    },
+    {
+      name: "nft items",
+      path: nftItemsPath(PIN_ETH),
+      body: { owner: PIN_OWNER },
+      upstream: PIN_NFT,
+      answer: () => Response.json({ ownedNfts: [], pageKey: null }),
+    },
+    {
+      name: "nft item",
+      path: nftItemPath(PIN_ETH),
+      body: { contract: PIN_USDC, tokenId: "1" },
+      upstream: PIN_NFT,
+      answer: () => Response.json({}),
+    },
+    {
+      name: "nft collection",
+      path: nftCollectionPath(PIN_ETH),
+      body: { collection: PIN_USDC },
+      upstream: PIN_NFT,
+      answer: () => Response.json({}),
+    },
+    {
+      name: "nft floor",
+      path: nftFloorPath(PIN_ETH),
+      body: { collection: PIN_USDC },
+      upstream: PIN_NFT,
+      answer: () => Response.json({}),
+    },
+  ];
+
+  it.each(PIN_CASES)(
+    "$name forwards a pin it cannot select, like the other data routes",
+    async (c) => {
+      const up = fakeFetch({ [c.upstream]: c.answer });
+      const init = post(c.body);
+      await gateway({ fetch: up.fetch, networks: PIN_NETWORKS }).request(c.path, {
+        ...init,
+        headers: { ...(init.headers as Record<string, string>), [PROVIDER_PIN_HEADER]: "a" },
+      });
+      /* A refused pin (esplora-style) 400s before any upstream call — reaching the upstream at
+         all proves the data-route rule. */
+      expect(up.calls.length).toBeGreaterThan(0);
     },
   );
 });

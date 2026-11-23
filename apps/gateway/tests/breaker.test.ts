@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import * as contract from "@qntx/wallet-engine/gateway/contract";
 import {
   PROVIDERS_HEADER,
   PROVIDER_PIN_HEADER,
@@ -286,6 +287,30 @@ const forwardedRoutes = Object.entries(ROUTES).filter(
   (entry): entry is [string, Forwarded] => entry[1] !== null,
 );
 
+/**
+ * The contract endpoints (`METHOD path`) no registered route serves. A `…/*` route serves every
+ * narrower contract path under it — esplora's `/tx`, tron's method paths — so coverage is an
+ * exact match or a wildcard prefix.
+ */
+const uncoveredContractRoutes = (routeKeys: ReadonlyArray<string>): string[] =>
+  Object.values(contract as Record<string, unknown>)
+    .filter(
+      (value): value is { readonly method: string; readonly path: string } =>
+        typeof value === "object" &&
+        value !== null &&
+        "method" in value &&
+        "path" in value &&
+        typeof value.method === "string" &&
+        typeof value.path === "string",
+    )
+    .map((route) => `${route.method} ${route.path}`)
+    .filter(
+      (key) =>
+        !routeKeys.some(
+          (route) => route === key || (route.endsWith("/*") && key.startsWith(route.slice(0, -1))),
+        ),
+    );
+
 describe("shared upstream breakers", () => {
   it("lists every registered route", () => {
     const { app } = appWith(() => new Response("{}"));
@@ -293,6 +318,12 @@ describe("shared upstream breakers", () => {
       app.routes.filter((route) => route.method !== "ALL").map((r) => `${r.method} ${r.path}`),
     );
     expect([...registered].toSorted()).toStrictEqual(Object.keys(ROUTES).toSorted());
+  });
+
+  it("the route table covers every contract endpoint", () => {
+    /* A contract endpoint the app never registered would pass "lists every registered route"
+       unnoticed — enumerate the contract module and hold the table to it. */
+    expect(uncoveredContractRoutes(Object.keys(ROUTES))).toStrictEqual([]);
   });
 
   it.each([
