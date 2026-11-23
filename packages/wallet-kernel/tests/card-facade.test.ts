@@ -30,10 +30,14 @@ import { card } from "@qntx/wallet/card";
 import { chains } from "@qntx/wallet/chains";
 import type { ChainSignRequest, ChainSignResult } from "@qntx/wallet/chains";
 import { connectKernel } from "@qntx/wallet/host";
+import type { MainPort } from "@qntx/wallet/host";
 import type { CardStep } from "@qntx/wallet/protocol";
 import type { Wallet } from "@qntx/wallet/types";
 
-import { shortId } from "../src/modules/card/protocol/identity.ts";
+import { accessHash } from "../src/modules/card/protocol/access.ts";
+import { cardId, shortId } from "../src/modules/card/protocol/identity.ts";
+import { entropyFromMnemonic } from "../src/seed/mnemonic.ts";
+import { seedFromEntropy } from "../src/seed/seed.ts";
 import { testSecureInput } from "./card/input.ts";
 import type { TestSecureInput } from "./card/input.ts";
 import { testCardReader } from "./card/reader.ts";
@@ -41,6 +45,7 @@ import type { TestCardReader } from "./card/reader.ts";
 import { CA1_ANCHOR, SIM_LAUNCHER, startSimulator } from "./card/sim.ts";
 import type { SimCard, Simulator } from "./card/sim.ts";
 import { createHarness } from "./harness.ts";
+import { quickArgon2id, subtlePbkdf2 } from "./helpers.ts";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -59,6 +64,39 @@ const PASSKEY = {
 };
 
 let simulator: Simulator;
+
+/** Recursive scan for a needle's raw bytes, hex, base64 or printable text inside any value. */
+const containsSecret = (value: unknown, needles: ReadonlyArray<Uint8Array>): boolean => {
+  const forms = (n: Uint8Array): string[] => {
+    let binary = "";
+    for (const b of n) {
+      binary += String.fromCodePoint(b);
+    }
+    return [bytesToHex(n), btoa(binary), new TextDecoder("utf-8", { fatal: false }).decode(n)];
+  };
+  const stack: unknown[] = [value];
+  while (stack.length > 0) {
+    const v = stack.pop();
+    if (v instanceof Uint8Array) {
+      for (const n of needles) {
+        if (n.length <= v.length && bytesToHex(v).includes(bytesToHex(n))) {
+          return true;
+        }
+      }
+    } else if (typeof v === "string") {
+      for (const n of needles) {
+        if (forms(n).some((f) => f.length > 3 && v.includes(f))) {
+          return true;
+        }
+      }
+    } else if (Array.isArray(v)) {
+      stack.push(...v);
+    } else if (typeof v === "object" && v !== null) {
+      stack.push(...Object.values(v));
+    }
+  }
+  return false;
+};
 
 const HARDENED = 0x80000000;
 const BTC_NETWORK = "bip122:000000000019d6689c085ae165831e93";
@@ -107,15 +145,33 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card(wallet) facade end to end", ()
     reader: TestCardReader;
     input: TestSecureInput;
     sourceId: string;
+    crossed: unknown[];
+    draws: Uint8Array[];
   }> => {
     const reader = testCardReader();
     const input = testSecureInput();
     const h = createHarness({
       card: { reader: reader.reader, secureInput: input.secureInput, anchors: [CA1_ANCHOR] },
     });
+    // Every frame crossing hostPort in either direction — the leak scan asserts none
+    // carries access-code bytes, per-card access hashes, drawn entropy or seed material.
+    const crossed: unknown[] = [];
+    const port: MainPort = {
+      post: (message, transfer) => {
+        crossed.push(message);
+        h.hostPort.post(message, transfer);
+      },
+      listen: (l) =>
+        h.hostPort.listen((message) => {
+          crossed.push(message);
+          l(message);
+        }),
+      onExit: (handler) => h.hostPort.onExit(handler),
+      terminate: () => h.hostPort.terminate(),
+    };
     const wallet = await connectKernel({
       verifyEvent,
-      spawn: () => h.hostPort,
+      spawn: () => port,
       factors: "software",
       passkey: PASSKEY,
       ceremony: undefined,
@@ -128,7 +184,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card(wallet) facade end to end", ()
       mnemonic: MNEMONIC,
       factor: { kind: "password", password: PASSWORD },
     });
-    return { wallet, reader, input, sourceId: imported.walletId };
+    return { wallet, reader, input, sourceId: imported.walletId, crossed, draws: h.draws };
   };
 
   /**
@@ -239,7 +295,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card(wallet) facade end to end", ()
   });
 
   it("creates a 2-card generated set and signs one request per family — facade-verified, independently recovered", async () => {
-    const { wallet, reader, input } = await rig();
+    const { wallet, reader, input, crossed, draws } = await rig();
     const api = card(wallet);
     const source = await simulator.newCard();
     const target = await simulator.newCard();
@@ -435,5 +491,24 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card(wallet) facade end to end", ()
     expect(
       verifyBitcoinPsbtSignatures(psbtResult.signedPsbt, [0], btc84.xpub, "btc.bip84", BTC_NETWORK),
     ).toBe(true);
+
+    // Leak scan over everything that crossed hostPort: access-code bytes, every per-card
+    // access hash, drawn host entropy and the imported wallet's seed must all stay kernel-side.
+    const seed = await seedFromEntropy(entropyFromMnemonic(MNEMONIC), "", subtlePbkdf2);
+    const code = utf8ToBytes(CODE_TEXT);
+    const needles = [
+      code,
+      await accessHash(code, cardId(source.identity), quickArgon2id),
+      await accessHash(code, cardId(target.identity), quickArgon2id),
+      seed,
+      ...draws.filter((d) => d.length === 32),
+      ...draws.filter((d) => d.length === 32).map((d) => d.subarray(0, 16)),
+    ];
+    for (const frame of crossed) {
+      expect(containsSecret(frame, needles)).toBe(false);
+    }
+    crossed.push({ planted: code });
+    expect(containsSecret(crossed.at(-1), needles)).toBe(true);
+    crossed.pop();
   }, 900_000);
 });

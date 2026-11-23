@@ -23,13 +23,16 @@ import { accessHash } from "../src/modules/card/protocol/access.ts";
 import { shortId } from "../src/modules/card/protocol/identity.ts";
 import { encodeCardWalletBody, encodeCardWalletHeader } from "../src/modules/card/record.ts";
 import type { CardWalletBody, CardWalletHeader } from "../src/modules/card/record.ts";
+import type { Argon2id } from "../src/platform.ts";
 import { wipe } from "../src/secret/secret.ts";
 import type { Secret } from "../src/secret/secret.ts";
 import { entropyFromMnemonic } from "../src/seed/mnemonic.ts";
 import { seedFromEntropy } from "../src/seed/seed.ts";
 import { passkeyKek, unwrapDek } from "../src/vault/factors.ts";
+import { encodeHeader } from "../src/vault/headers.ts";
 import { withManifest } from "../src/vault/manifest.ts";
 import { CARD_WALLET_KIND } from "../src/vault/store.ts";
+import type { RecordStore } from "../src/vault/store.ts";
 import { sealRecord } from "../src/vault/vault.ts";
 import { CA1_PRIVATE, createFakeCard, issueCert } from "./card/fake-card.ts";
 import type { FakeCard } from "./card/fake-card.ts";
@@ -78,7 +81,14 @@ type Rig = {
   input: ReturnType<typeof testSecureInput>;
 };
 
-const rig = async (planMs?: number): Promise<Rig> => {
+const rig = async (
+  planMs?: number,
+  extra?: {
+    idleMs?: number;
+    argon2id?: Argon2id;
+    wrapStore?: (store: RecordStore) => RecordStore;
+  },
+): Promise<Rig> => {
   const reader = testCardReader();
   const input = testSecureInput();
   const h = createHarness({
@@ -88,6 +98,7 @@ const rig = async (planMs?: number): Promise<Rig> => {
       anchors: [CA1_ANCHOR],
       ...(planMs === undefined ? {} : { planMs }),
     },
+    ...extra,
   });
   const res = ok(
     await h.call("wallet.createWithPasskey", {
@@ -1069,6 +1080,7 @@ describe("card tap gates and code policy (fake card)", () => {
     const bad1 = utf8ToBytes("abc"); // < 6
     const bad2 = utf8ToBytes("x".repeat(65)); // > 64
     const bad3 = new Uint8Array([0x41, 0x01, 0x42, 0x43, 0x44, 0x45]); // non-printable
+    const bad4 = new Uint8Array([0x41, 0x80, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47]); // > 0x7e
     const short = utf8ToBytes("shorty1"); // 7 chars → needs the short-confirm label
     const nope = utf8ToBytes("nope0000");
     const good1 = utf8ToBytes("a longer code");
@@ -1077,7 +1089,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "create", cards: 1, source: { kind: "wallet", walletId: source } },
       {
-        codes: [bad1, bad2, bad3, short, nope, good1, good2],
+        codes: [bad1, bad2, bad3, bad4, short, nope, good1, good2],
         cards: taps(card),
       },
       verifyPasskey(),
@@ -1091,11 +1103,12 @@ describe("card tap gates and code policy (fake card)", () => {
       NEW,
       NEW,
       NEW,
+      NEW,
       "The code is short — enter it again to confirm",
       NEW,
       "Enter the new access code again",
     ]);
-    for (const buffer of [bad1, bad2, bad3, short, nope, good1, good2]) {
+    for (const buffer of [bad1, bad2, bad3, bad4, short, nope, good1, good2]) {
       expect(buffer.every((b) => b === 0)).toBe(true);
     }
   });
@@ -1172,6 +1185,176 @@ describe("card tap gates and code policy (fake card)", () => {
       void card;
     },
   );
+
+  it.each(["accounts", "health", "erase", "create", "sign"] as const)(
+    "an abort between steps wipes the code a %s op still holds",
+    async (kind) => {
+      const r = await rig();
+      const card = await loadedCard();
+      const source = await vaultWalletId(r);
+      const walletId =
+        kind === "create"
+          ? source
+          : strField(
+              await drive(
+                r,
+                { kind: "add", groups: 1 },
+                { codes: [freshCode()], cards: taps(card) },
+              ),
+              "walletId",
+            );
+      const op =
+        kind === "accounts"
+          ? { kind, walletId, groupIndex: 1, templates: ["btc.bip84"], network: BTC_MAINNET }
+          : kind === "create"
+            ? { kind, cards: 1, source: { kind: "wallet", walletId: source } }
+            : kind === "sign"
+              ? {
+                  kind,
+                  request: normalizeEvm({
+                    kind: "evm.personal-message",
+                    network: "eip155:1",
+                    account: { kind: "hd", walletId, groupIndex: 0, template: "evm.bip44" },
+                    message: utf8ToBytes("wipe check"),
+                  }),
+                }
+              : {
+                  kind,
+                  walletId,
+                  ...(kind === "erase" ? { card: bytesToHex(card.cardId) } : {}),
+                };
+      const first = ok(
+        await r.h.call(
+          "card.begin",
+          {
+            op,
+            ...(kind === "create" || kind === "erase" || kind === "sign"
+              ? { verify: verifyPasskey() }
+              : {}),
+          },
+          r.session,
+        ),
+      ) as { opId: string; step: Step };
+      // Walk past any short-id asks to the first code ask; create types it for the card.
+      let { step } = first;
+      for (
+        let guard = 0;
+        step.kind === "input" && step["purpose"] === "short-id" && guard < 5;
+        guard += 1
+      ) {
+        r.input.push(utf8ToBytes(shortId(card.identity)));
+        step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+      }
+      expect(step.kind).toBe("input");
+      const code = freshCode();
+      r.input.push(code);
+      step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+      if (step.kind === "input") {
+        // create's confirm ask — answer it so the op carries `code` into the tap.
+        r.input.push(code);
+        step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+      }
+      // Suspended at the next tap — `code` is held by the op.
+      expect(step.kind).toBe("tap");
+      ok(await r.h.call("card.cancel", { opId: first.opId }, r.session));
+      await r.h.settle();
+      expect(code.every((b) => b === 0)).toBe(true);
+    },
+  );
+
+  it("a lock during a held input interrupts the step — cancelled", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+    ) as { opId: string; step: Step };
+    expect(first.step.kind).toBe("input");
+    const pending = r.h.call("card.step", { opId: first.opId }, r.session);
+    await new Promise((resolve) => setTimeout(resolve)); // the input request is now pending
+    r.h.advance(15 * 60_000 + 1); // session idle deadline → lock interrupts the request
+    await expect(errCode(pending)).resolves.toBe("cancelled");
+    void card;
+  });
+
+  it("a second card.begin discards the first op and wipes the code it held", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+    ) as { opId: string; step: Step };
+    const code = freshCode();
+    r.input.push(code);
+    const step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("tap"); // idle between steps, `code` still held
+    const second = ok(await r.h.call("card.begin", { op: { kind: "status" } }, r.session)) as {
+      opId: string;
+      step: Step;
+    };
+    expect(second.step.kind).toBe("tap");
+    await r.h.settle();
+    expect(code.every((b) => b === 0)).toBe(true);
+    ok(await r.h.call("card.cancel", { opId: second.opId }, r.session));
+    void card;
+  });
+
+  it("cancel interrupts an in-flight tap — the held step resolves cancelled", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const added = await drive(
+      r,
+      { kind: "add", groups: 1 },
+      { codes: [freshCode()], cards: taps(card) },
+    );
+    const walletId = strField(added, "walletId");
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "health", walletId } }, r.session),
+    ) as { opId: string; step: Step };
+    r.input.push(freshCode());
+    const step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("tap");
+    const slow: FieldCard = {
+      transmit: async (apdu) =>
+        new Promise((resolve) => setTimeout(() => resolve(card.transmit(apdu)), 30)),
+    };
+    r.reader.present(slow);
+    const pending = r.h.call("card.step", { opId: first.opId }, r.session);
+    await new Promise((resolve) => setTimeout(resolve)); // let the step go in-flight
+    r.h.advance(15 * 60_000 + 1); // lock mid-tap — the held step aborts
+    const res = await pending;
+    // Any failure wins here — what matters is the step does not resume the op.
+    expect("err" in res).toBe(true);
+  });
+
+  it("a cancelled op frees the slot — the next begin works", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+    ) as { opId: string; step: Step };
+    ok(await r.h.call("card.cancel", { opId: first.opId }, r.session));
+    const second = ok(await r.h.call("card.begin", { op: { kind: "status" } }, r.session)) as {
+      step: Step;
+    };
+    expect(second.step.kind).toBe("tap");
+    void card;
+  });
+
+  it("the 120 s clock re-arms on every step — slow steps do not age the op out", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+    ) as { opId: string; step: Step };
+    r.h.advance(100_000); // 100 s passes before the code arrives
+    r.input.push(freshCode());
+    const step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("tap");
+    r.h.advance(100_000); // another 100 s before the card lands — over 120 total
+    r.reader.present(card);
+    const next = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(next.kind === "tap" || next.kind === "done" || next.kind === "input").toBe(true);
+    ok(await r.h.call("card.cancel", { opId: first.opId }, r.session));
+  });
 });
 
 const BTC_MAINNET = "bip122:000000000019d6689c085ae165831e93";
@@ -1381,6 +1564,13 @@ describe("card code remember (fake card)", () => {
       ),
     ) as { step: Step };
     expect(forgot.step.kind).toBe("done");
+    // Stripped for real — the next op asks for the code instead of reusing a saved hash.
+    const third = ok(await r.h.call("card.begin", { op: op() }, r.session)) as {
+      opId: string;
+      step: Step;
+    };
+    expect(third.step.kind).toBe("input");
+    ok(await r.h.call("card.cancel", { opId: third.opId }, r.session));
   });
 });
 
@@ -1461,13 +1651,19 @@ describe("card op secrecy (fake card)", () => {
           templates: ["evm.bip44"],
           network: "eip155:1",
         },
-        { codes: [utf8ToBytes("leak code one")], cards: taps(card, 4) },
+        {
+          codes: [utf8ToBytes("leak code one"), utf8ToBytes("leak code one")],
+          cards: taps(card, 4),
+        },
       );
       expect(accounts["kind"]).toBe("accounts");
       await drive(
         r,
         { kind: "health", walletId },
-        { codes: [utf8ToBytes("leak code one")], cards: taps(card, 4) },
+        {
+          codes: [utf8ToBytes("leak code one"), utf8ToBytes("leak code one")],
+          cards: taps(card, 4),
+        },
       );
       const signed = await drive(
         r,
@@ -1480,7 +1676,10 @@ describe("card op secrecy (fake card)", () => {
             message: utf8ToBytes("leak check"),
           }),
         },
-        { codes: [utf8ToBytes("leak code one")], cards: taps(card, 4) },
+        {
+          codes: [utf8ToBytes("leak code one"), utf8ToBytes("leak code one")],
+          cards: taps(card, 4),
+        },
         verifyPasskey(),
       );
       expect(signed["kind"]).toBe("sign");
@@ -1489,7 +1688,7 @@ describe("card op secrecy (fake card)", () => {
       await drive(
         r,
         { kind: "change-access", walletId },
-        { codes: [utf8ToBytes("leak code one"), new1, new2], cards: taps(card, 4) },
+        { codes: [utf8ToBytes("leak code one"), new1, new2, new2], cards: taps(card, 4) },
         verifyPasskey(),
       );
       // A wrong code and a cancel along the way.
@@ -1503,11 +1702,18 @@ describe("card op secrecy (fake card)", () => {
       expect(step).toMatchObject({ kind: "input", remaining: 9 });
       ok(await r.h.call("card.cancel", { opId: begun.opId }, r.session));
       const other = await loadedCard();
-      await drive(r, { kind: "add", groups: 1 }, { codes: [freshCode()], cards: taps(other, 8) });
+      await drive(
+        r,
+        { kind: "add", groups: 1 },
+        { codes: [freshCode(), freshCode()], cards: taps(other, 8) },
+      );
       await drive(
         r,
         { kind: "erase", walletId, card: bytesToHex(card.cardId) },
-        { codes: [utf8ToBytes("leak code two")], cards: taps(card, 4) },
+        {
+          codes: [utf8ToBytes("leak code two"), utf8ToBytes("leak code two")],
+          cards: taps(card, 4),
+        },
         verifyPasskey(),
       );
       const status = ok(await r.h.call("status", null, r.session));
@@ -1533,6 +1739,13 @@ describe("card op secrecy (fake card)", () => {
       }
       expect(containsSecret(status, needles)).toBe(false);
       expect(containsSecret(consoleLines, needles)).toBe(false);
+      // The persisted store image outside the sealed ciphertext — record kinds, ids, headers.
+      const image = await r.h.store.load();
+      for (const record of image.records) {
+        expect(
+          containsSecret({ kind: record.kind, id: record.id, header: record.header }, needles),
+        ).toBe(false);
+      }
       // Positive control — the scan must catch a planted leak.
       const planted = new Uint8Array(seed);
       r.h.posted.push({ leaked: planted });
@@ -1543,6 +1756,317 @@ describe("card op secrecy (fake card)", () => {
         console[name] = fn;
       }
     }
+  });
+});
+
+describe("card module mutation coverage (fake card)", () => {
+  it("a card that does not answer SELECT with 9000 is card-not-genuine", async () => {
+    const r = await rig();
+    const real = createFakeCard();
+    const impostor: FieldCard = {
+      transmit: async (apdu) =>
+        apdu[1] === 0xa4 ? Promise.resolve(new Uint8Array([0x6a, 0x82])) : real.transmit(apdu),
+    };
+    const error = await driveErr(r, { kind: "status" }, { cards: [impostor] });
+    expect(error).toBe("card-not-genuine");
+  });
+
+  it("a stray verify on an op that takes none is invalid-input", async () => {
+    const r = await rig();
+    await expect(
+      errCode(
+        r.h.call("card.begin", { op: { kind: "status" }, verify: verifyPasskey() }, r.session),
+      ),
+    ).resolves.toBe("invalid-input");
+  });
+
+  it("add marks a claimed-but-unverified member unknown, not ready", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const stranger = createFakeCard();
+    // The card claims a second member this kernel never tapped.
+    card.load(seed, await accessHash(CODE, card.cardId, quickArgon2id), [stranger.cardId]);
+    const added = await drive(
+      r,
+      { kind: "add", groups: 1 },
+      { codes: [freshCode()], cards: taps(card) },
+    );
+    const walletId = strField(added, "walletId");
+    const status = ok(await r.h.call("status", null, r.session)) as { wallets: WalletInfo[] };
+    const entry = status.wallets.find((w) => w.walletId === walletId);
+    const states = (entry?.custody === "card" ? entry.cards : []).map((c) => c.state);
+    expect(states).toStrictEqual(["ready", "unknown"]);
+  });
+
+  it("a torn create whose verify names foreign members is wrong-card", async () => {
+    const r = await rig();
+    const source = await vaultWalletId(r);
+    const codeText = "the new code";
+    const card = createFakeCard();
+    const stranger = createFakeCard();
+    // LOADED with the source wallet and this op's hash — VERIFY passes the master check,
+    // but its member list names a card the op never selected.
+    card.load(seed, await accessHash(utf8ToBytes(codeText), card.cardId, quickArgon2id), [
+      stranger.cardId,
+    ]);
+    const target = createFakeCard();
+    const first = ok(
+      await r.h.call(
+        "card.begin",
+        {
+          op: { kind: "create", cards: 2, source: { kind: "wallet", walletId: source } },
+          verify: verifyPasskey(),
+        },
+        r.session,
+      ),
+    ) as { opId: string; step: Step };
+    let { step } = first;
+    let typed = 0;
+    let lost = false;
+    let presented = false;
+    for (let guard = 0; guard < 30; guard += 1) {
+      if (step.kind === "input") {
+        if (step["purpose"] === "short-id") {
+          typed += 1;
+          r.input.push(utf8ToBytes(shortId((typed === 1 ? target : card).identity)));
+        } else {
+          r.input.push(utf8ToBytes(codeText));
+        }
+      } else if (step["reason"] === "target") {
+        r.reader.present(target);
+      } else if (lost) {
+        r.reader.present(card); // same master, foreign member list → wrong-card
+        presented = true;
+      } else {
+        // The source tap expects BLANK — lose it so the retry admits the loaded liar.
+        lost = true;
+        r.reader.loseAfter(0);
+        r.reader.present(createFakeCard());
+      }
+      const next = await r.h.call("card.step", { opId: first.opId }, r.session);
+      if ("err" in next) {
+        expect(next.err.code).toBe("wrong-card");
+        expect(presented).toBe(true);
+        return;
+      }
+      step = next.ok as Step;
+    }
+    throw new Error("the lying card was accepted");
+  });
+
+  it("an abort mid-commit resolves the held step cancelled, not done", async () => {
+    // The commit gate parks the tap's record commit; the interrupt lands while the run is
+    // suspended inside it — without the aborted check before gen.next the op would emit done.
+    let gate: Promise<void> | undefined;
+    let release = (): void => {};
+    let entered = 0;
+    const r = await rig(undefined, {
+      wrapStore: (store) => ({
+        load: store.load,
+        watch: store.watch,
+        commit: async (ops) => {
+          const armed = gate;
+          gate = undefined;
+          if (armed !== undefined) {
+            entered += 1;
+            await armed;
+          }
+          return store.commit(ops);
+        },
+      }),
+    });
+    const card = await loadedCard();
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+    ) as { opId: string; step: Step };
+    r.input.push(freshCode());
+    const step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("tap");
+    gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    r.reader.present(card);
+    const pending = r.h.call("card.step", { opId: first.opId }, r.session);
+    // oxlint-disable-next-line eslint/no-unmodified-loop-condition -- `entered` counts inside the wrapped store
+    for (let guard = 0; entered === 0 && guard < 200; guard += 1) {
+      await r.h.settle();
+    }
+    expect(entered).toBe(1);
+    r.h.advance(120_000); // the op's own timer interrupts the suspended run
+    release();
+    await expect(errCode(pending)).resolves.toBe("cancelled");
+  });
+
+  it("an abort while the op hashes a re-asked code resolves the step cancelled", async () => {
+    // The argon2 gate parks gen.next itself: after the interrupt lands, the resumed generator
+    // yields a tap — without the aborted check after gen.next the op would run it.
+    let gate: Promise<void> | undefined;
+    let release = (): void => {};
+    let entered = 0;
+    const argon2id: Argon2id = async (password, salt, cost, length) => {
+      const armed = gate;
+      gate = undefined;
+      if (armed !== undefined) {
+        entered += 1;
+        await armed;
+      }
+      return quickArgon2id(password, salt, cost, length);
+    };
+    const r = await rig(undefined, { argon2id });
+    const card = await loadedCard();
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+    ) as { opId: string; step: Step };
+    r.input.push(freshCode());
+    let step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    r.reader.present(card);
+    step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("tap"); // phase 2
+    // The card now expects a different hash: phase 2 VERIFYs fail and the op re-asks.
+    card.load(seed, await accessHash(utf8ToBytes("other code!"), card.cardId, quickArgon2id));
+    r.reader.present(card);
+    step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("input"); // wrong-code re-ask
+    gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    r.input.push(freshCode());
+    const pending = r.h.call("card.step", { opId: first.opId }, r.session);
+    // oxlint-disable-next-line eslint/no-unmodified-loop-condition -- `entered` counts inside the wrapped store
+    for (let guard = 0; entered === 0 && guard < 200; guard += 1) {
+      await r.h.settle();
+    }
+    expect(entered).toBe(1); // hashAll inside the resumed generator is parked
+    r.h.advance(120_000);
+    release();
+    await expect(errCode(pending)).resolves.toBe("cancelled");
+  });
+
+  it("a lock between steps discards the op and wipes the code it held", async () => {
+    const r = await rig(undefined, { idleMs: 5000 });
+    const card = await loadedCard();
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+    ) as { opId: string; step: Step };
+    const code = freshCode();
+    r.input.push(code);
+    const step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("tap"); // idle — the op still holds the code
+    r.h.advance(5001); // session idle lock, long before the op's own 120 s timer
+    await r.h.settle();
+    expect(code.every((byte) => byte === 0)).toBe(true);
+    await expect(errCode(r.h.call("card.step", { opId: first.opId }, r.session))).resolves.toBe(
+      "locked",
+    );
+    void card;
+  });
+
+  it("a foreign-kind record with the wallet's id is not the card wallet", async () => {
+    // Plant a data-key record under the walletId: `walletOf` filters on kind, so ops report
+    // not-found — with the kind check gone the foreign header fails the card-wallet parse.
+    const r = await rig();
+    const masterKey = HDKey.fromMasterSeed(seed);
+    try {
+      const walletId = walletIdOf(masterKey.publicKey!);
+      const dek = await sessionDek(r.h);
+      try {
+        const image = await r.h.store.load();
+        const record = sealRecord(
+          testSealer,
+          dek,
+          "data-key",
+          walletId,
+          encodeHeader({ purpose: "planted", createdAt: 0 }),
+          utf8ToBytes("{}"),
+        );
+        await r.h.store.commit(
+          withManifest(testSealer, image, [{ op: "put-record", record }], dek),
+        );
+      } finally {
+        dek.wipe();
+      }
+      await r.h.settle();
+      await expect(
+        errCode(r.h.call("card.begin", { op: { kind: "health", walletId } }, r.session)),
+      ).resolves.toBe("not-found");
+    } finally {
+      masterKey.wipePrivateData();
+    }
+  });
+
+  it("the access-code ask carries the lowest recorded tries of the member set", async () => {
+    const r = await rig();
+    const a = await loadedCard();
+    const b = await loadedCard();
+    a.load(seed, await accessHash(CODE, a.cardId, quickArgon2id), [b.cardId]);
+    b.load(seed, await accessHash(CODE, b.cardId, quickArgon2id), [a.cardId]);
+    const masterKey = HDKey.fromMasterSeed(seed);
+    try {
+      const walletId = walletIdOf(masterKey.publicKey!);
+      await plantCardWallet(
+        r.h,
+        {
+          v: 1,
+          walletId,
+          origin: "generated",
+          createdAt: 0,
+          members: [bytesToHex(a.cardId), bytesToHex(b.cardId)],
+          cards: [
+            { cardId: bytesToHex(a.cardId), state: "ready", cert: bytesToHex(a.cert), tries: 1 },
+            { cardId: bytesToHex(b.cardId), state: "ready", cert: bytesToHex(b.cert), tries: 3 },
+          ],
+        },
+        { master: bytesToHex(masterKey.publicKey!), nodes: {}, ed25519: {}, ephemerals: {} },
+      );
+      const first = ok(
+        await r.h.call(
+          "card.begin",
+          {
+            op: {
+              kind: "accounts",
+              walletId,
+              groupIndex: 0,
+              templates: ["evm.bip44"],
+              network: "eip155:1",
+            },
+          },
+          r.session,
+        ),
+      ) as { opId: string; step: Step };
+      expect(first.step).toMatchObject({ kind: "input", remaining: 1 });
+      ok(await r.h.call("card.cancel", { opId: first.opId }, r.session));
+    } finally {
+      masterKey.wipePrivateData();
+    }
+  });
+
+  it("cancelling a create at the source tap wipes the new code it held", async () => {
+    const r = await rig();
+    const source = await vaultWalletId(r);
+    const card = createFakeCard();
+    const code = freshCode();
+    const confirm = freshCode();
+    const first = ok(
+      await r.h.call(
+        "card.begin",
+        {
+          op: { kind: "create", cards: 1, source: { kind: "wallet", walletId: source } },
+          verify: verifyPasskey(),
+        },
+        r.session,
+      ),
+    ) as { opId: string; step: Step };
+    r.input.push(utf8ToBytes(shortId(card.identity)));
+    let step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    r.input.push(code);
+    step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    r.input.push(confirm);
+    step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("tap"); // newCode held, not yet hashed
+    ok(await r.h.call("card.cancel", { opId: first.opId }, r.session));
+    await r.h.settle();
+    expect(code.every((byte) => byte === 0)).toBe(true);
+    expect(confirm.every((byte) => byte === 0)).toBe(true);
   });
 });
 
@@ -2083,6 +2607,93 @@ describe("card sign (fake card)", () => {
     }
   });
 
+  it("a 63Cx on a remembered hash drops it for sign too", async () => {
+    const r = await keystoreRig();
+    ok(await r.h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, r.session));
+    const card = await loadedCard(CODE, seed2);
+    const added = await drive(
+      r,
+      { kind: "add", groups: 1 },
+      { codes: [freshCode()], cards: taps(card, 8) },
+    );
+    const walletId = strField(added, "walletId");
+    const result = signResult(
+      await drive(
+        r,
+        { kind: "sign", request: evmMsg(walletId), remember: true },
+        { codes: [freshCode()], cards: taps(card) },
+        HARDWARE,
+      ),
+    );
+    expect(field(result, "signature")).toBeInstanceOf(Uint8Array);
+    // The card's hash changes under the record — the saved one is now stale.
+    card.load(seed2, await accessHash(utf8ToBytes("elsewhere code"), card.cardId, quickArgon2id));
+    const signed = signResult(
+      await drive(
+        r,
+        { kind: "sign", request: evmMsg(walletId) },
+        { codes: [utf8ToBytes("elsewhere code")], cards: taps(card) },
+        HARDWARE,
+      ),
+    );
+    expect(field(signed, "signature")).toBeInstanceOf(Uint8Array);
+    // The stale entry was dropped in the failing tap's commit — accounts asks the code again.
+    const again = ok(
+      await r.h.call(
+        "card.begin",
+        {
+          op: {
+            kind: "accounts",
+            walletId,
+            groupIndex: 1,
+            templates: ["btc.bip84"],
+            network: BTC_MAINNET,
+          },
+        },
+        r.session,
+      ),
+    ) as { opId: string; step: Step };
+    expect(again.step.kind).toBe("input");
+    ok(await r.h.call("card.cancel", { opId: again.opId }, r.session));
+  });
+
+  it("the torn-VERIFY allowance is spent once per op — a second tear is card-tampered", async () => {
+    // Two ECDSA tasks over two taps (see the budget test) — VERIFY runs on both.
+    const r = await rig(2250);
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    const psbt = bip84Psbt(2);
+    const first = ok(
+      await r.h.call(
+        "card.begin",
+        {
+          op: { kind: "sign", request: psbtReq(walletId, psbt, ["btc.bip84", "btc.bip84"]) },
+          verify: verifyPasskey(),
+        },
+        r.session,
+      ),
+    ) as { opId: string; step: Step };
+    r.input.push(freshCode());
+    let step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("tap");
+    // Tap 1's VERIFY dies after committing the counter — recorded − 1, forgiven once.
+    card.tearAt(2);
+    r.reader.present(card);
+    step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step).toMatchObject({ kind: "tap", reason: "retry" });
+    card.reset();
+    r.reader.present(card);
+    step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(step.kind).toBe("tap"); // tap 2
+    // A foreign attempt before tap 2 drops the count to recorded − 1 again — the allowance
+    // is spent, so the read-back now reports tampering instead of forgiving it.
+    card.state.fails += 1;
+    r.reader.present(card);
+    await expect(errCode(r.h.call("card.step", { opId: first.opId }, r.session))).resolves.toBe(
+      "card-tampered",
+    );
+  });
+
   it("a solana message over 16 KiB is card-unsupported before any tap", async () => {
     const r = await rig();
     const card = await loadedCard();
@@ -2247,5 +2858,231 @@ describe("card sign (fake card)", () => {
     const second = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
     expect(second.kind).toBe("done");
     expect(card.received.filter((i) => i === 0x31)).toStrictEqual([0x31, 0x31]);
+  });
+
+  it("forget-access strips the remembered hash — the next accounts op asks for the code", async () => {
+    const r = await keystoreRig();
+    ok(await r.h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, r.session));
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    signResult(
+      await drive(
+        r,
+        { kind: "sign", request: evmMsg(walletId), remember: true },
+        { codes: [freshCode()], cards: taps(card) },
+        HARDWARE,
+      ),
+    );
+    const accounts = {
+      kind: "accounts",
+      walletId,
+      groupIndex: 1, // uncached — the op must tap and VERIFY
+      templates: ["btc.bip84"],
+      network: BTC_NETWORK,
+    };
+    const remembered = ok(await r.h.call("card.begin", { op: accounts }, r.session)) as {
+      opId: string;
+      step: Step;
+    };
+    expect(remembered.step.kind).toBe("tap"); // no code ask while the hash is remembered
+    ok(await r.h.call("card.cancel", { opId: remembered.opId }, r.session));
+    const forgot = ok(
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "forget-access", walletId }, verify: HARDWARE },
+        r.session,
+      ),
+    ) as { step: Step };
+    expect(forgot.step.kind).toBe("done");
+    const again = ok(await r.h.call("card.begin", { op: accounts }, r.session)) as {
+      opId: string;
+      step: Step;
+    };
+    expect(again.step.kind).toBe("input"); // the saved hash is gone — the code is asked again
+    ok(await r.h.call("card.cancel", { opId: again.opId }, r.session));
+  });
+
+  it("a sign prompt over the reader text cap is card-unsupported before any tap", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    ok(
+      await r.h.call(
+        "vault.setBlindSigning",
+        { enabled: true, verify: verifyPasskey() },
+        r.session,
+      ),
+    );
+    // A typed-data message whose kernel-built prompt rows exceed the 1024-byte tap-text cap:
+    // sixteen showable leaves, one quoted line each.
+    const fields = Array.from({ length: 16 }, (_, i) => `field${i}`);
+    const request = {
+      kind: "evm.typed-data",
+      network: "eip155:1",
+      account: signAccount(walletId, "evm.bip44"),
+      typedData: JSON.stringify({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          Mail: fields.map((name) => ({ name, type: "string" })),
+        },
+        domain: {
+          name: "D",
+          chainId: 1,
+          verifyingContract: "0x0000000000000000000000000000000000000001",
+        },
+        primaryType: "Mail",
+        message: Object.fromEntries(fields.map((name) => [name, "x".repeat(60)])),
+      }),
+    };
+    const before = r.reader.sent.length;
+    const error = await driveErr(
+      r,
+      { kind: "sign", request },
+      { codes: [freshCode()], cards: taps(card) },
+      verifyPasskey(),
+    );
+    expect(error).toBe("card-unsupported");
+    expect(r.reader.sent).toHaveLength(before); // never truncated, never tapped
+  });
+
+  it("the first VERIFY binds a sign to that card — the other member is card-id-mismatch", async () => {
+    // Two ECDSA tasks over two taps; after tap 1 the op is bound to that card, so the
+    // second member presented for tap 2 is refused before any command goes out.
+    const r = await rig(2250);
+    const a = createFakeCard();
+    const b = createFakeCard();
+    a.load(seed, await accessHash(CODE, a.cardId, quickArgon2id), [b.cardId]);
+    b.load(seed, await accessHash(CODE, b.cardId, quickArgon2id), [a.cardId]);
+    const masterKey = HDKey.fromMasterSeed(seed);
+    const account = masterKey.derive("m/84'/0'/0'");
+    try {
+      const walletId = walletIdOf(masterKey.publicKey!);
+      await plantCardWallet(
+        r.h,
+        {
+          v: 1,
+          walletId,
+          origin: "generated",
+          createdAt: 0,
+          members: [bytesToHex(a.cardId), bytesToHex(b.cardId)],
+          cards: [
+            { cardId: bytesToHex(a.cardId), state: "ready", cert: bytesToHex(a.cert), tries: 10 },
+            { cardId: bytesToHex(b.cardId), state: "ready", cert: bytesToHex(b.cert), tries: 10 },
+          ],
+        },
+        {
+          master: bytesToHex(masterKey.publicKey!),
+          nodes: {
+            "m/84'/0'/0'": {
+              key: bytesToHex(account.publicKey!),
+              chainCode: bytesToHex(account.chainCode!),
+            },
+          },
+          ed25519: {},
+          ephemerals: {},
+        },
+      );
+      const first = ok(
+        await r.h.call(
+          "card.begin",
+          {
+            op: {
+              kind: "sign",
+              request: psbtReq(walletId, bip84Psbt(2), ["btc.bip84", "btc.bip84"]),
+            },
+            verify: verifyPasskey(),
+          },
+          r.session,
+        ),
+      ) as { opId: string; step: Step };
+      let { step } = first;
+      for (let guard = 0; step.kind !== "done" && guard < 20; guard += 1) {
+        if (step.kind === "input") {
+          r.input.push(freshCode());
+          const next = await r.h.call("card.step", { opId: first.opId }, r.session);
+          if ("err" in next) {
+            throw new Error(`unexpected ${next.err.code}`);
+          }
+          step = next.ok as Step;
+          continue;
+        }
+        // Until the approval binds, `a` is the member on the reader; once the step names the
+        // bound card, present the other member — it must be refused before SELECT.
+        const named = step["card"] as string | undefined;
+        r.reader.present(named === undefined ? a : b);
+        const next = await r.h.call("card.step", { opId: first.opId }, r.session);
+        if ("err" in next) {
+          expect(named).toBe(shortId(a.identity));
+          expect(next.err.code).toBe("card-id-mismatch");
+          return;
+        }
+        step = next.ok as Step;
+      }
+      throw new Error("the foreign member was accepted for the second tap");
+    } finally {
+      masterKey.wipePrivateData();
+    }
+  });
+
+  it("signing leaks nothing per family — ecdsa, bip340 and ed25519", async () => {
+    const consoleLines: string[] = [];
+    const seen = new Map<"log" | "warn" | "error", typeof console.log>();
+    for (const name of ["log", "warn", "error"] as const) {
+      seen.set(name, console[name]);
+      console[name] = (...args: unknown[]) => {
+        consoleLines.push(args.map(String).join(" "));
+      };
+    }
+    try {
+      const r = await rig();
+      const card = await loadedCard();
+      const walletId = await addWallet(r, card);
+      for (const request of [
+        evmMsg(walletId),
+        psbtReq(walletId, bip84Psbt(1), ["btc.bip84"]),
+        psbtReq(walletId, bip86Psbt(), ["btc.bip86"]),
+        solMsg(walletId, utf8ToBytes("leak solana")),
+      ]) {
+        const result = await drive(
+          r,
+          { kind: "sign", request },
+          { codes: [freshCode(), freshCode()], cards: taps(card, 4) },
+          verifyPasskey(),
+        );
+        expect(result["kind"]).toBe("sign");
+      }
+      const keys = card.secrets.keys ?? new Uint8Array(0);
+      const needles = [
+        utf8ToBytes(CODE_TEXT),
+        await accessHash(CODE, card.cardId, quickArgon2id),
+        card.secrets.eph ?? new Uint8Array(0),
+        card.secrets.shared ?? new Uint8Array(0),
+        keys,
+        keys.subarray(0, 16),
+        keys.subarray(16, 32),
+        new Uint8Array(seed),
+      ].filter((n) => n.length > 0);
+      for (const message of r.h.posted) {
+        expect(containsSecret(message, needles)).toBe(false);
+      }
+      const image = await r.h.store.load();
+      for (const record of image.records) {
+        expect(
+          containsSecret({ kind: record.kind, id: record.id, header: record.header }, needles),
+        ).toBe(false);
+      }
+      expect(containsSecret(consoleLines, needles)).toBe(false);
+      r.h.posted.push({ planted: keys });
+      expect(containsSecret(r.h.posted.at(-1), needles)).toBe(true);
+      r.h.posted.pop();
+    } finally {
+      for (const [name, fn] of seen) {
+        console[name] = fn;
+      }
+    }
   });
 });

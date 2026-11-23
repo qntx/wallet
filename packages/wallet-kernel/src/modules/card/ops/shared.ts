@@ -125,27 +125,42 @@ export const validCode = (code: Uint8Array): boolean =>
 export async function* askNewCode(
   env: OpEnv,
 ): AsyncGenerator<PendingInput | PendingTap, Uint8Array, StepOutcome | undefined> {
-  for (;;) {
-    const code = yield* ask({
-      purpose: "new-access-code",
-      secure: "access-code",
-      label: newAccessCodeLabel(env.locale, undefined),
-    });
-    if (!validCode(code)) {
+  let code: Uint8Array | undefined;
+  try {
+    for (;;) {
+      code = yield* ask({
+        purpose: "new-access-code",
+        secure: "access-code",
+        label: newAccessCodeLabel(env.locale, undefined),
+      });
+      if (!validCode(code)) {
+        wipe(code);
+        code = undefined;
+        continue;
+      }
+      const confirm = yield* ask({
+        purpose: "confirm-access-code",
+        secure: "access-code",
+        label: confirmAccessCodeLabel(
+          env.locale,
+          undefined,
+          code.length < CODE_LIMITS.confirmBelow,
+        ),
+      });
+      const matched = equalBytes(code, confirm);
+      wipe(confirm);
+      if (matched) {
+        const accepted = code;
+        code = undefined;
+        return accepted;
+      }
       wipe(code);
-      continue;
+      code = undefined;
     }
-    const confirm = yield* ask({
-      purpose: "confirm-access-code",
-      secure: "access-code",
-      label: confirmAccessCodeLabel(env.locale, undefined, code.length < CODE_LIMITS.confirmBelow),
-    });
-    const matched = equalBytes(code, confirm);
-    wipe(confirm);
-    if (matched) {
-      return code;
+  } finally {
+    if (code !== undefined) {
+      wipe(code);
     }
-    wipe(code);
   }
 }
 

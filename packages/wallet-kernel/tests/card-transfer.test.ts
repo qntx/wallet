@@ -5,12 +5,16 @@
  * short-ID/card-ID failure stories, the hostile OFFER/EXPORT/IMPORT deviations, tag loss, and
  * `tear` on every persistent write of OFFER/CREATE/IMPORT.
  */
-import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
+import { sha512 } from "@noble/hashes/sha2.js";
+import { bytesToHex, concatBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { HDKey } from "@scure/bip32";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { CardInfo, WalletInfo } from "@qntx/wallet/types";
 
+import { walletIdOf } from "../src/derive/wallet-id.ts";
 import { accessHash } from "../src/modules/card/protocol/access.ts";
+import { ascii } from "../src/modules/card/protocol/bytes.ts";
 import { shortId } from "../src/modules/card/protocol/identity.ts";
 import { entropyFromMnemonic } from "../src/seed/mnemonic.ts";
 import { seedFromEntropy } from "../src/seed/seed.ts";
@@ -20,7 +24,7 @@ import { testSecureInput } from "./card/input.ts";
 import { testCardReader } from "./card/reader.ts";
 import { CA1_ANCHOR } from "./card/sim.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
-import { createHarness } from "./harness.ts";
+import { createHarness, seededRandom } from "./harness.ts";
 import { quickArgon2id, subtlePbkdf2 } from "./helpers.ts";
 
 const CREDENTIAL_ID = utf8ToBytes("credential-1");
@@ -994,6 +998,12 @@ describe("multi-card operations (fake card)", () => {
       const status = ok(await r.h.call("status", null, r.session));
       expect(containsSecret(status, needles)).toBe(false);
       expect(containsSecret(consoleLines, needles)).toBe(false);
+      const image = await r.h.store.load();
+      for (const record of image.records) {
+        expect(
+          containsSecret({ kind: record.kind, id: record.id, header: record.header }, needles),
+        ).toBe(false);
+      }
       r.h.posted.push({ planted: seed });
       expect(containsSecret(r.h.posted.at(-1), needles)).toBe(true);
       r.h.posted.pop();
@@ -1002,5 +1012,509 @@ describe("multi-card operations (fake card)", () => {
         console[name] = fn;
       }
     }
+  });
+
+  it("generated creates leak nothing — host entropy, codes, hashes and session keys", async () => {
+    const consoleLines: string[] = [];
+    const seen = new Map<"log" | "warn" | "error", typeof console.log>();
+    for (const name of ["log", "warn", "error"] as const) {
+      seen.set(name, console[name]);
+      console[name] = (...args: unknown[]) => {
+        consoleLines.push(args.map(String).join(" "));
+      };
+    }
+    const r = await rig();
+    try {
+      const drawn = r.h.draws.length;
+      const a = createFakeCard();
+      const b = createFakeCard();
+      const first = await begin(
+        r,
+        { kind: "create", cards: 2, source: { kind: "generate" } },
+        verifyPasskey(),
+      );
+      const cards_ = [a, b];
+      const codes = ["leak gen", "leak gen", "leak gen2", "leak gen2"];
+      let s = first.step;
+      for (let guard = 0; s.kind !== "done"; guard += 1) {
+        if (guard > 40) {
+          throw new Error("stuck");
+        }
+        if (s.kind === "input") {
+          if (s["purpose"] === "short-id") {
+            r.input.push(utf8ToBytes(shortId(cards_[0]?.identity ?? new Uint8Array(33))));
+          } else {
+            const c = codes.shift();
+            if (c === undefined) {
+              throw new Error("no code");
+            }
+            r.input.push(utf8ToBytes(c));
+          }
+        } else {
+          const bound = s["card"];
+          const next =
+            bound === undefined
+              ? cards_.shift()
+              : [a, b].find((c) => shortId(c.identity) === bound);
+          if (next === undefined) {
+            throw new Error("no card");
+          }
+          r.reader.present(next);
+        }
+        s = await step(r, first.opId);
+      }
+      const { walletId } = await cardWallet(r);
+      expect(walletId).not.toBe("");
+      const entropy = r.h.draws.slice(drawn).filter((d) => d.length === 32);
+      const keys = [...(a.secrets.keys ?? []), ...(b.secrets.keys ?? [])];
+      const needles = [
+        utf8ToBytes("leak gen"),
+        utf8ToBytes("leak gen2"),
+        await accessHash(utf8ToBytes("leak gen"), a.cardId, quickArgon2id),
+        await accessHash(utf8ToBytes("leak gen"), b.cardId, quickArgon2id),
+        await accessHash(utf8ToBytes("leak gen2"), b.cardId, quickArgon2id),
+        a.secrets.eph ?? new Uint8Array(0),
+        b.secrets.eph ?? new Uint8Array(0),
+        a.secrets.keys ?? new Uint8Array(0),
+        b.secrets.keys ?? new Uint8Array(0),
+        new Uint8Array(keys),
+        ...entropy,
+        ...entropy.map((e) => e.subarray(0, 16)),
+      ].filter((n) => n.length > 0);
+      for (const message of r.h.posted) {
+        expect(containsSecret(message, needles)).toBe(false);
+      }
+      const status = ok(await r.h.call("status", null, r.session));
+      expect(containsSecret(status, needles)).toBe(false);
+      expect(containsSecret(consoleLines, needles)).toBe(false);
+      const image = await r.h.store.load();
+      for (const record of image.records) {
+        expect(
+          containsSecret({ kind: record.kind, id: record.id, header: record.header }, needles),
+        ).toBe(false);
+      }
+      r.h.posted.push({ planted: entropy[0] ?? new Uint8Array([1]) });
+      expect(containsSecret(r.h.posted.at(-1), needles)).toBe(true);
+      r.h.posted.pop();
+    } finally {
+      for (const [name, fn] of seen) {
+        console[name] = fn;
+      }
+    }
+  });
+});
+
+describe("multi-card mutation coverage (fake card)", () => {
+  it("a generated create transmits the host's entropy — wiping it early loads a different wallet", async () => {
+    const r = await rig();
+    const cardRandom = seededRandom(97);
+    const source = createFakeCard({ random: cardRandom.random });
+    const target = createFakeCard();
+    const result = await createSet(r, [source, target], { generate: true });
+    expect(result["kind"]).toBe("create");
+    const { walletId } = await cardWallet(r);
+    // The applet's generate path mixes the transmitted 32 bytes into its seed — replay every
+    // (card draw, host draw) pair; exactly one must reproduce the committed wallet. A wiped
+    // buffer transmits zeros, whose candidate never matches a real draw.
+    const label = ascii("qntx-card/v1/seed");
+    const candidates = new Set<string>();
+    for (const mix of cardRandom.draws) {
+      if (mix.length !== 32) {
+        continue;
+      }
+      for (const host of r.h.draws) {
+        if (host.length !== 32) {
+          continue;
+        }
+        const master = HDKey.fromMasterSeed(sha512(concatBytes(label, mix, host))).publicKey;
+        if (master !== null) {
+          candidates.add(walletIdOf(master));
+        }
+      }
+    }
+    expect(candidates.has(walletId)).toBe(true);
+  });
+
+  it("transfer seals the export under the target's new code — the target verifies with it", async () => {
+    const r = await rig();
+    const source = createFakeCard();
+    const target = createFakeCard();
+    const wid = await vaultWalletId(r);
+    const { opId, step: firstStep } = await begin(
+      r,
+      { kind: "create", cards: 2, source: { kind: "wallet", walletId: wid } },
+      verifyPasskey(),
+    );
+    const codes = [CODE, CODE];
+    const cards = [target, source];
+    let s = firstStep;
+    let targetTaps = 0;
+    for (let guard = 0; s.kind !== "done"; guard += 1) {
+      if (guard > 40) {
+        throw new Error("stuck");
+      }
+      if (s.kind === "input") {
+        if (s["purpose"] === "short-id") {
+          r.input.push(utf8ToBytes(shortId(cards[0]?.identity ?? new Uint8Array(33))));
+        } else {
+          const c = codes.shift();
+          if (c === undefined) {
+            throw new Error("no code");
+          }
+          r.input.push(utf8ToBytes(c));
+        }
+      } else {
+        if (s["reason"] === "target") {
+          targetTaps += 1;
+          if (targetTaps === 2) {
+            break;
+          }
+        }
+        const next = cards.shift();
+        if (next === undefined) {
+          throw new Error("no card");
+        }
+        r.reader.present(next);
+      }
+      s = await step(r, opId);
+    }
+    await r.h.call("card.cancel", { opId }, r.session);
+    const out = await drive(
+      r,
+      { kind: "transfer", walletId: wid },
+      {
+        codes: [CODE, "new code t", "new code t"],
+        choices: [target, source],
+        deck: [target, source],
+      },
+      verifyPasskey(),
+    );
+    expect(out.error).toBeUndefined();
+    expect(out.result?.["kind"]).toBe("transfer");
+    // Proof the payload carried the TARGET's hash: the member verifies under its new code.
+    const health = await drive(
+      r,
+      { kind: "health", walletId: wid },
+      {
+        codes: [CODE, "new code t"],
+        choices: [source, target],
+        deck: [source, target],
+      },
+    );
+    expect(health.error).toBeUndefined();
+    expect(health.result?.["kind"]).toBe("health");
+  });
+
+  it("an imported two-card create deletes the source entropy record with the wallet commit", async () => {
+    const r = await rig();
+    const sourceId = await vaultWalletId(r);
+    const result = await createSet(r, [createFakeCard(), createFakeCard()]);
+    expect(result["kind"]).toBe("create");
+    const { records } = await r.h.store.load();
+    expect(records.some((rec) => rec.kind === "entropy")).toBe(false);
+    void sourceId;
+  });
+
+  it("health verifies every member — stopping at the first leaves the rest unchecked", async () => {
+    const r = await rig();
+    const source = createFakeCard();
+    const target = createFakeCard();
+    await createSet(r, [source, target]);
+    const { walletId } = await cardWallet(r);
+    source.received.length = 0;
+    target.received.length = 0;
+    const out = await drive(
+      r,
+      { kind: "health", walletId },
+      { codes: [CODE], choices: [source, target], deck: [source, target] },
+    );
+    expect(out.error).toBeUndefined();
+    expect(out.result?.["kind"]).toBe("health");
+    expect(source.received).toContain(0x22); // VERIFY
+    expect(target.received).toContain(0x22);
+  });
+
+  it("cancel wipes the codes a suspended transfer and reseal still hold", async () => {
+    const r = await rig();
+    const source = createFakeCard();
+    const target = createFakeCard();
+    await createSet(r, [source, target]);
+    const { walletId, cards } = await cardWallet(r);
+    const targetId = cards?.[1]?.cardId ?? "";
+    // reseal: push the member code, suspend at the verify tap, cancel — code wiped.
+    const first = await begin(r, { kind: "reseal", walletId, card: targetId }, verifyPasskey());
+    const code = utf8ToBytes(CODE);
+    const queue = [target, source];
+    let s = first.step;
+    let pushed = false;
+    for (let guard = 0; guard < 20 && !pushed; guard += 1) {
+      if (s.kind === "input") {
+        if (s["purpose"] === "short-id") {
+          r.input.push(utf8ToBytes(shortId((queue[0] ?? target).identity)));
+        } else {
+          r.input.push(code); // the member's existing code — held until its VERIFY
+          pushed = true;
+        }
+      } else {
+        r.reader.present(queue.shift() ?? target);
+      }
+      s = await step(r, first.opId);
+    }
+    expect(pushed).toBe(true);
+    await r.h.call("card.cancel", { opId: first.opId }, r.session);
+    await r.h.settle();
+    expect(code.every((b) => b === 0)).toBe(true);
+  });
+
+  it("cancel wipes the code a suspended transfer still holds", async () => {
+    const r = await rig();
+    const source = createFakeCard();
+    const target = createFakeCard();
+    const wid = await vaultWalletId(r);
+    // Stop the create before the target's install tap — a pending member to transfer onto.
+    const { opId, step: firstStep } = await begin(
+      r,
+      { kind: "create", cards: 2, source: { kind: "wallet", walletId: wid } },
+      verifyPasskey(),
+    );
+    const codes = [CODE, CODE];
+    const cards = [target, source];
+    let s = firstStep;
+    let targetTaps = 0;
+    for (let guard = 0; s.kind !== "done"; guard += 1) {
+      if (guard > 40) {
+        throw new Error("stuck");
+      }
+      if (s.kind === "input") {
+        if (s["purpose"] === "short-id") {
+          r.input.push(utf8ToBytes(shortId(cards[0]?.identity ?? new Uint8Array(33))));
+        } else {
+          const c = codes.shift();
+          if (c === undefined) {
+            throw new Error("no code");
+          }
+          r.input.push(utf8ToBytes(c));
+        }
+      } else {
+        if (s["reason"] === "target") {
+          targetTaps += 1;
+          if (targetTaps === 2) {
+            break;
+          }
+        }
+        const next = cards.shift();
+        if (next === undefined) {
+          throw new Error("no card");
+        }
+        r.reader.present(next);
+      }
+      s = await step(r, opId);
+    }
+    await r.h.call("card.cancel", { opId }, r.session);
+    // transfer: walk to the source-code ask, push it, suspend at the next step, cancel.
+    const t = await begin(r, { kind: "transfer", walletId: wid }, verifyPasskey());
+    const code = utf8ToBytes(CODE);
+    const queue = [target, source];
+    s = t.step;
+    let pushed = false;
+    for (let guard = 0; guard < 20 && !pushed; guard += 1) {
+      if (s.kind === "input") {
+        if (s["purpose"] === "short-id") {
+          r.input.push(utf8ToBytes(shortId((queue[0] ?? target).identity)));
+        } else if (s["purpose"] === "access-code") {
+          r.input.push(code); // the source code — held until the source tap's VERIFY
+          pushed = true;
+        } else {
+          r.input.push(code);
+        }
+      } else {
+        r.reader.present(queue.shift() ?? target);
+      }
+      s = await step(r, t.opId);
+    }
+    expect(pushed).toBe(true);
+    await r.h.call("card.cancel", { opId: t.opId }, r.session);
+    await r.h.settle();
+    expect(code.every((b) => b === 0)).toBe(true);
+  });
+
+  it("cancel between a create's new-code asks wipes the half-entered code", async () => {
+    const r = await rig();
+    const source = createFakeCard();
+    const target = createFakeCard();
+    const wid = await vaultWalletId(r);
+    const { opId, step: firstStep } = await begin(
+      r,
+      { kind: "create", cards: 2, source: { kind: "wallet", walletId: wid } },
+      verifyPasskey(),
+    );
+    const code = utf8ToBytes(CODE);
+    let typed = 0;
+    let s = firstStep;
+    let pushed = false;
+    for (let guard = 0; guard < 20 && !pushed; guard += 1) {
+      if (s.kind === "input") {
+        if (s["purpose"] === "short-id") {
+          typed += 1;
+          r.input.push(utf8ToBytes(shortId((typed === 1 ? target : source).identity)));
+        } else {
+          r.input.push(code); // new code — held while the confirm ask is pending
+          pushed = true;
+        }
+      } else {
+        r.reader.present(s["reason"] === "target" ? target : source);
+      }
+      s = await step(r, opId);
+    }
+    expect(pushed).toBe(true);
+    expect(s.kind).toBe("input"); // the confirm ask — `code` still held
+    await r.h.call("card.cancel", { opId }, r.session);
+    await r.h.settle();
+    expect(code.every((b) => b === 0)).toBe(true);
+  });
+
+  it("a torn create whose VERIFYed members come back reordered is wrong-card", async () => {
+    // k=3: [source, t2, t1] survives the decoder (distinct, contains the card) but is not the
+    // op's member order — `stage` must compare the list in order, not just its length. The
+    // first source tap is lost so the retry admits the already-loaded liar under "any" life.
+    const r = await rig();
+    const t1 = createFakeCard();
+    const t2 = createFakeCard();
+    const source = createFakeCard();
+    const codeText = "the new code";
+    const wid = await vaultWalletId(r);
+    const exported = ok(
+      await r.h.call(
+        "wallet.exportMnemonic",
+        { walletId: wid, verify: verifyPasskey() },
+        r.session,
+      ),
+    );
+    const seed = await seedFromEntropy(
+      entropyFromMnemonic(new TextDecoder().decode(exported["mnemonic"] as Uint8Array)),
+      "",
+      subtlePbkdf2,
+    );
+    source.load(seed, await accessHash(utf8ToBytes(codeText), source.cardId, quickArgon2id), [
+      t2.cardId,
+      t1.cardId,
+    ]);
+    const { opId, step: firstStep } = await begin(
+      r,
+      { kind: "create", cards: 3, source: { kind: "wallet", walletId: wid } },
+      verifyPasskey(),
+    );
+    let err: string | undefined;
+    let s = firstStep;
+    let typed = 0;
+    let lost = false;
+    let presented = false;
+    const ids = [t1, t2, source];
+    for (let guard = 0; guard < 30; guard += 1) {
+      if (s.kind === "input") {
+        if (s["purpose"] === "short-id") {
+          typed += 1;
+          r.input.push(utf8ToBytes(shortId((ids[typed - 1] ?? source).identity)));
+        } else {
+          r.input.push(utf8ToBytes(codeText));
+        }
+      } else if (s["reason"] === "target") {
+        r.reader.present(typed === 1 ? t1 : t2);
+      } else if (lost) {
+        presented = true;
+        r.reader.present(source); // same master, reordered member list → wrong-card
+      } else {
+        lost = true;
+        r.reader.loseAfter(0); // the source tap dies before SELECT answers
+        r.reader.present(createFakeCard());
+      }
+      const next = await r.h.call("card.step", { opId }, r.session);
+      if ("err" in next) {
+        err = next.err.code;
+        break;
+      }
+      s = next.ok as Step;
+    }
+    expect(err).toBe("wrong-card");
+    expect(presented).toBe(true);
+  });
+
+  it("the create source tap refuses a card already OFFERed as a target", async () => {
+    // Typing the target's own short ID at the source ask and presenting that card again must
+    // be refused before any command — the same card cannot take two slots.
+    const r = await rig();
+    const target = createFakeCard();
+    const source = createFakeCard();
+    const out = await drive(
+      r,
+      { kind: "create", cards: 2, source: { kind: "generate" } },
+      {
+        codes: [CODE, CODE],
+        shortIds: [shortId(target.identity), shortId(target.identity)],
+        deck: [target, source],
+        presents: [target, target],
+      },
+      verifyPasskey(),
+    );
+    expect(out.error).toBe("card-id-mismatch");
+  });
+
+  it("cancel at the source tap wipes the codes a k=2 create still holds", async () => {
+    // createSet keeps `newCode` live through the source tap — a cancel there must run the
+    // finally that wipes it.
+    const r = await rig();
+    const target = createFakeCard();
+    const source = createFakeCard();
+    const { opId, step: firstStep } = await begin(
+      r,
+      { kind: "create", cards: 2, source: { kind: "generate" } },
+      verifyPasskey(),
+    );
+    const code = utf8ToBytes(CODE);
+    const confirm = utf8ToBytes(CODE);
+    let s = firstStep;
+    let presented = 0;
+    for (let guard = 0; guard < 20; guard += 1) {
+      if (s.kind === "input") {
+        if (s["purpose"] === "short-id") {
+          r.input.push(utf8ToBytes(shortId((presented === 0 ? target : source).identity)));
+        } else if (s["purpose"] === "new-access-code") {
+          r.input.push(code);
+        } else {
+          r.input.push(confirm);
+        }
+      } else if (s["reason"] === "target") {
+        r.reader.present(target);
+        presented += 1;
+      } else {
+        break; // the source tap — newCode is held, unwiped until its hash lands
+      }
+      s = await step(r, opId);
+    }
+    expect(s.kind).toBe("tap");
+    await r.h.call("card.cancel", { opId }, r.session);
+    await r.h.settle();
+    expect(code.every((b) => b === 0)).toBe(true);
+    expect(confirm.every((b) => b === 0)).toBe(true);
+  });
+
+  it("health verifies every member of the set, not just the first", async () => {
+    const r = await rig();
+    const source = createFakeCard();
+    const target = createFakeCard();
+    await createSet(r, [source, target]);
+    const { walletId } = await cardWallet(r);
+    const out = await drive(
+      r,
+      { kind: "health", walletId },
+      { codes: [CODE], choices: [source], deck: [source, target] },
+    );
+    expect(out.error).toBeUndefined();
+    const taps = out.steps.filter((s) => s.kind === "tap");
+    expect(taps).toHaveLength(2);
+    // The second tap's bound ask names the member the first tap did not verify.
+    const second = taps[1]?.["card"];
+    expect(second === shortId(source.identity) || second === shortId(target.identity)).toBe(true);
+    expect(second).not.toBe(taps[0]?.["card"]);
   });
 });
