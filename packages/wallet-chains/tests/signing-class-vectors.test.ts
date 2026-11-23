@@ -6,6 +6,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { decodeEvm, normalizeEvm } from "../src/evm/index.ts";
 import { ChainError, isBlindIntent, messageBlindReason, messageContent } from "../src/index.ts";
+import type { DisplayIntent, SignRequest } from "../src/index.ts";
 import { decodeSolana } from "../src/solana/index.ts";
 import { decodeTron } from "../src/tron/decode.ts";
 

@@ -867,6 +867,7 @@ describe("chain.sign", () => {
     };
     for (const verify of [wrongFactor, PASSKEY()]) {
       for (const network of ["eip155:0", "eip155:1"]) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- sequential kernel calls
         const res = await callSign(
           h,
           session,

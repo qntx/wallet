@@ -125,7 +125,7 @@ const stubCrypto = (): SparkCrypto => ({
   },
   frostSign: () => frostSignResponse(1),
   frostAggregate: notImplemented,
-  eciesEncrypt: (_publicKey: Uint8Array, plaintext: Uint8Array) => plaintext.slice(),
+  eciesEncrypt: (_publicKey: Uint8Array, plaintext: Uint8Array) => Uint8Array.from(plaintext),
   eciesDecrypt: notImplemented,
   splitSecretWithProofs: (_secret: Uint8Array, threshold: number, shares: number) =>
     fakeSplit(threshold, shares),
@@ -449,7 +449,7 @@ const prepareTransfer = async (
   return recordBytes(field(prepared, "operatorPackages"));
 };
 
-const signTransfer = (
+const signTransfer = async (
   t: SparkTest,
   transferId: string,
   operatorPackages: Record<string, Uint8Array>,
@@ -467,7 +467,11 @@ const signTransfer = (
     t.session,
   );
 
-const signToken = (t: SparkTest, owner: Uint8Array, amount: bigint): Promise<KernelResponse> =>
+const signToken = async (
+  t: SparkTest,
+  owner: Uint8Array,
+  amount: bigint,
+): Promise<KernelResponse> =>
   t.h.call(
     "spark.signIdentity",
     {
@@ -639,7 +643,7 @@ describe("onchain approval", () => {
   it("consumes the approval after the first signed spend", async () => {
     const t = await setup();
     ok(await approveOnchain(t));
-    const spend = (): Promise<KernelResponse> =>
+    const spend = async (): Promise<KernelResponse> =>
       signKeySpend(t, 5000, [{ script: APPROVED.script, amount: 4800 }]);
     expect(errCode(await spend())).toBeUndefined();
     expect(errCode(await spend())).toBe("approval-required");
@@ -647,7 +651,7 @@ describe("onchain approval", () => {
 });
 
 describe("transfer approval", () => {
-  const approveTransfer = (t: SparkTest, amountSats = 100): Promise<KernelResponse> =>
+  const approveTransfer = async (t: SparkTest, amountSats = 100): Promise<KernelResponse> =>
     approve(t, {
       kind: "transfer",
       receivers: [{ identityPublicKey: RECEIVER, amountSats }],
@@ -682,7 +686,7 @@ describe("transfer approval", () => {
 });
 
 describe("token approval", () => {
-  const approveToken = (t: SparkTest, amount = "100"): Promise<KernelResponse> =>
+  const approveToken = async (t: SparkTest, amount = "100"): Promise<KernelResponse> =>
     approve(t, {
       kind: "token",
       tokenIdentifier: TOKEN_ID,

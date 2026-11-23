@@ -729,9 +729,7 @@ describe("sessions.sign checks", () => {
       params: { action: orderAction, nonce: T0 },
     });
     await h.settle();
-    const reply = h.posted.findLast(
-      (m) => typeof m === "object" && m !== null && ("ok" in m || "err" in m),
-    );
+    const reply = h.posted.at(-1);
     expect(reply).toMatchObject({ err: { code: "locked" } });
   });
 

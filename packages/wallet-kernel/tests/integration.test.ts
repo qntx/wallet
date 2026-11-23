@@ -2567,10 +2567,7 @@ describe("request structure", () => {
     });
     void h.sendRaw(raw);
     await h.settle();
-    const reply = h.posted.find(
-      (m) => typeof m === "object" && m !== null && "err" in (m as Record<string, unknown>),
-    );
-    expect(reply).toMatchObject({ id: 0, err: { code: "integrity" } });
+    expect(h.posted.at(-1)).toMatchObject({ id: 0, err: { code: "integrity" } });
   });
 
   /**
