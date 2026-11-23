@@ -55,8 +55,11 @@ async function main(): Promise<number> {
     console.error("bun build produced no entry-point output");
     return 1;
   }
-  await Bun.write(outfile, `${await shim.text()}
-${await bundle.text()}`);
+  await Bun.write(
+    outfile,
+    `${await shim.text()}
+${await bundle.text()}`,
+  );
   const run = Bun.spawnSync([hermes, "-Xes6-block-scoping", outfile], {
     stdout: "pipe",
     stderr: "pipe",
