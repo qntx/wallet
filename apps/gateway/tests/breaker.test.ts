@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   PROVIDERS_HEADER,
   PROVIDER_PIN_HEADER,
+  approvalsPath,
   bridgeQuote,
   health,
   historyPath,
@@ -104,6 +105,10 @@ const ROUTES: Readonly<Record<string, Forwarded | null>> = {
   },
   "POST /v1/history/:caip2": {
     request: [historyPath(ETH), post({ address: OWNER })],
+    upstreams: [ALCHEMY],
+  },
+  "POST /v1/approvals/:caip2": {
+    request: [approvalsPath(ETH), post({ address: OWNER })],
     upstreams: [ALCHEMY],
   },
   "GET /v1/esplora/:caip2/*": {
@@ -234,6 +239,7 @@ const OUTAGES: ReadonlyArray<readonly [string, Upstream]> = [
 const PROBED = new Set([
   "POST /v1/rpc/:caip2",
   "POST /v1/history/:caip2",
+  "POST /v1/approvals/:caip2",
   "GET /v1/esplora/:caip2/*",
   "POST /v1/esplora/:caip2/*",
   "POST /v1/tron/:caip2/*",

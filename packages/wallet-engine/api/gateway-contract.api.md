@@ -26,6 +26,108 @@ export const appAvailability: z.ZodMiniEnum<{
 // @public
 export const applyDiff: (list: HashList, add: HashList, remove: HashList) => HashList;
 
+// @public
+export const APPROVAL_CANDIDATES_MAX = 500;
+
+// @public (undocumented)
+export type ApprovalCandidate = z.infer<typeof approvalCandidate>;
+
+// @public
+export const approvalCandidate: z.ZodMiniDiscriminatedUnion<[z.ZodMiniObject<{
+    kind: z.ZodMiniLiteral<"erc20">;
+    token: z.ZodMiniString<string>;
+    spender: z.ZodMiniString<string>;
+    block: z.ZodMiniString<string>;
+}, z.core.$strict>, z.ZodMiniObject<{
+    kind: z.ZodMiniLiteral<"erc721">;
+    token: z.ZodMiniString<string>;
+    spender: z.ZodMiniString<string>;
+    tokenId: z.ZodMiniString<string>;
+    block: z.ZodMiniString<string>;
+}, z.core.$strict>, z.ZodMiniObject<{
+    kind: z.ZodMiniLiteral<"operator">;
+    token: z.ZodMiniString<string>;
+    operator: z.ZodMiniString<string>;
+    block: z.ZodMiniString<string>;
+}, z.core.$strict>, z.ZodMiniObject<{
+    kind: z.ZodMiniLiteral<"permit2">;
+    token: z.ZodMiniString<string>;
+    spender: z.ZodMiniString<string>;
+    block: z.ZodMiniString<string>;
+}, z.core.$strict>], "kind">;
+
+// @public (undocumented)
+export const approvals: Endpoint<z.ZodMiniObject<{
+    address: z.ZodMiniString<string>;
+}, z.core.$strict>, z.ZodMiniObject<{
+    toBlock: z.ZodMiniString<string>;
+    candidates: z.ZodMiniArray<z.ZodMiniDiscriminatedUnion<[z.ZodMiniObject<{
+        kind: z.ZodMiniLiteral<"erc20">;
+        token: z.ZodMiniString<string>;
+        spender: z.ZodMiniString<string>;
+        block: z.ZodMiniString<string>;
+    }, z.core.$strict>, z.ZodMiniObject<{
+        kind: z.ZodMiniLiteral<"erc721">;
+        token: z.ZodMiniString<string>;
+        spender: z.ZodMiniString<string>;
+        tokenId: z.ZodMiniString<string>;
+        block: z.ZodMiniString<string>;
+    }, z.core.$strict>, z.ZodMiniObject<{
+        kind: z.ZodMiniLiteral<"operator">;
+        token: z.ZodMiniString<string>;
+        operator: z.ZodMiniString<string>;
+        block: z.ZodMiniString<string>;
+    }, z.core.$strict>, z.ZodMiniObject<{
+        kind: z.ZodMiniLiteral<"permit2">;
+        token: z.ZodMiniString<string>;
+        spender: z.ZodMiniString<string>;
+        block: z.ZodMiniString<string>;
+    }, z.core.$strict>], "kind">>;
+    truncated: z.ZodMiniBoolean<boolean>;
+}, z.core.$strict>>;
+
+// @public
+export const approvalsPath: (caip2: string) => string;
+
+// @public (undocumented)
+export type ApprovalsRequest = z.infer<typeof approvalsRequest>;
+
+// @public (undocumented)
+export const approvalsRequest: z.ZodMiniObject<{
+    address: z.ZodMiniString<string>;
+}, z.core.$strict>;
+
+// @public (undocumented)
+export type ApprovalsResponse = z.infer<typeof approvalsResponse>;
+
+// @public (undocumented)
+export const approvalsResponse: z.ZodMiniObject<{
+    toBlock: z.ZodMiniString<string>;
+    candidates: z.ZodMiniArray<z.ZodMiniDiscriminatedUnion<[z.ZodMiniObject<{
+        kind: z.ZodMiniLiteral<"erc20">;
+        token: z.ZodMiniString<string>;
+        spender: z.ZodMiniString<string>;
+        block: z.ZodMiniString<string>;
+    }, z.core.$strict>, z.ZodMiniObject<{
+        kind: z.ZodMiniLiteral<"erc721">;
+        token: z.ZodMiniString<string>;
+        spender: z.ZodMiniString<string>;
+        tokenId: z.ZodMiniString<string>;
+        block: z.ZodMiniString<string>;
+    }, z.core.$strict>, z.ZodMiniObject<{
+        kind: z.ZodMiniLiteral<"operator">;
+        token: z.ZodMiniString<string>;
+        operator: z.ZodMiniString<string>;
+        block: z.ZodMiniString<string>;
+    }, z.core.$strict>, z.ZodMiniObject<{
+        kind: z.ZodMiniLiteral<"permit2">;
+        token: z.ZodMiniString<string>;
+        spender: z.ZodMiniString<string>;
+        block: z.ZodMiniString<string>;
+    }, z.core.$strict>], "kind">>;
+    truncated: z.ZodMiniBoolean<boolean>;
+}, z.core.$strict>;
+
 // @public (undocumented)
 export const BITCOIN_NETWORKS: ReadonlyArray<NetworkInfo>;
 

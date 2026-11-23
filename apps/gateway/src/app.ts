@@ -20,6 +20,7 @@ import { JUPITER_PROVIDER } from "./providers/jupiter.ts";
 import { COINGECKO_API, coingeckoSource } from "./providers/prices-coingecko.ts";
 import { DEFILLAMA_API, defillamaSource } from "./providers/prices-defillama.ts";
 import { ZEROX_PROVIDER } from "./providers/zerox.ts";
+import { approvalsRoutes } from "./routes/approvals.ts";
 import { eligibilityRoutes } from "./routes/eligibility.ts";
 import { esploraRoutes } from "./routes/esplora.ts";
 import { healthRoutes } from "./routes/health.ts";
@@ -91,6 +92,7 @@ export function createGateway(
   app.route("/", networksRoutes(served));
   app.route("/", rpcRoutes(deps));
   app.route("/", historyRoutes({ ...deps, log }));
+  app.route("/", approvalsRoutes({ ...deps, log }));
   app.route("/", esploraRoutes(deps));
   app.route("/", tronRoutes(deps));
   app.route(
