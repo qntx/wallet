@@ -74,8 +74,9 @@ const ENTRIES: ReadonlyArray<Entry> = [
     name: "index",
     source: "src/index.ts",
     /* 139 kB with the TRON family and its dApp provider, the extra EVM fee models, the CCTP
-       deposit and the nonce/tracking fixes. */
-    budget: 144 * 1024,
+       deposit and the nonce/tracking fixes; +6 kB for the NFT inventory and transfer code —
+       measured 153,090 B gzipped. */
+    budget: 150 * 1024,
     external: true,
     forbidden: [
       "@nktkas/hyperliquid",
