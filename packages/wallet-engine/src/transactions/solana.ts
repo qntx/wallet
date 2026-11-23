@@ -25,6 +25,7 @@ import type { MintExtensionSummary, ParsedSolanaMessage } from "@qntx/wallet-cha
 /** Solana route: SOL/SPL send → sign → broadcast, plus status poll with rebroadcast/drop. */
 import { chains } from "@qntx/wallet/chains";
 
+import { CORE_KEY_ASSET_V1, CORE_UPDATE_AUTHORITY_COLLECTION } from "../chains/nfts.ts";
 import { STAKE_ACCOUNT_BYTES, SolanaChainAdapter } from "../chains/solana.ts";
 import type { SolanaIntent, SolanaUnsignedTransaction } from "../chains/solana.ts";
 import { SOLANA_MAINNET } from "../gateway/contract/quotes.ts";
@@ -803,9 +804,6 @@ const coreAssetAccount = async (rpc: SolanaRpc, asset: string): Promise<Uint8Arr
   }
   return base64.decode(raw);
 };
-
-const CORE_KEY_ASSET_V1 = 1;
-const CORE_UPDATE_AUTHORITY_COLLECTION = 2;
 
 export const prepareSolanaCoreSend = async (
   ctx: RouteContext,

@@ -57,6 +57,24 @@ export { PRICE_STALE_MS } from "./prices/valuation.ts";
 export type { PriceView, Valuation, ValuedHolding } from "./prices/valuation.ts";
 export type { FiatCurrency } from "./gateway/contract/prices.ts";
 export { FIAT_CURRENCIES } from "./gateway/contract/prices.ts";
+export { NFT_INVENTORY_MAX_PAGES, NFT_POLL_MS, NftController } from "./nfts/controller.ts";
+export type {
+  NftControllerOptions,
+  NftDetailView,
+  NftFailure,
+  NftFloorView,
+  NftInventory,
+  NftResult,
+  NftState,
+  NftView,
+} from "./nfts/controller.ts";
+export type {
+  NftCollectionView,
+  NftItemFacts,
+  NftMedia,
+  NftTransferSupport,
+} from "./nfts/metadata.ts";
+export type { NftAcquisition, NftSpamReason } from "./nfts/spam.ts";
 export type { GatewayConfig, GatewayScope } from "./gateway/client.ts";
 export { AddressBookController } from "./addresses/controller.ts";
 export type { AddressBookEntry, AddressBookState, AddressFamily } from "./addresses/controller.ts";

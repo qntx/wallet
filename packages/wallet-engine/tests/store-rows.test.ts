@@ -8,6 +8,7 @@ import { WatchController } from "../src/accounts/watch.ts";
 import { AddressBookController } from "../src/addresses/controller.ts";
 import { AssetsController } from "../src/assets/controller.ts";
 import { ConnectionController } from "../src/connect/controller.ts";
+import { NftController } from "../src/nfts/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
 
@@ -82,6 +83,29 @@ describe("controller init over a non-JSON row", () => {
     await connections.init();
     expect(connections.getState().sessions).toStrictEqual({});
     expect(warnings).toContain("connection session skipped: malformed");
+  });
+
+  it("NFT visibility", async () => {
+    const store = await seeded("nfts", "visibility");
+    const { warnings, logger } = recorder();
+    const nfts = new NftController({
+      gateway: undefined,
+      fetch: globalThis.fetch,
+      openStore: async () => Promise.resolve(store),
+      setTimer: () => () => undefined,
+      now: () => 0,
+      logger,
+      networks: {
+        info: (network: string) => ({ family: network.startsWith("eip155:") ? "evm" : "solana" }),
+      } as never,
+      balances: () => ({}),
+      activity: () => ({ entries: [], txs: [] }),
+      onActivityChange: () => () => undefined,
+      onConfirmed: () => () => undefined,
+    });
+    await nfts.init();
+    expect(nfts.getState().inventories).toStrictEqual({});
+    expect(warnings).toContain("ignoring a malformed stored NFT visibility row");
   });
 
   it("watch accounts", async () => {
