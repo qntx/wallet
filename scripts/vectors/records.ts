@@ -10,6 +10,7 @@
  * - Data-key: purpose, createdAt
  * - Imported key: family, address, createdAt
  * - Session key: scheme, walletId, groupIndex, owner, scope, name, validUntil, createdAt
+ * - Hardware wallet: device, fingerprint, [model,] [firmware,] createdAt
  * - Nostr derived: publicKey, walletId, index, createdAt
  * - Nostr sync key: publicKey, walletId, createdAt
  * - Password factor: salt, iterations, publicKey, createdAt
@@ -58,6 +59,14 @@ function textOf(kind: string, input: Input): string {
         scope: i["scope"],
         name: i["name"],
         validUntil: i["validUntil"],
+        createdAt: i["createdAt"],
+      });
+    case "hardware-wallet":
+      return JSON.stringify({
+        device: i["device"],
+        fingerprint: i["fingerprint"],
+        ...(i["model"] === undefined ? {} : { model: i["model"] }),
+        ...(i["firmware"] === undefined ? {} : { firmware: i["firmware"] }),
         createdAt: i["createdAt"],
       });
     case "nostr-derived":
@@ -203,6 +212,26 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
       scope: `0x${"11".repeat(20)}`,
       name: "bot-2",
       validUntil: CREATED_AT + 180 * 86_400_000,
+      createdAt: CREATED_AT,
+    },
+  },
+  {
+    name: "hardware-wallet",
+    kind: "hardware-wallet",
+    input: {
+      device: "keystone",
+      fingerprint: "73c5da0a",
+      model: "Keystone 3 Pro",
+      firmware: "1.7.2",
+      createdAt: CREATED_AT,
+    },
+  },
+  {
+    name: "hardware-wallet-minimal",
+    kind: "hardware-wallet",
+    input: {
+      device: "keystone",
+      fingerprint: "0123abcd",
       createdAt: CREATED_AT,
     },
   },

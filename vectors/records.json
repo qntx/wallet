@@ -110,6 +110,28 @@
       "text": "{\"scheme\":\"future-scheme\",\"walletId\":\"0011223344556677\",\"groupIndex\":0,\"owner\":\"0x9858EfFD232B4033E47d90003D41EC34EcaEda94\",\"scope\":\"0x1111111111111111111111111111111111111111\",\"name\":\"bot-2\",\"validUntil\":1782777600000,\"createdAt\":1767225600000}"
     },
     {
+      "name": "hardware-wallet",
+      "kind": "hardware-wallet",
+      "input": {
+        "device": "keystone",
+        "fingerprint": "73c5da0a",
+        "model": "Keystone 3 Pro",
+        "firmware": "1.7.2",
+        "createdAt": 1767225600000
+      },
+      "text": "{\"device\":\"keystone\",\"fingerprint\":\"73c5da0a\",\"model\":\"Keystone 3 Pro\",\"firmware\":\"1.7.2\",\"createdAt\":1767225600000}"
+    },
+    {
+      "name": "hardware-wallet-minimal",
+      "kind": "hardware-wallet",
+      "input": {
+        "device": "keystone",
+        "fingerprint": "0123abcd",
+        "createdAt": 1767225600000
+      },
+      "text": "{\"device\":\"keystone\",\"fingerprint\":\"0123abcd\",\"createdAt\":1767225600000}"
+    },
+    {
       "name": "nostr-derived",
       "kind": "nostr-derived",
       "input": {
