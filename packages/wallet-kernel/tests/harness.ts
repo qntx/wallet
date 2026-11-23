@@ -3,6 +3,7 @@ import type { KernelEvent, ProtocolValue } from "@qntx/wallet/protocol";
 import type { WalletErrorCode } from "@qntx/wallet/types";
 
 import { startKernel } from "../src/kernel.ts";
+import type { DRIVERS } from "../src/modules/signers/drivers.ts";
 import type {
   Argon2id,
   KernelPlatform,
@@ -152,6 +153,8 @@ export function createHarness(opts?: {
   argon2id?: Argon2id;
   /** Refuse a posted message (the native CBOR boundary throws for an unencodable response). */
   throwOnPost?: (message: ProtocolValue) => boolean;
+  /** Device drivers for the signers module (default: the production registry). */
+  drivers?: typeof DRIVERS;
 }): Harness {
   let now = opts?.start ?? 1_700_000_000_000; // wall clock — persisted timestamps only
   let elapsed = 0; // monotonic clock — session deadlines and timers
@@ -237,7 +240,7 @@ export function createHarness(opts?: {
       nostr: nobleBackend,
     },
   };
-  startKernel(platform, port);
+  startKernel(platform, port, opts?.drivers);
 
   let nextId = 1;
   return {

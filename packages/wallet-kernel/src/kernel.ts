@@ -125,7 +125,11 @@ function classifyLoadFailure(error: unknown): "corrupted" | "unsupported" | "una
   return "unavailable";
 }
 
-export function startKernel(host: KernelPlatform, port: Port): void {
+export function startKernel(
+  host: KernelPlatform,
+  port: Port,
+  drivers: typeof DRIVERS = DRIVERS,
+): void {
   // Every system-UI ceremony goes through one queue: the platform shows one prompt at a time.
   // The callback posts lazily — ceremonies only run inside requests, after `post` exists.
   const platform = serializeCeremonies(host, (active) => {
@@ -136,7 +140,7 @@ export function startKernel(host: KernelPlatform, port: Port): void {
   // add a line here and a section in status.ts's composition.
   const nostr = createNostrModule(platform.backends.nostr);
   const spark = createSparkModule();
-  const signers = createSignersModule(DRIVERS);
+  const signers = createSignersModule(drivers);
   const chains = createChainsModule(signers.material);
   const sessions = createSessionsModule();
   const HANDLERS = {

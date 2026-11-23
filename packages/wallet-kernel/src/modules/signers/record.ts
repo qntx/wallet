@@ -158,7 +158,12 @@ export function pathFromString(text: string): KeyPath {
     .split("/")
     .map((segment) => {
       const hardened = segment.endsWith("'");
-      const index = Number(hardened ? segment.slice(0, -1) : segment);
+      const digits = hardened ? segment.slice(0, -1) : segment;
+      // Canonical decimal only — a leading zero would re-encode differently.
+      if (digits.length > 1 && digits.startsWith("0")) {
+        throw bodyFailure();
+      }
+      const index = Number(digits);
       if (!Number.isSafeInteger(index) || index > 0x7fffffff) {
         throw bodyFailure();
       }
