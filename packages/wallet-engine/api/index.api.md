@@ -899,6 +899,9 @@ export type ControllerOptions<S> = {
 // @public (undocumented)
 export function createEventBus<E>(logger: EngineLogger): EventBus<E>;
 
+// @public (undocumented)
+export function createGoogleDriveCloudStore(input: GoogleDriveCloudStoreOptions): CloudStore;
+
 // @public
 export function createMemoryCloudStore(backing?: Map<string, string>): CloudStore;
 
@@ -1172,6 +1175,14 @@ export type GatewayConfig = {
 
 // @public
 export type GatewayScope = "evm" | "solana" | "bitcoin" | "tron" | "service";
+
+// @public (undocumented)
+export type GoogleDriveCloudStoreOptions = {
+    readonly fetch: typeof globalThis.fetch;
+    readonly setTimer: SetTimer;
+    readonly token: () => Promise<string>;
+    readonly invalidateToken: (token: string) => Promise<void>;
+};
 
 // @public (undocumented)
 export type GroupHistory = {
