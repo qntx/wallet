@@ -186,6 +186,8 @@ export class ApprovalsController extends Controller<ApprovalsState> {
   /** The account each loaded view was opened with — feeds `revoke`/`revokeBatch`. */
   private readonly accounts = new Map<string, AccountRef>();
   private readonly rerun = new Set<string>();
+  /** Lowest chain height the next refresh of a key may read at — set by confirmed sends. */
+  private readonly floors = new Map<string, bigint>();
   private readonly aborts = new Set<() => void>();
   /** Token metadata cached per session — a failed read is cached too (never retried in-session). */
   private readonly tokens = new Map<
@@ -215,10 +217,23 @@ export class ApprovalsController extends Controller<ApprovalsState> {
       if (confirmed.length === 0) {
         return;
       }
-      const networks = new Set(confirmed.map((tx) => tx.network));
+      /* A head polled right after inclusion can still lag the confirming block — read at least at
+       * the confirmed height or the just-mined change is invisible to the refresh. */
+      const floors = new Map<string, bigint>();
+      for (const tx of confirmed) {
+        if (tx.block === undefined) {
+          continue;
+        }
+        const height = BigInt(tx.block.height);
+        const floor = floors.get(tx.network);
+        if (floor === undefined || floor < height) {
+          floors.set(tx.network, height);
+        }
+      }
       for (const view of Object.values(this.getState().views)) {
-        if (networks.has(view.network)) {
-          void this.refresh(view.key);
+        const floor = floors.get(view.network);
+        if (floor !== undefined) {
+          void this.refreshAt(view.key, floor);
         }
       }
     });
@@ -242,6 +257,7 @@ export class ApprovalsController extends Controller<ApprovalsState> {
     this.accounts.clear();
     this.inflight.clear();
     this.rerun.clear();
+    this.floors.clear();
     this.engineStore = undefined;
     this.update(() => ({ views: {} }));
   }
@@ -405,8 +421,22 @@ export class ApprovalsController extends Controller<ApprovalsState> {
 
   /** Re-reads a view: single-flight per key, a concurrent ask reruns once after. */
   async refresh(key: string): Promise<void> {
+    await this.refreshAt(key, undefined);
+  }
+
+  /**
+   * `refresh` with a lowest chain height the next read may answer at — the confirmed-transaction
+   * subscription sets it to the send's block so a lagging head cannot hide what the send changed.
+   */
+  private async refreshAt(key: string, floor: bigint | undefined): Promise<void> {
     if (!this.active) {
       return;
+    }
+    if (floor !== undefined) {
+      const current = this.floors.get(key);
+      if (current === undefined || current < floor) {
+        this.floors.set(key, floor);
+      }
     }
     const running = this.inflight.get(key);
     if (running !== undefined) {
@@ -521,6 +551,8 @@ export class ApprovalsController extends Controller<ApprovalsState> {
         ...localCandidates(this.options.transactions.getState().txs, info.family, network, owner),
         ...storedCandidates,
       ];
+      const floor = this.floors.get(key);
+      this.floors.delete(key);
 
       let sources: ReadonlyArray<ApprovalSourceState>;
       let result: ChainResult;
@@ -565,6 +597,7 @@ export class ApprovalsController extends Controller<ApprovalsState> {
             })),
             ...local.map((candidate) => ({ candidate, source: "local" as const })),
           ]),
+          floor,
         );
       } else if (info.family === "solana") {
         sources = [{ source: "local", status: "ok" }];

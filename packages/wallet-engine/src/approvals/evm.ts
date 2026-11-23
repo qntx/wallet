@@ -312,6 +312,7 @@ export const evmApprovals = async (
   network: string,
   owner: string,
   candidates: ReadonlyArray<GatheredCandidate>,
+  minHeight?: bigint,
 ): Promise<ChainResult> => {
   const primary = deps.networks.client(network);
   const independent = deps.networks.independentClient(network);
@@ -326,6 +327,11 @@ export const evmApprovals = async (
       // The corroborator cannot answer at any height — every row it could have proven stays unverified.
       independentFailed = true;
     }
+  }
+  /* A refresh triggered by a just-confirmed send must see that send's block even when a polled
+   * head still lags it — reads at a height both sides can serve stay corroboratable. */
+  if (minHeight !== undefined && head < minHeight) {
+    head = minHeight;
   }
   const at = {
     height: head.toString(10),

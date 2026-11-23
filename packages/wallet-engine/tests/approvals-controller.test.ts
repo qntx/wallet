@@ -137,6 +137,8 @@ const approvalTx = (
   intent,
   nonce: 0,
   evm: { from: OWNER, account: ACCOUNT },
+  /* The confirmed-transaction subscription floors the re-read at this height. */
+  block: { height: 1 },
   submittedAt: 0,
   error: undefined,
 });
@@ -439,6 +441,33 @@ describe("approvals controller — lifecycle", () => {
     // The triggered refresh re-read the chain: the confirmed grant's key is now a live candidate.
     const granted = spenderRow(after?.rows, OTHER);
     expect(has(granted, "amount")?.amount).toBe("5");
+  });
+
+  it("a confirmed send floors the re-read at its block when the head lags", async () => {
+    const calls: Array<{ method: string; params: unknown[] }> = [];
+    const rig = make({
+      evm: {
+        head: 5n,
+        calls,
+        allowances: new Map([[`${TOKEN}|${SPENDER}`, 80n]]),
+        balances: new Map([[TOKEN, 100n]]),
+      },
+    });
+    await rig.controller.init();
+    const key = await rig.controller.load(ACCOUNT, NETWORK);
+    await rig.controller.refresh(key);
+    calls.length = 0;
+
+    const tx = approvalTx("9", allowanceIntent(SPENDER, "80"), "submitted");
+    rig.txs.set({ "tx-9": tx });
+    rig.txs.set({ "tx-9": { ...tx, state: "confirmed", block: { height: 8 } } });
+    await new Promise((resolve) => {
+      setTimeout(resolve);
+    });
+    /* The head still answers 5, yet every eth_call ran at the confirming block 8 — a lagging
+     * head must not hide what the send just changed. */
+    expect(calls.map((c) => c.params[1])).toContain("0x8");
+    expect(rig.controller.getState().views[key]?.at?.height).toBe("8");
   });
 });
 
