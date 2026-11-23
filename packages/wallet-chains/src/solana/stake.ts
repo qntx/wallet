@@ -89,9 +89,7 @@ const account = (
   index: number,
   named: NamedAccounts,
 ): string | undefined =>
-  index < ix.accountIndices.length
-    ? named.at(ix.accountIndices[index] ?? 0)
-    : undefined;
+  index < ix.accountIndices.length ? named.at(ix.accountIndices[index] ?? 0) : undefined;
 
 const role = (data: Uint8Array, offset: number): "staker" | "withdrawer" | "other" => {
   const r = u32le(data, offset);

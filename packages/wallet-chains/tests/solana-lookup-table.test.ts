@@ -1,3 +1,6 @@
+import { getDelegateStakeInstruction } from "@solana-program/stake";
+import { getTransferSolInstruction } from "@solana-program/system";
+import { getApproveInstruction, getTransferCheckedInstruction } from "@solana-program/token";
 /**
  * The accounts a decoded intent names to the user must be static keys — the signature binds the
  * compiled message bytes, never the caller-declared lookup-table contents an index resolves
@@ -7,11 +10,6 @@
  */
 import { address } from "@solana/addresses";
 import { AccountRole, createNoopSigner } from "@solana/kit";
-import {
-  getDelegateStakeInstruction,
-} from "@solana-program/stake";
-import { getTransferSolInstruction } from "@solana-program/system";
-import { getApproveInstruction, getTransferCheckedInstruction } from "@solana-program/token";
 import {
   appendTransactionMessageInstruction,
   compileTransactionMessage,
@@ -23,14 +21,10 @@ import {
 } from "@solana/transaction-messages";
 import { describe, expect, it } from "vite-plus/test";
 
-import { JUPITER_PROGRAM } from "../src/solana/jupiter.ts";
-import {
-  decodeSolana,
-  namedTableAccounts,
-  verifiabilitySolana,
-} from "../src/solana/decode.ts";
-import { parseCompiledMessage } from "../src/solana/message.ts";
+import { decodeSolana, namedTableAccounts, verifiabilitySolana } from "../src/solana/decode.ts";
 import { PROGRAM_IDS } from "../src/solana/ids.ts";
+import { JUPITER_PROGRAM } from "../src/solana/jupiter.ts";
+import { parseCompiledMessage } from "../src/solana/message.ts";
 
 const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "solana" } as const;
 const MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
@@ -87,7 +81,7 @@ const intent = (
 
 const feePayerSigner = createNoopSigner(FEE_PAYER);
 
-/** route_v2: discriminator + inAmount + quotedOut + slippageBps + platformFeeBps + empty plan. */
+/** Route_v2: discriminator + inAmount + quotedOut + slippageBps + platformFeeBps + empty plan. */
 const ROUTE_V2 = Uint8Array.from([0xbb, 0x64, 0xfa, 0xcc, 0x31, 0xc4, 0xaf, 0x14]);
 const routeData = (): Uint8Array => {
   const data = new Uint8Array(34);
@@ -101,8 +95,10 @@ const routeData = (): Uint8Array => {
   return data;
 };
 
-/** route_v2 accounts: authority, pool, destATA, sourceMint, destinationMint, pool,
-   destinationTokenProgram, optionalDest, pool, pool. */
+/**
+ * Route_v2 accounts: authority, pool, destATA, sourceMint, destinationMint, pool,
+ * destinationTokenProgram, optionalDest, pool, pool.
+ */
 const jupiterIx = (loaded: {
   dest?: boolean;
   mints?: boolean;
@@ -230,9 +226,9 @@ describe("Solana named accounts loaded from lookup tables", () => {
       amount: 1000n,
     });
     const message = compile([ix], { [LOOKUP_TABLE]: [DEST] });
-    expect(namedTableAccounts(parseCompiledMessage(message), table([DEST]).lookupTables)).toStrictEqual([
-      DEST,
-    ]);
+    expect(
+      namedTableAccounts(parseCompiledMessage(message), table([DEST]).lookupTables),
+    ).toStrictEqual([DEST]);
     expect(
       verifiabilitySolana(
         {

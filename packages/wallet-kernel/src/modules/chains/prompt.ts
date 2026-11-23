@@ -1228,9 +1228,7 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
                title carries the refusal reason, the program list is what the signature reaches. */
             intent.family === "solana" && intent.verifiability === "opaque"
             ? [
-                ...(intent.blind === "lookup-table-account"
-                  ? [catalog.solanaLookupTable]
-                  : []),
+                ...(intent.blind === "lookup-table-account" ? [catalog.solanaLookupTable] : []),
                 ...(intent.programs === undefined || intent.programs.length === 0
                   ? []
                   : [

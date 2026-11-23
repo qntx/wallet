@@ -1,7 +1,7 @@
 /**
  * A Solana recipient resolved through caller-supplied lookup-table contents is unverifiable: the
- * signature binds only the compiled message bytes, so the same bytes can be presented as paying
- * any address the caller's table declares. The intent must be blind and must not name the
+ * signature binds only the compiled message bytes, so the same bytes can be presented as paying any
+ * address the caller's table declares. The intent must be blind and must not name the
  * table-resolved address.
  */
 import { utf8ToBytes } from "@noble/hashes/utils.js";
@@ -61,7 +61,7 @@ const bytes = (value: ProtocolValue, key: string): Uint8Array => {
 };
 
 const errCode = (response: KernelResponse): string | undefined =>
-  "err" in response ? (response.err.code as string) : undefined;
+  "err" in response ? response.err.code : undefined;
 
 const openDescriptions = (calls: ReadonlyArray<KeystoreCall>): string[] =>
   calls.flatMap((call) =>

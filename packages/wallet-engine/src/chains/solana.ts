@@ -462,21 +462,24 @@ export class SolanaChainAdapter {
         ? new Set(namedTableAccounts(parseCompiledMessage(messageBytes), lookupTables))
         : new Set<string>();
     if (named.size > 0) {
-      const pinned = {
-        ...compilable,
-        instructions: compilable.instructions.map((ix) => ({
-          ...ix,
-          accounts: (ix.accounts ?? []).map((meta) =>
-            "lookupTableAddress" in meta && named.has(meta.address)
-              ? { address: meta.address, role: meta.role }
-              : meta,
-          ),
-        })),
-      };
-      messageBytes = this.compileAndEncode(pinned as typeof compilable);
-      if (
-        namedTableAccounts(parseCompiledMessage(messageBytes), lookupTables).length !== 0
-      ) {
+      const pinnedIxs = [];
+      for (const ix of compilable.instructions) {
+        const accounts = ix.accounts ?? [];
+        pinnedIxs.push(
+          accounts.some((meta) => "lookupTableAddress" in meta && named.has(meta.address))
+            ? {
+                ...ix,
+                accounts: accounts.map((meta) =>
+                  "lookupTableAddress" in meta && named.has(meta.address)
+                    ? { address: meta.address, role: meta.role }
+                    : meta,
+                ),
+              }
+            : ix,
+        );
+      }
+      messageBytes = this.compileAndEncode({ ...compilable, instructions: pinnedIxs });
+      if (namedTableAccounts(parseCompiledMessage(messageBytes), lookupTables).length > 0) {
         throw new Error("a named account still resolves through a lookup table");
       }
     }

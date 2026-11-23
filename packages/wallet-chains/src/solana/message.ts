@@ -575,9 +575,9 @@ export const resolveAccountIndex = (
 
 /**
  * The accounts a decoded intent names to the user — recipients, owners, authorities, delegates,
- * mints, stake and vote accounts — must be static keys: the signature binds only the message
- * bytes, never the caller-declared table contents an index resolves through. `at` therefore
- * treats a loaded index as unresolvable and records the address the caller's table substituted.
+ * mints, stake and vote accounts — must be static keys: the signature binds only the message bytes,
+ * never the caller-declared table contents an index resolves through. `at` therefore treats a
+ * loaded index as unresolvable and records the address the caller's table substituted.
  */
 export type NamedAccounts = {
   readonly at: (index: number) => string | undefined;
