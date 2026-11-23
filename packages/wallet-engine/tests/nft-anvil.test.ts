@@ -357,19 +357,19 @@ describe.runIf(RUN)("anvil e2e: NFT sends through the request pipeline", () => {
       await expect(balanceOf(7n)).resolves.toBe(5n);
       await expect(balanceOf(8n)).resolves.toBe(3n);
 
-      const preparedSelf = await requests.prepare({
-        method: "evm-nft-send",
-        account: acct,
-        network: NETWORK,
-        contract: contract721,
-        items: [{ tokenId: 2n }],
-        to: contract721,
-        fee: "slow",
-      });
-      expect(preparedSelf.stage).toBe("awaiting-approval");
-      const codes = (preparedSelf.risk ?? []).map((finding) => finding.code);
-      expect(codes).toContain("token-contract-recipient");
-      expect(preparedSelf.simulation?.status).toBe("reverted");
+      // Sending the ERC-721 to the contract itself reverts in gas estimation — the contract
+      // is not an ERC721Receiver — so the request is refused before anything is signed.
+      await expect(
+        requests.prepare({
+          method: "evm-nft-send",
+          account: acct,
+          network: NETWORK,
+          contract: contract721,
+          items: [{ tokenId: 2n }],
+          to: contract721,
+          fee: "slow",
+        }),
+      ).rejects.toThrow();
     } finally {
       proc.kill();
     }

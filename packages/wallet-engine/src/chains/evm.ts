@@ -6,9 +6,6 @@
  * `finalized` block tag; receipts with status 0 fail.
  */
 import {
-  BaseError,
-  ContractFunctionRevertedError,
-  RpcRequestError,
   encodeFunctionData,
   isAddress,
   isHex,
@@ -313,28 +310,6 @@ export type EvmSimulationCall = {
   readonly data: string;
 };
 
-/** The error walks to a contract revert — the call is legal, the contract just refused it. */
-export const reverted = (error: unknown): boolean =>
-  error instanceof BaseError &&
-  /* `walk` answers `null`, not `undefined`, when nothing in the chain is a revert — a transport
-     failure must not read as "the contract reverted". */
-  error.walk((e) => e instanceof ContractFunctionRevertedError) !== null;
-
-/**
- * `eth_estimateGas` surfaces a revert as a raw RPC error, not a wrapped contract error: EIP-1474
- * code 3, or the message on a node that wraps it in -32000.
- */
-export const estimateReverted = (error: unknown): boolean => {
-  if (reverted(error)) {
-    return true;
-  }
-  const found = error instanceof BaseError ? error.walk((e) => e instanceof RpcRequestError) : null;
-  return (
-    found instanceof RpcRequestError &&
-    (found.code === 3 || /execution reverted/i.test(found.details))
-  );
-};
-
 export class EvmChainAdapter {
   readonly family = "evm";
 
@@ -480,25 +455,13 @@ export class EvmChainAdapter {
       override === undefined
         ? [{ from, to, value: hex(value), data }]
         : [{ from, to, value: hex(value), data }, "latest", override];
-    const minGas = intent.kind === "call" ? intent.minGas : undefined;
-    let estimate: bigint;
-    try {
-      estimate =
-        hexQuantity(await evmRpc(client, "eth_estimateGas", params), "eth_estimateGas") +
-        (authorization === undefined ? 0n : 25_000n);
-    } catch (error) {
-      /* `minGas` is the caller's own gas figure: when estimation reverts — the call would fail
-         on chain — the request still builds at it so the simulation can show the revert. A
-         transport failure is a dead endpoint, not a revert, and always propagates. */
-      if (minGas === undefined || !estimateReverted(error)) {
-        throw error;
-      }
-      estimate = 0n;
-    }
+    const estimate =
+      hexQuantity(await evmRpc(client, "eth_estimateGas", params), "eth_estimateGas") +
+      (authorization === undefined ? 0n : 25_000n);
     const scale = erc20 ? 11n : 12n;
     const buffered = (estimate * scale) / 10n + ((estimate * scale) % 10n === 0n ? 0n : 1n);
-    const floor = minGas ?? 0n;
-    const gas = buffered > floor ? buffered : floor;
+    const minGas = intent.kind === "call" ? (intent.minGas ?? 0n) : 0n;
+    const gas = buffered > minGas ? buffered : minGas;
     return {
       family: "evm",
       network,

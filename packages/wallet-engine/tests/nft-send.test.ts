@@ -886,6 +886,13 @@ describe("solana-nft-send (SPL)", () => {
 });
 
 describe("solana-nft-send (Core)", () => {
+  it("sending to the asset itself flags token-contract-recipient", async () => {
+    const w = solanaWorld({});
+    await w.start();
+    const p = await prepareCore(w, { to: ASSET });
+    expect(p.risk).toContainEqual({ code: "token-contract-recipient", level: "danger" });
+  });
+
   it("an owned asset with a Collection authority → TransferV1", async () => {
     const w = solanaWorld({});
     await w.start();

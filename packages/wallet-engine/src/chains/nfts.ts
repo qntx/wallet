@@ -6,15 +6,21 @@
  */
 import { base58, base64 } from "@scure/base";
 import { address, getAddressEncoder, getProgramDerivedAddress } from "@solana/kit";
-import { isAddress } from "viem";
+import { BaseError, ContractFunctionRevertedError, isAddress } from "viem";
 import { readContract } from "viem/actions";
 
 import { MPL_CORE_PROGRAM, PROGRAM_IDS, associatedTokenAddress } from "@qntx/wallet-chains/solana";
 
 import type { SolanaRpc } from "../networks/controller.ts";
-import { reverted } from "./evm.ts";
 
 type ViemClient = Parameters<typeof readContract>[0];
+
+/** The error walks to a contract revert — the call is legal, the contract just refused it. */
+const reverted = (error: unknown): boolean =>
+  error instanceof BaseError &&
+  /* `walk` answers `null`, not `undefined`, when nothing in the chain is a revert — a transport
+     failure must not read as "the contract reverted". */
+  error.walk((e) => e instanceof ContractFunctionRevertedError) !== null;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? v : undefined);

@@ -944,12 +944,6 @@ const prepareCctpIntent = (
   return { kind: "call", to: messenger, value: 0n, data };
 };
 
-/**
- * A known NFT transfer's gas when estimation reverts — a contract recipient refusing the receiver
- * hook builds at this figure so its simulation can show the revert.
- */
-const NFT_SEND_GAS_FLOOR = 100_000n;
-
 /* The built call must decode back to exactly the send: one NFT outflow to the recipient
    with the right contract, id and unit count — like the bridge's quote-term guard. */
 const guardNftCall = (
@@ -993,7 +987,7 @@ const guardNftCall = (
   if (!matches) {
     throw new ChainError("invalid-request", "the built transfer does not decode to the send");
   }
-  return { kind: "call", to: input.contract, value: 0n, data, minGas: NFT_SEND_GAS_FLOOR };
+  return { kind: "call", to: input.contract, value: 0n, data };
 };
 
 /* A cross-checked read on both endpoints: a successful disagreeing read refuses, a failed

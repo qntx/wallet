@@ -815,7 +815,6 @@ export const prepareSolanaStake = async (
   });
 };
 
-/** Returns the terminal state, `dropped` on blockhash expiry, or `undefined` to keep polling. */
 /**
  * An account read answered identically by both endpoints — bytes and owner compared byte-for-byte;
  * a failed independent read degrades to `reads-unverified`.
@@ -1382,6 +1381,7 @@ const settleSolanaDrop = async (
   return undefined;
 };
 
+/** Returns the terminal state, `dropped` on blockhash expiry, or `undefined` to keep polling. */
 export const pollSolana = async (
   ctx: RouteContext,
   tx: TrackedTransaction,
