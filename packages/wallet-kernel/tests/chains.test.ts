@@ -208,13 +208,13 @@ type PsbtOpts = {
   readonly changeOutput?: boolean;
   readonly foreignOutput?: boolean;
   readonly extraInput?: boolean;
-  /** bip49: keep the our-key prevout and derivation but carry another key's redeemScript. */
+  /** Bip49: keep the our-key prevout and derivation but carry another key's redeemScript. */
   readonly badRedeem?: boolean;
-  /** bip49: carry no redeemScript at all. */
+  /** Bip49: carry no redeemScript at all. */
   readonly missingRedeem?: boolean;
   /** Attach a non-default sighash to input 0. */
   readonly sighash?: number;
-  /** bip86: drop tapInternalKey and carry a script-tree merkle root instead. */
+  /** Bip86: drop tapInternalKey and carry a script-tree merkle root instead. */
   readonly tapMerkleRoot?: boolean;
 };
 

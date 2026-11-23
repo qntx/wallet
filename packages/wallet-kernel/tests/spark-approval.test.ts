@@ -405,14 +405,11 @@ const u128be = (amount: bigint): Uint8Array => {
 };
 
 /**
- * A `spark_token.PartialTokenTransaction` with one `partial_token_outputs` entry (field 6) of
- * owner public key (1), token identifier (4) and u128 amount (5) — all `tokenOutflow` reads.
+ * A `spark_token.PartialTokenTransaction` with one `partial_token_outputs` entry (field 6) of owner
+ * public key (1), token identifier (4) and u128 amount (5) — all `tokenOutflow` reads.
  */
 const tokenTransaction = (owner: Uint8Array, amount: bigint): Uint8Array =>
-  lenField(
-    6,
-    concatBytes(lenField(1, owner), lenField(4, TOKEN_ID), lenField(5, u128be(amount))),
-  );
+  lenField(6, concatBytes(lenField(1, owner), lenField(4, TOKEN_ID), lenField(5, u128be(amount))));
 
 /**
  * Registers the transfer and records its refund signature: `spark.prepareTransfer` gives the
@@ -433,9 +430,7 @@ const prepareTransfer = async (
         account: t.account,
         request: {
           transferId,
-          leaves: [
-            { leafId, key: { type: "leaf", leafId }, receiverIdentityPublicKey: receiver },
-          ],
+          leaves: [{ leafId, key: { type: "leaf", leafId }, receiverIdentityPublicKey: receiver }],
         },
       },
       t.session,

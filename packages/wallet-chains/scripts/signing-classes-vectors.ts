@@ -7,9 +7,9 @@
  * vectors/chains/tron.json, three TRON messages, and the blind reason codes with their expected
  * `verifiability`/`blind` and the exact kernel prompt in en and zh-Hans. `rejected` rows are
  * requests `normalizeEvm` must refuse with the pinned ChainError code (a chainId-0 EIP-7702
- * authorization, non-canonical eip155 ids). Calldata is built with
- * viem; Solana messages are compiled with @solana/kit like the tests; TRON raw bytes are read from
- * tron.json; the expected class and prompt text are literals written by hand.
+ * authorization, non-canonical eip155 ids). Calldata is built with viem; Solana messages are
+ * compiled with @solana/kit like the tests; TRON raw bytes are read from tron.json; the expected
+ * class and prompt text are literals written by hand.
  *
  * SignRequest fields that cannot live in JSON: `typedData` is the parsed document (consumers pass
  * JSON.stringify of it) and `message` is `{"$bytes": hex}` (consumers decode to Uint8Array).
