@@ -8,6 +8,7 @@
 
 import { base58, hex } from "@scure/base";
 
+import { backupPasskeyCredentialIds } from "./backup.ts";
 import { Channel } from "./channel.ts";
 import type { MainPort, SetTimer } from "./channel.ts";
 import {
@@ -693,6 +694,9 @@ export class KernelWallet implements Wallet {
             this.factorSource,
             options.backupFactor,
             wire,
+            options.backupFactor.kind === "passkey"
+              ? backupPasskeyCredentialIds(options.envelope)
+              : undefined,
           );
           const factor = await this.createFactorParam(options.factor, wire);
           const passphrases = options.passphrases?.map(({ walletId, passphrase }) => ({
