@@ -76,7 +76,7 @@ type FactorInfo = {
 };
 
 // @public
-const HARDWARE_DEVICES: readonly ["keystone"];
+const HARDWARE_DEVICES: readonly ["keystone", "onekey"];
 
 // @public
 type HardwareDevice = (typeof HARDWARE_DEVICES)[number];

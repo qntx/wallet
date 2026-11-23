@@ -553,7 +553,7 @@ export type FrostSignJob = {
 };
 
 // @public
-const HARDWARE_DEVICES: readonly ["keystone"];
+const HARDWARE_DEVICES: readonly ["keystone", "onekey"];
 
 // @public (undocumented)
 export const HARDWARE_METHODS: {

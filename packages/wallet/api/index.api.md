@@ -117,7 +117,7 @@ export type FactorInfo = {
 };
 
 // @public
-export const HARDWARE_DEVICES: readonly ["keystone"];
+export const HARDWARE_DEVICES: readonly ["keystone", "onekey"];
 
 // @public
 export type HardwareDevice = (typeof HARDWARE_DEVICES)[number];

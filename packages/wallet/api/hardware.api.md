@@ -285,7 +285,7 @@ type FactorInfo = {
 export function hardware(wallet: Wallet): HardwareApi;
 
 // @public
-const HARDWARE_DEVICES: readonly ["keystone"];
+const HARDWARE_DEVICES: readonly ["keystone", "onekey"];
 
 // @public (undocumented)
 export type HardwareApi = {
@@ -426,6 +426,9 @@ type NostrKeyRef = {
     readonly walletId: string;
     readonly index: number;
 };
+
+// @public
+export const oneKeyAnswerLength: (firstChunk: Uint8Array, transport: "usb" | "ble") => number;
 
 // @public
 export const qrParts: (payload: QrPayload, options?: {
