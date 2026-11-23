@@ -1,4 +1,5 @@
 /// <reference types="node" />
+/* oxlint-disable typescript/no-unsafe-type-assertion -- the JSON signing-plan oracle is untyped */
 /**
  * Records a live OneKey Classic 1S emulator session into vectors/onekey/emulator-classic1s.json:
  * the raw request/response byte streams of (1) Initialize on a fresh device, (2) LoadDevice of the
@@ -12,11 +13,19 @@
  * -p 127.0.0.1:54945-54946:54935-54936/udp onekey-emu-classic1s
  * bun scripts/vectors/onekey-emulator.ts --port 54945 --debug-port 54946
  */
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { bytesToHex } from "@noble/hashes/utils.js";
 
+import type { EvmTransaction } from "../../packages/wallet-chains/src/index.ts";
+import { initialize } from "../../packages/wallet-kernel/src/modules/onekey/protocol/device.ts";
+import { OneKeyError } from "../../packages/wallet-kernel/src/modules/onekey/protocol/errors.ts";
+import {
+  signEvmPersonalMessage,
+  signEvmTransaction,
+  signTypedData,
+} from "../../packages/wallet-kernel/src/modules/onekey/protocol/evm.ts";
 import {
   decodeMessage,
   encodeMessage,
@@ -102,28 +111,25 @@ if (last.type !== 17) {
 
 sessions.push(uninitialized, load, initialized);
 
-// Layer 2: public nodes and addresses through the keys.ts API. Every exchange is recorded; a
-// ButtonAck request (message type 27) means the device is about to show a confirmation dialog,
-// so a DebugLink YES is pressed while that exchange waits for the follow-up response.
+// Layer 2: public nodes and addresses through the keys.ts API. Every exchange is recorded;
+// while one is open the recorder keeps pressing YES on the debug link, which is what both a
+// ButtonAck-gated protectButton and an ack-round-gated protectWaitKey consume.
 const H = 0x80_00_00_00;
 const recording = (session: { exchanges: Step[] }): Exchange => {
   return async (data: Uint8Array): Promise<Uint8Array> => {
-    let presser: ReturnType<typeof setInterval> | undefined;
-    if (decodeMessage(data).type === 27) {
-      // The confirmation dialog takes a moment to appear after the ack; keep pressing YES until
-      // the device answers — presses on the idle screen are ignored.
-      presser = setInterval(() => {
-        void debugYes(HOST, DEBUG_PORT);
-      }, 200);
-    }
+    // Press YES on the debug link while every exchange is open: on the Classic 1S the signing
+    // wizards wait in protectWaitKey inside whichever ack round precedes the screen — typed-data
+    // value acks, tx acks — not only ButtonAck, and a stray press queues in msg_tiny until the
+    // next key wait consumes it, which is exactly a user pressing early.
+    const presser = setInterval(() => {
+      void debugYes(HOST, DEBUG_PORT);
+    }, 200);
     try {
       const response = await exchange(data);
       session.exchanges.push({ request: bytesToHex(data), response: bytesToHex(response) });
       return response;
     } finally {
-      if (presser !== undefined) {
-        clearInterval(presser);
-      }
+      clearInterval(presser);
     }
   };
 };
@@ -208,6 +214,210 @@ if (DEVICE === "pro") {
     console.log(`sol-account0-show: pub=${bytesToHex(key)}`);
   }
 }
+// Layer 3: EVM signing. Plan inputs come from vectors/chains/signing-plans.json so the
+// replayed signatures verify against the plan digests; the big-data, contract-creation,
+// unregistered-delegator and array/nested typed-data sessions are extras the tests verify
+// independently. On the Classic 1S each signing wizard consumes one DebugLink YES per
+// protectWaitKey screen, so the ButtonAck-open poll inside recording() walks the device
+// through its multi-screen confirmation and back to the signature.
+{
+  const initSession = { name: "evm-init", exchanges: [] as Step[] };
+  const info = await initialize(recording(initSession));
+  sessions.push(initSession);
+  console.log(`evm-init: ${info.model} ${info.firmware.join(".")}`);
+
+  type PlanRequest = { tx?: EvmTransaction; message?: string; typedData?: string };
+  const plans = JSON.parse(
+    readFileSync(resolve(import.meta.dirname, "../../vectors/chains/signing-plans.json"), "utf8"),
+  ) as { cases: Array<{ name: string; key: { path: number[] }; request: PlanRequest }> };
+  const planCase = (name: string) => {
+    const found = plans.cases.find((c) => c.name === name);
+    if (found === undefined) {
+      throw new Error(`plan case ${name} missing from signing-plans.json`);
+    }
+    return found;
+  };
+  const evmPath = planCase("evm-legacy").key.path;
+  const planTx = (name: string): EvmTransaction => {
+    const { tx } = planCase(name).request;
+    if (tx === undefined) {
+      throw new Error(`plan case ${name} carries no transaction`);
+    }
+    return tx;
+  };
+
+  for (const name of ["evm-legacy", "evm-eip1559", "evm-eip1559-data"] as const) {
+    const session = { name, exchanges: [] as Step[] };
+    // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+    const result = await signEvmTransaction(recording(session), info, evmPath, planTx(name));
+    sessions.push(session);
+    console.log(`${name}: sig=${bytesToHex(result.signature).slice(0, 24)}…`);
+  }
+
+  // eip2930 has no OneKey message — `unsupported` before any exchange, so this session
+  // records an empty exchange list on purpose.
+  {
+    const session = { name: "evm-eip2930", exchanges: [] as Step[] };
+    try {
+      await signEvmTransaction(recording(session), info, evmPath, planTx("evm-eip2930"));
+      console.log("evm-eip2930: unexpectedly signed");
+    } catch (error) {
+      console.log(`evm-eip2930: ${error instanceof OneKeyError ? error.code : String(error)}`);
+    }
+    sessions.push(session);
+  }
+
+  // 2100 bytes of calldata: initial chunk 1024, then two TxRequest/TxAck rounds.
+  {
+    const session = { name: "evm-legacy-bigdata", exchanges: [] as Step[] };
+    const result = await signEvmTransaction(recording(session), info, evmPath, {
+      type: "legacy",
+      chainId: 1,
+      to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      value: "0x0",
+      nonce: 10,
+      gas: "0x40000",
+      gasPrice: "0x3b9aca00",
+      data: `0x${"ab".repeat(2100)}`,
+    });
+    sessions.push(session);
+    console.log(
+      `evm-legacy-bigdata: sig=${bytesToHex(result.signature).slice(0, 24)}… (${session.exchanges.length} exchanges)`,
+    );
+  }
+
+  // Contract creation: `to` omitted, data is init code.
+  {
+    const session = { name: "evm-create", exchanges: [] as Step[] };
+    const result = await signEvmTransaction(recording(session), info, evmPath, {
+      type: "legacy",
+      chainId: 1,
+      value: "0x0",
+      nonce: 11,
+      gas: "0x100000",
+      gasPrice: "0x3b9aca00",
+      data: `0x${"6080604052".repeat(8)}`,
+    });
+    sessions.push(session);
+    console.log(`evm-create: sig=${bytesToHex(result.signature).slice(0, 24)}…`);
+  }
+
+  // Two-stage EIP-7702: stage 1 returns the authorization signature, stage 2 passes it
+  // back in `options.authorization` — the firmware skips re-signing and echoes it.
+  for (const planName of ["evm-eip7702-upgrade", "evm-eip7702-revoke"] as const) {
+    const stage1 = { name: `${planName}-stage1`, exchanges: [] as Step[] };
+    // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+    const r1 = await signEvmTransaction(recording(stage1), info, evmPath, planTx(planName));
+    sessions.push(stage1);
+    const stage2 = { name: `${planName}-stage2`, exchanges: [] as Step[] };
+    // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+    const r2 = await signEvmTransaction(
+      recording(stage2),
+      info,
+      evmPath,
+      planTx(planName),
+      r1.authorization === undefined ? {} : { authorization: r1.authorization },
+    );
+    sessions.push(stage2);
+    console.log(
+      `${planName}: auth=${r1.authorization === undefined ? "none" : bytesToHex(r1.authorization.r).slice(0, 16)}… ` +
+        `env=${bytesToHex(r2.signature).slice(0, 16)}…`,
+    );
+  }
+
+  // An unregistered delegator: the device must refuse with Failure_DataError, mapped to
+  // `unsupported` — the refusal exchange is part of the recording.
+  {
+    const session = { name: "evm-eip7702-unregistered", exchanges: [] as Step[] };
+    const upgrade = planTx("evm-eip7702-upgrade");
+    if (upgrade.type !== "eip7702") {
+      throw new Error("evm-eip7702-upgrade is not an eip7702 transaction");
+    }
+    try {
+      await signEvmTransaction(recording(session), info, evmPath, {
+        ...upgrade,
+        authorization: {
+          address: "0x00000000000000000000000000000000dEaDbEEF",
+        },
+      });
+      console.log("evm-eip7702-unregistered: unexpectedly signed");
+    } catch (error) {
+      console.log(
+        `evm-eip7702-unregistered: ${error instanceof OneKeyError ? error.code : String(error)}`,
+      );
+    }
+    sessions.push(session);
+  }
+
+  {
+    const session = { name: "evm-personal-message", exchanges: [] as Step[] };
+    const sig = await signEvmPersonalMessage(
+      recording(session),
+      evmPath,
+      new Uint8Array(Buffer.from(planCase("evm-personal-message").request.message ?? "", "hex")),
+    );
+    sessions.push(session);
+    console.log(`evm-personal-message: sig=${bytesToHex(sig).slice(0, 24)}…`);
+  }
+
+  // EIP-712: the plan's Mail document (stream mode), an array-of-structs + fixed-array
+  // document (still stream), and a nested-array document (hash mode).
+  const typedDocs: Array<[string, string]> = [
+    ["evm-typed-data-mail", planCase("evm-typed-data-mail").request.typedData ?? ""],
+    [
+      "evm-typed-data-arrays",
+      JSON.stringify({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "chainId", type: "uint256" },
+          ],
+          Item: [
+            { name: "id", type: "uint256" },
+            { name: "owner", type: "address" },
+          ],
+          Batch: [
+            { name: "items", type: "Item[]" },
+            { name: "flags", type: "uint256[3]" },
+            { name: "note", type: "string" },
+          ],
+        },
+        primaryType: "Batch",
+        domain: { name: "BatchTest", chainId: 1 },
+        message: {
+          items: [
+            { id: "7", owner: "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826" },
+            { id: "8", owner: "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB" },
+          ],
+          flags: ["1", "2", "3"],
+          note: "two items",
+        },
+      }),
+    ],
+    [
+      "evm-typed-data-nested",
+      JSON.stringify({
+        types: {
+          EIP712Domain: [{ name: "name", type: "string" }],
+          Grid: [{ name: "cells", type: "uint256[][]" }],
+        },
+        primaryType: "Grid",
+        domain: { name: "GridTest" },
+        message: { cells: [["1", "2"], ["3"]] },
+      }),
+    ],
+  ];
+  for (const [name, typedData] of typedDocs) {
+    const session = { name, exchanges: [] as Step[] };
+    // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+    const sig = await signTypedData(recording(session), info, evmPath, typedData);
+    sessions.push(session);
+    console.log(
+      `${name}: sig=${bytesToHex(sig).slice(0, 24)}… (${session.exchanges.length} exchanges)`,
+    );
+  }
+}
+
 const SOURCES = {
   classic1s: {
     repository: "https://github.com/OneKeyHQ/firmware-classic1s",

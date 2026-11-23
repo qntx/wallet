@@ -4,10 +4,18 @@
  * `Exchange`. The wire facts are OneKey's published `.proto` schemas and
  * `common/protob/protocol.md`, cited per descriptor; no OneKey code is a dependency.
  */
-export { initialize } from "./device.ts";
-export type { DeviceInfo, OneKeyModel } from "./device.ts";
+export { initialize, supports } from "./device.ts";
+export type { DeviceInfo, OneKeyFeature, OneKeyModel } from "./device.ts";
 export { OneKeyError } from "./errors.ts";
 export type { OneKeyErrorCode } from "./errors.ts";
+export {
+  evmDisplay,
+  signEvmPersonalMessage,
+  signEvmTransaction,
+  signTypedData,
+  typedDataMode,
+} from "./evm.ts";
+export type { EvmAuthorizationSignature, EvmDisplayRequest, EvmTransactionOptions } from "./evm.ts";
 export { decodeMessage, encodeMessage, MAX_MESSAGE, REPORT_SIZE } from "./frame.ts";
 export type { Message } from "./frame.ts";
 export { address, evmPublicNode, publicNode, solanaPublicKey } from "./keys.ts";

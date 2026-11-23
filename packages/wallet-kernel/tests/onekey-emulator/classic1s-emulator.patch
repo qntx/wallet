@@ -234,6 +234,28 @@ index de2dd15..70e66e2 100644
    if (!se_derive_fido_keys(&node, "nist256p1", path, path_len, NULL)) {
      return CTAP1_ERR_OTHER;
    }
+diff --git a/legacy/firmware/fsm.c b/legacy/firmware/fsm.c
+index 9cceb41..5812289 100644
+--- a/legacy/firmware/fsm.c
++++ b/legacy/firmware/fsm.c
+@@ -389,6 +389,7 @@ HDNode *fsm_getDerivedNode(const char *curve, const uint32_t *address_n,
+     return 0;
+   }
+   if (!address_n || address_n_count == 0) {
++    hdnode_fill_public_key(&node);
+     return &node;
+   }
+   if (hdnode_private_ckd_cached(&node, address_n, address_n_count,
+@@ -398,6 +399,9 @@ HDNode *fsm_getDerivedNode(const char *curve, const uint32_t *address_n,
+     layoutHome();
+     return 0;
+   }
++  // Match the SE derivation path, which returns the public key filled; without
++  // this the emulator hashed a zeroed public_key in address handlers.
++  hdnode_fill_public_key(&node);
+ #else
+   if (!config_genSessionSeed()) {
+     layoutHome();
 diff --git a/legacy/firmware/fsm_msg_common.h b/legacy/firmware/fsm_msg_common.h
 index d6e12c5..5d332f4 100644
 --- a/legacy/firmware/fsm_msg_common.h
@@ -293,6 +315,35 @@ index 9cd4593..836aee3 100644
        oledDrawStringAdapter(0, y + 10, network_magic_str, FONT_STANDARD);
        layoutButtonNoAdapter(NULL, &bmp_bottom_left_arrow);
        layoutButtonYesAdapter(NULL, &bmp_bottom_right_arrow);
+diff --git a/legacy/firmware/protect.c b/legacy/firmware/protect.c
+index 476c09c..0925587 100644
+--- a/legacy/firmware/protect.c
++++ b/legacy/firmware/protect.c
+@@ -992,6 +992,24 @@ uint8_t protectWaitKey(uint32_t time_out, uint8_t mode) {
+       msg_tiny_id = 0xFFFF;
+       break;
+     }
++#if DEBUG_LINK
++    // DebugLink key injection: the sign/confirm wizards (sign tx, typed data,
++    // shown addresses) wait here on keyScan, which the emulator cannot feed
++    // through SDL — map DebugLinkDecision YES/NO onto CONFIRM/CANCEL, the same
++    // way _protectButton_ex already does for its own loop.
++    if (msg_tiny_id == MessageType_MessageType_DebugLinkDecision) {
++      msg_tiny_id = 0xFFFF;
++      DebugLinkDecision *dld = (DebugLinkDecision *)msg_tiny;
++      if (dld->button == DebugButton_YES) {
++        key = KEY_CONFIRM;
++      } else if (dld->button == DebugButton_NO) {
++        key = KEY_CANCEL;
++      }
++      if (key != KEY_NULL && (mode == 0 || key == KEY_CONFIRM || key == KEY_CANCEL)) {
++        break;
++      }
++    }
++#endif
+ #if !BITCOIN_ONLY
+     if (layoutLast == layoutScreensaver) {
+       if (u2f_init_command) {
 diff --git a/legacy/firmware/se_chip.h b/legacy/firmware/se_chip.h
 index 22fe7b0..85f92e5 100644
 --- a/legacy/firmware/se_chip.h
@@ -588,25 +639,3 @@ index 57f37d9..bc7d573 100644
  #endif
  
  #endif
-diff --git a/legacy/firmware/fsm.c b/legacy/firmware/fsm.c
-index 9cceb41..5812289 100644
---- a/legacy/firmware/fsm.c
-+++ b/legacy/firmware/fsm.c
-@@ -389,6 +389,7 @@ HDNode *fsm_getDerivedNode(const char *curve, const uint32_t *address_n,
-     return 0;
-   }
-   if (!address_n || address_n_count == 0) {
-+    hdnode_fill_public_key(&node);
-     return &node;
-   }
-   if (hdnode_private_ckd_cached(&node, address_n, address_n_count,
-@@ -398,6 +399,9 @@ HDNode *fsm_getDerivedNode(const char *curve, const uint32_t *address_n,
-     layoutHome();
-     return 0;
-   }
-+  // Match the SE derivation path, which returns the public key filled; without
-+  // this the emulator hashed a zeroed public_key in address handlers.
-+  hdnode_fill_public_key(&node);
- #else
-   if (!config_genSessionSeed()) {
-     layoutHome();

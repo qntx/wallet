@@ -275,3 +275,350 @@ export type TronAddressFields = { address: Field<"string", 1, "optional"> };
 export const TronAddress: MessageDef<TronAddressFields> = defineMessage(10_502, {
   address: { no: 1, kind: "string", rule: "optional" },
 });
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto EthereumAccessListOneKey —
+// a nested record, not a wire message.
+export type EthereumAccessListFields = {
+  address: Field<"string", 1, "required">;
+  storageKeys: Field<"bytes", 2, "repeated">;
+};
+export const EthereumAccessListOneKey: MessageDef<EthereumAccessListFields> = {
+  typeId: -1,
+  fields: {
+    address: { no: 1, kind: "string", rule: "required" },
+    storageKeys: { no: 2, kind: "bytes", rule: "repeated" },
+  },
+};
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto
+// EthereumAuthorizationSignature — a nested record, not a wire message.
+export type EthereumAuthorizationSignatureFields = {
+  yParity: Field<"uint32", 1, "required">;
+  r: Field<"bytes", 2, "required">;
+  s: Field<"bytes", 3, "required">;
+};
+export const EthereumAuthorizationSignature: MessageDef<EthereumAuthorizationSignatureFields> = {
+  typeId: -1,
+  fields: {
+    yParity: { no: 1, kind: "uint32", rule: "required" },
+    r: { no: 2, kind: "bytes", rule: "required" },
+    s: { no: 3, kind: "bytes", rule: "required" },
+  },
+};
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto
+// EthereumAuthorizationOneKey — nested inside EthereumSignTxEIP7702OneKey.
+export type EthereumAuthorizationFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  chainId: Field<"uint64", 2, "required">;
+  address: Field<"string", 3, "required">;
+  nonce: Field<"bytes", 4, "required">;
+  signature: MsgField<5, "optional", typeof EthereumAuthorizationSignature>;
+};
+export const EthereumAuthorizationOneKey: MessageDef<EthereumAuthorizationFields> = {
+  typeId: -1,
+  fields: {
+    addressN: { no: 1, kind: "uint32", rule: "repeated" },
+    chainId: { no: 2, kind: "uint64", rule: "required" },
+    address: { no: 3, kind: "string", rule: "required" },
+    nonce: { no: 4, kind: "bytes", rule: "required" },
+    signature: {
+      no: 5,
+      kind: "message",
+      rule: "optional",
+      message: EthereumAuthorizationSignature,
+    },
+  },
+};
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto EthereumSignTxOneKey
+export type EthereumSignTxOneKeyFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  nonce: Field<"bytes", 2, "optional">;
+  gasPrice: Field<"bytes", 3, "required">;
+  gasLimit: Field<"bytes", 4, "required">;
+  to: Field<"string", 11, "optional">;
+  value: Field<"bytes", 6, "optional">;
+  dataInitialChunk: Field<"bytes", 7, "optional">;
+  dataLength: Field<"uint32", 8, "optional">;
+  chainId: Field<"uint64", 9, "required">;
+  txType: Field<"uint32", 10, "optional">;
+};
+export const EthereumSignTxOneKey: MessageDef<EthereumSignTxOneKeyFields> = defineMessage(20_104, {
+  addressN: { no: 1, kind: "uint32", rule: "repeated" },
+  nonce: { no: 2, kind: "bytes", rule: "optional" },
+  gasPrice: { no: 3, kind: "bytes", rule: "required" },
+  gasLimit: { no: 4, kind: "bytes", rule: "required" },
+  to: { no: 11, kind: "string", rule: "optional" },
+  value: { no: 6, kind: "bytes", rule: "optional" },
+  dataInitialChunk: { no: 7, kind: "bytes", rule: "optional" },
+  dataLength: { no: 8, kind: "uint32", rule: "optional" },
+  chainId: { no: 9, kind: "uint64", rule: "required" },
+  txType: { no: 10, kind: "uint32", rule: "optional" },
+});
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto
+// EthereumSignTxEIP1559OneKey
+export type EthereumSignTxEIP1559OneKeyFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  nonce: Field<"bytes", 2, "required">;
+  maxGasFee: Field<"bytes", 3, "required">;
+  maxPriorityFee: Field<"bytes", 4, "required">;
+  gasLimit: Field<"bytes", 5, "required">;
+  to: Field<"string", 6, "optional">;
+  value: Field<"bytes", 7, "required">;
+  dataInitialChunk: Field<"bytes", 8, "optional">;
+  dataLength: Field<"uint32", 9, "required">;
+  chainId: Field<"uint64", 10, "required">;
+  accessList: MsgField<11, "repeated", typeof EthereumAccessListOneKey>;
+};
+export const EthereumSignTxEIP1559OneKey: MessageDef<EthereumSignTxEIP1559OneKeyFields> =
+  defineMessage(20_105, {
+    addressN: { no: 1, kind: "uint32", rule: "repeated" },
+    nonce: { no: 2, kind: "bytes", rule: "required" },
+    maxGasFee: { no: 3, kind: "bytes", rule: "required" },
+    maxPriorityFee: { no: 4, kind: "bytes", rule: "required" },
+    gasLimit: { no: 5, kind: "bytes", rule: "required" },
+    to: { no: 6, kind: "string", rule: "optional" },
+    value: { no: 7, kind: "bytes", rule: "required" },
+    dataInitialChunk: { no: 8, kind: "bytes", rule: "optional" },
+    dataLength: { no: 9, kind: "uint32", rule: "required" },
+    chainId: { no: 10, kind: "uint64", rule: "required" },
+    accessList: {
+      no: 11,
+      kind: "message",
+      rule: "repeated",
+      message: EthereumAccessListOneKey,
+    },
+  });
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto
+// EthereumSignTxEIP7702OneKey
+export type EthereumSignTxEIP7702OneKeyFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  nonce: Field<"bytes", 2, "required">;
+  maxGasFee: Field<"bytes", 3, "required">;
+  maxPriorityFee: Field<"bytes", 4, "required">;
+  gasLimit: Field<"bytes", 5, "required">;
+  to: Field<"string", 6, "required">;
+  value: Field<"bytes", 7, "required">;
+  dataInitialChunk: Field<"bytes", 8, "optional">;
+  dataLength: Field<"uint32", 9, "required">;
+  chainId: Field<"uint64", 10, "required">;
+  accessList: MsgField<11, "repeated", typeof EthereumAccessListOneKey>;
+  authorizationList: MsgField<12, "repeated", typeof EthereumAuthorizationOneKey>;
+};
+export const EthereumSignTxEIP7702OneKey: MessageDef<EthereumSignTxEIP7702OneKeyFields> =
+  defineMessage(20_120, {
+    addressN: { no: 1, kind: "uint32", rule: "repeated" },
+    nonce: { no: 2, kind: "bytes", rule: "required" },
+    maxGasFee: { no: 3, kind: "bytes", rule: "required" },
+    maxPriorityFee: { no: 4, kind: "bytes", rule: "required" },
+    gasLimit: { no: 5, kind: "bytes", rule: "required" },
+    to: { no: 6, kind: "string", rule: "required" },
+    value: { no: 7, kind: "bytes", rule: "required" },
+    dataInitialChunk: { no: 8, kind: "bytes", rule: "optional" },
+    dataLength: { no: 9, kind: "uint32", rule: "required" },
+    chainId: { no: 10, kind: "uint64", rule: "required" },
+    accessList: {
+      no: 11,
+      kind: "message",
+      rule: "repeated",
+      message: EthereumAccessListOneKey,
+    },
+    authorizationList: {
+      no: 12,
+      kind: "message",
+      rule: "repeated",
+      message: EthereumAuthorizationOneKey,
+    },
+  });
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto EthereumTxRequestOneKey
+export type EthereumTxRequestOneKeyFields = {
+  dataLength: Field<"uint32", 1, "optional">;
+  signatureV: Field<"uint32", 2, "optional">;
+  signatureR: Field<"bytes", 3, "optional">;
+  signatureS: Field<"bytes", 4, "optional">;
+  authorizationSignatures: MsgField<10, "repeated", typeof EthereumAuthorizationSignature>;
+};
+export const EthereumTxRequestOneKey: MessageDef<EthereumTxRequestOneKeyFields> = defineMessage(
+  20_106,
+  {
+    dataLength: { no: 1, kind: "uint32", rule: "optional" },
+    signatureV: { no: 2, kind: "uint32", rule: "optional" },
+    signatureR: { no: 3, kind: "bytes", rule: "optional" },
+    signatureS: { no: 4, kind: "bytes", rule: "optional" },
+    authorizationSignatures: {
+      no: 10,
+      kind: "message",
+      rule: "repeated",
+      message: EthereumAuthorizationSignature,
+    },
+  },
+);
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto EthereumTxAckOneKey
+export type EthereumTxAckOneKeyFields = { dataChunk: Field<"bytes", 1, "required"> };
+export const EthereumTxAckOneKey: MessageDef<EthereumTxAckOneKeyFields> = defineMessage(20_107, {
+  dataChunk: { no: 1, kind: "bytes", rule: "required" },
+});
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto
+// EthereumSignMessageOneKey
+export type EthereumSignMessageOneKeyFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  message: Field<"bytes", 2, "required">;
+  chainId: Field<"uint64", 3, "optional">;
+};
+export const EthereumSignMessageOneKey: MessageDef<EthereumSignMessageOneKeyFields> = defineMessage(
+  20_108,
+  {
+    addressN: { no: 1, kind: "uint32", rule: "repeated" },
+    message: { no: 2, kind: "bytes", rule: "required" },
+    chainId: { no: 3, kind: "uint64", rule: "optional" },
+  },
+);
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto
+// EthereumMessageSignatureOneKey — signature is the 65-byte r‖s‖v (see sign_message.py
+// `signature[1:] + signature[0:1]`).
+export type EthereumMessageSignatureOneKeyFields = {
+  signature: Field<"bytes", 2, "required">;
+  address: Field<"string", 3, "required">;
+};
+export const EthereumMessageSignatureOneKey: MessageDef<EthereumMessageSignatureOneKeyFields> =
+  defineMessage(20_110, {
+    signature: { no: 2, kind: "bytes", rule: "required" },
+    address: { no: 3, kind: "string", rule: "required" },
+  });
+
+// firmware-pro/classic1s common/protob/messages-ethereum-eip712-onekey.proto
+// EthereumFieldTypeOneKey — a nested record; entryType is self-referential for nested arrays.
+export type EthereumFieldTypeOneKeyFields = {
+  dataType: Field<"enum", 1, "required">;
+  size: Field<"uint32", 2, "optional">;
+  entryType: MsgField<3, "optional", MessageDef>;
+  structName: Field<"string", 4, "optional">;
+};
+export const EthereumFieldTypeOneKey: MessageDef<EthereumFieldTypeOneKeyFields> = {
+  typeId: -1,
+  fields: {
+    dataType: { no: 1, kind: "enum", rule: "required" },
+    size: { no: 2, kind: "uint32", rule: "optional" },
+    // Self-referential (arrays of arrays): the getter resolves the descriptor lazily so the
+    // definition can stay a literal.
+    entryType: {
+      no: 3,
+      kind: "message",
+      rule: "optional",
+      get message() {
+        return EthereumFieldTypeOneKey;
+      },
+    },
+    structName: { no: 4, kind: "string", rule: "optional" },
+  },
+};
+
+// firmware-pro/classic1s common/protob/messages-ethereum-eip712-onekey.proto
+// EthereumStructMemberOneKey — a nested record.
+export type EthereumStructMemberOneKeyFields = {
+  type: MsgField<1, "required", typeof EthereumFieldTypeOneKey>;
+  name: Field<"string", 2, "required">;
+};
+export const EthereumStructMemberOneKey: MessageDef<EthereumStructMemberOneKeyFields> = {
+  typeId: -1,
+  fields: {
+    type: { no: 1, kind: "message", rule: "required", message: EthereumFieldTypeOneKey },
+    name: { no: 2, kind: "string", rule: "required" },
+  },
+};
+
+// firmware-pro/classic1s common/protob/messages-ethereum-eip712-onekey.proto
+// EthereumSignTypedDataOneKey
+export type EthereumSignTypedDataOneKeyFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  primaryType: Field<"string", 2, "required">;
+  metamaskV4Compat: Field<"bool", 3, "optional">;
+  chainId: Field<"uint64", 4, "optional">;
+};
+export const EthereumSignTypedDataOneKey: MessageDef<EthereumSignTypedDataOneKeyFields> =
+  defineMessage(20_111, {
+    addressN: { no: 1, kind: "uint32", rule: "repeated" },
+    primaryType: { no: 2, kind: "string", rule: "required" },
+    metamaskV4Compat: { no: 3, kind: "bool", rule: "optional" },
+    chainId: { no: 4, kind: "uint64", rule: "optional" },
+  });
+
+// firmware-pro/classic1s common/protob/messages-ethereum-eip712-onekey.proto
+// EthereumTypedDataStructRequestOneKey
+export type EthereumTypedDataStructRequestOneKeyFields = {
+  name: Field<"string", 1, "required">;
+};
+export const EthereumTypedDataStructRequestOneKey: MessageDef<EthereumTypedDataStructRequestOneKeyFields> =
+  defineMessage(20_112, {
+    name: { no: 1, kind: "string", rule: "required" },
+  });
+
+// firmware-pro/classic1s common/protob/messages-ethereum-eip712-onekey.proto
+// EthereumTypedDataStructAckOneKey
+export type EthereumTypedDataStructAckOneKeyFields = {
+  members: MsgField<1, "repeated", typeof EthereumStructMemberOneKey>;
+};
+export const EthereumTypedDataStructAckOneKey: MessageDef<EthereumTypedDataStructAckOneKeyFields> =
+  defineMessage(20_113, {
+    members: {
+      no: 1,
+      kind: "message",
+      rule: "repeated",
+      message: EthereumStructMemberOneKey,
+    },
+  });
+
+// firmware-pro/classic1s common/protob/messages-ethereum-eip712-onekey.proto
+// EthereumTypedDataValueRequestOneKey
+export type EthereumTypedDataValueRequestOneKeyFields = {
+  memberPath: Field<"uint32", 1, "repeated">;
+};
+export const EthereumTypedDataValueRequestOneKey: MessageDef<EthereumTypedDataValueRequestOneKeyFields> =
+  defineMessage(20_114, {
+    memberPath: { no: 1, kind: "uint32", rule: "repeated" },
+  });
+
+// firmware-pro/classic1s common/protob/messages-ethereum-eip712-onekey.proto
+// EthereumTypedDataValueAckOneKey
+export type EthereumTypedDataValueAckOneKeyFields = {
+  value: Field<"bytes", 1, "required">;
+};
+export const EthereumTypedDataValueAckOneKey: MessageDef<EthereumTypedDataValueAckOneKeyFields> =
+  defineMessage(20_115, {
+    value: { no: 1, kind: "bytes", rule: "required" },
+  });
+
+// firmware-pro/classic1s common/protob/messages-ethereum-eip712-onekey.proto
+// EthereumTypedDataSignatureOneKey — also the answer to EthereumSignTypedHashOneKey.
+export type EthereumTypedDataSignatureOneKeyFields = {
+  signature: Field<"bytes", 1, "required">;
+  address: Field<"string", 2, "required">;
+};
+export const EthereumTypedDataSignatureOneKey: MessageDef<EthereumTypedDataSignatureOneKeyFields> =
+  defineMessage(20_116, {
+    signature: { no: 1, kind: "bytes", rule: "required" },
+    address: { no: 2, kind: "string", rule: "required" },
+  });
+
+// firmware-pro/classic1s common/protob/messages-ethereum-onekey.proto
+// EthereumSignTypedHashOneKey
+export type EthereumSignTypedHashOneKeyFields = {
+  addressN: Field<"uint32", 1, "repeated">;
+  domainSeparatorHash: Field<"bytes", 2, "required">;
+  messageHash: Field<"bytes", 3, "optional">;
+  chainId: Field<"uint64", 4, "optional">;
+};
+export const EthereumSignTypedHashOneKey: MessageDef<EthereumSignTypedHashOneKeyFields> =
+  defineMessage(20_117, {
+    addressN: { no: 1, kind: "uint32", rule: "repeated" },
+    domainSeparatorHash: { no: 2, kind: "bytes", rule: "required" },
+    messageHash: { no: 3, kind: "bytes", rule: "optional" },
+    chainId: { no: 4, kind: "uint64", rule: "optional" },
+  });

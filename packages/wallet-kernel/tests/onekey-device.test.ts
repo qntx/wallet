@@ -1,7 +1,7 @@
 /** Features → DeviceInfo mapping and every initialize() refusal, over scripted exchanges. */
 import { describe, expect, it } from "vite-plus/test";
 
-import { initialize } from "../src/modules/onekey/protocol/device.ts";
+import { initialize, supports } from "../src/modules/onekey/protocol/device.ts";
 import type { DeviceInfo } from "../src/modules/onekey/protocol/device.ts";
 import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
 import { decodeMessage, encodeMessage } from "../src/modules/onekey/protocol/frame.ts";
@@ -44,19 +44,25 @@ async function refusalError(features: Decoded<FeaturesFields>): Promise<OneKeyEr
 }
 
 describe("initialize", () => {
-  const models: Array<[number, DeviceInfo["model"]]> = [
-    [0, "classic"],
-    [1, "classic1s"],
-    [2, "mini"],
-    [3, "touch"],
-    [5, "pro"],
-    [6, "pure"],
+  // The touch/pro firmware floor (4.5.0) is above the classic fixture version, so each row
+  // carries the firmware it reports.
+  const models: Array<[number, DeviceInfo["model"], string, readonly [number, number, number]]> = [
+    [0, "classic", "3.21.0", [3, 21, 0]],
+    [1, "classic1s", "3.21.0", [3, 21, 0]],
+    [2, "mini", "3.21.0", [3, 21, 0]],
+    [3, "touch", "4.21.0", [4, 21, 0]],
+    [5, "pro", "4.21.0", [4, 21, 0]],
+    [6, "pure", "3.21.0", [3, 21, 0]],
   ];
 
-  it.each(models)("maps device type %i to %s", async (type, model) => {
-    const result = await info({ ...BASE, onekeyDeviceType: type });
+  it.each(models)("maps device type %i to %s", async (type, model, version, firmware) => {
+    const result = await info({
+      ...BASE,
+      onekeyDeviceType: type,
+      onekeyFirmwareVersion: version,
+    });
     expect(result.model).toBe(model);
-    expect(result.firmware).toStrictEqual([3, 21, 0]);
+    expect(result.firmware).toStrictEqual(firmware);
   });
 
   it("takes the firmware version from onekey_version when 609 is absent", async () => {
@@ -66,9 +72,9 @@ describe("initialize", () => {
       patchVersion: 1,
       initialized: true,
       onekeyDeviceType: 5,
-      onekeyVersion: "4.0.1",
+      onekeyVersion: "4.21.0",
     });
-    expect(result.firmware).toStrictEqual([4, 0, 1]);
+    expect(result.firmware).toStrictEqual([4, 21, 0]);
   });
 
   it("accepts equal version fields", async () => {
@@ -92,6 +98,7 @@ describe("initialize", () => {
     expect(result.passphraseProtection).toBe(false);
     expect(result.unlocked).toBe(true);
     expect(result.sessionId).toStrictEqual(sessionId);
+    expect(result.capabilities).toStrictEqual([1, 5, 7]);
   });
 
   it("marks a capability list without Bitcoin_like as bitcoinOnly", async () => {
@@ -178,5 +185,67 @@ describe("initialize refusals", () => {
     expect(short.code).toBe("device-fault");
     const tagged = await refusalError({ ...BASE, onekeyFirmwareVersion: "v4.21.0" });
     expect(tagged.code).toBe("device-fault");
+  });
+
+  it("refuses firmware below the current-schema floor", async () => {
+    // v1CurrentSchema starts at 3.3.0 for the classic family, 4.5.0 for touch/pro (SDK
+    // MessagesConfig.ts).
+    const classic = await refusalError({ ...BASE, onekeyFirmwareVersion: "3.2.0" });
+    expect(classic.code).toBe("unsupported");
+    const touch = await refusalError({
+      ...BASE,
+      onekeyDeviceType: 3,
+      onekeyFirmwareVersion: "4.4.9",
+    });
+    expect(touch.code).toBe("unsupported");
+    const floorClassic = await info({ ...BASE, onekeyFirmwareVersion: "3.3.0" });
+    expect(floorClassic.firmware).toStrictEqual([3, 3, 0]);
+    const floorPro = await info({
+      ...BASE,
+      onekeyDeviceType: 5,
+      onekeyFirmwareVersion: "4.5.0",
+    });
+    expect(floorPro.firmware).toStrictEqual([4, 5, 0]);
+  });
+});
+
+describe("supports", () => {
+  const deviceInfo = (partial: Partial<DeviceInfo>): DeviceInfo => ({
+    model: "classic1s",
+    firmware: [3, 21, 0],
+    deviceId: "",
+    capabilities: [],
+    bitcoinOnly: false,
+    pinProtection: false,
+    passphraseProtection: false,
+    unlocked: true,
+    sessionId: undefined,
+    ...partial,
+  });
+
+  it("treats evm-1559 as unconditional at the initialize floor", () => {
+    expect(supports(deviceInfo({ model: "mini", firmware: [3, 3, 0] }), "evm-1559")).toBe(true);
+  });
+
+  it("gates evm-7702 on model and firmware", () => {
+    expect(supports(deviceInfo({ firmware: [3, 13, 0] }), "evm-7702")).toBe(true);
+    expect(supports(deviceInfo({ firmware: [3, 12, 9] }), "evm-7702")).toBe(false);
+    expect(supports(deviceInfo({ model: "pure", firmware: [3, 13, 0] }), "evm-7702")).toBe(true);
+    expect(supports(deviceInfo({ model: "pro", firmware: [4, 16, 0] }), "evm-7702")).toBe(true);
+    expect(supports(deviceInfo({ model: "pro", firmware: [4, 15, 9] }), "evm-7702")).toBe(false);
+    expect(supports(deviceInfo({ model: "mini", firmware: [3, 21, 0] }), "evm-7702")).toBe(false);
+    expect(supports(deviceInfo({ model: "touch", firmware: [4, 21, 0] }), "evm-7702")).toBe(false);
+  });
+
+  it("gates typed-data streaming on the classic family's capability", () => {
+    const withCap = deviceInfo({ capabilities: [1000] });
+    expect(supports(withCap, "evm-typed-data-stream")).toBe(true);
+    expect(supports(deviceInfo({}), "evm-typed-data-stream")).toBe(false);
+    expect(
+      supports(deviceInfo({ model: "pro", firmware: [4, 21, 0] }), "evm-typed-data-stream"),
+    ).toBe(true);
+    expect(
+      supports(deviceInfo({ model: "touch", firmware: [4, 21, 0] }), "evm-typed-data-stream"),
+    ).toBe(true);
   });
 });
