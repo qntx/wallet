@@ -1,11 +1,9 @@
 /**
- * Round trip against the real qntx card applet running in jcardsim via the line-oriented APDU
- * bridge (`QNTX_CARD_SIM` = path to the bridge launcher; skipped without it). The bridge prints
- * `READY <cert hex>` once personalised to BLANK with the test CA ca1, then answers one hex C-APDU
- * line on stdin with one hex response line (data ‖ SW).
+ * Round trip against the real qntx card applet running in jcardsim via the multi-card bridge
+ * (`QNTX_CARD_SIM` = path to the `card:sim` launcher; skipped without it). Every card comes
+ * personalised to BLANK under the test CA ca1 and power-cycled, so each test SELECTs and OPENs
+ * itself. The applet at the pinned commit implements the full §9 command set.
  */
-import { spawn } from "node:child_process";
-import type { ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
@@ -16,18 +14,15 @@ import type { Inner } from "../src/modules/card/protocol/commands.ts";
 import { decode } from "../src/modules/card/protocol/decode.ts";
 import { CardError } from "../src/modules/card/protocol/errors.ts";
 import type { CardErrorCode } from "../src/modules/card/protocol/errors.ts";
-import type { Anchor } from "../src/modules/card/protocol/identity.ts";
 import { openRequest, openResponse, SELECT_APDU } from "../src/modules/card/protocol/session.ts";
 import type { Session } from "../src/modules/card/protocol/session.ts";
 import { result } from "../src/modules/card/protocol/status.ts";
+import { CA1_ANCHOR, SIM_LAUNCHER, startSimulator } from "./card/sim.ts";
+import type { SimCard, Simulator } from "./card/sim.ts";
 import { loadVectors } from "./helpers.ts";
 
-const SIM = process.env["QNTX_CARD_SIM"];
 const hex = hexToBytes;
 
-const cert = loadVectors("card/cert.json") as {
-  cas: ReadonlyArray<{ name: string; public: string }>;
-};
 const apdu = loadVectors("card/apdu.json") as {
   commands: ReadonlyArray<{
     name: string;
@@ -72,99 +67,46 @@ const resolveApdu = (template: string): string =>
     .replace("{hostEph.offCurve}", bytesToHex(hostEphOffCurve))
     .replace("{hostEph}", sessionVec.hostEph);
 
-const ca1 = cert.cas.find((ca) => ca.name === "ca1");
-const anchor: Anchor = { batch: "ca1", key: hex(requireCase(ca1).public) };
-
-/** A line of the bridge protocol. */
-class Bridge {
-  private readonly proc: ChildProcess;
-  private readonly queue: string[] = [];
-  private readonly waiters: Array<(line: string) => void> = [];
-  stderr = "";
-
-  constructor(command: string) {
-    this.proc = spawn(command, [], { stdio: ["pipe", "pipe", "pipe"] });
-    let buffer = "";
-    this.proc.stdout?.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString("utf8");
-      let cut = buffer.indexOf("\n");
-      while (cut >= 0) {
-        const line = buffer.slice(0, cut).trim();
-        buffer = buffer.slice(cut + 1);
-        const waiter = this.waiters.shift();
-        if (waiter === undefined) {
-          this.queue.push(line);
-        } else {
-          waiter(line);
-        }
-        cut = buffer.indexOf("\n");
-      }
-    });
-    this.proc.stderr?.on("data", (chunk: Buffer) => {
-      this.stderr += chunk.toString("utf8");
-    });
-  }
-
-  /** Next stdout line; the bridge answers one line per command line. */
-  async read(): Promise<string> {
-    const queued = this.queue.shift();
-    return queued === undefined
-      ? new Promise((resolve) => {
-          this.waiters.push(resolve);
-        })
-      : Promise.resolve(queued);
-  }
-
-  /** Sends one C-APDU (hex) and returns the response line (hex, data ‖ SW). */
-  async transmit(apduBytes: Uint8Array): Promise<string> {
-    this.proc.stdin?.write(`${bytesToHex(apduBytes)}\n`);
-    return this.read();
-  }
-
-  close(): void {
-    this.proc.stdin?.end();
-    this.proc.kill();
-  }
-}
-
-let bridge: Bridge;
-let readyCert = "";
+let simulator: Simulator;
+let card: SimCard;
 let session: Session;
 
+/** Sends one C-APDU; no command in this suite is expected to hit the armed tear. */
+const transmit = async (capdu: Uint8Array): Promise<Uint8Array> => {
+  const response = await card.transmit(capdu);
+  if (response === "torn") {
+    throw new Error("card was unexpectedly torn");
+  }
+  return response;
+};
+
 const wrapSend = async (inner: Inner): Promise<{ data: Uint8Array; sw: number }> => {
-  const rapdu = await bridge.transmit(session.wrap(inner));
-  return session.unwrap(hex(rapdu));
+  const rapdu = await transmit(session.wrap(inner));
+  return session.unwrap(rapdu);
 };
 
 const open = async (): Promise<Session> => {
   const { apdu: request, secret } = openRequest((n) => new Uint8Array(randomBytes(n)));
-  const response = await bridge.transmit(request);
-  return openResponse(secret, request, hex(response), [anchor], []);
+  const response = await transmit(request);
+  return openResponse(secret, request, response, [CA1_ANCHOR], []);
 };
 
-/** One inner command exchange asserted to end on inner 6D00 → card-fault. */
-const expectSixDZeroZero = async (inner: Inner): Promise<void> => {
-  const response = await wrapSend(inner);
-  expect(response.sw).toBe(0x6d00);
-  expect(cardError(() => result(inner, response))).toBe("card-fault");
-};
-
-describe.skipIf(SIM === undefined)("card simulator round trip", () => {
+describe.skipIf(SIM_LAUNCHER === undefined)("card simulator round trip", () => {
   beforeAll(async () => {
-    bridge = new Bridge(requireCase(SIM));
-    const ready = await bridge.read();
-    readyCert = ready.replace(/^READY /, "");
+    simulator = await startSimulator();
+    card = await simulator.newCard();
   }, 120_000);
 
-  afterAll(() => {
-    bridge.close();
+  afterAll(async () => {
+    await simulator.close();
   });
 
-  it("SELECT answers 9000 and OPEN opens a session carrying the READY certificate", async () => {
+  it("SELECT answers 9000 and OPEN opens a session carrying the card certificate", async () => {
     expect.hasAssertions();
-    await expect(bridge.transmit(SELECT_APDU)).resolves.toBe("9000");
+    await expect(transmit(SELECT_APDU).then(bytesToHex)).resolves.toBe("9000");
     session = await open();
-    expect(bytesToHex(session.cert)).toBe(readyCert);
+    expect(session.cert).toStrictEqual(card.cert);
+    expect(session.identity).toStrictEqual(card.identity);
   });
 
   it("STATUS decodes as blank/0", async () => {
@@ -179,37 +121,32 @@ describe.skipIf(SIM === undefined)("card simulator round trip", () => {
     expect.hasAssertions();
     const first = session.wrap(cmd.status());
     const second = session.wrap(cmd.status());
-    const rapdu1 = await bridge.transmit(first);
-    const rapdu2 = await bridge.transmit(second);
-    expect(session.unwrap(hex(rapdu1)).sw).toBe(0x9000);
-    expect(session.unwrap(hex(rapdu2)).sw).toBe(0x9000);
+    const rapdu1 = await transmit(first);
+    const rapdu2 = await transmit(second);
+    expect(session.unwrap(rapdu1).sw).toBe(0x9000);
+    expect(session.unwrap(rapdu2).sw).toBe(0x9000);
   });
 
   it("an unknown inner INS answers 6D00 → card-fault", async () => {
     expect.hasAssertions();
     const unknown: Inner = { name: "status", ins: 0x7f, p1: 0, p2: 0, data: new Uint8Array(0) };
-    await expectSixDZeroZero(unknown);
+    const response = await wrapSend(unknown);
+    expect(response.sw).toBe(0x6d00);
+    expect(cardError(() => result(unknown, response))).toBe("card-fault");
   });
 
-  // Const.INNER_INS = {INS_STATUS}: the stage-core applet implements STATUS only — every other
-  // inner command answers 6D00, which no command's allow-list accepts.
+  // The stage-core applet answered 6D00 for every inner command but STATUS; the full applet gates
+  // each LOADED-only command on life first (§9.2 checking order), so a BLANK card answers 6985,
+  // which the client maps to wrong-state.
   it.each([
     ["verify", cmd.verify(new Uint8Array(32))],
     ["change", cmd.change(new Uint8Array(32))],
     ["wait", cmd.wait()],
+    ["erase", cmd.erase()],
     ["public-key", cmd.publicKey("secp256k1", [0x80_00_00_00])],
     ["sign-ecdsa", cmd.signEcdsa(new Uint8Array(32), [0x80_00_00_00])],
     ["sign-bip340", cmd.signBip340(new Uint8Array(32), new Uint8Array(32), [0x80_00_00_00])],
     ["ed25519-begin", cmd.ed25519Begin([0x80_00_00_00])],
-    [
-      "create",
-      cmd.create({
-        mode: "generate",
-        accessHash: new Uint8Array(32),
-        entropy: new Uint8Array(32),
-        others: [],
-      }),
-    ],
     [
       "export-head",
       cmd.export0(new Uint8Array(97), {
@@ -217,17 +154,71 @@ describe.skipIf(SIM === undefined)("card simulator round trip", () => {
         signature: new Uint8Array(64),
       }),
     ],
-    [
-      "import-head",
-      cmd.import0(new Uint8Array(97), {
-        ephemeral: new Uint8Array(65),
-        signature: new Uint8Array(64),
-      }),
-    ],
-    ["import-payload", cmd.import1(new Uint8Array(160))],
-  ])("%s also answers 6D00", async (_name, inner) => {
+    ["export-payload", cmd.export1(new Uint8Array(32))],
+  ])("%s answers 6985 → wrong-state on a BLANK card", async (_name, inner) => {
     expect.hasAssertions();
-    await expectSixDZeroZero(inner);
+    const response = await wrapSend(inner);
+    expect(response.sw).toBe(0x6985);
+    expect(cardError(() => result(inner, response))).toBe("wrong-state");
+  });
+
+  it("IMPORT head without an OFFER answers 6985 → wrong-state", async () => {
+    expect.hasAssertions();
+    const inner = cmd.import0(new Uint8Array(97), {
+      ephemeral: new Uint8Array(65),
+      signature: new Uint8Array(64),
+    });
+    const response = await wrapSend(inner);
+    expect(response.sw).toBe(0x6985);
+    expect(cardError(() => result(inner, response))).toBe("wrong-state");
+  });
+
+  it("OFFER answers an offer that verifies under the card identity and repeats its LK", async () => {
+    expect.hasAssertions();
+    const first = decode.offer(result(cmd.offer(), await wrapSend(cmd.offer())), session.identity);
+    const second = decode.offer(result(cmd.offer(), await wrapSend(cmd.offer())), session.identity);
+    // §9.12: offer = VALID keeps the stored link key; only the signature is fresh.
+    expect(second.linkKey).toStrictEqual(first.linkKey);
+    expect(second.signature).not.toStrictEqual(first.signature);
+  });
+
+  it("IMPORT payload without a pending import answers 6985 → wrong-state", async () => {
+    expect.hasAssertions();
+    const inner = cmd.import1(new Uint8Array(160));
+    const response = await wrapSend(inner);
+    expect(response.sw).toBe(0x6985);
+    expect(cardError(() => result(inner, response))).toBe("wrong-state");
+  });
+
+  it("CREATE(generate) loads the wallet and echoes its WalletInfo", async () => {
+    expect.hasAssertions();
+    const params = {
+      mode: "generate",
+      accessHash: new Uint8Array(randomBytes(32)),
+      entropy: new Uint8Array(randomBytes(32)),
+      others: [],
+    } as const;
+    const inner = cmd.create(params);
+    const response = await wrapSend(inner);
+    expect(response.sw).toBe(0x9000);
+    const info = decode.created(result(inner, response), params, session.cardId);
+    expect(info.origin).toBe("generated");
+    expect(info.members).toStrictEqual([session.cardId]);
+    const status = decode.status(result(cmd.status(), await wrapSend(cmd.status())));
+    expect(status).toStrictEqual({ life: "loaded", tries: 10 });
+  });
+
+  it("a second CREATE answers 6985 → wrong-state", async () => {
+    expect.hasAssertions();
+    const inner = cmd.create({
+      mode: "generate",
+      accessHash: new Uint8Array(32),
+      entropy: new Uint8Array(32),
+      others: [],
+    });
+    const response = await wrapSend(inner);
+    expect(response.sw).toBe(0x6985);
+    expect(cardError(() => result(inner, response))).toBe("wrong-state");
   });
 
   it("a flipped record tag answers 6982 and breaks the session", async () => {
@@ -236,9 +227,9 @@ describe.skipIf(SIM === undefined)("card simulator round trip", () => {
     // tag = the 8 bytes right before the trailing Le byte: flip the first tag byte.
     const tagByte = requireCase(apduBytes.at(-10));
     apduBytes[apduBytes.length - 10] = tagByte ^ 1;
-    const rapdu = await bridge.transmit(apduBytes);
-    expect(rapdu).toBe("6982");
-    expect(cardError(() => session.unwrap(hex(rapdu)))).toBe("session-broken");
+    const rapdu = await transmit(apduBytes);
+    expect(bytesToHex(rapdu)).toBe("6982");
+    expect(cardError(() => session.unwrap(rapdu))).toBe("session-broken");
     expect(session.closed).toBe(true);
   });
 
@@ -259,7 +250,7 @@ describe.skipIf(SIM === undefined)("card simulator round trip", () => {
 
   it.each(openCases)("OPEN $name answers its status word", async (v) => {
     expect.hasAssertions();
-    await expect(bridge.transmit(hex(resolveApdu(v.apdu)))).resolves.toBe(v.sw);
+    await expect(transmit(hex(resolveApdu(v.apdu)))).resolves.toStrictEqual(hex(v.sw));
   });
 
   it.each(openCases)("openResponse($name) is card-not-genuine", (v) => {
@@ -270,7 +261,7 @@ describe.skipIf(SIM === undefined)("card simulator round trip", () => {
           hex(oracle.open.hostPrivate),
           hex(oracle.open.request),
           hex(v.sw),
-          [anchor],
+          [CA1_ANCHOR],
           [],
         ),
       ),

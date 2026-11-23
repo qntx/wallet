@@ -1,0 +1,123 @@
+{
+  "cases": [
+    {
+      "name": "evm",
+      "path": "m/44'/60'/0'/0/0",
+      "wire": "058000002c8000003c800000000000000000000000",
+      "privateKey": "994b207be623f08b88207264ae430d88d872a95e09d775fd54b6074bdd77acb8",
+      "publicKey": "0235fcd9731ac8098a86503e2538a4c955d34ad8f990d6f649959c93be3977e4a9",
+      "publicKeyUncompressed": "0435fcd9731ac8098a86503e2538a4c955d34ad8f990d6f649959c93be3977e4a9ab167568ba71c5d6d8d565367f88d8b1a9c6df35222c570be48840195dfa878a",
+      "digest": "827134c09e1f154d7d0239e5b8f74ebb638b420eabea552628efc21198f6ca64",
+      "signature": "ad0f6277c8eb283f2102506165f0b0f2b73e52ed5df7175f4318e0410eef235235d243bdeb4e94ee001a8291a09109c85b183ee5824e78fe84d1a6709c4bb72e",
+      "recoveryId": 0,
+      "lowS": "ad0f6277c8eb283f2102506165f0b0f2b73e52ed5df7175f4318e0410eef235235d243bdeb4e94ee001a8291a09109c85b183ee5824e78fe84d1a6709c4bb72e",
+      "lowSRecoveryId": 0,
+      "highS": "ad0f6277c8eb283f2102506165f0b0f2b73e52ed5df7175f4318e0410eef2352ca2dbc4214b16b11ffe57d6e5f6ef6365f969e012cfa273d3b00b81c33ea8a13",
+      "highSRecoveryId": 1
+    },
+    {
+      "name": "tron",
+      "path": "m/44'/195'/0'/0/0",
+      "wire": "058000002c800000c3800000000000000000000000",
+      "privateKey": "6a4b8d2b0cab190b425a69b5ba32fffad739e8e5ae4a6a58890be74ede9e7c41",
+      "publicKey": "038a692a5019d9f1f5176c28f54b38f41284c9bc0504646e4e10b68b7d3c38324e",
+      "publicKeyUncompressed": "048a692a5019d9f1f5176c28f54b38f41284c9bc0504646e4e10b68b7d3c38324eeabb98273847335caaee47fe563789bebda0e16979d1dc3dbee0c7dda40cccfd",
+      "digest": "98ad52e697e4b1654cbb2cd08b1be1e08d47b6bbae4893624aecd416f008a08c",
+      "signature": "779e594e2c84058053ad40503784afb9adfd47ace64dfe3eef1bdf37a3c93c95801e4ae2051e7ccd672763cb1df340462060b5e2b3e22468dc8a8b7bfdbbbf62",
+      "recoveryId": 0,
+      "lowS": "779e594e2c84058053ad40503784afb9adfd47ace64dfe3eef1bdf37a3c93c957fe1b51dfae1833298d89c34e20cbfb89a4e2703fb667bd2e347d310d27a81df",
+      "lowSRecoveryId": 1,
+      "highS": "779e594e2c84058053ad40503784afb9adfd47ace64dfe3eef1bdf37a3c93c95801e4ae2051e7ccd672763cb1df340462060b5e2b3e22468dc8a8b7bfdbbbf62",
+      "highSRecoveryId": 0
+    },
+    {
+      "name": "btc-bip84-account",
+      "path": "m/84'/0'/0'",
+      "wire": "03800000548000000080000000",
+      "privateKey": "5d7bed3044aa89e87b48d416b7256f1a85c0bbd5e3e4dd64cc24b26758578903",
+      "publicKey": "0238fb05e6f630c0396e9aa74eed6dbbe3c023727a680d4c588c1b40b10e99a5be",
+      "publicKeyUncompressed": "0438fb05e6f630c0396e9aa74eed6dbbe3c023727a680d4c588c1b40b10e99a5bee6a7578638d4b33c33c3bb24cc0f417d109388556275506f6ada230d30d23cd6",
+      "digest": "bf744b50f74c0b73e394ff3a012979de78118a21b4d4b5de7aefef9c53547acd",
+      "signature": "97d72d1d197e4626760b5d6f46de3098ed789fa1a2a6d83b50fe09d11ccc899aaeca98e56d42a6341eca646078db01ebff193cafd5642b4f43f4c2af7c8e9d52",
+      "recoveryId": 1,
+      "lowS": "97d72d1d197e4626760b5d6f46de3098ed789fa1a2a6d83b50fe09d11ccc899a5135671a92bd59cbe1359b9f8724fe12bb95a036d9e474ec7bdd9bdd53a7a3ef",
+      "lowSRecoveryId": 0,
+      "highS": "97d72d1d197e4626760b5d6f46de3098ed789fa1a2a6d83b50fe09d11ccc899aaeca98e56d42a6341eca646078db01ebff193cafd5642b4f43f4c2af7c8e9d52",
+      "highSRecoveryId": 1
+    },
+    {
+      "name": "btc-bip84",
+      "path": "m/84'/0'/0'/0/0",
+      "wire": "058000005480000000800000000000000000000000",
+      "privateKey": "b6ff93bfce663314cf3351559659e6008cc18ffdc54ffb0239a4793d44e676e9",
+      "publicKey": "03253e67d58cdd8ac590900fbd937e8e26c86d6f222009b236cb0fd327058e87ae",
+      "publicKeyUncompressed": "04253e67d58cdd8ac590900fbd937e8e26c86d6f222009b236cb0fd327058e87ae2d05111e6a571dd2ec22ea284934fb40cb48dee317125234f4d977ac5712e211",
+      "digest": "0c3d0e6c1e67e61d9c804ac77d14a5d407473e4f084aa2fdd296ef8f32c0219d",
+      "signature": "9987c60c1f2872a42616c60b8c7e7f278e0b96052a64d23121fe978b1a8e838d45fe9a0f860672eda56100f9110d6607a1842ba6bbac488ec32891652fbd7fc1",
+      "recoveryId": 0,
+      "lowS": "9987c60c1f2872a42616c60b8c7e7f278e0b96052a64d23121fe978b1a8e838d45fe9a0f860672eda56100f9110d6607a1842ba6bbac488ec32891652fbd7fc1",
+      "lowSRecoveryId": 0,
+      "highS": "9987c60c1f2872a42616c60b8c7e7f278e0b96052a64d23121fe978b1a8e838dba0165f079f98d125a9eff06eef299f7192ab13ff39c57acfca9cd27a078c180",
+      "highSRecoveryId": 1
+    },
+    {
+      "name": "depth-10",
+      "path": "m/0/1'/2/3'/4/5'/6/7'/8/9'",
+      "wire": "0a00000000800000010000000280000003000000048000000500000006800000070000000880000009",
+      "privateKey": "6c799d10a6376d14093bfe1419112567a194c910eb2e85f31183dc3d7f698087",
+      "publicKey": "0394d16209e384bc5943ed1db26cd1356ffa91dd791b90d06bebc4cb5fb59435aa",
+      "publicKeyUncompressed": "0494d16209e384bc5943ed1db26cd1356ffa91dd791b90d06bebc4cb5fb59435aa9316386dcc1202b7d017793ddbc4477475fce79f87dd884eafe135018ec01ea9",
+      "digest": "fa54965188607534a0d0cc17ba5e31ed2caae5c3e0ea057f855487558167106a",
+      "signature": "9c1e3b20b84c13b50541085ae0dbd634e97e4a877844aa52f4055bb7609bb4a2ea6ac4f6ebe72d19e661285b4b81c0c490f95e2b1d5cf67e9a9c451760d13e78",
+      "recoveryId": 0,
+      "lowS": "9c1e3b20b84c13b50541085ae0dbd634e97e4a877844aa52f4055bb7609bb4a215953b091418d2e6199ed7a4b47e3f3a29b57ebb91eba9bd253619756f6502c9",
+      "lowSRecoveryId": 1,
+      "highS": "9c1e3b20b84c13b50541085ae0dbd634e97e4a877844aa52f4055bb7609bb4a2ea6ac4f6ebe72d19e661285b4b81c0c490f95e2b1d5cf67e9a9c451760d13e78",
+      "highSRecoveryId": 0
+    }
+  ],
+  "invalid": [
+    {
+      "name": "r-zero",
+      "publicKey": "0235fcd9731ac8098a86503e2538a4c955d34ad8f990d6f649959c93be3977e4a9",
+      "digest": "827134c09e1f154d7d0239e5b8f74ebb638b420eabea552628efc21198f6ca64",
+      "signature": "000000000000000000000000000000000000000000000000000000000000000035d243bdeb4e94ee001a8291a09109c85b183ee5824e78fe84d1a6709c4bb72e",
+      "reason": "r is outside [1, n-1]"
+    },
+    {
+      "name": "s-zero",
+      "publicKey": "0235fcd9731ac8098a86503e2538a4c955d34ad8f990d6f649959c93be3977e4a9",
+      "digest": "827134c09e1f154d7d0239e5b8f74ebb638b420eabea552628efc21198f6ca64",
+      "signature": "ad0f6277c8eb283f2102506165f0b0f2b73e52ed5df7175f4318e0410eef23520000000000000000000000000000000000000000000000000000000000000000",
+      "reason": "s is outside [1, n-1]"
+    },
+    {
+      "name": "r-is-n",
+      "publicKey": "0235fcd9731ac8098a86503e2538a4c955d34ad8f990d6f649959c93be3977e4a9",
+      "digest": "827134c09e1f154d7d0239e5b8f74ebb638b420eabea552628efc21198f6ca64",
+      "signature": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036414135d243bdeb4e94ee001a8291a09109c85b183ee5824e78fe84d1a6709c4bb72e",
+      "reason": "r is outside [1, n-1]"
+    },
+    {
+      "name": "s-is-n",
+      "publicKey": "0235fcd9731ac8098a86503e2538a4c955d34ad8f990d6f649959c93be3977e4a9",
+      "digest": "827134c09e1f154d7d0239e5b8f74ebb638b420eabea552628efc21198f6ca64",
+      "signature": "ad0f6277c8eb283f2102506165f0b0f2b73e52ed5df7175f4318e0410eef2352fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+      "reason": "s is outside [1, n-1]"
+    },
+    {
+      "name": "wrong-digest",
+      "publicKey": "0235fcd9731ac8098a86503e2538a4c955d34ad8f990d6f649959c93be3977e4a9",
+      "digest": "827134c09e1f154d7d0239e5b8f74ebb638b420eabea552628efc21198f6ca65",
+      "signature": "ad0f6277c8eb283f2102506165f0b0f2b73e52ed5df7175f4318e0410eef235235d243bdeb4e94ee001a8291a09109c85b183ee5824e78fe84d1a6709c4bb72e",
+      "reason": "the signature was made over a different digest"
+    },
+    {
+      "name": "wrong-key",
+      "publicKey": "038a692a5019d9f1f5176c28f54b38f41284c9bc0504646e4e10b68b7d3c38324e",
+      "digest": "827134c09e1f154d7d0239e5b8f74ebb638b420eabea552628efc21198f6ca64",
+      "signature": "ad0f6277c8eb283f2102506165f0b0f2b73e52ed5df7175f4318e0410eef235235d243bdeb4e94ee001a8291a09109c85b183ee5824e78fe84d1a6709c4bb72e",
+      "reason": "the signature was made under a different key"
+    }
+  ]
+}
