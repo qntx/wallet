@@ -1398,6 +1398,114 @@
       }
     },
     {
+      "name": "card-erc20-transfer",
+      "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 42161,
+          "nonce": 0,
+          "gas": "0x30000",
+          "to": "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14",
+          "value": "0x0",
+          "data": "0xa9059cbb00000000000000000000000000000000000000000000000000000000c0ffee000000000000000000000000000000000000000000000000000000000000003039",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1"
+        }
+      },
+      "expect": {
+        "summary": "contract-call",
+        "verifiability": "opaque",
+        "blind": "fiat24-function",
+        "warnings": [],
+        "prompt": {
+          "en": "Confirm blind signing\nNetwork: Arbitrum One\nThe wallet cannot describe this Fiat24 call: an unrecognised function of a Fiat24 contract, or a Fiat24 function sent to another contract or network\nCall contract 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14, function 0xa9059cbb\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认盲签\n网络：Arbitrum One\n钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数\n调用合约 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14，函数 0xa9059cbb\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "card-erc20-approve",
+      "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 42161,
+          "nonce": 0,
+          "gas": "0x30000",
+          "to": "0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14",
+          "value": "0x0",
+          "data": "0x095ea7b300000000000000000000000000000000000000000000000000000000c0ffee000000000000000000000000000000000000000000000000000000000000000309",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1"
+        }
+      },
+      "expect": {
+        "summary": "contract-call",
+        "verifiability": "opaque",
+        "blind": "fiat24-function",
+        "warnings": [],
+        "prompt": {
+          "en": "Confirm blind signing\nNetwork: Arbitrum One\nThe wallet cannot describe this Fiat24 call: an unrecognised function of a Fiat24 contract, or a Fiat24 function sent to another contract or network\nCall contract 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14, function 0x095ea7b3\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认盲签\n网络：Arbitrum One\n钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数\n调用合约 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14，函数 0x095ea7b3\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "deposit-erc20-approve",
+      "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 42161,
+          "nonce": 0,
+          "gas": "0x30000",
+          "to": "0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F",
+          "value": "0x0",
+          "data": "0x095ea7b300000000000000000000000000000000000000000000000000000000c0ffee000000000000000000000000000000000000000000000000000000000000000309",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1"
+        }
+      },
+      "expect": {
+        "summary": "contract-call",
+        "verifiability": "opaque",
+        "blind": "fiat24-function",
+        "warnings": [],
+        "prompt": {
+          "en": "Confirm blind signing\nNetwork: Arbitrum One\nThe wallet cannot describe this Fiat24 call: an unrecognised function of a Fiat24 contract, or a Fiat24 function sent to another contract or network\nCall contract 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F, function 0x095ea7b3\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认盲签\n网络：Arbitrum One\n钱包无法描述此 Fiat24 调用：Fiat24 合约的未识别函数，或发送到其他合约或网络的 Fiat24 函数\n调用合约 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F，函数 0x095ea7b3\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
       "name": "grant-text",
       "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
       "request": {

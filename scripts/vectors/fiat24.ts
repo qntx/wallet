@@ -483,10 +483,7 @@ const main = async () => {
       summary: "transfer",
       verifiability: "partial",
       warnings: ["fiat24-internal-account"],
-      prompt: sendPrompt("0.88", "CNH24", "999999", [
-        INTERNAL_EN("999999"),
-        INTERNAL_ZH("999999"),
-      ]),
+      prompt: sendPrompt("0.88", "CNH24", "999999", [INTERNAL_EN("999999"), INTERNAL_ZH("999999")]),
     },
   });
 
@@ -1100,6 +1097,31 @@ const main = async () => {
       prompt: blindPrompt(DEPOSIT, byWallet.slice(0, 10)),
     },
   });
+  /* ERC-20 selectors aimed at a non-token Fiat24 contract are still Fiat24 calls — claimed, not
+     decoded as a generic transfer/approval of a token the contract is not. */
+  const ercTransfer = await call(USD24_ABI, "transfer(address,uint256)", "transfer", [
+    OTHER,
+    12345n,
+  ]);
+  const ercApprove = await call(USD24_ABI, "approve(address,uint256)", "approve", [OTHER, 777n]);
+  for (const [name, to, data] of [
+    ["card-erc20-transfer", CARD, ercTransfer],
+    ["card-erc20-approve", CARD, ercApprove],
+    ["deposit-erc20-approve", DEPOSIT, ercApprove],
+  ] as const) {
+    add({
+      name,
+      signer: SIGNER,
+      request: evmTx(to, data),
+      expect: {
+        summary: "contract-call",
+        verifiability: "opaque",
+        blind: "fiat24-function",
+        warnings: [],
+        prompt: blindPrompt(to, data.slice(0, 10)),
+      },
+    });
+  }
 
   /* The two raw grant texts — blind under the Fiat24 session-grant reason. */
   const GRANT_TEXT_1 =
