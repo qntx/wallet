@@ -11,19 +11,17 @@ import {
   BixinPinInputOnDevice,
   ButtonAck,
   ButtonRequest,
-  Cancel,
   Failure,
   Features,
-  GetFeatures,
   Initialize,
   PassphraseAck,
   PassphraseRequest,
   PinMatrixRequest,
-  Success,
 } from "../src/modules/onekey/protocol/messages.ts";
 import { decode, defineMessage, encode } from "../src/modules/onekey/protocol/proto.ts";
 import type { FieldSpec, Fields, MessageDef } from "../src/modules/onekey/protocol/proto.ts";
 import { loadVectors } from "./helpers.ts";
+import { Success } from "./onekey-emulator/index.ts";
 
 /**
  * Test-only superset of Features covering the fields the oracle vector sets but the client
@@ -52,7 +50,6 @@ const vectors = (loadVectors("onekey/messages.json") as { messages: Vector[] }).
 
 const MESSAGES: Readonly<Record<string, MessageDef>> = {
   Initialize,
-  GetFeatures,
   Features,
   Success,
   Failure,
@@ -62,7 +59,6 @@ const MESSAGES: Readonly<Record<string, MessageDef>> = {
   BixinPinInputOnDevice,
   PassphraseRequest,
   PassphraseAck,
-  Cancel,
 };
 
 const ENCODERS: Readonly<Record<string, MessageDef>> = {
@@ -325,6 +321,19 @@ describe("decode acceptance", () => {
   it("merges repeated scalars across unpacked and packed occurrences", () => {
     const data = hex("100218032004f00101f201020203");
     expect(fields(Features, data)["capabilities"]).toStrictEqual([1, 2, 3]);
+  });
+
+  it("rejects a packed run whose last varint continues past its end", () => {
+    // All required fields precede it so only the overrun is wrong: capabilities packed length 2
+    // = "01 80" — the trailing varint's continuation bit would read the next field's tag (32)
+    // into the run, silently producing capabilities [1, 6400] on an unchecked decoder.
+    const error = fault(() => decode(Features, hex("100218032004f201020180320141")));
+    expect(error).toBeDefined();
+  });
+
+  it("keeps a leading BOM as U+FEFF in a string field", () => {
+    const decoded = decode(Success, hex("0a04efbbbf61"));
+    expect(decoded.message).toBe("\uFEFFa");
   });
 
   it("round-trips through encode", () => {

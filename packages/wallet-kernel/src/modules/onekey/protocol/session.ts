@@ -93,13 +93,11 @@ function interact(message: { readonly type: number; readonly payload: Uint8Array
       }
       return { def: BixinPinInputOnDevice, value: {} };
     }
-    case PassphraseRequest.typeId: {
-      const request = decode(PassphraseRequest, message.payload);
-      if (request.existsAttachPinUser === true) {
-        throw fault("device requested an attach-pin passphrase flow");
-      }
+    case PassphraseRequest.typeId:
+      // An attach-pin request is answered like any other: the ack carries nothing secret and the
+      // device runs its own on-device entry.
+      decode(PassphraseRequest, message.payload);
       return { def: PassphraseAck, value: { onDevice: true } };
-    }
     case Failure.typeId:
       throw failureError(decode(Failure, message.payload));
     default:

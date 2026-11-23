@@ -61,6 +61,12 @@ describe("encodeMessage", () => {
     expect(error?.code).toBe("invalid-input");
   });
 
+  it("encodes the maximum payload into exactly 65 536 report bytes", () => {
+    // 64 504 payload bytes fill 1 024 reports — the exchange byte cap.
+    const out = encodeMessage(17, new Uint8Array(MAX_MESSAGE));
+    expect(out).toHaveLength(65_536);
+  });
+
   it("rejects a type id out of range", () => {
     expect(onekeyError(() => encodeMessage(0x1_00_00, new Uint8Array()))?.code).toBe(
       "invalid-input",

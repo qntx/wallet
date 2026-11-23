@@ -15,17 +15,16 @@ import {
   ButtonRequest,
   Failure,
   Features,
-  GetFeatures,
   Initialize,
   PassphraseAck,
   PassphraseRequest,
   PinMatrixRequest,
-  Success,
 } from "../src/modules/onekey/protocol/messages.ts";
 import { decode, encode } from "../src/modules/onekey/protocol/proto.ts";
 import type { Decoded, Fields, MessageDef } from "../src/modules/onekey/protocol/proto.ts";
 import { call } from "../src/modules/onekey/protocol/session.ts";
 import type { Exchange } from "../src/modules/onekey/protocol/session.ts";
+import { Success } from "./onekey-emulator/index.ts";
 
 const hex = hexToBytes;
 
@@ -78,7 +77,6 @@ async function callError(fn: () => Promise<unknown>): Promise<OneKeyError> {
   throw new Error("expected the call to throw");
 }
 
-const getFeatures = { def: GetFeatures, value: {} };
 const initialize = { def: Initialize, value: {} };
 
 describe("call", () => {
@@ -92,7 +90,7 @@ describe("call", () => {
 
   it("accepts a list of expected types", async () => {
     const { exchange } = scripted([reply(Success, { message: "ok" })]);
-    const result = await call(exchange, getFeatures, [Features, Success]);
+    const result = await call(exchange, initialize, [Features, Success]);
     expect(result).toStrictEqual({ message: "ok" });
   });
 
@@ -141,13 +139,13 @@ describe("call", () => {
     expect(decode(PassphraseAck, ack.payload)).toStrictEqual({ onDevice: true });
   });
 
-  it("rejects an attach-pin PassphraseRequest", async () => {
+  it("answers an attach-pin PassphraseRequest the same on-device way", async () => {
     const { exchange, writes } = scripted([
       reply(PassphraseRequest, { existsAttachPinUser: true }),
+      reply(Features, FEATURES),
     ]);
-    const error = await callError(async () => call(exchange, initialize, Features));
-    expect(error.code).toBe("device-fault");
-    expect(writes).toHaveLength(1);
+    await call(exchange, initialize, Features);
+    expect(decodeMessage(written(writes, 1)).type).toBe(PassphraseAck.typeId);
   });
 
   it("fails after 256 interaction rounds", async () => {
@@ -219,7 +217,6 @@ describe("failure mapping", () => {
 describe("write leak check", () => {
   const ALLOWED = new Set([
     Initialize.typeId,
-    GetFeatures.typeId,
     ButtonAck.typeId,
     BixinPinInputOnDevice.typeId,
     PassphraseAck.typeId,

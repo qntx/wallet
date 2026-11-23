@@ -170,7 +170,7 @@ function skipField(data: Uint8Array, pos: number, wire: number): number {
   }
 }
 
-const textDecoder = new TextDecoder("utf-8", { fatal: true });
+const textDecoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 function readLengthDelimited(
   spec: FieldSpec,
@@ -269,10 +269,13 @@ function decodeAt<F extends Fields>(
         throw fault("length past the end of the message");
       }
       const end = start + Number(length);
+      // The run is sliced out so a varint whose continuation bit crosses `end` is a truncated
+      // varint, not a silent read into the next field.
+      const packed = data.subarray(start, end);
       const items: Scalar[] = [];
-      let packedPos = start;
-      while (packedPos < end) {
-        const [value, next] = readVarint(data, packedPos);
+      let packedPos = 0;
+      while (packedPos < packed.length) {
+        const [value, next] = readVarint(packed, packedPos);
         packedPos = next;
         items.push(scalarFromVarint(spec.kind, value));
       }

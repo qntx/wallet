@@ -12,7 +12,10 @@
 import { OneKeyError } from "./errors.ts";
 
 export const REPORT_SIZE = 64;
-export const MAX_MESSAGE = 65_536;
+// The signer foundation caps an exchange at 65 536 bytes total (hw-signers DeviceRequest/
+// DeviceResponse data). The largest payload whose report sequence fits is 1024 reports × 63
+// payload bytes − the 8-byte header = 64 504.
+export const MAX_MESSAGE = 64_504;
 
 const MAGIC0 = 0x3f;
 const MAGIC1 = 0x23;

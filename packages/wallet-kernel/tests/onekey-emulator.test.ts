@@ -7,7 +7,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { initialize } from "../src/modules/onekey/protocol/device.ts";
 import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
-import { Success } from "../src/modules/onekey/protocol/messages.ts";
 import { call } from "../src/modules/onekey/protocol/session.ts";
 import type { Exchange } from "../src/modules/onekey/protocol/session.ts";
 import { loadVectors } from "./helpers.ts";
@@ -15,6 +14,7 @@ import {
   LoadDevice,
   TEST_MNEMONIC,
   replayExchange,
+  Success,
   transcriptSession,
 } from "./onekey-emulator/index.ts";
 import type { Transcript } from "./onekey-emulator/index.ts";

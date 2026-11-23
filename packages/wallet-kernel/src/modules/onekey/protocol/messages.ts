@@ -19,10 +19,6 @@ export const Initialize: MessageDef<InitializeFields> = defineMessage(0, {
   sessionId: { no: 1, kind: "bytes", rule: "optional" },
 });
 
-// firmware-pro/classic1s common/protob/messages-management.proto GetFeatures
-export type GetFeaturesFields = Record<never, never>;
-export const GetFeatures: MessageDef<GetFeaturesFields> = defineMessage(55, {});
-
 // firmware-pro/classic1s common/protob/messages-management.proto Features — only the fields
 // both schemas number identically and the client reads.
 export type FeaturesFields = {
@@ -64,12 +60,6 @@ export const Features: MessageDef<FeaturesFields> = defineMessage(17, {
   onekeyDeviceType: { no: 600, kind: "enum", rule: "optional" },
   onekeyFirmwareVersion: { no: 609, kind: "string", rule: "optional" },
   onekeySerialNo: { no: 612, kind: "string", rule: "optional" },
-});
-
-// firmware-pro/classic1s common/protob/messages-common.proto Success
-export type SuccessFields = { message: Field<"string", 1, "optional"> };
-export const Success: MessageDef<SuccessFields> = defineMessage(2, {
-  message: { no: 1, kind: "string", rule: "optional" },
 });
 
 // firmware-pro/classic1s common/protob/messages-common.proto Failure
@@ -126,7 +116,3 @@ export type PassphraseAckFields = { onDevice: Field<"bool", 3, "optional"> };
 export const PassphraseAck: MessageDef<PassphraseAckFields> = defineMessage(42, {
   onDevice: { no: 3, kind: "bool", rule: "optional" },
 });
-
-// firmware-pro/classic1s common/protob/messages-common.proto Cancel
-export type CancelFields = Record<never, never>;
-export const Cancel: MessageDef<CancelFields> = defineMessage(20, {});

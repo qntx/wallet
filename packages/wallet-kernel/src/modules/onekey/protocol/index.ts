@@ -14,15 +14,12 @@ export {
   BixinPinInputOnDevice,
   ButtonAck,
   ButtonRequest,
-  Cancel,
   Failure,
   Features,
-  GetFeatures,
   Initialize,
   PassphraseAck,
   PassphraseRequest,
   PinMatrixRequest,
-  Success,
 } from "./messages.ts";
 export { decode, defineMessage, encode } from "./proto.ts";
 export type { Decoded, FieldSpec, Fields, MessageDef } from "./proto.ts";

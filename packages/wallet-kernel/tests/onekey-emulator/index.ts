@@ -34,6 +34,13 @@ export const LoadDevice: MessageDef<LoadDeviceFields> = defineMessage(13, {
   skipChecksum: { no: 7, kind: "bool", rule: "optional" },
 });
 
+// firmware-pro/classic1s common/protob/messages-common.proto Success — used only by tests (the
+// device answers it to LoadDevice and other management calls the client itself never sends).
+export type SuccessFields = { message: Field<"string", 1, "optional"> };
+export const Success: MessageDef<SuccessFields> = defineMessage(2, {
+  message: { no: 1, kind: "string", rule: "optional" },
+});
+
 export const TEST_MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
