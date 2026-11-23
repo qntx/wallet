@@ -5,6 +5,7 @@
  * reopened store reads every row back; after `vault.reset()` a new vault's wallets leave the old
  * rows unreachable — the engine's state only ever surfaces live walletIds and account keys.
  */
+/* oxlint-disable vitest/no-conditional-in-test -- the respawn retry is inherently conditional */
 import { randomBytes } from "node:crypto";
 
 import { describe, expect, it } from "vite-plus/test";
@@ -140,7 +141,7 @@ describe("engine collections across lock, unlock and reset", () => {
         id: "ab".repeat(16),
         networks: ["evm:eip155:1"],
         requested: ["evm:eip155:1"],
-        addresses: [`0x${  "aa".repeat(20)}`],
+        addresses: [`0x${"aa".repeat(20)}`],
         token: "tok",
         refreshedAt: 1,
         expiresAt: Number.MAX_SAFE_INTEGER,
@@ -156,15 +157,19 @@ describe("engine collections across lock, unlock and reset", () => {
       await wallet.vault.lock();
       await wallet.vault.unlock({ kind: "password", password: PASSWORD });
       await until(() => opens === 2);
-      await expect(opened!.collection("approvals").get("eip155:1:0xaaaa")).resolves.toStrictEqual(bytes);
+      await expect(opened!.collection("approvals").get("eip155:1:0xaaaa")).resolves.toStrictEqual(
+        bytes,
+      );
       await expect(opened!.collection("nfts").get("visibility")).resolves.toStrictEqual(bytes);
-      await expect(opened!.collection("notifications").get(`wallet:${walletA}`)).resolves.toStrictEqual(
-        optInRow,
+      await expect(
+        opened!.collection("notifications").get(`wallet:${walletA}`),
+      ).resolves.toStrictEqual(optInRow);
+      await expect(
+        opened!.collection("notifications").get(`sub:${walletA}:evm`),
+      ).resolves.toStrictEqual(subRow);
+      await expect(opened!.collection("apps.hyperliquid").get("terms")).resolves.toStrictEqual(
+        bytes,
       );
-      await expect(opened!.collection("notifications").get(`sub:${walletA}:evm`)).resolves.toStrictEqual(
-        subRow,
-      );
-      await expect(opened!.collection("apps.hyperliquid").get("terms")).resolves.toStrictEqual(bytes);
 
       // Reset erases the vault; a new vault's wallet has a different id, so none of the rows
       // keyed to vault A's wallets and accounts is reachable through engine state. The reset
@@ -175,6 +180,7 @@ describe("engine collections across lock, unlock and reset", () => {
       const deadline = Date.now() + 20_000;
       for (;;) {
         try {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- retrying the respawn window
           await wallet.wallets.importMnemonic({
             mnemonic: MNEMONIC_B,
             factor: { kind: "password", password: PASSWORD },
@@ -195,8 +201,12 @@ describe("engine collections across lock, unlock and reset", () => {
       // store rows still sit in the host backing under their dead keys.
       const live = engine.notifications.getState().wallets;
       expect(Object.keys(live)).not.toContain(walletA);
-      await expect(opened!.collection("notifications").get(`wallet:${walletB}`)).resolves.toBeUndefined();
-      await expect(opened!.collection("notifications").get(`sub:${walletB}:evm`)).resolves.toBeUndefined();
+      await expect(
+        opened!.collection("notifications").get(`wallet:${walletB}`),
+      ).resolves.toBeUndefined();
+      await expect(
+        opened!.collection("notifications").get(`sub:${walletB}:evm`),
+      ).resolves.toBeUndefined();
       await expect(opened!.collection("approvals").get("eip155:1:0xbbbb")).resolves.toBeUndefined();
     } finally {
       engine.unsubscribe();
