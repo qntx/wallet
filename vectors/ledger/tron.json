@@ -203,6 +203,7 @@
     },
     {
       "name": "personal-long",
+      "setting": "Blind signing=on",
       "call": {
         "fn": "tronSignPersonalMessage",
         "path": [

@@ -589,6 +589,8 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
   }, 300_000);
 
   it("signs a personal message and typed data", async () => {
+    const ethScreen = screen("ethereum");
+    await setSetting(ethScreen, "Blind signing", true); // typed data signs behind it
     const message = utf8ToBytes("hello ledger");
     const personal = ok(
       await sign("ethereum", {
@@ -644,16 +646,25 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
       recoverAddress({ hash: `0x${hex(sha256(rawData))}`, signature: rsv(txSig) }),
     ).resolves.toBe(tronTail);
 
+    // The pinned app hash-signs personal messages behind "Blind signing" — it must refuse while
+    // off, then sign once the setting is on.
+    const tronScreen = screen("tron");
     const message = utf8ToBytes("hello tron");
-    const msgDone = ok(
-      await sign("tron", {
-        kind: "tron.message",
-        network: TRON_NETWORK,
-        account: hd(hwId, "tron.bip44"),
-        message,
-      }),
-    );
+    const msgRequest = {
+      kind: "tron.message",
+      network: TRON_NETWORK,
+      account: hd(hwId, "tron.bip44"),
+      message,
+    } as const;
+    await setSetting(tronScreen, "Blind signing", false);
+    expect(errCode(await sign("tron", msgRequest))).toBe("blind-signing-disabled");
+    await setSetting(tronScreen, "Blind signing", true);
+    const before = keystore.calls.length;
+    const msgDone = ok(await sign("tron", msgRequest));
     const msgSig = bytesField(signResult(msgDone), "signature");
+    expect(
+      promptsSince(before).some((d) => d.includes(devicePromptLine("en", "blind", "ledger"))),
+    ).toBe(true);
     await expect(
       recoverAddress({ hash: `0x${hex(tronMessageDigest(message))}`, signature: rsv(msgSig) }),
     ).resolves.toBe(tronTail);
@@ -661,8 +672,8 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
 
   it("signs a solana transfer and an off-chain ascii message", async () => {
     const dest = new Uint8Array(32).fill(0x22);
+    // The SystemProgram id "11111111111111111111111111111111" is all-zero bytes.
     const system = new Uint8Array(32);
-    system[31] = 2;
     const blockhash = new Uint8Array(32).fill(0x33);
     const data = new Uint8Array(12);
     const dv = new DataView(data.buffer);

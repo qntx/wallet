@@ -834,6 +834,7 @@ export const TRON_CASES: CaseDef[] = [
   },
   {
     name: "personal-long",
+    setting: { label: "Blind signing", enabled: true },
     call: {
       fn: "tronSignPersonalMessage",
       path: TRX_PATH,

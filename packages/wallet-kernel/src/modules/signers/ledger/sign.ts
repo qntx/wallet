@@ -157,6 +157,11 @@ const tron = async (
   }
   if (request.kind === "tron.message" && stage.kind === "tron.message") {
     expectDigest(tronMessageDigest(request.message), task);
+    // The pinned app hash-signs personal messages behind "Blind signing" (sign_personal_message.c).
+    const config = await call(async () => tronConfiguration(exchange));
+    if (!config.signByHash) {
+      throw blind();
+    }
     return call(async () => tronSignPersonalMessage(exchange, task.path, request.message));
   }
   if (request.kind === "tron.typed-data" && stage.kind === "tron.typed-data") {

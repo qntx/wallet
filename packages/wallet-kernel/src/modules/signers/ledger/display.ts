@@ -13,7 +13,9 @@
  *   anything else falls to APPROVAL_SIMPLE_TRANSACTION behind "Sign by hash"; a data memo needs
  *   "Allow data" (parse.c USTREAM_MISSING_SETTING_DATA_ALLOWED); a TriggerSmartContract that is not
  *   a TRC20 transfer/approve needs "Custom contracts"; a contract call carrying TRX/TRC10 value
- *   with a TRC20 selector is refused outright (E_INCORRECT_DATA).
+ *   with a TRC20 selector is refused outright (E_INCORRECT_DATA). A personal message is always
+ *   hash-signed: handleSignPersonalMessage shows the keccak hash and refuses without "Blind
+ *   signing" (sign_personal_message.c S_SIGN_BY_HASH).
  * - Solana 1.16.0: the app renders System Program transfers; every other instruction is a blind sign
  *   (handle_sign_offchain_message.c / libsol parser); off-chain messages are the v0 `\xffsolana
  *   offchain` document — format 0 restricted-ASCII shows text, format 1 UTF-8 shows a hash behind
@@ -197,7 +199,7 @@ export const display = (
     return tronClears(request.rawData) ? "clear" : "blind";
   }
   if (plan.kind === "tron.message") {
-    return "clear";
+    return "blind"; // sign_personal_message.c: hash-signed behind "Blind signing"
   }
   if (plan.kind === "tron.typed-data") {
     return "blind";

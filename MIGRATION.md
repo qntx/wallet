@@ -2067,7 +2067,7 @@ Compiled snippet: `tests/migration/ledger.ts`. Nothing changes for hosts that do
    open (Bitcoin, Ethereum, Tron, Solana); `sign` and `verifyAddress` need the request's app. A
    wrong or closed app is `device-app-closed`; ask the user to open the named app and retry.
 4. **Device settings.** A request the device can only blind-sign (EVM calldata, EIP-712, a Solana
-   instruction the app does not decode, a TRON custom contract call, memo or TIP-712) fails
+   instruction the app does not decode, a TRON custom contract call, memo, personal message or TIP-712) fails
    `blind-signing-disabled` until the user enables the corresponding setting in that Ledger app
    (Ethereum/Solana "Blind signing"; Tron "Custom contracts", "Allow data", "Sign by hash").
 5. **Unsupported on Ledger:** EIP-7702, raw (non off-chain-format) Solana messages, BIP-322 message

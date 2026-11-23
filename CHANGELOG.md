@@ -642,7 +642,7 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   message, Bitcoin PSBT (P2PKH, P2SH-P2WPKH, P2WPKH, P2TR key path) and legacy message. Every
   device payload is recomputed from the request and checked against the plan digest before an APDU
   leaves the kernel; requests the device can only blind-sign read the app configuration first and
-  fail `blind-signing-disabled` when the app's setting is off; the prompt says whether the device
+  fail `blind-signing-disabled` when the app's setting is off (the Tron app hash-signs personal messages, so they are blind too); the prompt says whether the device
   shows the request in full or signs blind. Refused before any prompt (`unsupported`): EIP-7702
   (not in the Ethereum app's default build since 1.24.0), raw Solana messages that are not formal
   off-chain documents, BIP-322 (Bitcoin app 2.6.0 is not released to devices), mixed-template

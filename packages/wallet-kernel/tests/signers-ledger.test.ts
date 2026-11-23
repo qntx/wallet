@@ -507,6 +507,14 @@ describe("ledger driver display", () => {
     // A contract without a dedicated screen (ClearABIContract, enum 48) signs by hash.
     const hashed = { ...request, rawData: renameContract(rawData, 0x30, "ClearABIContract") };
     expect(LEDGER_DRIVER.display(hashed, planTron(hashed, TRX_KEY))).toBe("blind");
+    // A personal message is hash-signed behind "Blind signing" — never clear.
+    const message: Extract<ChainSignRequest, { kind: "tron.message" }> = {
+      kind: "tron.message",
+      network: "tron:mainnet",
+      account: hd("tron.bip44"),
+      message: utf8ToBytes("hello tron"),
+    };
+    expect(LEDGER_DRIVER.display(message, planTron(message, TRX_KEY))).toBe("blind");
   });
 
   it("clears a solana system transfer and blinds an unknown program", () => {
@@ -771,6 +779,29 @@ describe("ledger driver sign", () => {
     const out = await LEDGER_DRIVER.sign(fake.link, { request, stage, pin, random });
     expect(out.map(hex)).toStrictEqual([vectorCase("tron", "tx-transfer").result]);
     fake.done();
+  });
+
+  it("signs a tron message only when the app allows hash signing", async () => {
+    const request: Extract<ChainSignRequest, { kind: "tron.message" }> = {
+      kind: "tron.message",
+      network: "tron:mainnet",
+      account: hd("tron.bip44"),
+      message: utf8ToBytes("hello tron"),
+    };
+    const stage = planTron(request, TRX_KEY);
+    // flags bit 3 = sign by hash (handlers/get_app_configuration.c CONFIG_BIT_SIGN_BY_HASH).
+    const on = scriptedLedger("tron", [
+      { response: "080008029000" },
+      ...caseSteps("tron", "personal-short"),
+    ]);
+    const out = await LEDGER_DRIVER.sign(on.link, { request, stage, pin, random });
+    expect(out.map(hex)).toStrictEqual([vectorCase("tron", "personal-short").result]);
+    on.done();
+    const off = scriptedLedger("tron", [{ response: "000008029000" }]);
+    await expect(
+      code(async () => LEDGER_DRIVER.sign(off.link, { request, stage, pin, random })),
+    ).resolves.toBe("blind-signing-disabled");
+    off.done();
   });
 
   it("refuses a tron memo and a non-TRC20 call when the device settings are off", async () => {
