@@ -9,7 +9,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { PUSH_TTL_MS } from "@qntx/wallet-engine/gateway/contract";
-import { openPush } from "@qntx/wallet-engine/push";
 
 import { GatewayHttpError } from "../src/middleware/errors.ts";
 import { OUTBOX_TTL_MS, PUSH_RECORDS_MAX, PUSH_WATCHED_MAX } from "../src/push/core.ts";
@@ -26,6 +25,7 @@ import {
   coreHarness,
   fakeSender,
   subscribeRequest,
+  openPush,
 } from "./push/helpers.ts";
 import { dumpText } from "./push/sql.ts";
 
@@ -141,7 +141,9 @@ describe("PushCore flow", () => {
       throw new TypeError("unreachable");
     }
     expect(delivery.token).toBe(DEVICE_TOKEN);
-    const opened = openPush({ v: "1", e: delivery.eventId, c: delivery.c }, [payloadKeyBytes()]);
+    const opened = await openPush({ v: "1", e: delivery.eventId, c: delivery.c }, [
+      payloadKeyBytes(),
+    ]);
     expect(opened?.event).toStrictEqual({
       v: 1,
       k: "received",
@@ -172,7 +174,9 @@ describe("PushCore flow", () => {
     if (delivery === undefined) {
       throw new TypeError("unreachable");
     }
-    const opened = openPush({ v: "1", e: delivery.eventId, c: delivery.c }, [payloadKeyBytes()]);
+    const opened = await openPush({ v: "1", e: delivery.eventId, c: delivery.c }, [
+      payloadKeyBytes(),
+    ]);
     expect(opened?.event.x).toBeUndefined();
   });
 
@@ -195,7 +199,9 @@ describe("PushCore flow", () => {
     if (reverted === undefined) {
       throw new TypeError("unreachable");
     }
-    const opened = openPush({ v: "1", e: reverted.eventId, c: reverted.c }, [payloadKeyBytes()]);
+    const opened = await openPush({ v: "1", e: reverted.eventId, c: reverted.c }, [
+      payloadKeyBytes(),
+    ]);
     expect(opened?.event.k).toBe("reverted");
   });
 
@@ -223,7 +229,9 @@ describe("PushCore flow", () => {
     if (delivery === undefined) {
       throw new TypeError("unreachable");
     }
-    const opened = openPush({ v: "1", e: delivery.eventId, c: delivery.c }, [payloadKeyBytes()]);
+    const opened = await openPush({ v: "1", e: delivery.eventId, c: delivery.c }, [
+      payloadKeyBytes(),
+    ]);
     expect(opened?.event.k).toBe("sent");
     expect(opened?.event.a).toBe(ADDRESS);
   });

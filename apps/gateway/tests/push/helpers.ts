@@ -1,13 +1,21 @@
+/* oxlint-disable no-await-in-loop -- openPush tries subscription keys in order:
+   the first that authenticates wins, so the decrypts must run sequentially. */
 /**
  * Shared push fixtures: a fake EVM-like family config (lowercase `0x` 40-hex addresses, one
  * network), scripted verify/send helpers and a deterministic nonce clock for `PushCore` tests.
  */
 import { DatabaseSync } from "node:sqlite";
 
-import type { PushPlatform } from "@qntx/wallet-engine/gateway/contract";
+import {
+  parsePushMessage,
+  parsePushPlaintext,
+  pushAad,
+} from "@qntx/wallet-engine/gateway/contract";
+import type { PushPlaintext, PushPlatform } from "@qntx/wallet-engine/gateway/contract";
 
 import { PushCore } from "../../src/push/core.ts";
 import type { PushCoreDeps, PushFamilyConfig, SubscribeRequest } from "../../src/push/core.ts";
+import { base64urlBytes, utf8 } from "../../src/push/encoding.ts";
 import type { CheckResult } from "../../src/push/rules.ts";
 import { importSealKey } from "../../src/push/seal.ts";
 import type { PushDelivery, PushSender, SendOutcome } from "../../src/push/senders.ts";
@@ -182,3 +190,55 @@ export const subscribeRequest = (
   networks: overrides.networks ?? [EVM],
   addresses: overrides.addresses ?? [ADDRESS],
 });
+
+/**
+ * Opens a delivered `{v,e,c}` push with WebCrypto AES-256-GCM — the wallet-side twin of the
+ * engine's `openPush` for these tests (the noble cross-implementation proof lives in the engine's
+ * own push tests and the engine e2e). Returns `undefined` for anything that does not authenticate
+ * AND parse: wrong key, tampered blob, malformed plaintext.
+ */
+export const openPush = async (
+  message: unknown,
+  keys: ReadonlyArray<Uint8Array>,
+): Promise<{ keyIndex: number; event: PushPlaintext } | undefined> => {
+  const parsed = parsePushMessage(message);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const blob = base64urlBytes(parsed.c);
+  if (blob === undefined || blob.length < 12 + 16 + 1) {
+    return undefined;
+  }
+  const aad = new Uint8Array(utf8(pushAad(parsed.e)));
+  for (const [index, key] of keys.entries()) {
+    if (key.length !== 32) {
+      continue;
+    }
+    let plaintext: Uint8Array;
+    try {
+      const cryptoKey = await crypto.subtle.importKey(
+        "raw",
+        new Uint8Array(key),
+        "AES-GCM",
+        false,
+        ["decrypt"],
+      );
+      plaintext = new Uint8Array(
+        await crypto.subtle.decrypt(
+          {
+            name: "AES-GCM",
+            iv: new Uint8Array(blob.subarray(0, 12)),
+            additionalData: aad,
+          },
+          cryptoKey,
+          new Uint8Array(blob.subarray(12)),
+        ),
+      );
+    } catch {
+      continue;
+    }
+    const event = parsePushPlaintext(new TextDecoder().decode(plaintext));
+    return event === undefined ? undefined : { keyIndex: index, event };
+  }
+  return undefined;
+};

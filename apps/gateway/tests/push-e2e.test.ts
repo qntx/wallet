@@ -13,7 +13,6 @@ import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vite-plus/test";
 
 import { PUSH_TTL_MS } from "@qntx/wallet-engine/gateway/contract";
-import { openPush } from "@qntx/wallet-engine/push";
 
 import { GatewayHttpError } from "../src/middleware/errors.ts";
 import { indexNetworks } from "../src/middleware/network.ts";
@@ -27,7 +26,7 @@ import { pushStore } from "../src/push/store.ts";
 import { evmVerifier } from "../src/push/verify-evm.ts";
 import { alchemyConfig, alchemySync } from "../src/push/watch-alchemy.ts";
 import { CLIENT_ID, TEST_ACCOUNTS, allowAll, fakeFetch, gateway, openBudget } from "./helpers.ts";
-import { SEAL_KEY_B64, p8Pem } from "./push/helpers.ts";
+import { SEAL_KEY_B64, openPush, p8Pem } from "./push/helpers.ts";
 import { nodeSql } from "./push/sql.ts";
 
 const EVM = "eip155:1";
@@ -288,7 +287,7 @@ describe("push end to end", () => {
     receipts.set(HASH_IN, receipt(HASH_IN, "0x1", FOREIGN));
     await core.alarm();
     expect(apnsPushes()).toHaveLength(1);
-    const first = openPush(apnsPushes()[0], [key]);
+    const first = await openPush(apnsPushes()[0], [key]);
     expect(first?.keyIndex).toBe(0);
     expect(first?.event).toStrictEqual({
       v: 1,
@@ -309,7 +308,7 @@ describe("push end to end", () => {
     clock += 60_000;
     await core.alarm();
     expect(apnsPushes()).toHaveLength(2);
-    const second = openPush(apnsPushes()[1], [key]);
+    const second = await openPush(apnsPushes()[1], [key]);
     expect(second?.event.k).toBe("reverted");
     expect(second?.event.h).toBe(HASH_IN);
     expect(apnsPushes()[1]?.e).not.toBe(firstEventId);
@@ -328,7 +327,7 @@ describe("push end to end", () => {
     });
     expect(watchRes.status).toBe(200);
     await core.alarm();
-    const failed = openPush(apnsPushes().at(-1), [key]);
+    const failed = await openPush(apnsPushes().at(-1), [key]);
     expect(apnsPushes()).toHaveLength(3);
     expect(failed?.event).toStrictEqual({
       v: 1,
@@ -372,7 +371,8 @@ describe("push end to end", () => {
     expect(replayRes.status).toBe(200);
     receipts.set(HASH_IN, receipt(HASH_IN, "0x1", FOREIGN));
     await core.alarm();
-    const received = apnsPushes().filter((push) => openPush(push, [key])?.event.k === "received");
+    const opened = await Promise.all(apnsPushes().map(async (push) => openPush(push, [key])));
+    const received = apnsPushes().filter((_, index) => opened[index]?.event.k === "received");
     expect(received).toHaveLength(1);
 
     // The address-sync pass reached the dashboard with the watched address.

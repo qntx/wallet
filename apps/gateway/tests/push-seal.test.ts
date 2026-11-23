@@ -11,7 +11,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { PushEventKind, PushFamily } from "@qntx/wallet-engine/gateway/contract";
-import { openPush } from "@qntx/wallet-engine/push";
 
 import { base64urlBytes, base64urlOf, bytesOfHex } from "../src/push/encoding.ts";
 import {
@@ -23,6 +22,7 @@ import {
   subscriptionIdOf,
 } from "../src/push/seal.ts";
 import type { SealedTarget } from "../src/push/seal.ts";
+import { openPush } from "./push/helpers.ts";
 
 type PushVectors = {
   readonly subscriptionIds: ReadonlyArray<{ readonly secret: string; readonly id: string }>;
