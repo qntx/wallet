@@ -6,7 +6,7 @@
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
+import { OneKeyError } from "../src/modules/signers/onekey/protocol/errors.ts";
 import {
   BixinPinInputOnDevice,
   ButtonAck,
@@ -17,9 +17,9 @@ import {
   PassphraseAck,
   PassphraseRequest,
   PinMatrixRequest,
-} from "../src/modules/onekey/protocol/messages.ts";
-import { decode, defineMessage, encode } from "../src/modules/onekey/protocol/proto.ts";
-import type { FieldSpec, Fields, MessageDef } from "../src/modules/onekey/protocol/proto.ts";
+} from "../src/modules/signers/onekey/protocol/messages.ts";
+import { decode, defineMessage, encode } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type { FieldSpec, Fields, MessageDef } from "../src/modules/signers/onekey/protocol/proto.ts";
 import { loadVectors } from "./helpers.ts";
 import { Success } from "./onekey-emulator/index.ts";
 

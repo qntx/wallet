@@ -30,8 +30,8 @@ import {
   signTronTransaction,
   signTypedData,
   solanaPublicKey,
-} from "../../src/modules/onekey/protocol/index.ts";
-import type { Exchange } from "../../src/modules/onekey/protocol/index.ts";
+} from "../../src/modules/signers/onekey/protocol/index.ts";
+import type { Exchange } from "../../src/modules/signers/onekey/protocol/index.ts";
 
 declare function print(msg: string): void;
 declare function quit(code: number): void;

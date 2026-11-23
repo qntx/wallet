@@ -7,17 +7,17 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
-import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
-import { decodeMessage, encodeMessage } from "../src/modules/onekey/protocol/frame.ts";
+import { OneKeyError } from "../src/modules/signers/onekey/protocol/errors.ts";
+import { decodeMessage, encodeMessage } from "../src/modules/signers/onekey/protocol/frame.ts";
 import {
   ButtonRequest,
   Failure,
   Features,
   PublicKey,
   SolanaAddress,
-} from "../src/modules/onekey/protocol/messages.ts";
-import { decode, encode } from "../src/modules/onekey/protocol/proto.ts";
-import type { MessageDef } from "../src/modules/onekey/protocol/proto.ts";
+} from "../src/modules/signers/onekey/protocol/messages.ts";
+import { decode, encode } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type { MessageDef } from "../src/modules/signers/onekey/protocol/proto.ts";
 
 /** Run count; the weekly job raises it via FUZZ_RUNS. */
 const RUNS = Number(process.env["FUZZ_RUNS"] ?? "3000");

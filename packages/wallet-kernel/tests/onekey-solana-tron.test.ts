@@ -24,9 +24,9 @@ import {
   tronTypeUrl,
 } from "@qntx/wallet-chains/tron";
 
-import type { DeviceInfo } from "../src/modules/onekey/protocol/device.ts";
-import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
-import { decodeMessage, encodeMessage } from "../src/modules/onekey/protocol/frame.ts";
+import type { DeviceInfo } from "../src/modules/signers/onekey/protocol/device.ts";
+import { OneKeyError } from "../src/modules/signers/onekey/protocol/errors.ts";
+import { decodeMessage, encodeMessage } from "../src/modules/signers/onekey/protocol/frame.ts";
 import {
   Failure,
   SolanaMessageSignature,
@@ -34,20 +34,20 @@ import {
   TronMessageSignature,
   TronSignedTx,
   TronSignTx,
-} from "../src/modules/onekey/protocol/messages.ts";
-import { decode, encode } from "../src/modules/onekey/protocol/proto.ts";
-import type { Decoded, MessageDef } from "../src/modules/onekey/protocol/proto.ts";
-import type { Exchange } from "../src/modules/onekey/protocol/session.ts";
+} from "../src/modules/signers/onekey/protocol/messages.ts";
+import { decode, encode } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type { Decoded, MessageDef } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type { Exchange } from "../src/modules/signers/onekey/protocol/session.ts";
 import {
   signSolanaRawMessage,
   signSolanaTransaction,
   solanaDisplay,
-} from "../src/modules/onekey/protocol/solana.ts";
+} from "../src/modules/signers/onekey/protocol/solana.ts";
 import {
   signTronMessage,
   signTronTransaction,
   tronDisplay,
-} from "../src/modules/onekey/protocol/tron.ts";
+} from "../src/modules/signers/onekey/protocol/tron.ts";
 import { loadVectors } from "./helpers.ts";
 import { replayExchange, loadTranscript, transcriptSession } from "./onekey-emulator/index.ts";
 import type { Transcript } from "./onekey-emulator/index.ts";

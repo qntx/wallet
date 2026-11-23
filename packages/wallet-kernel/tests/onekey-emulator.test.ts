@@ -11,18 +11,18 @@ import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
  */
 import { describe, expect, it } from "vite-plus/test";
 
-import { initialize } from "../src/modules/onekey/protocol/device.ts";
-import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
-import { decodeMessage } from "../src/modules/onekey/protocol/frame.ts";
+import { initialize } from "../src/modules/signers/onekey/protocol/device.ts";
+import { OneKeyError } from "../src/modules/signers/onekey/protocol/errors.ts";
+import { decodeMessage } from "../src/modules/signers/onekey/protocol/frame.ts";
 import {
   address,
   evmPublicNode,
   publicNode,
   solanaPublicKey,
-} from "../src/modules/onekey/protocol/keys.ts";
-import type { DeviceNode } from "../src/modules/onekey/protocol/keys.ts";
-import { call } from "../src/modules/onekey/protocol/session.ts";
-import type { Exchange } from "../src/modules/onekey/protocol/session.ts";
+} from "../src/modules/signers/onekey/protocol/keys.ts";
+import type { DeviceNode } from "../src/modules/signers/onekey/protocol/keys.ts";
+import { call } from "../src/modules/signers/onekey/protocol/session.ts";
+import type { Exchange } from "../src/modules/signers/onekey/protocol/session.ts";
 import { loadVectors } from "./helpers.ts";
 import {
   LoadDevice,

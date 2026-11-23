@@ -1,15 +1,15 @@
 /** Features → DeviceInfo mapping and every initialize() refusal, over scripted exchanges. */
 import { describe, expect, it } from "vite-plus/test";
 
-import { initialize, supports } from "../src/modules/onekey/protocol/device.ts";
-import type { DeviceInfo } from "../src/modules/onekey/protocol/device.ts";
-import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
-import { decodeMessage, encodeMessage } from "../src/modules/onekey/protocol/frame.ts";
-import { Features, Initialize } from "../src/modules/onekey/protocol/messages.ts";
-import type { FeaturesFields } from "../src/modules/onekey/protocol/messages.ts";
-import { decode, encode } from "../src/modules/onekey/protocol/proto.ts";
-import type { Decoded } from "../src/modules/onekey/protocol/proto.ts";
-import type { Exchange } from "../src/modules/onekey/protocol/session.ts";
+import { initialize, supports } from "../src/modules/signers/onekey/protocol/device.ts";
+import type { DeviceInfo } from "../src/modules/signers/onekey/protocol/device.ts";
+import { OneKeyError } from "../src/modules/signers/onekey/protocol/errors.ts";
+import { decodeMessage, encodeMessage } from "../src/modules/signers/onekey/protocol/frame.ts";
+import { Features, Initialize } from "../src/modules/signers/onekey/protocol/messages.ts";
+import type { FeaturesFields } from "../src/modules/signers/onekey/protocol/messages.ts";
+import { decode, encode } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type { Decoded } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type { Exchange } from "../src/modules/signers/onekey/protocol/session.ts";
 
 const BASE: Decoded<FeaturesFields> = {
   majorVersion: 3,

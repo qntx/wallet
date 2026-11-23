@@ -29,35 +29,35 @@ import {
   bitcoinPrepare,
   signBitcoinMessage,
   signBitcoinTransaction,
-} from "../../packages/wallet-kernel/src/modules/onekey/protocol/bitcoin.ts";
-import { initialize } from "../../packages/wallet-kernel/src/modules/onekey/protocol/device.ts";
-import { OneKeyError } from "../../packages/wallet-kernel/src/modules/onekey/protocol/errors.ts";
-import { signTypedData } from "../../packages/wallet-kernel/src/modules/onekey/protocol/evm-typed-data.ts";
+} from "../../packages/wallet-kernel/src/modules/signers/onekey/protocol/bitcoin.ts";
+import { initialize } from "../../packages/wallet-kernel/src/modules/signers/onekey/protocol/device.ts";
+import { OneKeyError } from "../../packages/wallet-kernel/src/modules/signers/onekey/protocol/errors.ts";
+import { signTypedData } from "../../packages/wallet-kernel/src/modules/signers/onekey/protocol/evm-typed-data.ts";
 import {
   signEvmPersonalMessage,
   signEvmTransaction,
-} from "../../packages/wallet-kernel/src/modules/onekey/protocol/evm.ts";
+} from "../../packages/wallet-kernel/src/modules/signers/onekey/protocol/evm.ts";
 import {
   decodeMessage,
   encodeMessage,
-} from "../../packages/wallet-kernel/src/modules/onekey/protocol/frame.ts";
+} from "../../packages/wallet-kernel/src/modules/signers/onekey/protocol/frame.ts";
 import {
   address,
   evmPublicNode,
   publicNode,
   solanaPublicKey,
-} from "../../packages/wallet-kernel/src/modules/onekey/protocol/keys.ts";
-import { Initialize } from "../../packages/wallet-kernel/src/modules/onekey/protocol/messages.ts";
-import { encode } from "../../packages/wallet-kernel/src/modules/onekey/protocol/proto.ts";
-import type { Exchange } from "../../packages/wallet-kernel/src/modules/onekey/protocol/session.ts";
+} from "../../packages/wallet-kernel/src/modules/signers/onekey/protocol/keys.ts";
+import { Initialize } from "../../packages/wallet-kernel/src/modules/signers/onekey/protocol/messages.ts";
+import { encode } from "../../packages/wallet-kernel/src/modules/signers/onekey/protocol/proto.ts";
+import type { Exchange } from "../../packages/wallet-kernel/src/modules/signers/onekey/protocol/session.ts";
 import {
   signSolanaRawMessage,
   signSolanaTransaction,
-} from "../../packages/wallet-kernel/src/modules/onekey/protocol/solana.ts";
+} from "../../packages/wallet-kernel/src/modules/signers/onekey/protocol/solana.ts";
 import {
   signTronMessage,
   signTronTransaction,
-} from "../../packages/wallet-kernel/src/modules/onekey/protocol/tron.ts";
+} from "../../packages/wallet-kernel/src/modules/signers/onekey/protocol/tron.ts";
 import {
   buildChangePsbt,
   buildMixedPsbt,

@@ -8,9 +8,9 @@ import { join } from "node:path";
 
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
-import { defineMessage } from "../../src/modules/onekey/protocol/proto.ts";
-import type { MessageDef } from "../../src/modules/onekey/protocol/proto.ts";
-import type { Exchange } from "../../src/modules/onekey/protocol/session.ts";
+import { defineMessage } from "../../src/modules/signers/onekey/protocol/proto.ts";
+import type { MessageDef } from "../../src/modules/signers/onekey/protocol/proto.ts";
+import type { Exchange } from "../../src/modules/signers/onekey/protocol/session.ts";
 
 export { debugYes, udpExchange } from "./udp.ts";
 

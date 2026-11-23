@@ -6,9 +6,9 @@
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
-import type { OneKeyErrorCode } from "../src/modules/onekey/protocol/errors.ts";
-import { decodeMessage, encodeMessage } from "../src/modules/onekey/protocol/frame.ts";
+import { OneKeyError } from "../src/modules/signers/onekey/protocol/errors.ts";
+import type { OneKeyErrorCode } from "../src/modules/signers/onekey/protocol/errors.ts";
+import { decodeMessage, encodeMessage } from "../src/modules/signers/onekey/protocol/frame.ts";
 import {
   BixinPinInputOnDevice,
   ButtonAck,
@@ -19,11 +19,11 @@ import {
   PassphraseAck,
   PassphraseRequest,
   PinMatrixRequest,
-} from "../src/modules/onekey/protocol/messages.ts";
-import { decode, encode } from "../src/modules/onekey/protocol/proto.ts";
-import type { Decoded, Fields, MessageDef } from "../src/modules/onekey/protocol/proto.ts";
-import { call } from "../src/modules/onekey/protocol/session.ts";
-import type { Exchange } from "../src/modules/onekey/protocol/session.ts";
+} from "../src/modules/signers/onekey/protocol/messages.ts";
+import { decode, encode } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type { Decoded, Fields, MessageDef } from "../src/modules/signers/onekey/protocol/proto.ts";
+import { call } from "../src/modules/signers/onekey/protocol/session.ts";
+import type { Exchange } from "../src/modules/signers/onekey/protocol/session.ts";
 import { Success } from "./onekey-emulator/index.ts";
 
 const hex = hexToBytes;

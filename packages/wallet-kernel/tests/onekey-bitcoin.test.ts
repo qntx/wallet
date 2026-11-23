@@ -20,15 +20,15 @@ import {
   bitcoinPrepare,
   signBitcoinMessage,
   signBitcoinTransaction,
-} from "../src/modules/onekey/protocol/bitcoin.ts";
-import type { BitcoinSignEntry } from "../src/modules/onekey/protocol/bitcoin.ts";
-import type { DeviceInfo } from "../src/modules/onekey/protocol/device.ts";
-import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
-import { encodeMessage } from "../src/modules/onekey/protocol/frame.ts";
-import { BtcMessageSignature, BtcTxRequest } from "../src/modules/onekey/protocol/messages.ts";
-import { encode } from "../src/modules/onekey/protocol/proto.ts";
-import type { Decoded, MessageDef } from "../src/modules/onekey/protocol/proto.ts";
-import type { Exchange } from "../src/modules/onekey/protocol/session.ts";
+} from "../src/modules/signers/onekey/protocol/bitcoin.ts";
+import type { BitcoinSignEntry } from "../src/modules/signers/onekey/protocol/bitcoin.ts";
+import type { DeviceInfo } from "../src/modules/signers/onekey/protocol/device.ts";
+import { OneKeyError } from "../src/modules/signers/onekey/protocol/errors.ts";
+import { encodeMessage } from "../src/modules/signers/onekey/protocol/frame.ts";
+import { BtcMessageSignature, BtcTxRequest } from "../src/modules/signers/onekey/protocol/messages.ts";
+import { encode } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type { Decoded, MessageDef } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type { Exchange } from "../src/modules/signers/onekey/protocol/session.ts";
 import { loadVectors } from "./helpers.ts";
 import {
   buildChangePsbt,

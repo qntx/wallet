@@ -16,16 +16,16 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { EvmTransaction } from "@qntx/wallet-chains";
 
-import { initialize } from "../src/modules/onekey/protocol/device.ts";
-import type { DeviceInfo } from "../src/modules/onekey/protocol/device.ts";
-import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
-import { signTypedData, typedDataMode } from "../src/modules/onekey/protocol/evm-typed-data.ts";
+import { initialize } from "../src/modules/signers/onekey/protocol/device.ts";
+import type { DeviceInfo } from "../src/modules/signers/onekey/protocol/device.ts";
+import { OneKeyError } from "../src/modules/signers/onekey/protocol/errors.ts";
+import { signTypedData, typedDataMode } from "../src/modules/signers/onekey/protocol/evm-typed-data.ts";
 import {
   evmDisplay,
   signEvmPersonalMessage,
   signEvmTransaction,
-} from "../src/modules/onekey/protocol/evm.ts";
-import { decodeMessage, encodeMessage } from "../src/modules/onekey/protocol/frame.ts";
+} from "../src/modules/signers/onekey/protocol/evm.ts";
+import { decodeMessage, encodeMessage } from "../src/modules/signers/onekey/protocol/frame.ts";
 import {
   EthereumMessageSignatureOneKey,
   Failure,
@@ -35,10 +35,10 @@ import {
   EthereumTypedDataValueAckOneKey,
   EthereumTypedDataValueRequestOneKey,
   EthereumTxRequestOneKey,
-} from "../src/modules/onekey/protocol/messages.ts";
-import { decode, encode } from "../src/modules/onekey/protocol/proto.ts";
-import type { Decoded, MessageDef } from "../src/modules/onekey/protocol/proto.ts";
-import type { Exchange } from "../src/modules/onekey/protocol/session.ts";
+} from "../src/modules/signers/onekey/protocol/messages.ts";
+import { decode, encode } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type { Decoded, MessageDef } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type { Exchange } from "../src/modules/signers/onekey/protocol/session.ts";
 import { loadVectors } from "./helpers.ts";
 import {
   TEST_MNEMONIC,

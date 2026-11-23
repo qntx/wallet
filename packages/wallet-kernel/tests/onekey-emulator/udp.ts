@@ -7,8 +7,8 @@
 import { createSocket } from "node:dgram";
 import type { Socket } from "node:dgram";
 
-import { REPORT_SIZE } from "../../src/modules/onekey/protocol/frame.ts";
-import type { Exchange } from "../../src/modules/onekey/protocol/session.ts";
+import { REPORT_SIZE } from "../../src/modules/signers/onekey/protocol/frame.ts";
+import type { Exchange } from "../../src/modules/signers/onekey/protocol/session.ts";
 
 const TIMEOUT_MS = 10_000;
 

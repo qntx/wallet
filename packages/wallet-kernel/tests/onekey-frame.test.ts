@@ -6,13 +6,13 @@
 import { bytesToHex, concatBytes, hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
+import { OneKeyError } from "../src/modules/signers/onekey/protocol/errors.ts";
 import {
   decodeMessage,
   encodeMessage,
   MAX_MESSAGE,
   REPORT_SIZE,
-} from "../src/modules/onekey/protocol/frame.ts";
+} from "../src/modules/signers/onekey/protocol/frame.ts";
 import { loadVectors } from "./helpers.ts";
 
 const hex = hexToBytes;

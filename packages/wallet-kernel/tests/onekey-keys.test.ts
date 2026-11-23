@@ -8,14 +8,14 @@ import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { base58, createBase58check } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
-import { OneKeyError } from "../src/modules/onekey/protocol/errors.ts";
-import { decodeMessage, encodeMessage } from "../src/modules/onekey/protocol/frame.ts";
+import { OneKeyError } from "../src/modules/signers/onekey/protocol/errors.ts";
+import { decodeMessage, encodeMessage } from "../src/modules/signers/onekey/protocol/frame.ts";
 import {
   address,
   evmPublicNode,
   publicNode,
   solanaPublicKey,
-} from "../src/modules/onekey/protocol/keys.ts";
+} from "../src/modules/signers/onekey/protocol/keys.ts";
 import {
   Address,
   EthereumAddressOneKey,
@@ -25,10 +25,10 @@ import {
   PublicKey,
   SolanaAddress,
   TronAddress,
-} from "../src/modules/onekey/protocol/messages.ts";
-import type { Decoded, Fields, MessageDef } from "../src/modules/onekey/protocol/proto.ts";
-import { decode, encode } from "../src/modules/onekey/protocol/proto.ts";
-import type { Exchange } from "../src/modules/onekey/protocol/session.ts";
+} from "../src/modules/signers/onekey/protocol/messages.ts";
+import type { Decoded, Fields, MessageDef } from "../src/modules/signers/onekey/protocol/proto.ts";
+import { decode, encode } from "../src/modules/signers/onekey/protocol/proto.ts";
+import type { Exchange } from "../src/modules/signers/onekey/protocol/session.ts";
 import { loadTranscript, transcriptSession } from "./onekey-emulator/index.ts";
 
 const hex = hexToBytes;
