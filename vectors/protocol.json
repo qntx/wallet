@@ -2757,6 +2757,7 @@
         "id": 11,
         "ok": {
           "wallet": {
+            "custody": "vault",
             "walletId": "0011223344556677",
             "origin": "mnemonic",
             "words": 12,

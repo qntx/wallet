@@ -1,4 +1,5 @@
 import { nobleBackend } from "@qntx/nostr";
+import type { MainPort, PortExit } from "@qntx/wallet/host";
 import type { KernelEvent, ProtocolValue } from "@qntx/wallet/protocol";
 import type { WalletErrorCode } from "@qntx/wallet/types";
 
@@ -6,6 +7,7 @@ import { startKernel } from "../src/kernel.ts";
 import type { DRIVERS } from "../src/modules/signers/drivers.ts";
 import type {
   Argon2id,
+  CardPlatform,
   KernelPlatform,
   Keystore,
   PasskeyAuthenticator,
@@ -74,6 +76,12 @@ export type Harness = {
   readonly settle: () => Promise<void>;
   /** Sends a raw (possibly malformed) message to the kernel and awaits its response. */
   readonly sendRaw: (raw: unknown) => Promise<KernelResponse>;
+  /**
+   * The host-runtime end of the kernel port: `post` feeds the kernel's handler, the kernel's
+   * responses and events reach `listen` — what `connectKernel` expects from `spawn` in an
+   * in-process (no worker) end-to-end test.
+   */
+  readonly hostPort: MainPort;
 };
 
 /**
@@ -155,6 +163,8 @@ export function createHarness(opts?: {
   keystore?: Keystore;
   /** A platform passkey authenticator: the kernel runs WebAuthn ceremonies itself (React Native). */
   passkey?: PasskeyAuthenticator;
+  /** The card reader/secure-input/anchor bundle (default undefined — a no-NFC host). */
+  card?: CardPlatform;
   /** Overrides the WebCrypto PBKDF2 (spies observing seed derivation). */
   pbkdf2?: Pbkdf2;
   /** The real cost, for the vector tests; every other test stretches at a token cost. */
@@ -178,6 +188,8 @@ export function createHarness(opts?: {
   const pending = new Map<number, (response: KernelResponse) => void>();
   const timers: Array<{ fireAt: number; fn: () => void }> = [];
   let handler: ((message: unknown) => void) | undefined;
+  let hostListener: ((message: unknown) => void) | undefined;
+  let hostExit: ((reason: PortExit) => void) | undefined;
 
   const port: Port = {
     post: (message) => {
@@ -199,6 +211,7 @@ export function createHarness(opts?: {
       } else if (isEvent(message)) {
         events.push(message);
       }
+      hostListener?.(message);
     },
     listen: (h) => {
       handler = h;
@@ -243,6 +256,7 @@ export function createHarness(opts?: {
     },
     keystore: opts?.keystore,
     passkey: opts?.passkey,
+    card: opts?.card,
     backends: opts?.backends ?? {
       spark: async () => {
         await Promise.resolve();
@@ -253,10 +267,32 @@ export function createHarness(opts?: {
   };
   startKernel(platform, port, opts?.drivers);
 
+  const hostPort: MainPort = {
+    post: (message) => {
+      handler?.(message);
+    },
+    listen: (h) => {
+      hostListener = h;
+      return () => {
+        hostListener = undefined;
+      };
+    },
+    onExit: (h) => {
+      hostExit = h;
+      return () => {
+        hostExit = undefined;
+      };
+    },
+    terminate: () => {
+      hostExit?.("crashed");
+    },
+  };
+
   let nextId = 1;
   return {
     posted,
     events,
+    hostPort,
     store: inner,
     anchor: innerAnchor,
     draws,

@@ -33,7 +33,7 @@ import {
 } from "./headers.ts";
 import { isManifestRecord } from "./manifest.ts";
 import type { StoredFactor, StoredRecord, StoreOp, VaultImage, VaultMeta } from "./store.ts";
-import { VAULT_FORMAT } from "./store.ts";
+import { CARD_WALLET_KIND, VAULT_FORMAT } from "./store.ts";
 
 /** Consecutive password failures → enforced wait: 30 s, 60 s, then 300 s from the 5th failure. */
 const BACKOFF_MS = [30_000, 60_000, 300_000];
@@ -674,8 +674,8 @@ export function findRecord(image: VaultImage, kind: string, id: string): StoredR
   return record;
 }
 
-/** Record kinds whose wallets sign outside the vault — they hold no seed. */
-const EXTERNAL_CUSTODY_KINDS = new Set(["hardware-wallet"]);
+/** Record kinds whose wallets sign outside the vault (a device or qntx cards) — they hold no seed. */
+const EXTERNAL_CUSTODY_KINDS = new Set(["hardware-wallet", CARD_WALLET_KIND]);
 
 /**
  * The `entropy` record for `walletId`, or the reason there is none: `unsupported` when the id names

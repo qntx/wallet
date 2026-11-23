@@ -3,7 +3,7 @@
 Public API surface of the qntx wallet: the `Wallet` interface, the immutable `WalletSnapshot`,
 `WalletError`, the core API groups (vault, wallets, dataKeys), the host/kernel wire protocol, and
 the `@qntx/wallet/nostr` subpath — the first protocol module (`./spark`, `./chains`,
-`./sessions` and `./hardware` are the other module subpaths). This package contains no runtime of
+`./sessions`, `./hardware` and `./card` are the other module subpaths). This package contains no runtime of
 its own — a `Wallet` comes from a host package that spawns the kernel, currently
 [`@qntx/wallet-worker`](https://www.npmjs.com/package/@qntx/wallet-worker) for Web and Node and
 [`@qntx/wallet-native`](https://www.npmjs.com/package/@qntx/wallet-native) for React Native.
@@ -71,6 +71,27 @@ requests (for a Keystone: animate `qrParts(request.show)`, fold scanned frames t
 `qrReader(request.scan)`). The kernel validates every frame, checks every returned signature, and
 a `sign` re-runs the same verification as `chains().sign`; the host only moves bytes and shows
 prompts. `@qntx/ur` is an optional peer required only by this subpath.
+
+`@qntx/wallet/card` drives qntx card wallets (React Native only; Web and Node answer
+`unsupported`). A card wallet's seed lives only on its one to three cards — `WalletInfo.custody`
+is `"card"` — so `chains(wallet).sign` answers `card-required` and the host runs the request as a
+card task instead:
+
+```ts
+import { card } from "@qntx/wallet/card";
+
+const task = card(wallet).start({ kind: "sign", request }, { kind: "hardware" });
+task.observe((step) => {
+  // "input": mount SecureInput from @qntx/wallet-native/secure-input
+  // "tap": show the hold-the-card instruction; "done": the result is ready
+});
+const outcome = await task.result; // { kind: "sign", result: ChainSignResult }
+```
+
+The host only starts, observes and cancels: the kernel reads the access code from the secure
+field, exchanges the APDUs with the native NFC reader and sets the NFC sheet's text from the
+request it decoded. `create`, `add`, `accounts`, `health`, `change-access`, `erase`, `transfer`
+and `reseal` run the same way.
 
 ### React
 
@@ -177,6 +198,10 @@ React Native the device owner proves presence before anything is erased.
   (64 MiB, 3 passes, 4 lanes) and must be at least 12 characters. `backup.restore` adopts the
   file's backup key only when the restore establishes the vault through a kernel-run passkey
   ceremony (React Native); every other restore leaves backup off until it is enabled again.
+- A card wallet's seed, access code, access-code hashes and card session keys exist only on the
+  cards and in the kernel; no message to the host carries them. Each tap checks the card's
+  certificate against a pinned anchor and its identity against the vault record before any
+  access-code hash is sent, so an unknown or swapped card never learns anything.
 - Requests are capped at 1 MiB on both sides of the channel; larger calls fail `invalid-input`
   without reaching the kernel.
 - `dist/kernel.manifest.json` in `@qntx/wallet-worker` records the protocol version, vault

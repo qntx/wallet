@@ -13,7 +13,7 @@ import type { Versions } from "@scure/bip32";
 import type { KeyPath } from "@qntx/wallet-chains";
 
 import { KernelError } from "../../errors.ts";
-import type { PublicMaterial } from "../chains/keys.ts";
+import type { PublicMaterial } from "../../derive/material.ts";
 import type { HardwarePin, PinnedNode } from "./driver.ts";
 
 const HARDENED = 0x80000000;

@@ -20,6 +20,8 @@ export function walletBadge(info: WalletInfo): string {
         : `passkey wallet ${info.walletId}`;
     case "hardware":
       return `${info.device} ${info.model ?? "device"} (${info.fingerprint})`;
+    case "card":
+      return `card wallet ${info.walletId} (${String(info.members)} cards)`;
   }
 }
 

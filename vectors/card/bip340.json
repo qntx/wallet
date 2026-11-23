@@ -1,0 +1,386 @@
+{
+  "official": [
+    {
+      "index": 0,
+      "secretKey": "0000000000000000000000000000000000000000000000000000000000000003",
+      "publicKey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      "auxRand": "0000000000000000000000000000000000000000000000000000000000000000",
+      "message": "0000000000000000000000000000000000000000000000000000000000000000",
+      "signature": "e907831f80848d1069a5371b402410364bdf1c5f8307b0084c55f1ce2dca821525f66a4a85ea8b71e482a74f382d2ce5ebeee8fdb2172f477df4900d310536c0",
+      "valid": true,
+      "comment": ""
+    },
+    {
+      "index": 1,
+      "secretKey": "b7e151628aed2a6abf7158809cf4f3c762e7160f38b4da56a784d9045190cfef",
+      "publicKey": "dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659",
+      "auxRand": "0000000000000000000000000000000000000000000000000000000000000001",
+      "message": "243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89",
+      "signature": "6896bd60eeae296db48a229ff71dfe071bde413e6d43f917dc8dcf8c78de33418906d11ac976abccb20b091292bff4ea897efcb639ea871cfa95f6de339e4b0a",
+      "valid": true,
+      "comment": ""
+    },
+    {
+      "index": 2,
+      "secretKey": "c90fdaa22168c234c4c6628b80dc1cd129024e088a67cc74020bbea63b14e5c9",
+      "publicKey": "dd308afec5777e13121fa72b9cc1b7cc0139715309b086c960e18fd969774eb8",
+      "auxRand": "c87aa53824b4d7ae2eb035a2b5bbbccc080e76cdc6d1692c4b0b62d798e6d906",
+      "message": "7e2d58d8b3bcdf1abadec7829054f90dda9805aab56c77333024b9d0a508b75c",
+      "signature": "5831aaeed7b44bb74e5eab94ba9d4294c49bcf2a60728d8b4c200f50dd313c1bab745879a5ad954a72c45a91c3a51d3c7adea98d82f8481e0e1e03674a6f3fb7",
+      "valid": true,
+      "comment": ""
+    },
+    {
+      "index": 3,
+      "secretKey": "0b432b2677937381aef05bb02a66ecd012773062cf3fa2549e44f58ed2401710",
+      "publicKey": "25d1dff95105f5253c4022f628a996ad3a0d95fbf21d468a1b33f8c160d8f517",
+      "auxRand": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "message": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "signature": "7eb0509757e246f19449885651611cb965ecc1a187dd51b64fda1edc9637d5ec97582b9cb13db3933705b32ba982af5af25fd78881ebb32771fc5922efc66ea3",
+      "valid": true,
+      "comment": "test fails if msg is reduced modulo p or n"
+    },
+    {
+      "index": 4,
+      "secretKey": "",
+      "publicKey": "d69c3509bb99e412e68b0fe8544e72837dfa30746d8be2aa65975f29d22dc7b9",
+      "auxRand": "",
+      "message": "4df3c3f68fcc83b27e9d42c90431a72499f17875c81a599b566c9889b9696703",
+      "signature": "00000000000000000000003b78ce563f89a0ed9414f5aa28ad0d96d6795f9c6376afb1548af603b3eb45c9f8207dee1060cb71c04e80f593060b07d28308d7f4",
+      "valid": true,
+      "comment": ""
+    },
+    {
+      "index": 5,
+      "secretKey": "",
+      "publicKey": "eefdea4cdb677750a420fee807eacf21eb9898ae79b9768766e4faa04a2d4a34",
+      "auxRand": "",
+      "message": "243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89",
+      "signature": "6cff5c3ba86c69ea4b7376f31a9bcb4f74c1976089b2d9963da2e5543e17776969e89b4c5564d00349106b8497785dd7d1d713a8ae82b32fa79d5f7fc407d39b",
+      "valid": false,
+      "comment": "public key not on the curve"
+    },
+    {
+      "index": 6,
+      "secretKey": "",
+      "publicKey": "dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659",
+      "auxRand": "",
+      "message": "243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89",
+      "signature": "fff97bd5755eeea420453a14355235d382f6472f8568a18b2f057a14602975563cc27944640ac607cd107ae10923d9ef7a73c643e166be5ebeafa34b1ac553e2",
+      "valid": false,
+      "comment": "has_even_y(R) is false"
+    },
+    {
+      "index": 7,
+      "secretKey": "",
+      "publicKey": "dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659",
+      "auxRand": "",
+      "message": "243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89",
+      "signature": "1fa62e331edbc21c394792d2ab1100a7b432b013df3f6ff4f99fcb33e0e1515f28890b3edb6e7189b630448b515ce4f8622a954cfe545735aaea5134fccdb2bd",
+      "valid": false,
+      "comment": "negated message"
+    },
+    {
+      "index": 8,
+      "secretKey": "",
+      "publicKey": "dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659",
+      "auxRand": "",
+      "message": "243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89",
+      "signature": "6cff5c3ba86c69ea4b7376f31a9bcb4f74c1976089b2d9963da2e5543e177769961764b3aa9b2ffcb6ef947b6887a226e8d7c93e00c5ed0c1834ff0d0c2e6da6",
+      "valid": false,
+      "comment": "negated s value"
+    },
+    {
+      "index": 9,
+      "secretKey": "",
+      "publicKey": "dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659",
+      "auxRand": "",
+      "message": "243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89",
+      "signature": "0000000000000000000000000000000000000000000000000000000000000000123dda8328af9c23a94c1feecfd123ba4fb73476f0d594dcb65c6425bd186051",
+      "valid": false,
+      "comment": "sG - eP is infinite. Test fails in single verification if has_even_y(inf) is defined as true and x(inf) as 0"
+    },
+    {
+      "index": 10,
+      "secretKey": "",
+      "publicKey": "dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659",
+      "auxRand": "",
+      "message": "243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89",
+      "signature": "00000000000000000000000000000000000000000000000000000000000000017615fbaf5ae28864013c099742deadb4dba87f11ac6754f93780d5a1837cf197",
+      "valid": false,
+      "comment": "sG - eP is infinite. Test fails in single verification if has_even_y(inf) is defined as true and x(inf) as 1"
+    },
+    {
+      "index": 11,
+      "secretKey": "",
+      "publicKey": "dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659",
+      "auxRand": "",
+      "message": "243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89",
+      "signature": "4a298dacae57395a15d0795ddbfd1dcb564da82b0f269bc70a74f8220429ba1d69e89b4c5564d00349106b8497785dd7d1d713a8ae82b32fa79d5f7fc407d39b",
+      "valid": false,
+      "comment": "sig[0:32] is not an X coordinate on the curve"
+    },
+    {
+      "index": 12,
+      "secretKey": "",
+      "publicKey": "dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659",
+      "auxRand": "",
+      "message": "243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89",
+      "signature": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f69e89b4c5564d00349106b8497785dd7d1d713a8ae82b32fa79d5f7fc407d39b",
+      "valid": false,
+      "comment": "sig[0:32] is equal to field size"
+    },
+    {
+      "index": 13,
+      "secretKey": "",
+      "publicKey": "dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659",
+      "auxRand": "",
+      "message": "243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89",
+      "signature": "6cff5c3ba86c69ea4b7376f31a9bcb4f74c1976089b2d9963da2e5543e177769fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+      "valid": false,
+      "comment": "sig[32:64] is equal to curve order"
+    },
+    {
+      "index": 14,
+      "secretKey": "",
+      "publicKey": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30",
+      "auxRand": "",
+      "message": "243f6a8885a308d313198a2e03707344a4093822299f31d0082efa98ec4e6c89",
+      "signature": "6cff5c3ba86c69ea4b7376f31a9bcb4f74c1976089b2d9963da2e5543e17776969e89b4c5564d00349106b8497785dd7d1d713a8ae82b32fa79d5f7fc407d39b",
+      "valid": false,
+      "comment": "public key is not a valid X coordinate because it exceeds the field size"
+    },
+    {
+      "index": 15,
+      "secretKey": "0340034003400340034003400340034003400340034003400340034003400340",
+      "publicKey": "778caa53b4393ac467774d09497a87224bf9fab6f6e68b23086497324d6fd117",
+      "auxRand": "0000000000000000000000000000000000000000000000000000000000000000",
+      "message": "",
+      "signature": "71535db165ecd9fbbc046e5ffaea61186bb6ad436732fccc25291a55895464cf6069ce26bf03466228f19a3a62db8a649f2d560fac652827d1af0574e427ab63",
+      "valid": true,
+      "comment": "message of size 0 (added 2022-12)"
+    },
+    {
+      "index": 16,
+      "secretKey": "0340034003400340034003400340034003400340034003400340034003400340",
+      "publicKey": "778caa53b4393ac467774d09497a87224bf9fab6f6e68b23086497324d6fd117",
+      "auxRand": "0000000000000000000000000000000000000000000000000000000000000000",
+      "message": "11",
+      "signature": "08a20a0afef64124649232e0693c583ab1b9934ae63b4c3511f3ae1134c6a303ea3173bfea6683bd101fa5aa5dbc1996fe7cacfc5a577d33ec14564cec2bacbf",
+      "valid": true,
+      "comment": "message of size 1 (added 2022-12)"
+    },
+    {
+      "index": 17,
+      "secretKey": "0340034003400340034003400340034003400340034003400340034003400340",
+      "publicKey": "778caa53b4393ac467774d09497a87224bf9fab6f6e68b23086497324d6fd117",
+      "auxRand": "0000000000000000000000000000000000000000000000000000000000000000",
+      "message": "0102030405060708090a0b0c0d0e0f1011",
+      "signature": "5130f39a4059b43bc7cac09a19ece52b5d8699d1a71e3c52da9afdb6b50ac370c4a482b77bf960f8681540e25b6771ece1e5a37fd80e5a51897c5566a97ea5a5",
+      "valid": true,
+      "comment": "message of size 17 (added 2022-12)"
+    },
+    {
+      "index": 18,
+      "secretKey": "0340034003400340034003400340034003400340034003400340034003400340",
+      "publicKey": "778caa53b4393ac467774d09497a87224bf9fab6f6e68b23086497324d6fd117",
+      "auxRand": "0000000000000000000000000000000000000000000000000000000000000000",
+      "message": "99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+      "signature": "403b12b0d8555a344175ea7ec746566303321e5dbfa8be6f091635163eca79a8585ed3e3170807e7c03b720fc54c7b23897fcba0e9d0b4a06894cfd249f22367",
+      "valid": true,
+      "comment": "message of size 100 (added 2022-12)"
+    }
+  ],
+  "bip86": {
+    "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    "seed": "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4",
+    "rootPrivate": "xprv9s21ZrQH143K3GJpoapnV8SFfukcVBSfeCficPSGfubmSFDxo1kuHnLisriDvSnRRuL2Qrg5ggqHKNVpxR86QEC8w35uxmGoggxtQTPvfUu",
+    "keys": [
+      {
+        "path": "m/86'/0'/0'/0/0",
+        "wire": "058000005680000000800000000000000000000000",
+        "xprv": "xprvA449goEeU9okwCzzZaxiy475EQGQzBkc65su82nXEvcwzfSskb2hAt2WymrjyRL6kpbVTGL3cKtp9herYXSjjQ1j4stsXXiRF7kXkCacK3T",
+        "xpub": "xpub6H3W6JmYJXN49h5TfcVjLC3onS6uPeUTTJoVvRC8oG9vsTn2J8LwigLzq5tHbrwAzH9DGo6ThGUdWsqce8dGfwHVBxSbixjDADGGdzF7t2B",
+        "internalKey": "cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115",
+        "tweak": "2ca01ed85cf6b6526f73d39a1111cd80333bfdc00ce98992859848a90a6f0258",
+        "outputKey": "a60869f0dbcf1dc659c9cecbaf8050135ea9e8cdc487053f1dc6880949dc684c"
+      },
+      {
+        "path": "m/86'/0'/0'/0/1",
+        "wire": "058000005680000000800000000000000000000001",
+        "xprv": "xprvA449goEeU9okyiF1LmKiDaTgeXvmh87DVyRd35VPbsSop8n8uALpbtrUhUXByPFKK7C2yuqrB1FrhiDkEMC4RGmA5KTwsE1aB5jRu9zHsuQ",
+        "xpub": "xpub6H3W6JmYJXN4CCKUSnriaiQRCZmG6aq4sCMDqTu1ACyngw7HShf59hAxYjXgKDuuHThVEUzdHrc3aXCr9kfvQvZPit5dnD3K9xVRBzjK3rX",
+        "internalKey": "83dfe85a3151d2517290da461fe2815591ef69f2b18a2ce63f01697a8b313145",
+        "tweak": "84a88d9651f7cbc831e3b2a7800f2e572b6a719c3352dd9e6d3125cd21827237",
+        "outputKey": "a82f29944d65b86ae6b5e5cc75e294ead6c59391a1edc5e016e3498c67fc7bbb"
+      },
+      {
+        "path": "m/86'/0'/0'/1/0",
+        "wire": "058000005680000000800000000000000100000000",
+        "xprv": "xprvA3Ln3Gt3aphvUgzgEDT8vE2cYqb4PjFfpmbiFKphxLg1FjXQpkAk5M1ZKDY15bmCAHA35jTiawbFuwGtbDZogKF1WfjwxML4gK7WfYW5JRP",
+        "xpub": "xpub6GL8SnQwRCGDhB59LEz9HMyM6sRYoByXBzXK3iEKWgCz8XrZNHUzd9L3AUBELW5NzA7dEFvMas1F84TuPH3xqdUA5tumaGWFgihJzWytXe3",
+        "internalKey": "399f1b2f4393f29a18c937859c5dd8a77350103157eb880f02e8c08214277cef",
+        "tweak": "563b7c38f218e910fefc744150ed5d5597e4f6dabff583ec56cfac08a9a70235",
+        "outputKey": "882d74e5d0572d5a816cef0041a96b6c1de832f6f9676d9605c44d5e9a97d3dc"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "p-even-q-even",
+      "path": "m/86'/0'/0'/0/0",
+      "wire": "058000005680000000800000000000000000000000",
+      "privateKey": "f14f39d70a02f41ed9dc5382840374b870e2a860bf31a81be7e5e5395a18553a",
+      "publicKey": "028bb96c92f60f8a2a25027aaca2015337de27a0c664808a44e7046b1bbb0b3587",
+      "internalKey": "8bb96c92f60f8a2a25027aaca2015337de27a0c664808a44e7046b1bbb0b3587",
+      "tweak": "33d5bc9d8d7e6ba549742bd7d7091d672dd29e9360c7145274de760dcf6e4c17",
+      "tweakedKey": "2524f67497815fc423507f5a5b0c9220e4066a0d70b01c329cf1fcba59506010",
+      "outputKey": "73f2caa403a85ab26dd671b1c23b1e40dedd51fe43adf0e717709012dd110f86",
+      "outputKeyOddY": false,
+      "message": "1a31ef5eea01b1a38c4329c5129326edd50bb66d1ce66633509f5c9eb1d1d3cf",
+      "aux": "f9ffeae0ef400cb2694c2d91eabf022ecab104ecec4026d12504e7f6d73907d4",
+      "signature": "40466cd671c4c70db6fc884a065e65f33d1a02342bc41b50d96d61573308d984c6688a644d8502c3a593c38c869b06cff1a8a5e8661655de97fca4690d6ea183"
+    },
+    {
+      "name": "p-even-q-odd",
+      "path": "m/86'/0'/0'/0/2",
+      "wire": "058000005680000000800000000000000000000002",
+      "privateKey": "316812205c43994add448d37bf56e39e060a0029e09d72a09f0c927bd70f1478",
+      "publicKey": "028af0968ae451e9cc32e8734c4eb9b2f4d45a396d4e16dba245a5e9477a4ac5f2",
+      "internalKey": "8af0968ae451e9cc32e8734c4eb9b2f4d45a396d4e16dba245a5e9477a4ac5f2",
+      "tweak": "e4cff66f68df15beb7402f956c88ad58e8ef55669138ed68d5b8daf02e5d6f10",
+      "tweakedKey": "1638088fc522af099484bccd2bdf90f8344a78a9c28dbfcdb4f30edf35364247",
+      "outputKey": "acfc0275552e486d7b2ff430fab28ec24127005312e327d47250e751b9189e2f",
+      "outputKeyOddY": true,
+      "message": "0b57ee550d59927051883350b77d2cf1e9b81da248772d21eae399bec2785169",
+      "aux": "724cec841b1cdb517f14399dfd19774f386a01ae7ad25195a1d2e83777de7c8e",
+      "signature": "3011d105c2531b22cc96960c5561674183cc63abff77c33bd9be022a1e4928f325e25b4cec73ff21e6124366871e2bb2b28a7d37744c841289d2bfe3c36815d4"
+    },
+    {
+      "name": "p-odd-q-even",
+      "path": "m/86'/0'/0'/0/11",
+      "wire": "05800000568000000080000000000000000000000b",
+      "privateKey": "8c93e18954b0209f8d7f2c4c4e6eeff6cff704440697ae0a560b7ff41f6e9077",
+      "publicKey": "0374610bed414009dc1a64943e46f57f1ddba56221980232845b9bd59dedecc2a6",
+      "internalKey": "74610bed414009dc1a64943e46f57f1ddba56221980232845b9bd59dedecc2a6",
+      "tweak": "c7210fc8b5369895a1abe1e91a6a610c89fd01e9e8d83a2baf879834e7368bc7",
+      "tweakedKey": "3a8d2e3f608677f6142cb59ccbfb7115ba05fda5e2408c21597c1840c7c7fb50",
+      "outputKey": "7cf1492d579ca0ae1376ffd408a99d674bc37f5d64092557af87bc6ccfecc37e",
+      "outputKeyOddY": false,
+      "message": "08523de4c1795ddfb525be811483af80a35041a4e9d1b25102acaa926457e753",
+      "aux": "791269a74ea822a7fecf6639330f0e98886a2c945814457c905d3bd042bcd5d5",
+      "signature": "390375093258c1ce12436d460d0298738bafbf1a923eeb734ab1f7a2e98357482efc208f7296a6f183abd354d73f1c1c022f1ab5c1d4915bc46b59239d8cf576"
+    },
+    {
+      "name": "p-odd-q-odd",
+      "path": "m/86'/0'/0'/0/1",
+      "wire": "058000005680000000800000000000000000000001",
+      "privateKey": "0e9fe4c1f5014f793bd9119d64943f2dc752e1e37bc70cdc9eaac53d07a240d2",
+      "publicKey": "034864270f787c6718c60393c5596de5bb60c710c25c0fea2bf500a215c3037e7e",
+      "internalKey": "4864270f787c6718c60393c5596de5bb60c710c25c0fea2bf500a215c3037e7e",
+      "tweak": "d5a51213075f40f57a0d8e8fb35055e536a44db686df2440a4255275fd6ed29b",
+      "tweakedKey": "c7052d51125df17c3e347cf24ebc16b76f516bd30b181764057a8d38f5cc91c9",
+      "outputKey": "aba772908dce26f8a17fee87af156d22dddea180d852a6cab507ad220c37dddb",
+      "outputKeyOddY": true,
+      "message": "88b5d8abdb395672a82b81116c1b92858436ddb60315eddbc8bbc0c59c8b06b6",
+      "aux": "7b3958b4fc0da3e92a38e9b7974b40a6f70533ddace806e74c9285a07d3c3c53",
+      "signature": "e33728768a7a199900b4e8adbc51cccb0cffd91b90a6a87947d56af4c1e20a419858e4f588e1de864dada9e27084bf9d62c7d2345af7c37ea644a5d76e9b83e8"
+    },
+    {
+      "name": "untweaked",
+      "path": "m/86'/0'/0'/0/0",
+      "wire": "058000005680000000800000000000000000000000",
+      "privateKey": "f14f39d70a02f41ed9dc5382840374b870e2a860bf31a81be7e5e5395a18553a",
+      "publicKey": "028bb96c92f60f8a2a25027aaca2015337de27a0c664808a44e7046b1bbb0b3587",
+      "internalKey": "8bb96c92f60f8a2a25027aaca2015337de27a0c664808a44e7046b1bbb0b3587",
+      "tweak": "0000000000000000000000000000000000000000000000000000000000000000",
+      "tweakedKey": "f14f39d70a02f41ed9dc5382840374b870e2a860bf31a81be7e5e5395a18553a",
+      "outputKey": "8bb96c92f60f8a2a25027aaca2015337de27a0c664808a44e7046b1bbb0b3587",
+      "outputKeyOddY": false,
+      "message": "582066b12ddcf339167a1bc8ea3bccd5bcb905a34e5ead6f82b044acb5b0b5ef",
+      "aux": "2f970bf9cc79878c793f0423c4caa1173c6d023324e723364cf01912a71df48c",
+      "signature": "6c26c97b804a372f0f535c2250037fec3ca804589f5f9189662e68dd65552c34b59cf38be9cb1b77fd9e4ef66345530a486c1a7db3007370eaf64e98b4a48d03"
+    },
+    {
+      "name": "script-tree",
+      "path": "m/86'/0'/0'/0/0",
+      "wire": "058000005680000000800000000000000000000000",
+      "privateKey": "f14f39d70a02f41ed9dc5382840374b870e2a860bf31a81be7e5e5395a18553a",
+      "publicKey": "028bb96c92f60f8a2a25027aaca2015337de27a0c664808a44e7046b1bbb0b3587",
+      "internalKey": "8bb96c92f60f8a2a25027aaca2015337de27a0c664808a44e7046b1bbb0b3587",
+      "merkleRoot": "434f64bb44d29eebcee77da500c567564049c0999415188f7180444a8d6c85a6",
+      "tweak": "dcc6f876420b2b089ada4cb60e92c3e2b6748b11788409f9d60b878a2d8917ee",
+      "tweakedKey": "ce16324d4c0e1f2774b6a0389296389c6ca8568b886d11d9fe1f0e36b76b2be7",
+      "outputKey": "d985c40c912f5945a54bb9414cf12fb994569505d9fbfb3726c33938389cc209",
+      "outputKeyOddY": false,
+      "message": "f17fb12c11f5a72b3fc33341fc524f3810bbf6a27e9f5d97d2e7486f6466e277",
+      "aux": "a3a3dd978551087d6aec989218a7879cad796abd95a7943941d1213d691cd55d",
+      "signature": "b6f99f8de921c0933cdc24fa9ca5465d6823fa82e6e5960ca96b9c8a31da4909b3ba82a693b5f846e98ebd1620bf5e6363b80ca56b5ed92cda433207d73c6eac"
+    },
+    {
+      "name": "aux-zero",
+      "path": "m/86'/0'/0'/0/0",
+      "wire": "058000005680000000800000000000000000000000",
+      "privateKey": "f14f39d70a02f41ed9dc5382840374b870e2a860bf31a81be7e5e5395a18553a",
+      "publicKey": "028bb96c92f60f8a2a25027aaca2015337de27a0c664808a44e7046b1bbb0b3587",
+      "internalKey": "8bb96c92f60f8a2a25027aaca2015337de27a0c664808a44e7046b1bbb0b3587",
+      "tweak": "33d5bc9d8d7e6ba549742bd7d7091d672dd29e9360c7145274de760dcf6e4c17",
+      "tweakedKey": "2524f67497815fc423507f5a5b0c9220e4066a0d70b01c329cf1fcba59506010",
+      "outputKey": "73f2caa403a85ab26dd671b1c23b1e40dedd51fe43adf0e717709012dd110f86",
+      "outputKeyOddY": false,
+      "message": "91bf004efd04edc9f572a3b0994d2434175ffa876af6a539a0e6d17d04c95940",
+      "aux": "0000000000000000000000000000000000000000000000000000000000000000",
+      "signature": "870187beceb36e630fe59959e05f087912e3aab47ef07618c3951c62ccdac1b2260ca2c0bc7b7d955b8336c85b284310fa2fc360650f8bdf2927f60738892565"
+    },
+    {
+      "name": "template-bip86",
+      "path": "m/86'/0'/0'/0/0",
+      "wire": "058000005680000000800000000000000000000000",
+      "privateKey": "f14f39d70a02f41ed9dc5382840374b870e2a860bf31a81be7e5e5395a18553a",
+      "publicKey": "028bb96c92f60f8a2a25027aaca2015337de27a0c664808a44e7046b1bbb0b3587",
+      "internalKey": "8bb96c92f60f8a2a25027aaca2015337de27a0c664808a44e7046b1bbb0b3587",
+      "tweak": "33d5bc9d8d7e6ba549742bd7d7091d672dd29e9360c7145274de760dcf6e4c17",
+      "tweakedKey": "2524f67497815fc423507f5a5b0c9220e4066a0d70b01c329cf1fcba59506010",
+      "outputKey": "73f2caa403a85ab26dd671b1c23b1e40dedd51fe43adf0e717709012dd110f86",
+      "outputKeyOddY": false,
+      "message": "2559b244c39562d40edd7769a8f39e90eddca22c4d94f85131cb67cb32269f94",
+      "aux": "ee900143c5cc19edfd791dbaa3fa31b837d4fcd060645a6aee16447b0f60cd5d",
+      "signature": "93f14320f8ca984ad6cb0a3b726f7a09d653bd390056d31acb305ba729e380648e3b7fb12a296473f7017c47d2ac85a03d0dc0152dc1d98fe68c706046cb6375"
+    },
+    {
+      "name": "depth-10",
+      "path": "m/0/1'/2/3'/4/5'/6/7'/8/9'",
+      "wire": "0a00000000800000010000000280000003000000048000000500000006800000070000000880000009",
+      "privateKey": "6c799d10a6376d14093bfe1419112567a194c910eb2e85f31183dc3d7f698087",
+      "publicKey": "0394d16209e384bc5943ed1db26cd1356ffa91dd791b90d06bebc4cb5fb59435aa",
+      "internalKey": "94d16209e384bc5943ed1db26cd1356ffa91dd791b90d06bebc4cb5fb59435aa",
+      "tweak": "09375b54998742af0619f3f7c2002020fc762bb0dc14680d0ba28ea16bd03a6e",
+      "tweakedKey": "9cbdbe43f34fd59afcddf5e3a8eefab815903f86a02e8255b9f110f0bc9cfb28",
+      "outputKey": "587f3df08d8c985332235172bd1b3de6e305ce1a4cecad5da9f6ee6c31112361",
+      "outputKeyOddY": true,
+      "message": "2eb02e6bd8baf205e74ff94613a7c8c635d3a9c398eb077cc4e8fc37efdba8e1",
+      "aux": "2f012badd017c80571441b1c599c81ea0c679b4d0d174968fb5ef25584af8d19",
+      "signature": "b37c7397e1acb806d82066bb6d49a5f2ab0eb0d0e5cb94269fe9c101c7b0b9d417637ebc0613f53a9618b28d642cee05f74be198a3e911d90b2aa9f09683335b"
+    }
+  ],
+  "invalidTweak": [
+    {
+      "name": "tweak-is-n",
+      "path": "m/86'/0'/0'/0/0",
+      "tweak": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+      "reason": "tweak >= n"
+    },
+    {
+      "name": "tweak-max",
+      "path": "m/86'/0'/0'/0/0",
+      "tweak": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "reason": "tweak >= n"
+    },
+    {
+      "name": "tweaked-key-zero",
+      "path": "m/86'/0'/0'/0/0",
+      "tweak": "0eb0c628f5fd0be12623ac7d7bfc8b4649cc3485f016f81fd7ec7953761dec07",
+      "reason": "the tweaked key is zero"
+    }
+  ]
+}

@@ -842,16 +842,46 @@ Gateway (operators):
   drives the tap cadence (the card-wallet transport architecture, AGENTS.md). `__qntx.secureInput`
   collects a card access code or printed short ID from a native field and hands the bytes to the
   kernel runtime only. Neither is registered with Nitro or reachable from the main runtime.
-  Kernel-side bindings: `kernel/card.ts` (`bindNativeCardReader`, `bindNativeSecureInput`);
-  platform types `CardReader`, `SecureInput` in the kernel's `platform.ts` (not yet wired into
-  `KernelPlatform`).
-- `@qntx/wallet-native/secure-input` (experimental: may change before card wallets ship): the
-  `SecureInput` Nitro host component. The main runtime can
+  Kernel-side bindings: `kernel/card.ts` (`bindNativeCardReader`, `bindNativeSecureInput`),
+  wired into the kernel as `KernelPlatform.card` (reader, secure input and certificate anchors).
+- `@qntx/wallet-native/secure-input`: the `SecureInput` Nitro host component. The main runtime can
   mount and size it and receives only `idle | empty | filled | submitted`; the kernel decides
   whether it collects an access code (masked, printable ASCII, ≤ 64) or a short ID (8 hex digits)
   and which label it shows. The field is editable only while a kernel request is pending, takes
   focus and raises the keyboard on that request, has no edit menu (no paste, copy or cut), is
   excluded from autofill, and on Android sets `FLAG_SECURE` while an access code is being typed.
+- **qntx card wallets** (React Native). A wallet's seed can live only on one to three qntx cards:
+  the vault keeps a `card-wallet` record (card IDs and pinned certificates, the wallet anchor,
+  the public keys a tap fetched, optionally the sealed access-code hash), never the seed.
+  `@qntx/wallet/card`: `card(wallet).start(op, verify)` returns a `CardTask` (`observe`, `cancel`,
+  `result`); operations `status`, `add`, `accounts`, `health`, `change-access`, `erase`,
+  `create` (card-generated, or moving a vault wallet onto the cards), `transfer`, `reseal`,
+  `sign` and `forget-access`. Kernel protocol `card.begin` / `card.step` / `card.cancel`
+  (`CARD_METHODS`); the host only starts, observes and cancels — APDUs flow between the kernel
+  runtime and the native reader, the kernel collects the access code from `SecureInput`, and the
+  NFC sheet's text is the kernel's decoded prompt of the request (for a blind request, the blind
+  warning and the network).
+- Card signing covers every `chain.sign` request: EVM transactions (incl. EIP-7702
+  authorisations), personal messages and EIP-712 (incl. Fiat24 sessions and app-origin typed
+  data), Bitcoin PSBTs (multi-input, all four account templates, Taproot key path), BIP-322 and legacy messages, Solana
+  legacy/v0/v1 transactions and messages (≤ 16 KiB), and TRON. ECDSA, BIP-340 and Ed25519
+  (streamed) run on the card; every card signature is verified against the cached public key
+  before assembly, and a repeated ECDSA `r` within one operation is `card-fault`. A plan that
+  needs more than one tap resumes on the next tap of the same card without a new prompt.
+- Every tap is its own authenticated session: the card's certificate must chain to a pinned
+  anchor (else `card-not-genuine`), its ephemeral key must not repeat, the card ID must be the
+  one the step expects before any access-code hash is sent (`card-id-mismatch`), a failure
+  counter that moved without this kernel is `card-tampered`, and every exit path wipes the code,
+  the hashes, the session keys and any generated entropy or imported seed. An operation without
+  progress for 120 s, a lock or `card.cancel` discards it.
+- `@qntx/wallet`: `CardWalletInfo`, `VaultWalletInfo`, `CardInfo`; error codes `card-required`,
+  `card-not-genuine`, `card-id-mismatch`, `wrong-card`, `card-erased`, `card-locked`,
+  `card-tampered`, `card-fault`, `card-unsupported`. `@qntx/wallet/protocol`: `CARD_METHODS`, the
+  `cardId` validator and the `Card*` wire types.
+- `scripts/card-sim/` and `bun run card:sim`: the real qntx applet at the commit
+  `vectors/card/SOURCE` pins, in its patched jcardsim, behind a multi-card stdio bridge with a
+  power-loss hook; the kernel's simulator suites and CI's `card.yml` run against it.
+- `scripts/check-kernel-budget.ts` reports the card module on its own line with a measured budget.
 - `apps/harness`: a card-surfaces page (`EXPO_PUBLIC_CARD_SURFACES=1`) that drives both surfaces
   through a real kernel runtime with a fake card reader, and a leak check proving the typed code
   never appears in any main-runtime message, log, event payload or React state.
@@ -1269,6 +1299,10 @@ Gateway (operators):
 
 ### Fixed
 
+- `@qntx/wallet-native`: the kernel bytecode is compiled with `-Xes6-block-scoping`. hermesc
+  leaves ES6 block scoping off by default, so on React Native a closure over a loop-scoped
+  `let`/`const` in kernel code saw the last iteration's value. The kernel now refuses to start in
+  a runtime without block scoping.
 - `@qntx/wallet-chains/evm`: native value sent with calldata is always an outflow; an unrecognised
   payable call, a payable token call and a contract creation decoded with no outflow (#224).
   Native amounts in typed data take the request network's symbol and decimals (Seaport no longer

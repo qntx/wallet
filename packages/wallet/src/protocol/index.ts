@@ -9,6 +9,8 @@
  */
 import type { LockReason, StatusPayload, WalletErrorCode } from "../types.ts";
 import { backupInfo } from "./backup.ts";
+// oxlint-disable-next-line unicorn/prefer-export-from -- the table is composed locally AND re-exported
+import { CARD_METHODS } from "./card.ts";
 import { CHAINS_METHODS } from "./chains.ts";
 import {
   CORE_METHODS,
@@ -225,6 +227,7 @@ const statusPayload: Validator<StatusPayload> = obj({
 export const METHODS: {
   readonly status: MethodSpec<NullValue, StatusPayload>;
 } & typeof CORE_METHODS &
+  typeof CARD_METHODS &
   typeof NOSTR_METHODS &
   typeof CHAINS_METHODS &
   typeof SPARK_METHODS &
@@ -237,6 +240,7 @@ export const METHODS: {
     result: statusPayload,
   },
   ...CORE_METHODS,
+  ...CARD_METHODS,
   ...CHAINS_METHODS,
   ...NOSTR_METHODS,
   ...SPARK_METHODS,
@@ -247,8 +251,13 @@ export const METHODS: {
 // A method name must live in exactly one table: an overlap violates the never constraint.
 type AssertNever<T extends never> = T;
 export type MethodTablesDisjoint = [
+  AssertNever<keyof typeof CORE_METHODS & keyof typeof CARD_METHODS>,
   AssertNever<keyof typeof CORE_METHODS & keyof typeof NOSTR_METHODS>,
   AssertNever<keyof typeof CORE_METHODS & keyof typeof SPARK_METHODS>,
+  AssertNever<keyof typeof CARD_METHODS & keyof typeof NOSTR_METHODS>,
+  AssertNever<keyof typeof CARD_METHODS & keyof typeof CHAINS_METHODS>,
+  AssertNever<keyof typeof CARD_METHODS & keyof typeof SPARK_METHODS>,
+  AssertNever<keyof typeof CARD_METHODS & keyof typeof SESSIONS_METHODS>,
   AssertNever<keyof typeof NOSTR_METHODS & keyof typeof SPARK_METHODS>,
   AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof CORE_METHODS>,
   AssertNever<keyof typeof SESSIONS_METHODS & keyof typeof NOSTR_METHODS>,
@@ -259,6 +268,7 @@ export type MethodTablesDisjoint = [
   AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof CHAINS_METHODS>,
   AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof SPARK_METHODS>,
   AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof SESSIONS_METHODS>,
+  AssertNever<keyof typeof HARDWARE_METHODS & keyof typeof CARD_METHODS>,
 ];
 
 export type MethodName = keyof typeof METHODS;
@@ -295,7 +305,7 @@ export const responseError: Validator<{
   detail?: string | undefined;
 }> = errorPayload;
 
-export { NOSTR_METHODS, SESSIONS_METHODS, SPARK_METHODS, HARDWARE_METHODS };
+export { CARD_METHODS, HARDWARE_METHODS, NOSTR_METHODS, SESSIONS_METHODS, SPARK_METHODS };
 export type {
   DeviceDisplay,
   DeviceRequest,
@@ -306,6 +316,15 @@ export type {
   HardwareStep,
   QrPayload,
 } from "./hardware.ts";
+export type {
+  CardBeginParams,
+  CardInputPurpose,
+  CardOperation,
+  CardOpResult,
+  CardStep,
+  CardStepParams,
+  CardTapReason,
+} from "./card.ts";
 export type {
   HyperliquidL1Action,
   HyperliquidL1Order,

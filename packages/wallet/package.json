@@ -71,6 +71,11 @@
       "types": "./dist/hardware.d.mts",
       "import": "./dist/hardware.mjs",
       "default": "./dist/hardware.mjs"
+    },
+    "./card": {
+      "types": "./dist/card.d.mts",
+      "import": "./dist/card.mjs",
+      "default": "./dist/card.mjs"
     }
   },
   "publishConfig": {

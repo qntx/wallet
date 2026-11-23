@@ -16,8 +16,8 @@ import {
   planBitcoinPsbt,
 } from "@qntx/wallet-chains/bitcoin";
 
+import type { PublicMaterial } from "../../derive/material.ts";
 import { KernelError } from "../../errors.ts";
-import type { PublicMaterial } from "./keys.ts";
 import { messagePromptIntent } from "./prompt.ts";
 import type { BitcoinRequest, Prepared } from "./shared.ts";
 import { BTC_PURPOSE, deepEqual, mapChainError } from "./shared.ts";
@@ -203,7 +203,11 @@ const bitcoinOwnScripts = async (b: BitcoinDerive, tx: Transaction): Promise<Set
         if (deepEqual(output.script, expectedScript(purpose, pub))) {
           ownScripts.add(hex(output.script));
         }
-      } catch {
+      } catch (error) {
+        // A cache miss on card material is a real answer, not "not ours" — the caller must tap.
+        if (error instanceof KernelError && error.code === "card-required") {
+          throw error;
+        }
         continue;
       }
     }

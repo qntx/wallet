@@ -193,6 +193,7 @@ function boot(store: ReturnType<typeof createMemoryStore>): Kernel {
     random,
     keystore: undefined,
     passkey: undefined,
+    card: undefined,
     now: () => 1_700_000_000_000,
     elapsed: () => 0,
     // The session's idle/max timers simply never fire in this smoke — no ambient clock advances.

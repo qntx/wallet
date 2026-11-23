@@ -1074,9 +1074,9 @@ import type { BackupErrorCategory, EngineErrorCode, SparkErrorCategory } from "@
 /**
  * Exhaustive maps: adding or removing a code fails this file, so the list in MIGRATION.md stays
  * complete. New in this release: `verification-unavailable`, `blind-signing-disabled`
- * (`no-device-credential` is gone); `weak-password`; `auth-required`; `quota`; `unknown`;
- * `EngineErrorCode` lost `integrity`; `device-required`, `device-locked`, `device-app-closed`,
- * `device-rejected`, `wrong-device`.
+ * (`no-device-credential` is gone), the nine `card-*` / `wrong-card` codes; `weak-password`;
+ * `auth-required`; `quota`; `unknown`; `EngineErrorCode` lost `integrity`; `device-required`,
+ * `device-locked`, `device-app-closed`, `device-rejected`, `wrong-device`.
  */
 export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   locked: false,
@@ -1097,6 +1097,15 @@ export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   integrity: false,
   "blind-signing-disabled": true,
   "approval-required": false,
+  "card-required": true,
+  "card-not-genuine": true,
+  "card-id-mismatch": true,
+  "wrong-card": true,
+  "card-erased": true,
+  "card-locked": true,
+  "card-tampered": true,
+  "card-fault": true,
+  "card-unsupported": true,
   crashed: false,
   "device-required": true,
   "device-locked": true,
@@ -2058,20 +2067,56 @@ warnings, for every origin, so an exhaustive `switch` over `RiskFinding["code"]`
 check in `checks`): an `approve` must echo those back exactly, while warning-level findings never
 require acknowledgement.
 
-## 30. Card wallet native surfaces (experimental)
+## 30. Card wallets (experimental)
 
-The qntx card wallet is not usable in this release: the card protocol client is private to the
-kernel and no kernel command, `@qntx/wallet` API or engine API reaches it. What ships is the
-native groundwork, which a host app may still notice. Compiled snippet:
-[`tests/migration/secure-input.ts`](tests/migration/secure-input.ts).
+Compiled snippets: [`tests/migration/card-wallet.ts`](tests/migration/card-wallet.ts),
+[`tests/migration/secure-input.ts`](tests/migration/secure-input.ts). Changes affect every
+`@qntx/wallet` host that reads `WalletInfo`, and React Native hosts that offer qntx card wallets.
+The vault gains a `card-wallet` record kind; existing vault wallets are unchanged.
 
-1. **Android: the library manifest is empty.** `@qntx/wallet-native` merges no permissions.
-   A host that exercises the card surfaces declares `android.permission.NFC`,
+1. **`CardWalletInfo`** (`custody: "card"`) joins the `WalletInfo` union (§24): `origin`
+   `card-generated | card-imported`, `backup: "cards"`, `members` (k = 1–3) and `cards`
+   (`CardInfo`: `cardId`, `shortId`, `state` `ready | unknown | pending`, `tries`, `verifiedAt`).
+   Show a card wallet's receive addresses only after its `create` task has resolved: a `pending`
+   member has not imported the seed yet.
+2. **Card wallets sign through `@qntx/wallet/card`.** `chains(wallet).sign` on a card wallet
+   answers `card-required`, and `wallet.accounts` does too for any account whose public key no
+   earlier tap cached; run `card(wallet).start({ kind: "sign", request }, verify)` (or
+   `{ kind: "accounts", … }`) instead. `start` returns a `CardTask`: `observe` reports every
+   `CardStep` (an `input` step means mount `SecureInput`, a `tap` step means show the
+   hold-the-card instruction), `cancel` ends the operation, and `result` resolves with the
+   operation's `CardOpResult`. A `sign` result is verified exactly like `chains.sign`'s before
+   `done` is reported. There is no call that answers a step: the kernel collects the code from
+   `SecureInput` and talks to the card itself, and it sets the NFC sheet's text from the decoded
+   request. Starting a second task cancels the first.
+3. **Operations.** `status`, `add` (register a card that already holds a wallet in this vault),
+   `accounts`, `health`, `change-access`, `erase` (`last: true` for the last card of a
+   card-generated wallet), `create` (1–3 cards; `source: { kind: "generate" }` or
+   `{ kind: "wallet", walletId }`, which moves a vault wallet onto the cards and deletes its sealed
+   seed in the same commit), `transfer` (finish a pending member), `reseal` (a new code for a
+   member that forgot it, from another member), `sign` and `forget-access`. `change-access`,
+   `erase`, `create`, `transfer`, `reseal` and `sign` require a `verify` factor. `remember: true`
+   (save the access code's hash in the vault) needs the app lock and a `hardware` factor, else
+   `unsupported`.
+4. **Capabilities a card wallet lacks.** Nostr, Spark, session keys (`sessions.create`) and
+   `wallets.exportMnemonic` answer `unsupported` for a card wallet. Hide them for
+   `custody: "card"`.
+5. **Platforms.** Only `@qntx/wallet-native` has a card platform. Web and Node answer every
+   `card.*` call `unsupported`. Production builds pin no card certificate anchor yet, so every
+   card is `card-not-genuine` until a release ships the production anchor.
+6. **New error codes** (§14): `card-not-genuine` (the certificate does not chain to a pinned
+   anchor — never offer to continue), `card-id-mismatch` (another card than the step asked for;
+   nothing was sent), `wrong-card` (a card of another wallet), `card-erased`, `card-locked`,
+   `card-tampered` (the card's failure counter moved without this wallet — offer `reseal` from
+   another member), `card-fault` (the card answered outside the protocol), `card-unsupported` (the
+   request does not fit the card's limits; split it) and `card-required`. A wrong access code is
+   not an error: the next `input` step carries `remaining`.
+7. **Android: the library manifest is empty.** `@qntx/wallet-native` merges no permissions.
+   A host that offers card wallets declares `android.permission.NFC`,
    `android.permission.HIDE_OVERLAY_WINDOWS` and
    `<uses-feature android:name="android.hardware.nfc" android:required="false"/>` itself —
    the exact entries are in the package README (the harness declares them in its Expo config).
-2. **iOS**: CoreNFC is weak-linked, so apps without NFC keep loading. The NFC entitlement and
-   `Info.plist` keys in the package README are needed only once card wallets ship.
-3. **`@qntx/wallet-native/secure-input`** (`SecureInput`) is experimental: its props and states may
-   change before card wallets ship. Never collect a card access code or short ID in a JS
-   `TextInput`.
+8. **iOS**: CoreNFC is weak-linked, so apps without NFC keep loading. A host that offers card
+   wallets adds the NFC entitlement and the `Info.plist` keys in the package README.
+9. **`@qntx/wallet-native/secure-input`** (`SecureInput`) collects the access code and short ID.
+   Never collect a card access code or short ID in a JS `TextInput`.

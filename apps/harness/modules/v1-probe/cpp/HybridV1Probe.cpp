@@ -3,6 +3,8 @@
 #include <NitroModules/InstallNitro.hpp>
 
 #include "FakeCardReader.hpp"
+#include "SimCardReader.hpp"
+#include "runtime/KernelJs.hpp"
 #include "runtime/KernelRuntime.hpp"
 
 #if __has_include("generated/probes.hpp")
@@ -365,6 +367,11 @@ qntx::harness::probes::Script scriptFor(const std::string& name) {
   // The "-device" suffix runs the same script against the platform reader.
   if (name == "card-surfaces" || name == "card-surfaces-device") {
     return kCardSurfaces;
+  }
+  // The "-sim" probe drives the real applet in the card-sim bridge over TCP;
+  // an optional "@host:port" suffix overrides the default endpoint.
+  if (name == "card-surfaces-sim" || name.starts_with("card-surfaces-sim@")) {
+    return kCardSim;
   }
   throw std::invalid_argument("unknown probe script: " + name);
 }
@@ -826,6 +833,47 @@ std::shared_ptr<Promise<void>> HybridV1Probe::openKernel(
     if (probe == "card-surfaces") {
       // Scripted card behind the leak check; "-device" keeps the platform one.
       hooks.cardReader = qntx::harness::fakeCardReader();
+    }
+    if (probe == "card-surfaces-sim" || probe.starts_with("card-surfaces-sim@")) {
+      // The real applet behind the card-sim bridge; "@host:port" overrides the
+      // platform default (Android emulator reaches the host at 10.0.2.2).
+      std::string host =
+#if defined(__ANDROID__)
+          "10.0.2.2";
+#else
+          "127.0.0.1";
+#endif
+      int port = 9100;
+      const auto at = probe.find('@');
+      if (at != std::string::npos) {
+        const auto colon = probe.rfind(':');
+        if (colon != std::string::npos && colon > at + 1) {
+          host = probe.substr(at + 1, colon - at - 1);
+          port = std::stoi(probe.substr(colon + 1));
+        }
+      }
+      hooks.cardReader = qntx::harness::simCardReader(host, port);
+      // The script types the card's printed short ID before its first tap; the
+      // identity comes from the bridge's `CARD <n> <cert>` line.
+      hooks.beforeEvaluate = [](facebook::jsi::Runtime& runtime) {
+        // `__qntx` is sealed by installKernelGlobals — the identity lives on a
+        // separate global the probe script declares.
+        runtime.global().setProperty(
+            runtime,
+            "__qntxSimIdentity",
+            facebook::jsi::Function::createFromHostFunction(
+                runtime,
+                facebook::jsi::PropNameID::forAscii(runtime, "simIdentity"),
+                0,
+                [](facebook::jsi::Runtime& rt,
+                   const facebook::jsi::Value&,
+                   const facebook::jsi::Value*,
+                   size_t) -> facebook::jsi::Value {
+                  const auto identity = qntx::harness::simIdentity();
+                  return qntx::arrayBufferFromBytes(
+                      rt, identity.data(), identity.size());
+                }));
+      };
     }
     hooks.onPost = [session](qntx::SecretBytes bytes) {
       session->onPost(std::vector<uint8_t>(bytes.data(), bytes.data() + bytes.size()));

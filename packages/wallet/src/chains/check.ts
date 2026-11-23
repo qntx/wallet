@@ -1,7 +1,8 @@
 /**
- * The shared `chain.sign` / `hardware.sign` result verification: a result whose kind is not the
- * request's is refused for every request kind, then the family's check verifies the signature (or
- * signed content) against the account. Internal — reached through chains() and hardware() only.
+ * The shared `chain.sign` / `hardware.sign` / card `sign` result verification: a result whose kind
+ * is not the request's is refused for every request kind, then the family's check verifies the
+ * signature (or signed content) against the account. Fails closed with `integrity`. Internal —
+ * reached through chains(), hardware() and card() only.
  */
 import { ChainError } from "@qntx/wallet-chains";
 import {

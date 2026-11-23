@@ -14,7 +14,7 @@ describe("walletId", () => {
   it.each(vectors)("$seed → $walletId", (vector) => {
     const master = masterKey(hexToBytes(vector.seed));
     expect(bytesToHex(master.publicKey!)).toBe(vector.masterPublicKey);
-    expect(walletIdOf(master)).toBe(vector.walletId);
+    expect(walletIdOf(master.publicKey!)).toBe(vector.walletId);
     master.wipePrivateData();
   });
 });
@@ -39,7 +39,7 @@ describe("walletId with a passphrase", () => {
     );
     const master = masterKey(seed);
     expect(bytesToHex(master.publicKey!)).toBe(vector.masterPublicKey);
-    expect(walletIdOf(master)).toBe(vector.walletId);
+    expect(walletIdOf(master.publicKey!)).toBe(vector.walletId);
     master.wipePrivateData();
   });
 });

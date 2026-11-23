@@ -18,15 +18,22 @@ export const KERNEL_BUILD_CONDITIONS: ReadonlyArray<string> = [
 ];
 
 /**
- * The build() options of the committed kernel artifact. Nothing may stay external: the bytecode
- * runs in a bare Hermes runtime with no module loader, so deps and peers are inlined.
+ * The build() options of one classic-script kernel bundle. Nothing may stay external: the bytecode
+ * runs in a bare Hermes runtime with no module loader, so deps and peers are inlined. `target:
+ * "es2017"` is not cosmetic — rolldown lowers `async function*` (ES2018) to helpers, and hermesc
+ * rejects the raw syntax.
  */
-export const kernelBuildConfig = (entry: string, outDir: string): InlineConfig => ({
+const scriptConfig = (
+  entry: string,
+  outDir: string,
+  name: string,
+  fileName: () => string,
+): InlineConfig => ({
   configFile: false,
   logLevel: "warn",
   build: {
     // One iife classic-script bundle — hermesc needs a classic script, not an ES module.
-    lib: { entry, formats: ["iife"], name: "qntxKernelEntry", fileName: () => "kernel-entry.js" },
+    lib: { entry, formats: ["iife"], name, fileName },
     outDir,
     emptyOutDir: false,
     minify: false,
@@ -35,3 +42,14 @@ export const kernelBuildConfig = (entry: string, outDir: string): InlineConfig =
   },
   resolve: { conditions: [...KERNEL_BUILD_CONDITIONS] },
 });
+
+/** The build() options of the committed kernel artifact. */
+export const kernelBuildConfig = (entry: string, outDir: string): InlineConfig =>
+  scriptConfig(entry, outDir, "qntxKernelEntry", () => "kernel-entry.js");
+
+/**
+ * The same options for an apps/harness probe: probes bundle kernel source and are compiled by
+ * hermesc, so they need the identical es2017 lowering (`Bun.build` emits `async function*` raw).
+ */
+export const probeBuildConfig = (entry: string, outDir: string, name: string): InlineConfig =>
+  scriptConfig(entry, outDir, name, () => `${name}.js`);

@@ -50,7 +50,10 @@ async function deriveWalletMaterial(
 ): Promise<{ master: HDKey; walletId: string }> {
   return withSeed(platform.pbkdf2, entropy, passphraseText(passphrase), (seed) => {
     const master = masterKey(seed);
-    return { master, walletId: walletIdOf(master) };
+    if (master.publicKey === null) {
+      throw new KernelError("integrity", "master key has no compressed public key");
+    }
+    return { master, walletId: walletIdOf(master.publicKey) };
   });
 }
 
@@ -258,7 +261,7 @@ async function establishVault(
 }
 
 function ensureNewWallet(ctx: KernelContext, material: WalletMaterial): void {
-  if (ctx.image.records.some((r) => r.kind === "entropy" && r.id === material.walletId)) {
+  if (findWalletRecord(ctx.image, material.walletId) !== undefined) {
     throw new KernelError("already-exists", "wallet already exists");
   }
 }
@@ -612,8 +615,9 @@ export async function deleteWallet(
   if (record === undefined) {
     throw new KernelError("not-found", "record not found");
   }
-  // The wallet row and every module record derived from this wallet go in ONE commit —
-  // a partial deletion can never land. Reconciliation forgets the evicted live state.
+  // The wallet row (any custody) and every module record derived from this wallet go in ONE
+  // commit — a partial deletion can never land. Reconciliation forgets the evicted live state.
+  // Deleting an externally signed wallet never touches the device or the cards themselves.
   const extras = ctx.modules.flatMap((module) =>
     module.walletDeleteOps(ctx.image, params.walletId),
   );

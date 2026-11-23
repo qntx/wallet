@@ -22,6 +22,7 @@ import type { LockReason } from "@qntx/wallet/types";
 import type { CommitOptions, Handler, KernelContext } from "./commands/context.ts";
 import { CORE_HANDLERS } from "./commands/index.ts";
 import { KernelError } from "./errors.ts";
+import { createCardModule } from "./modules/card/index.ts";
 import { createChainsModule } from "./modules/chains/index.ts";
 import { createNostrModule } from "./modules/nostr/index.ts";
 import { createSessionsModule } from "./modules/sessions/index.ts";
@@ -45,6 +46,7 @@ import {
   isManifestRecord,
   withManifest,
 } from "./vault/manifest.ts";
+import { CARD_WALLET_KIND } from "./vault/store.ts";
 import type { StoredRecord, StoreOp, VaultImage } from "./vault/store.ts";
 import { openRecord, splitWalletSecret } from "./vault/vault.ts";
 import type { OpenedRecord } from "./vault/vault.ts";
@@ -127,6 +129,16 @@ export function startKernel(
   port: Port,
   drivers: typeof DRIVERS = DRIVERS,
 ): void {
+  // Fail closed if this bundle was compiled without -Xes6-block-scoping (the hermesc default is
+  // off): loop-scoped let/const would share one binding across iterations and closures would
+  // capture the last iteration's value.
+  const captures: Array<() => number> = [];
+  for (const each of [0, 1]) {
+    captures.push(() => each);
+  }
+  if (captures[0]?.() !== 0) {
+    throw new Error("kernel requires Hermes compiled with -Xes6-block-scoping");
+  }
   // Every system-UI ceremony goes through one queue: the platform shows one prompt at a time.
   // The callback posts lazily — ceremonies only run inside requests, after `post` exists.
   const platform = serializeCeremonies(host, (active) => {
@@ -136,13 +148,26 @@ export function startKernel(
   // VaultHooks entry in ctx.modules and its status section; there is no registry — future modules
   // add a line here and a section in status.ts's composition.
   const nostr = createNostrModule(platform.backends.nostr);
+  const card = createCardModule(platform);
   const spark = createSparkModule();
   const signers = createSignersModule(drivers);
-  const chains = createChainsModule(signers.material);
+  const chains = createChainsModule((image, record) => {
+    if (record.kind !== CARD_WALLET_KIND) {
+      return signers.material(image, record);
+    }
+    // The record exists but its body was never claimed — an unlock that opened records but
+    // skipped the card module should not be possible.
+    const material = card.material(record.id);
+    if (material === undefined) {
+      throw new KernelError("integrity", "card wallet material is not loaded");
+    }
+    return material;
+  });
   const sessions = createSessionsModule();
   const HANDLERS = {
     status: (ctx: KernelContext) => statusPayload(ctx, nostr),
     ...CORE_HANDLERS,
+    ...card.handlers,
     ...chains.handlers,
     ...nostr.handlers,
     ...spark.handlers,
@@ -351,7 +376,8 @@ export function startKernel(
   const ctx: KernelContext = {
     platform,
     session: new Session(platform, onLock),
-    modules: [nostr.vault, spark.vault, chains.vault, sessions.vault, signers.vault],
+    modules: [nostr.vault, spark.vault, chains.vault, sessions.vault, signers.vault, card.vault],
+    cardMaterial: card.material,
     image: EMPTY_IMAGE,
     health: "ok",
     commit: async (ops: ReadonlyArray<StoreOp>, options?: CommitOptions) => {
@@ -579,6 +605,21 @@ export function startKernel(
   });
 
   port.listen((message) => {
+    // A card.cancel while a step is blocked must not queue behind it: interrupt the operation
+    // synchronously so the in-flight secureInput/read resolves and the queued work answers.
+    if (
+      typeof message === "object" &&
+      message !== null &&
+      "method" in message &&
+      message.method === "card.cancel" &&
+      "params" in message &&
+      typeof message.params === "object" &&
+      message.params !== null &&
+      "opId" in message.params &&
+      typeof message.params.opId === "string"
+    ) {
+      card.interrupt(message.params.opId);
+    }
     enqueue(async () => handle(message));
   });
 

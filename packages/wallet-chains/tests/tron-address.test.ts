@@ -36,16 +36,21 @@ const vectors = JSON.parse(
 };
 
 describe("tronAddressFromPublicKey", () => {
-  it("reproduces every derivation row's address and private key", () => {
-    for (const row of vectors.derivation) {
-      const child = HDKey.fromMasterSeed(mnemonicToSeedSync(row.mnemonic)).derive(row.path);
-      expect(child.privateKey).not.toBeNull();
-      expect(child.publicKey).not.toBeNull();
-      expect(hexToBytes(row.privateKey)).toStrictEqual(child.privateKey!);
-      expect(tronAddressFromPublicKey(child.publicKey!)).toBe(row.address);
-      child.wipePrivateData();
-    }
-  });
+  it(
+    "reproduces every derivation row's address and private key",
+    () => {
+      for (const row of vectors.derivation) {
+        const child = HDKey.fromMasterSeed(mnemonicToSeedSync(row.mnemonic)).derive(row.path);
+        expect(child.privateKey).not.toBeNull();
+        expect(child.publicKey).not.toBeNull();
+        expect(hexToBytes(row.privateKey)).toStrictEqual(child.privateKey!);
+        expect(tronAddressFromPublicKey(child.publicKey!)).toBe(row.address);
+        child.wipePrivateData();
+      }
+    },
+    // ~10 s under coverage: every row is a full mnemonic → seed → derive.
+    30_000,
+  );
 
   it("reproduces every key row's address", () => {
     for (const { privateKey, address } of vectors.keys) {

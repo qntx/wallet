@@ -8,8 +8,8 @@ import {
   solanaAddressFromPublicKey,
 } from "@qntx/wallet-chains/solana";
 
+import type { PublicMaterial } from "../../derive/material.ts";
 import { KernelError } from "../../errors.ts";
-import type { PublicMaterial } from "./keys.ts";
 import { messagePromptIntent } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
 import type { Prepared, SolanaRequest } from "./shared.ts";

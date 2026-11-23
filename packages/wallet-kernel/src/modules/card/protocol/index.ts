@@ -14,7 +14,7 @@ export { cardId, PRODUCTION_ANCHORS, shortId, verifyCertificate } from "./identi
 export type { Anchor } from "./identity.ts";
 export { openRequest, openResponse, SELECT_APDU } from "./session.ts";
 export type { InnerResponse, Session } from "./session.ts";
-export { taprootTweak } from "./signatures.ts";
+export { bip340OutputX, taprootTweak } from "./signatures.ts";
 export type { EcdsaResult } from "./signatures.ts";
 export { ACCESS_LIMITS, result, waitsBeforeVerify } from "./status.ts";
 export type { ExportHead, Offer } from "./transfer.ts";

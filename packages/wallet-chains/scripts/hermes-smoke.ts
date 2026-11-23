@@ -55,8 +55,12 @@ async function main(): Promise<number> {
     console.error("bun build produced no entry-point output");
     return 1;
   }
-  await Bun.write(outfile, `${await shim.text()}\n${await bundle.text()}`);
-  const run = Bun.spawnSync([hermes, outfile], { stdout: "pipe", stderr: "pipe" });
+  await Bun.write(outfile, `${await shim.text()}
+${await bundle.text()}`);
+  const run = Bun.spawnSync([hermes, "-Xes6-block-scoping", outfile], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const out = `${run.stdout.toString()}\n${run.stderr.toString()}`;
   console.log(out);
   if (!out.includes("HERMES_CHAINS_OK")) {

@@ -1,8 +1,9 @@
 /// <reference types="node" />
 /**
- * Bundle every probe in apps/harness/probes/*.ts into a classic IIFE script (same approach as
- * packages/wallet-worker/scripts/hermes-smoke.ts), compile each to Hermes bytecode and emit the C++
- * byte arrays consumed by the V1Probe module.
+ * Bundle every probe in apps/harness/probes/*.ts into a classic IIFE script with the same rolldown
+ * options as the committed kernel artifact (`kernel-build-config.ts` — es2017 lowering matters:
+ * kernel source uses `async function*`, which hermesc rejects unlowered and `Bun.build` emits raw),
+ * compile each to Hermes bytecode and emit the C++ byte arrays consumed by the V1Probe module.
  *
  * Hermesc is resolved from apps/harness/node_modules — hermes-compiler is a react-native dependency
  * there, so the bytecode always matches the app's Hermes runtime (hermesc 260318099.0.4 for RN
@@ -18,19 +19,13 @@ import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { build } from "vite";
+
+import { probeBuildConfig } from "./kernel-build-config.ts";
+
 // The repo does not depend on @types/bun; declare the used surface (same as
 // packages/wallet-worker/scripts/hermes-smoke.ts).
-type BunBuildOutput = {
-  success: boolean;
-  logs: ReadonlyArray<{ toString: () => string }>;
-  outputs: ReadonlyArray<{ kind: string; text: () => Promise<string> }>;
-};
 declare const Bun: {
-  build: (options: {
-    entrypoints: string[];
-    target: "browser";
-    format: "iife";
-  }) => Promise<BunBuildOutput>;
   spawnSync: (
     cmd: ReadonlyArray<string>,
     options: { stdout: "pipe"; stderr: "pipe" },
@@ -137,23 +132,10 @@ const byteArray = (name: string, bytes: Uint8Array): string => {
   return lines.join("\n");
 };
 
-async function bundle(entrypoint: string): Promise<string> {
-  const result = await Bun.build({
-    entrypoints: [entrypoint],
-    target: "browser",
-    format: "iife",
-  });
-  if (!result.success) {
-    for (const log of result.logs) {
-      console.error(String(log));
-    }
-    throw new Error(`bun build failed for ${entrypoint}`);
-  }
-  const output = result.outputs.find((o) => o.kind === "entry-point");
-  if (!output) {
-    throw new Error(`bun build produced no entry-point output for ${entrypoint}`);
-  }
-  return output.text();
+async function bundle(entrypoint: string, name: string, workDir: string): Promise<string> {
+  const outDir = resolve(workDir, name);
+  await build(probeBuildConfig(entrypoint, outDir, name));
+  return readFileSync(resolve(outDir, `${name}.js`), "utf8");
 }
 
 const compileBytecode = (source: string, workDir: string): Uint8Array => {
@@ -164,7 +146,15 @@ const compileBytecode = (source: string, workDir: string): Uint8Array => {
   // via IHermes::asyncTriggerTimeout; without it bytecode busy-loops cannot be
   // stopped (supported since hermesc 250829098).
   const proc = Bun.spawnSync(
-    [hermesc, "-emit-binary", "-emit-async-break-check", "-out", hbcPath, jsPath],
+    [
+      hermesc,
+      "-Xes6-block-scoping",
+      "-emit-binary",
+      "-emit-async-break-check",
+      "-out",
+      hbcPath,
+      jsPath,
+    ],
     {
       stdout: "pipe",
       stderr: "pipe",
@@ -206,11 +196,14 @@ async function main(): Promise<number> {
   mkdirSync(workDir, { recursive: true });
   try {
     const bundled = await Promise.all(
-      probeFiles.map(async (file) => ({
-        file,
-        name: constName(file),
-        source: await bundle(resolve(probesDir, file)),
-      })),
+      probeFiles.map(async (file) => {
+        const name = constName(file);
+        return {
+          file,
+          name,
+          source: await bundle(resolve(probesDir, file), name, workDir),
+        };
+      }),
     );
     for (const { file, name, source } of bundled) {
       const bytecode = compileBytecode(source, workDir);

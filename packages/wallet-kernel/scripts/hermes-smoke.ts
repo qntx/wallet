@@ -46,7 +46,10 @@ const runOne = async (hermes: string, name: "card" | "ledger", marker: string): 
     },
   });
 
-  const proc = Bun.spawnSync([hermes, outfile], { stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawnSync([hermes, "-Xes6-block-scoping", outfile], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const out = proc.stdout.toString() + proc.stderr.toString();
   process.stdout.write(out);
   if (proc.exitCode !== 0 || !out.includes(marker)) {

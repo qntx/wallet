@@ -13,7 +13,60 @@
     "hostEph.prefix02": "65 bytes: hostEph with the first byte changed to 0x02",
     "hostEph.offCurve": "65 bytes: hostEph with y flipped so the point is off the curve",
     "openResponse": "226 bytes: cardEph \u2016 sig \u2016 cert plus SW 9000; verified through Open.response (session.json)",
-    "record0": "24 bytes: ct \u2016 tag of record.json commands[0].apdu \u2014 a well-formed record"
+    "record0": "24 bytes: ct \u2016 tag of record.json commands[0].apdu \u2014 a well-formed record",
+    "accessHash": "32 bytes: the access hash the LOADED card under test was created with (any fixed value; the card never sees the code)",
+    "accessHash.wrong": "32 bytes: an access hash different from {accessHash}",
+    "accessHash.new": "32 bytes: an access hash different from {accessHash} and {accessHash.wrong}, used by CHANGE",
+    "entropy": "32 bytes: host entropy for CREATE P1 = 00 (any value)",
+    "seed": "64 bytes: derivation.json templates.seed (its BIP-32 master key is valid)",
+    "id.self": "16 bytes: ID(A) of the card under test",
+    "id.other1": "16 bytes: a card ID different from {id.self}",
+    "id.other2": "16 bytes: a card ID different from {id.self} and {id.other1}",
+    "seed.masterPublicKey": "response only, 33 bytes: compressed BIP-32 master public key of {seed} (derivation.json templates.masterPublicKey)",
+    "masterPublicKey.any": "response only, 33 bytes: a compressed secp256k1 point (prefix 02 or 03, x on the curve); the value is random",
+    "pk.secp.evm": "response only, 65 bytes: publicKey(33) \u2016 chainCode(32) of m/44'/60'/0'/0/0 under {seed} (derivation.json templates)",
+    "pk.ed.solana": "response only, 64 bytes: W(A) of m/44'/501'/0'/0' under {seed} (derivation.json templates)",
+    "digest": "32 bytes: a fixed SIGN_ECDSA digest (any value)",
+    "message": "32 bytes: a fixed SIGN_BIP340 message (any value)",
+    "tweak.bip86": "32 bytes: TaggedHash(\"TapTweak\", x(P)) (BIP-341) where P is the public key of m/86'/0'/0'/0/0 under {seed} (derivation.json templates btc-bip86)",
+    "tweak.zeroKey": "32 bytes: n - d0' where d0' is the private key of m/86'/0'/0'/0/0 under {seed}, replaced by n - d0 when its public key has odd y (\u00a712.2); the tweaked key d0' + t is 0 mod n",
+    "sig.ecdsa.evm": "response only, 64 bytes: r \u2016 s with r, s in [1, n-1], a valid ECDSA signature (\u00a712.1, e = int({digest})) under the public key of m/44'/60'/0'/0/0 under {seed} (derivation.json templates evm); random nonce",
+    "sig.ecdsa.bip84Account": "response only, 64 bytes: r \u2016 s with r, s in [1, n-1], a valid ECDSA signature of {digest} under the public key of m/84'/0'/0' under {seed} (derivation.json templates btc-bip84-account); random nonce",
+    "sig.bip340.bip86": "response only, 64 bytes: R_x \u2016 s, a valid BIP-340 signature of {message} under the x-only output key x(P_even + int({tweak.bip86})\u00b7G) of m/86'/0'/0'/0/0 under {seed}; random aux",
+    "sig.bip340.untweaked": "response only, 64 bytes: R_x \u2016 s, a valid BIP-340 signature of {message} under x(P) where P is the public key of m/86'/0'/0'/0/0 under {seed}; random aux",
+    "wei.any": "response only, 64 bytes: X \u2016 Y of a point on Wei25519 (\u00a710.4) other than the base point; the nonce is random",
+    "ed25519.S.any": "response only, 32 bytes: le32(S) with int_le(S) < l; S depends on the random nonce of the stream's begin",
+    "peer.cert": "97 bytes: the certificate of {peer}, a second card personalized under ca1 (cert = A_peer \u2016 Sign(ca1, \"qntx-card/v1/cert\" \u2016 A_peer))",
+    "peer.cert.otherCa": "97 bytes: the certificate of {peer}'s identity key A_peer issued under ca2",
+    "peer.id": "16 bytes: ID(A_peer) of {peer}",
+    "peer.offer": "129 bytes: LK \u2016 sig, the OFFER response of {peer} (life SOURCE: {peer} is BLANK and answered one OFFER)",
+    "peer.offer.badSig": "129 bytes: {peer.offer} with its last byte xored with 0x01",
+    "peer.offer.prefix03": "129 bytes: {peer.offer} with its first byte changed to 0x03",
+    "peer.exportHead": "129 bytes: E \u2016 sig_S, the response of {peer} (the source of life TARGET and TARGET-LOADED, verified) to EXPORT P1 = 00 with {cert} \u2016 the OFFER response of the card under test in the case's session",
+    "peer.exportHead.badSig": "129 bytes: {peer.exportHead} with its last byte xored with 0x01",
+    "peer.exportPayload": "160 bytes: ct(144) \u2016 tag(16), the response of {peer} to EXPORT P1 = 01 with {accessHash.new}, sent right after the EXPORT P1 = 00 that produced {peer.exportHead}",
+    "peer.exportPayload.badTag": "160 bytes: {peer.exportPayload} with its last byte (in tag) xored with 0x01",
+    "peer.exportPayload.badCt": "160 bytes: {peer.exportPayload} with its first byte (in ct) xored with 0x01",
+    "cert.badPoint": "97 bytes: a certificate under ca1 for A' = 0x02 \u2016 u256(5); x = 5 is the smallest positive x for which x^3 + 7 is a quadratic non-residue mod p, so A' does not decompress (\u00a710.5)",
+    "id.badPoint": "16 bytes: ID(A') of the A' of {cert.badPoint}",
+    "offer.any": "response only, 129 bytes: LK \u2016 sig where LK is a valid uncompressed secp256k1 point and sig a valid signature under {A} of \"qntx-card/v1/offer\" \u2016 LK (\u00a79.12); LK is random",
+    "exportHead.any": "response only, 129 bytes: E \u2016 sig_S where E is a valid uncompressed secp256k1 point and sig_S a valid signature under {A} of \"qntx-card/v1/export\" \u2016 {A} \u2016 A_peer \u2016 LK \u2016 E, with A_peer from {peer.cert} and LK from {peer.offer} (\u00a79.13); E is random",
+    "exportPayload.any": "response only, 176 bytes: ct(160) \u2016 tag(16) that {peer} accepts: IMPORT P1 = 00 with {cert} \u2016 the E \u2016 sig_S of the session's EXPORT P1 = 00, then IMPORT P1 = 01 with these 176 bytes, both on {peer} in one session, return 9000 and WalletInfo {seed.masterPublicKey} 02 03 {id.self} {peer.id} {id.badPoint}"
+  },
+  "states": {
+    "FACTORY": "a freshly installed card",
+    "BLANK": "FACTORY, then PERSONALIZE with {cert} and {caKey}",
+    "LOADED": "BLANK, then OPEN and CREATE P1 = 01 with {accessHash} \u2016 {seed} (no other members), then a new OPEN",
+    "session none": "no OPEN after the setup",
+    "session open": "the last OPEN of the setup (OPEN once for BLANK); not verified",
+    "session verified": "session open, then VERIFY {accessHash} returned 9000",
+    "session streaming": "session verified, then SIGN_ED25519 begin (P1 = 00) with path m/44'/501'/0'/0' returned 9000",
+    "SOURCE": "BLANK, then OPEN and CREATE P1 = 01 with {accessHash} \u2016 {seed} \u2016 {peer.id} \u2016 {id.badPoint} (members = self, peer, badPoint), then a new OPEN. {peer} is a second card personalized under ca1, BLANK, that answered one OFFER ({peer.offer})",
+    "TARGET": "BLANK. {peer} is a second card personalized under ca1 and LOADED by OPEN and CREATE P1 = 01 with {accessHash} \u2016 {seed} \u2016 {id.self} (members = peer, self); its session stays verified",
+    "TARGET-LOADED": "TARGET, then the card under test receives the wallet: OPEN, OFFER; {peer} EXPORT P1 = 00 with {cert} \u2016 that OFFER response and EXPORT P1 = 01 with {accessHash}; the card under test IMPORT P1 = 00 with {peer.cert} \u2016 E \u2016 sig_S and IMPORT P1 = 01 with ct \u2016 tag (LOADED, members = peer, self, f = 0); then a new OPEN on the card under test",
+    "session offered": "session open, then OFFER returned 9000 on the card under test",
+    "session importing": "session offered, then IMPORT P1 = 00 with {peer.cert} \u2016 {peer.exportHead} returned 9000",
+    "session exporting": "session verified, then EXPORT P1 = 00 with {peer.cert} \u2016 {peer.offer} returned 9000"
   },
   "commands": [
     {
@@ -283,6 +336,1142 @@
           "inner": true,
           "sw": "9000",
           "response": "020a"
+        }
+      ]
+    },
+    {
+      "name": "CREATE",
+      "section": "9.4",
+      "cases": [
+        {
+          "name": "life-loaded",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "21020000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "21020000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "p2",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "210001{accessHash}{entropy}",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length-generate-65",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "210000{accessHash}{entropy}00",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-generate-112",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "210000{accessHash}{entropy}{id.other1}{id.other2}{id.other1}",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-import-80",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "210100{accessHash}{entropy}{id.other1}",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "others-duplicate",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "210000{accessHash}{entropy}{id.other1}{id.other1}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "others-self",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "210000{accessHash}{entropy}{id.other1}{id.self}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "import-others-self",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "210100{accessHash}{seed}{id.self}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "success-generate",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "210000{accessHash}{entropy}",
+          "inner": true,
+          "sw": "9000",
+          "response": "{masterPublicKey.any}0101{id.self}"
+        },
+        {
+          "name": "success-generate-three",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "210000{accessHash}{entropy}{id.other1}{id.other2}",
+          "inner": true,
+          "sw": "9000",
+          "response": "{masterPublicKey.any}0103{id.self}{id.other1}{id.other2}"
+        },
+        {
+          "name": "success-import",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "210100{accessHash}{seed}{id.other1}",
+          "inner": true,
+          "sw": "9000",
+          "response": "{seed.masterPublicKey}0202{id.self}{id.other1}"
+        }
+      ]
+    },
+    {
+      "name": "VERIFY",
+      "section": "9.5",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "22010000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1p2",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "22010000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "p2",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "220001{accessHash}",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "220000{accessHash}00",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "wrong",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "220000{accessHash.wrong}",
+          "inner": true,
+          "sw": "63c9"
+        },
+        {
+          "name": "success",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "220000{accessHash}",
+          "inner": true,
+          "sw": "9000",
+          "response": "{seed.masterPublicKey}0201{id.self}"
+        }
+      ]
+    },
+    {
+      "name": "CHANGE",
+      "section": "9.6",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "23010000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1p2",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "23010000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "230000{accessHash.new}00",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "230000{accessHash.new}",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "success",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "230000{accessHash.new}",
+          "inner": true,
+          "sw": "9000",
+          "response": ""
+        }
+      ]
+    },
+    {
+      "name": "ERASE",
+      "section": "9.7",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "24010000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1p2",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "24010000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "24000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "240000",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "success",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "240000",
+          "inner": true,
+          "sw": "9000",
+          "response": ""
+        }
+      ]
+    },
+    {
+      "name": "WAIT",
+      "section": "9.15",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "25010000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1p2",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "25010000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "25000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "success",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "250000",
+          "inner": true,
+          "sw": "9000",
+          "response": ""
+        }
+      ]
+    },
+    {
+      "name": "PUBLIC_KEY",
+      "section": "9.8",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "30020000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "30020000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "p2",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "300001058000002c8000003c800000000000000000000000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length-empty",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "300000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-short",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "300000058000002c8000003c8000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-long",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "300000058000002c8000003c80000000000000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "300000058000002c8000003c800000000000000000000000",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "depth-zero",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "30000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "depth-eleven",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "3000000b8000000080000000800000008000000080000000800000008000000080000000800000008000000080000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "ed25519-depth-zero",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "30010000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "ed25519-not-hardened",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "300100048000002c800001f58000000000000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "success-secp256k1",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "300000058000002c8000003c800000000000000000000000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{pk.secp.evm}"
+        },
+        {
+          "name": "success-ed25519",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "300100048000002c800001f58000000080000000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{pk.ed.solana}"
+        }
+      ]
+    },
+    {
+      "name": "SIGN_ECDSA",
+      "section": "9.9",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "31010000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "31010000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "p2",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310001{digest}058000002c8000003c800000000000000000000000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length-empty",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-no-path",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-short",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}058000002c8000003c8000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-long",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}058000002c8000003c80000000000000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "310000{digest}058000002c8000003c800000000000000000000000",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "depth-zero",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}00",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "depth-eleven",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}0b8000000080000000800000008000000080000000800000008000000080000000800000008000000080000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "success-evm",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}058000002c8000003c800000000000000000000000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{sig.ecdsa.evm}"
+        },
+        {
+          "name": "success-hardened-leaf",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "310000{digest}03800000548000000080000000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{sig.ecdsa.bip84Account}"
+        }
+      ]
+    },
+    {
+      "name": "SIGN_BIP340",
+      "section": "9.10",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "32010000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "32010000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "p2",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320001{message}{tweak.bip86}058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length-empty",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-no-path",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}{tweak.bip86}",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-short",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}{tweak.bip86}0580000056800000008000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-long",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}{tweak.bip86}05800000568000000080000000000000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "320000{message}{tweak.bip86}058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "depth-zero",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036414100",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "depth-eleven",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}{tweak.bip86}0b8000000080000000800000008000000080000000800000008000000080000000800000008000000080000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "tweak-n",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "tweak-max",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "tweaked-key-zero",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}{tweak.zeroKey}058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "success-bip86",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}{tweak.bip86}058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{sig.bip340.bip86}"
+        },
+        {
+          "name": "success-untweaked",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "320000{message}0000000000000000000000000000000000000000000000000000000000000000058000005680000000800000000000000000000000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{sig.bip340.untweaked}"
+        }
+      ]
+    },
+    {
+      "name": "SIGN_ED25519",
+      "section": "9.11",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "33030000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "33030000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "p2",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330001048000002c800001f58000000080000000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "begin-length-empty",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "begin-length-short",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330000048000002c800001f580000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "begin-length-long",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330000048000002c800001f5800000008000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "update-length-empty",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330100",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "begin-unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "330000048000002c800001f58000000080000000",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "update-unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "330100aa",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "finish-unverified",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "330200",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "update-no-stream",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330100aa",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "finish-no-stream",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330200",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "begin-depth-zero",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "33000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "begin-depth-eleven",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "3300000b8000000080000000800000008000000080000000800000008000000080000000800000008000000080000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "begin-not-hardened",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330000048000002c800001f58000000000000000",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "begin-success",
+          "life": "LOADED",
+          "session": "verified",
+          "apdu": "330000048000002c800001f58000000080000000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{wei.any}"
+        },
+        {
+          "name": "update-success",
+          "life": "LOADED",
+          "session": "streaming",
+          "apdu": "33010000112233",
+          "inner": true,
+          "sw": "9000",
+          "response": ""
+        },
+        {
+          "name": "finish-success",
+          "life": "LOADED",
+          "session": "streaming",
+          "apdu": "33020044556677",
+          "inner": true,
+          "sw": "9000",
+          "response": "{ed25519.S.any}"
+        }
+      ]
+    },
+    {
+      "name": "OFFER",
+      "section": "9.12",
+      "cases": [
+        {
+          "name": "p1p2",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "40010000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "40000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "success-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "400000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{offer.any}"
+        },
+        {
+          "name": "success-loaded",
+          "life": "LOADED",
+          "session": "open",
+          "apdu": "400000",
+          "inner": true,
+          "sw": "9000",
+          "response": "{offer.any}"
+        }
+      ]
+    },
+    {
+      "name": "EXPORT",
+      "section": "9.13",
+      "cases": [
+        {
+          "name": "life-blank",
+          "life": "BLANK",
+          "session": "open",
+          "apdu": "41020000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "p1",
+          "life": "SOURCE",
+          "session": "verified",
+          "apdu": "41020000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "p2",
+          "life": "SOURCE",
+          "session": "verified",
+          "apdu": "410001{peer.cert}{peer.offer}",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length-0",
+          "life": "SOURCE",
+          "session": "verified",
+          "apdu": "410000{peer.cert}{peer.offer}00",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-1",
+          "life": "SOURCE",
+          "session": "verified",
+          "apdu": "410100{accessHash.new}00",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "unverified-0",
+          "life": "SOURCE",
+          "session": "open",
+          "apdu": "410000{peer.cert}{peer.offer}",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "unverified-1",
+          "life": "SOURCE",
+          "session": "open",
+          "apdu": "410100{accessHash.new}",
+          "inner": true,
+          "sw": "6982"
+        },
+        {
+          "name": "no-pending-export",
+          "life": "SOURCE",
+          "session": "verified",
+          "apdu": "410100{accessHash.new}",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "cert-other-ca",
+          "life": "SOURCE",
+          "session": "verified",
+          "apdu": "410000{peer.cert.otherCa}{peer.offer}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "cert-own",
+          "life": "SOURCE",
+          "session": "verified",
+          "apdu": "410000{cert}{peer.offer}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "cert-non-member",
+          "life": "SOURCE",
+          "session": "verified",
+          "apdu": "410000{cert.otherA}{peer.offer}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "cert-no-decompression",
+          "life": "SOURCE",
+          "session": "verified",
+          "apdu": "410000{cert.badPoint}{peer.offer}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "offer-prefix03",
+          "life": "SOURCE",
+          "session": "verified",
+          "apdu": "410000{peer.cert}{peer.offer.prefix03}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "offer-bad-signature",
+          "life": "SOURCE",
+          "session": "verified",
+          "apdu": "410000{peer.cert}{peer.offer.badSig}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "success-0",
+          "life": "SOURCE",
+          "session": "verified",
+          "apdu": "410000{peer.cert}{peer.offer}",
+          "inner": true,
+          "sw": "9000",
+          "response": "{exportHead.any}"
+        },
+        {
+          "name": "success-1",
+          "life": "SOURCE",
+          "session": "exporting",
+          "apdu": "410100{accessHash.new}",
+          "inner": true,
+          "sw": "9000",
+          "response": "{exportPayload.any}"
+        }
+      ]
+    },
+    {
+      "name": "IMPORT",
+      "section": "9.14",
+      "cases": [
+        {
+          "name": "p1",
+          "life": "TARGET",
+          "session": "open",
+          "apdu": "42020000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "p2",
+          "life": "TARGET",
+          "session": "open",
+          "apdu": "42000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "inner": true,
+          "sw": "6a86"
+        },
+        {
+          "name": "length-0",
+          "life": "TARGET",
+          "session": "offered",
+          "apdu": "420000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-1-short",
+          "life": "TARGET",
+          "session": "importing",
+          "apdu": "4201000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "length-1-long",
+          "life": "TARGET",
+          "session": "importing",
+          "apdu": "420100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "inner": true,
+          "sw": "6700"
+        },
+        {
+          "name": "no-offer-0",
+          "life": "TARGET",
+          "session": "open",
+          "apdu": "42000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "no-offer-1",
+          "life": "TARGET",
+          "session": "open",
+          "apdu": "42010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "no-pending-import",
+          "life": "TARGET",
+          "session": "offered",
+          "apdu": "42010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "inner": true,
+          "sw": "6985"
+        },
+        {
+          "name": "cert-other-ca",
+          "life": "TARGET",
+          "session": "offered",
+          "apdu": "420000{peer.cert.otherCa}{peer.exportHead}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "cert-own",
+          "life": "TARGET",
+          "session": "offered",
+          "apdu": "420000{cert}{peer.exportHead}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "cert-non-member-loaded",
+          "life": "TARGET-LOADED",
+          "session": "offered",
+          "apdu": "420000{cert.otherA}{peer.exportHead}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "cert-not-sender-blank",
+          "life": "TARGET",
+          "session": "offered",
+          "apdu": "420000{cert.otherA}{peer.exportHead}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "cert-no-decompression",
+          "life": "TARGET",
+          "session": "offered",
+          "apdu": "420000{cert.badPoint}{peer.exportHead}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "export-bad-signature",
+          "life": "TARGET",
+          "session": "offered",
+          "apdu": "420000{peer.cert}{peer.exportHead.badSig}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "success-0",
+          "life": "TARGET",
+          "session": "offered",
+          "apdu": "420000{peer.cert}{peer.exportHead}",
+          "inner": true,
+          "sw": "9000",
+          "response": ""
+        },
+        {
+          "name": "bad-tag",
+          "life": "TARGET",
+          "session": "importing",
+          "apdu": "420100{peer.exportPayload.badTag}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "bad-ct",
+          "life": "TARGET",
+          "session": "importing",
+          "apdu": "420100{peer.exportPayload.badCt}",
+          "inner": true,
+          "sw": "6a80"
+        },
+        {
+          "name": "success-1",
+          "life": "TARGET",
+          "session": "importing",
+          "apdu": "420100{peer.exportPayload}",
+          "inner": true,
+          "sw": "9000",
+          "response": "{seed.masterPublicKey}0202{peer.id}{id.self}"
+        },
+        {
+          "name": "reseal-success-0",
+          "life": "TARGET-LOADED",
+          "session": "offered",
+          "apdu": "420000{peer.cert}{peer.exportHead}",
+          "inner": true,
+          "sw": "9000",
+          "response": ""
+        },
+        {
+          "name": "reseal-success-1",
+          "life": "TARGET-LOADED",
+          "session": "importing",
+          "apdu": "420100{peer.exportPayload}",
+          "inner": true,
+          "sw": "9000",
+          "response": "{seed.masterPublicKey}0202{peer.id}{id.self}"
         }
       ]
     }

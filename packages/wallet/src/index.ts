@@ -13,6 +13,8 @@ export {
   HARDWARE_DEVICES,
   type AutoLockPolicy,
   type BackupApi,
+  type CardInfo,
+  type CardWalletInfo,
   type DataKeyApi,
   type DerivedNostrKey,
   type ExportedMnemonic,

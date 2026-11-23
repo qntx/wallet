@@ -108,6 +108,13 @@ const UNITS: ReadonlyArray<Unit> = [
     budget: undefined,
     note: "recognizer dispatch — counts toward the share, has no per-unit budget",
   },
+  {
+    name: "card module",
+    match: /^packages\/wallet-kernel\/src\/modules\/card\/(?!protocol\/)/,
+    // measured 132741 B; budget from measurement with ≥ 5 % headroom (2026-11-23)
+    budget: 139_776,
+    note: "card operation engine — record, taps, ops, text (the protocol client has its own line)",
+  },
 ];
 
 /** Application entry points and the runtime exports their importers actually use. */
