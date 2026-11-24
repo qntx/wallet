@@ -6,12 +6,12 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
-import { decodeResponse, encodeCommand } from "../src/modules/ledger/protocol/apdu.ts";
-import type { Exchange } from "../src/modules/ledger/protocol/apdu.ts";
-import { Reader } from "../src/modules/ledger/protocol/bytes.ts";
-import { appAndVersion, requireApp } from "../src/modules/ledger/protocol/device.ts";
-import { LedgerError } from "../src/modules/ledger/protocol/errors.ts";
-import { statusError } from "../src/modules/ledger/protocol/status.ts";
+import { decodeResponse, encodeCommand } from "../src/modules/signers/ledger/protocol/apdu.ts";
+import type { Exchange } from "../src/modules/signers/ledger/protocol/apdu.ts";
+import { Reader } from "../src/modules/signers/ledger/protocol/bytes.ts";
+import { appAndVersion, requireApp } from "../src/modules/signers/ledger/protocol/device.ts";
+import { LedgerError } from "../src/modules/signers/ledger/protocol/errors.ts";
+import { statusError } from "../src/modules/signers/ledger/protocol/status.ts";
 
 const RUNS = Number(process.env["FUZZ_RUNS"] ?? "2000");
 

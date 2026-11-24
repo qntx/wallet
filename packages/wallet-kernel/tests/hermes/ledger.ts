@@ -11,15 +11,24 @@ import btc from "../../../../vectors/ledger/bitcoin.json" with { type: "json" };
 import eth from "../../../../vectors/ledger/ethereum.json" with { type: "json" };
 import sol from "../../../../vectors/ledger/solana.json" with { type: "json" };
 import trx from "../../../../vectors/ledger/tron.json" with { type: "json" };
-import type { Exchange } from "../../src/modules/ledger/protocol/apdu.ts";
+import type { Exchange } from "../../src/modules/signers/ledger/protocol/apdu.ts";
 import {
   btcMasterFingerprint,
   btcSignPsbt,
-} from "../../src/modules/ledger/protocol/bitcoin/index.ts";
-import type { BitcoinPolicy } from "../../src/modules/ledger/protocol/bitcoin/policy.ts";
-import { ethAddress, ethSignTransaction } from "../../src/modules/ledger/protocol/ethereum.ts";
-import { solanaAddress, solanaSignTransaction } from "../../src/modules/ledger/protocol/solana.ts";
-import { tronAddress, tronSignTransaction } from "../../src/modules/ledger/protocol/tron.ts";
+} from "../../src/modules/signers/ledger/protocol/bitcoin/index.ts";
+import type { BitcoinPolicy } from "../../src/modules/signers/ledger/protocol/bitcoin/policy.ts";
+import {
+  ethAddress,
+  ethSignTransaction,
+} from "../../src/modules/signers/ledger/protocol/ethereum.ts";
+import {
+  solanaAddress,
+  solanaSignTransaction,
+} from "../../src/modules/signers/ledger/protocol/solana.ts";
+import {
+  tronAddress,
+  tronSignTransaction,
+} from "../../src/modules/signers/ledger/protocol/tron.ts";
 
 const isPolicy = (value: unknown): value is BitcoinPolicy =>
   typeof value === "object" && value !== null && "template" in value && "key" in value;

@@ -13,17 +13,24 @@ import {
   encodeCommand,
   transmit,
   transmitChunks,
-} from "../src/modules/ledger/protocol/apdu.ts";
-import type { Command, Exchange } from "../src/modules/ledger/protocol/apdu.ts";
-import { encodePath, Reader, u16, u32, u64, varint } from "../src/modules/ledger/protocol/bytes.ts";
+} from "../src/modules/signers/ledger/protocol/apdu.ts";
+import type { Command, Exchange } from "../src/modules/signers/ledger/protocol/apdu.ts";
+import {
+  encodePath,
+  Reader,
+  u16,
+  u32,
+  u64,
+  varint,
+} from "../src/modules/signers/ledger/protocol/bytes.ts";
 import {
   LEDGER_APPS,
   openApp,
   quitApp,
   requireApp,
-} from "../src/modules/ledger/protocol/device.ts";
-import { LedgerError } from "../src/modules/ledger/protocol/errors.ts";
-import { statusError } from "../src/modules/ledger/protocol/status.ts";
+} from "../src/modules/signers/ledger/protocol/device.ts";
+import { LedgerError } from "../src/modules/signers/ledger/protocol/errors.ts";
+import { statusError } from "../src/modules/signers/ledger/protocol/status.ts";
 
 const code = async (job: Promise<unknown>): Promise<string> => {
   try {

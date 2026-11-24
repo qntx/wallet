@@ -26,11 +26,11 @@ import {
   btcSignMessage,
   btcSignPsbt,
   btcWalletAddress,
-} from "../../src/modules/ledger/protocol/bitcoin/index.ts";
-import { defaultPolicy } from "../../src/modules/ledger/protocol/bitcoin/policy.ts";
-import type { BitcoinPolicy } from "../../src/modules/ledger/protocol/bitcoin/policy.ts";
-import { varint } from "../../src/modules/ledger/protocol/bytes.ts";
-import { appAndVersion, requireApp } from "../../src/modules/ledger/protocol/device.ts";
+} from "../../src/modules/signers/ledger/protocol/bitcoin/index.ts";
+import { defaultPolicy } from "../../src/modules/signers/ledger/protocol/bitcoin/policy.ts";
+import type { BitcoinPolicy } from "../../src/modules/signers/ledger/protocol/bitcoin/policy.ts";
+import { varint } from "../../src/modules/signers/ledger/protocol/bytes.ts";
+import { appAndVersion, requireApp } from "../../src/modules/signers/ledger/protocol/device.ts";
 import {
   ethAddress,
   ethConfiguration,
@@ -38,13 +38,13 @@ import {
   ethSignPersonalMessage,
   ethSignTransaction,
   ethSignTypedData,
-} from "../../src/modules/ledger/protocol/ethereum.ts";
+} from "../../src/modules/signers/ledger/protocol/ethereum.ts";
 import {
   solanaAddress,
   solanaConfiguration,
   solanaSignOffchainMessage,
   solanaSignTransaction,
-} from "../../src/modules/ledger/protocol/solana.ts";
+} from "../../src/modules/signers/ledger/protocol/solana.ts";
 import {
   tronAddress,
   tronConfiguration,
@@ -52,7 +52,7 @@ import {
   tronSignPersonalMessage,
   tronSignTransaction,
   tronSignTypedDataHash,
-} from "../../src/modules/ledger/protocol/tron.ts";
+} from "../../src/modules/signers/ledger/protocol/tron.ts";
 import { appsJson, hex, unhex } from "./record.ts";
 import type { CaseDef } from "./record.ts";
 

@@ -13,16 +13,16 @@ import type { ChainTemplate } from "@qntx/wallet/protocol";
 
 import { pinnedMaterial } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
-import type { Exchange } from "../../ledger/protocol/apdu.ts";
-import { btcWalletAddress } from "../../ledger/protocol/bitcoin/index.ts";
-import { defaultPolicy } from "../../ledger/protocol/bitcoin/policy.ts";
-import { LedgerError } from "../../ledger/protocol/errors.ts";
-import { ethAddress } from "../../ledger/protocol/ethereum.ts";
-import { solanaAddress } from "../../ledger/protocol/solana.ts";
-import { tronAddress } from "../../ledger/protocol/tron.ts";
 import type { DeviceLink, HardwarePin, VerifyVerdict } from "../driver.ts";
 import { mapLedgerError } from "./errors.ts";
 import { apduExchange, requiredApp } from "./link.ts";
+import type { Exchange } from "./protocol/apdu.ts";
+import { btcWalletAddress } from "./protocol/bitcoin/index.ts";
+import { defaultPolicy } from "./protocol/bitcoin/policy.ts";
+import { LedgerError } from "./protocol/errors.ts";
+import { ethAddress } from "./protocol/ethereum.ts";
+import { solanaAddress } from "./protocol/solana.ts";
+import { tronAddress } from "./protocol/tron.ts";
 
 const BTC_TEMPLATE = new Set<string>(["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"]);
 

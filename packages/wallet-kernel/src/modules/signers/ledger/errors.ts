@@ -6,8 +6,8 @@
  */
 import { KernelError } from "../../../errors.ts";
 import type { KernelErrorCode } from "../../../errors.ts";
-import { LedgerError } from "../../ledger/protocol/errors.ts";
-import type { LedgerErrorCode } from "../../ledger/protocol/errors.ts";
+import { LedgerError } from "./protocol/errors.ts";
+import type { LedgerErrorCode } from "./protocol/errors.ts";
 
 const CODES: Readonly<Record<LedgerErrorCode, KernelErrorCode>> = {
   "device-locked": "device-locked",

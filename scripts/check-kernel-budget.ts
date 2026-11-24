@@ -19,8 +19,8 @@
  *   tree-shaken extras). Kernel infrastructure, not an application unit: it is out of the share and
  *   has its own budget.
  */
-import { existsSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { build } from "vite";
@@ -38,47 +38,22 @@ const CARD_BUDGET = 40_192;
 const SIGNERS_ENTRY = "qntx-budget-signers.ts";
 const SIGNERS_ENTRY_ID = "\0qntx-budget-signers";
 const SIGNERS_MODULE = "packages/wallet-kernel/src/modules/signers/";
-const SIGNERS_FILES = [
-  "index.ts",
-  "driver.ts",
-  "drivers.ts",
-  "operation.ts",
-  "prompt.ts",
-  "record.ts",
-  "keystone/derive.ts",
-  "keystone/driver.ts",
-  "keystone/registry.ts",
-  "keystone/sign.ts",
-  "keystone/sync.ts",
-  "ledger/display.ts",
-  "ledger/driver.ts",
-  "ledger/errors.ts",
-  "ledger/link.ts",
-  "ledger/pair.ts",
-  "ledger/sign.ts",
-  "ledger/verify.ts",
-  "onekey/driver.ts",
-  "onekey/protocol/bitcoin.ts",
-  "onekey/protocol/device.ts",
-  "onekey/protocol/errors.ts",
-  "onekey/protocol/evm-typed-data.ts",
-  "onekey/protocol/evm.ts",
-  "onekey/protocol/frame.ts",
-  "onekey/protocol/index.ts",
-  "onekey/protocol/keys.ts",
-  "onekey/protocol/messages.ts",
-  "onekey/protocol/proto.ts",
-  "onekey/protocol/session.ts",
-  "onekey/protocol/solana.ts",
-  "onekey/protocol/tron.ts",
-];
-// measured 220339 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
-const SIGNERS_BUDGET = 232_000;
-const LEDGER_ENTRY = "qntx-budget-ledger.ts";
-const LEDGER_ENTRY_ID = "\0qntx-budget-ledger";
-const LEDGER_PROTOCOL = "packages/wallet-kernel/src/modules/ledger/protocol/";
-// measured 69217 B (rendered, all exports retained); budget = measurement + ≥ 5 % headroom
-const LEDGER_BUDGET = 72_678;
+
+/** Every .ts file under modules/signers/, relative to the module root — a new driver just lands. */
+const signersFiles = (dir: string): string[] =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? signersFiles(join(dir, entry.name)).map((file) => `${entry.name}/${file}`)
+      : entry.name.endsWith(".ts")
+        ? [entry.name]
+        : [],
+  );
+const SIGNERS_FILES = signersFiles(resolve(ROOT, SIGNERS_MODULE)).toSorted();
+// measured 294411 B (rendered, all exports retained — ledger/protocol moved under the driver,
+// owner decision 2026-11-24: accept the measured size); budget from measurement with ≥ 5 % headroom
+const SIGNERS_BUDGET = 310_000;
+/** Breakdown lines printed every run: shared core files first, then one line per driver dir. */
+const SIGNERS_GROUPS = ["keystone", "ledger", "onekey"];
 
 type Unit = {
   readonly name: string;
@@ -166,15 +141,8 @@ const plugins = (ablate: boolean) => [
       if (id === resolve(ROOT, SIGNERS_ENTRY)) {
         return SIGNERS_ENTRY_ID;
       }
-      if (id === resolve(ROOT, LEDGER_ENTRY)) {
-        return LEDGER_ENTRY_ID;
-      }
       // The virtual entry only references absolute paths; claim them as real files.
-      if (
-        importer === CARD_ENTRY_ID ||
-        importer === SIGNERS_ENTRY_ID ||
-        importer === LEDGER_ENTRY_ID
-      ) {
+      if (importer === CARD_ENTRY_ID || importer === SIGNERS_ENTRY_ID) {
         return id;
       }
       if (id.startsWith(".") || id.startsWith("/") || id.startsWith("\0")) {
@@ -201,9 +169,6 @@ const plugins = (ablate: boolean) => [
         ).join(" ");
         const names = SIGNERS_FILES.map((_file, i) => `s${i}`).join(", ");
         return `import "${resolve(ROOT, ENTRY)}"; ${imports} export { ${names} };`;
-      }
-      if (id === LEDGER_ENTRY_ID) {
-        return `import "${resolve(ROOT, ENTRY)}"; export * from "${resolve(ROOT, LEDGER_PROTOCOL, "index.ts")}";`;
       }
       return ablate ? (STUBS[rel(id)] ?? null) : null;
     },
@@ -257,7 +222,6 @@ const full = await run(false);
 const ablated = await run(true);
 const card = await run(false, CARD_ENTRY);
 const signers = await run(false, SIGNERS_ENTRY);
-const ledger = await run(false, LEDGER_ENTRY);
 
 const delta = full.bytes - ablated.bytes;
 const share = delta / full.bytes;
@@ -312,10 +276,15 @@ if (cardBytes > CARD_BUDGET) {
   breaches.push(`card protocol client: ${cardBytes} B exceeds ${CARD_BUDGET} B`);
 }
 let signersBytes = 0;
+const signersGroups = new Map<string, number>();
 for (const [id, renderedLength] of signers.rendered) {
-  if (id.startsWith(SIGNERS_MODULE)) {
-    signersBytes += renderedLength;
+  if (!id.startsWith(SIGNERS_MODULE)) {
+    continue;
   }
+  signersBytes += renderedLength;
+  const rest = id.slice(SIGNERS_MODULE.length);
+  const group = rest.includes("/") ? (rest.split("/")[0] ?? "core") : "core";
+  signersGroups.set(group, (signersGroups.get(group) ?? 0) + renderedLength);
 }
 const signersDelta = signers.bytes - full.bytes;
 console.log(
@@ -327,22 +296,16 @@ if (signersBytes === 0) {
 if (signersBytes > SIGNERS_BUDGET) {
   breaches.push(`signers module: ${signersBytes} B exceeds ${SIGNERS_BUDGET} B`);
 }
-let ledgerBytes = 0;
-for (const [id, renderedLength] of ledger.rendered) {
-  if (id.startsWith(LEDGER_PROTOCOL)) {
-    ledgerBytes += renderedLength;
+for (const group of [
+  "core",
+  ...SIGNERS_GROUPS,
+  ...[...signersGroups.keys()].filter((name) => name !== "core" && !SIGNERS_GROUPS.includes(name)),
+]) {
+  const bytes = signersGroups.get(group);
+  if (bytes === undefined) {
+    continue;
   }
-}
-const ledgerDelta = ledger.bytes - full.bytes;
-const ledgerLimit = `${LEDGER_BUDGET} B`;
-console.log(
-  `  ${"ledger protocol client".padEnd(26)} ${String(ledgerBytes).padStart(7)} B / ${ledgerLimit}  ${ledgerBytes > LEDGER_BUDGET ? "BREACH " : ""}— ledger protocol client, all exports retained (bundle delta +${ledgerDelta} B)`,
-);
-if (ledgerBytes === 0) {
-  breaches.push(`ledger protocol client: no rendered modules under ${LEDGER_PROTOCOL}`);
-}
-if (ledgerBytes > LEDGER_BUDGET) {
-  breaches.push(`ledger protocol client: ${ledgerBytes} B exceeds ${LEDGER_BUDGET} B`);
+  console.log(`    ${group.padEnd(24)} ${String(bytes).padStart(7)} B`);
 }
 console.log(
   "note: prompt rows for hyperliquid/polymarket inside modules/chains/prompt.ts share a file with core rows and are not attributed.",

@@ -18,7 +18,7 @@ import { afterAll, describe, expect, it } from "vite-plus/test";
 
 import { tronMessageDigest } from "@qntx/wallet-chains/tron";
 
-import type { LedgerApp } from "../../src/modules/ledger/protocol/device.ts";
+import type { LedgerApp } from "../../src/modules/signers/ledger/protocol/device.ts";
 import {
   BITCOIN_CASES,
   COMPLEX,

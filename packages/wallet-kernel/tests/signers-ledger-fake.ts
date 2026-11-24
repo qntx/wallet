@@ -15,9 +15,9 @@ import { mnemonicToSeedSync } from "@scure/bip39";
 import type { DeviceRequest, DeviceResponse } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
-import { LEDGER_APPS } from "../src/modules/ledger/protocol/device.ts";
-import type { LedgerApp } from "../src/modules/ledger/protocol/device.ts";
 import type { DeviceLink } from "../src/modules/signers/driver.ts";
+import { LEDGER_APPS } from "../src/modules/signers/ledger/protocol/device.ts";
+import type { LedgerApp } from "../src/modules/signers/ledger/protocol/device.ts";
 
 /** The speculos seed every recorded ledger vector derives from (vectors/ledger/*.json `seed`). */
 export const MNEMONIC: string = (() => {

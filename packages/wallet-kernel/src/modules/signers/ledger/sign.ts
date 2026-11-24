@@ -31,30 +31,30 @@ import type { ChainSignRequest } from "@qntx/wallet/protocol";
 import { pinnedMaterial } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
 import type { ChainPlan } from "../../chains/run.ts";
-import type { Exchange } from "../../ledger/protocol/apdu.ts";
-import { btcSignMessage, btcSignPsbt } from "../../ledger/protocol/bitcoin/index.ts";
-import { defaultPolicy } from "../../ledger/protocol/bitcoin/policy.ts";
+import type { DeviceLink, SignContext } from "../driver.ts";
+import { solanaClears, solanaOffchain, tronSettings } from "./display.ts";
+import { call } from "./errors.ts";
+import { apduExchange, requiredApp } from "./link.ts";
+import type { Exchange } from "./protocol/apdu.ts";
+import { btcSignMessage, btcSignPsbt } from "./protocol/bitcoin/index.ts";
+import { defaultPolicy } from "./protocol/bitcoin/policy.ts";
 import {
   ethConfiguration,
   ethSignPersonalMessage,
   ethSignTransaction,
   ethSignTypedData,
-} from "../../ledger/protocol/ethereum.ts";
+} from "./protocol/ethereum.ts";
 import {
   solanaConfiguration,
   solanaSignOffchainMessage,
   solanaSignTransaction,
-} from "../../ledger/protocol/solana.ts";
+} from "./protocol/solana.ts";
 import {
   tronConfiguration,
   tronSignPersonalMessage,
   tronSignTransaction,
   tronSignTypedDataHash,
-} from "../../ledger/protocol/tron.ts";
-import type { DeviceLink, SignContext } from "../driver.ts";
-import { solanaClears, solanaOffchain, tronSettings } from "./display.ts";
-import { call } from "./errors.ts";
-import { apduExchange, requiredApp } from "./link.ts";
+} from "./protocol/tron.ts";
 
 function integrity(): never {
   throw new KernelError("integrity", "malformed device sign exchange");

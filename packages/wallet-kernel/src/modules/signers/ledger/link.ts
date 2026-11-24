@@ -6,11 +6,11 @@
  * minimum version before any operation-specific exchange.
  */
 import { KernelError } from "../../../errors.ts";
-import type { Exchange } from "../../ledger/protocol/apdu.ts";
-import { appAndVersion, requireApp } from "../../ledger/protocol/device.ts";
-import type { AppInfo, LedgerApp } from "../../ledger/protocol/device.ts";
 import type { DeviceLink } from "../driver.ts";
 import { call } from "./errors.ts";
+import type { Exchange } from "./protocol/apdu.ts";
+import { appAndVersion, requireApp } from "./protocol/device.ts";
+import type { AppInfo, LedgerApp } from "./protocol/device.ts";
 
 export const apduExchange = (link: DeviceLink): Exchange => {
   const exchange: Exchange = async (apdu) => {

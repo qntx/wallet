@@ -9,9 +9,9 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import type { Exchange } from "../../src/modules/ledger/protocol/apdu.ts";
-import type { LedgerApp } from "../../src/modules/ledger/protocol/device.ts";
-import { LedgerError } from "../../src/modules/ledger/protocol/errors.ts";
+import type { Exchange } from "../../src/modules/signers/ledger/protocol/apdu.ts";
+import type { LedgerApp } from "../../src/modules/signers/ledger/protocol/device.ts";
+import { LedgerError } from "../../src/modules/signers/ledger/protocol/errors.ts";
 import { exchange as liveExchange, Screen } from "./harness.ts";
 
 export const RECORD: boolean = process.env["LEDGER_RECORD"] === "1";

@@ -9,9 +9,9 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vite-plus/test";
 
-import type { Exchange } from "../src/modules/ledger/protocol/apdu.ts";
-import type { LedgerApp } from "../src/modules/ledger/protocol/device.ts";
-import { LedgerError } from "../src/modules/ledger/protocol/errors.ts";
+import type { Exchange } from "../src/modules/signers/ledger/protocol/apdu.ts";
+import type { LedgerApp } from "../src/modules/signers/ledger/protocol/device.ts";
+import { LedgerError } from "../src/modules/signers/ledger/protocol/errors.ts";
 import {
   BITCOIN_CASES,
   ETHEREUM_CASES,

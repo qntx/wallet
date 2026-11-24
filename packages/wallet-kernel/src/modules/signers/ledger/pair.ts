@@ -13,14 +13,14 @@ import type { KeyPath } from "@qntx/wallet-chains";
 
 import type { PinnedNode } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
-import { btcExtendedPublicKey, btcMasterFingerprint } from "../../ledger/protocol/bitcoin/index.ts";
-import type { LedgerApp } from "../../ledger/protocol/device.ts";
-import { ethPublicNode } from "../../ledger/protocol/ethereum.ts";
-import { solanaAddress } from "../../ledger/protocol/solana.ts";
-import { tronPublicNode } from "../../ledger/protocol/tron.ts";
 import type { DeviceLink, HardwarePin, PairingResult } from "../driver.ts";
 import { call } from "./errors.ts";
 import { apduExchange, requiredApp } from "./link.ts";
+import { btcExtendedPublicKey, btcMasterFingerprint } from "./protocol/bitcoin/index.ts";
+import type { LedgerApp } from "./protocol/device.ts";
+import { ethPublicNode } from "./protocol/ethereum.ts";
+import { solanaAddress } from "./protocol/solana.ts";
+import { tronPublicNode } from "./protocol/tron.ts";
 
 const HARDENED = 0x80_00_00_00;
 const PAIR_PURPOSES = [44, 49, 84, 86] as const;

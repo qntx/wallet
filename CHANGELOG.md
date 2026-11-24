@@ -1123,7 +1123,7 @@ Gateway (operators):
   (not in the Ethereum app's default build since 1.24.0), raw Solana messages that are not formal
   off-chain documents, BIP-322 (Bitcoin app 2.6.0 is not released to devices), mixed-template
   PSBTs, non-mainnet Bitcoin.
-- The Ledger protocol client (`modules/ledger/protocol/`): a pure, Hermes-safe implementation of
+- The Ledger protocol client (`modules/signers/ledger/protocol/`): a pure, Hermes-safe implementation of
   the documented APDU protocols of the Bitcoin (v2: merkleized PSBTv2, default wallet policies,
   bounded interactive client), Ethereum (incl. EIP-712 full mode and the legacy safe-chunk rule),
   Solana and Tron apps; no vendor SDK (none runs in the bare kernel runtime). Exact reply parsing:

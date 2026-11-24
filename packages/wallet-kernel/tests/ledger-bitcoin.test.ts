@@ -16,7 +16,7 @@ import { p2wpkh, Transaction } from "@scure/btc-signer";
 import { taprootTweakPubkey } from "@scure/btc-signer/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { Command, Exchange } from "../src/modules/ledger/protocol/apdu.ts";
+import type { Command, Exchange } from "../src/modules/signers/ledger/protocol/apdu.ts";
 import {
   interact,
   knownList,
@@ -24,29 +24,29 @@ import {
   knownWalletPolicy,
   maxRounds,
   newKnown,
-} from "../src/modules/ledger/protocol/bitcoin/client.ts";
+} from "../src/modules/signers/ledger/protocol/bitcoin/client.ts";
 import {
   btcExtendedPublicKey,
   btcMasterFingerprint,
   btcSignMessage,
   btcSignPsbt,
   btcWalletAddress,
-} from "../src/modules/ledger/protocol/bitcoin/index.ts";
+} from "../src/modules/signers/ledger/protocol/bitcoin/index.ts";
 import {
   leafHash,
   merkleProof,
   merkleRoot,
-} from "../src/modules/ledger/protocol/bitcoin/merkle.ts";
+} from "../src/modules/signers/ledger/protocol/bitcoin/merkle.ts";
 import {
   defaultPolicy,
   policyId,
   serializePolicy,
-} from "../src/modules/ledger/protocol/bitcoin/policy.ts";
-import type { BitcoinPolicy } from "../src/modules/ledger/protocol/bitcoin/policy.ts";
-import { mapCommitment, psbtV2Maps } from "../src/modules/ledger/protocol/bitcoin/psbt.ts";
-import type { KeyValue } from "../src/modules/ledger/protocol/bitcoin/psbt.ts";
-import { varint } from "../src/modules/ledger/protocol/bytes.ts";
-import { LedgerError } from "../src/modules/ledger/protocol/errors.ts";
+} from "../src/modules/signers/ledger/protocol/bitcoin/policy.ts";
+import type { BitcoinPolicy } from "../src/modules/signers/ledger/protocol/bitcoin/policy.ts";
+import { mapCommitment, psbtV2Maps } from "../src/modules/signers/ledger/protocol/bitcoin/psbt.ts";
+import type { KeyValue } from "../src/modules/signers/ledger/protocol/bitcoin/psbt.ts";
+import { varint } from "../src/modules/signers/ledger/protocol/bytes.ts";
+import { LedgerError } from "../src/modules/signers/ledger/protocol/errors.ts";
 
 const H = 0x80_00_00_00;
 const ACCT = [H + 84, H, H];

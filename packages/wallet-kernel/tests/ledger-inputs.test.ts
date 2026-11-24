@@ -8,15 +8,15 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { TypedDataInput } from "@qntx/wallet-chains/evm";
 
-import type { Exchange } from "../src/modules/ledger/protocol/apdu.ts";
-import { LedgerError } from "../src/modules/ledger/protocol/errors.ts";
+import type { Exchange } from "../src/modules/signers/ledger/protocol/apdu.ts";
+import { LedgerError } from "../src/modules/signers/ledger/protocol/errors.ts";
 import {
   ethSignPersonalMessage,
   ethSignTransaction,
   ethSignTypedData,
-} from "../src/modules/ledger/protocol/ethereum.ts";
-import { solanaSignTransaction } from "../src/modules/ledger/protocol/solana.ts";
-import { tronSignTypedDataHash } from "../src/modules/ledger/protocol/tron.ts";
+} from "../src/modules/signers/ledger/protocol/ethereum.ts";
+import { solanaSignTransaction } from "../src/modules/signers/ledger/protocol/solana.ts";
+import { tronSignTypedDataHash } from "../src/modules/signers/ledger/protocol/tron.ts";
 
 const PATH = [0x80_00_00_2c, 0x80_00_00_3c, 0x80_00_00_00, 0, 0];
 

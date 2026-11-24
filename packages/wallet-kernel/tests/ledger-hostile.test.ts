@@ -5,12 +5,21 @@
 
 import { describe, expect, it } from "vite-plus/test";
 
-import type { Exchange } from "../src/modules/ledger/protocol/apdu.ts";
-import { appAndVersion, requireApp } from "../src/modules/ledger/protocol/device.ts";
-import { LedgerError } from "../src/modules/ledger/protocol/errors.ts";
-import { ethAddress, ethSignPersonalMessage } from "../src/modules/ledger/protocol/ethereum.ts";
-import { solanaAddress, solanaSignTransaction } from "../src/modules/ledger/protocol/solana.ts";
-import { tronAddress, tronSignPersonalMessage } from "../src/modules/ledger/protocol/tron.ts";
+import type { Exchange } from "../src/modules/signers/ledger/protocol/apdu.ts";
+import { appAndVersion, requireApp } from "../src/modules/signers/ledger/protocol/device.ts";
+import { LedgerError } from "../src/modules/signers/ledger/protocol/errors.ts";
+import {
+  ethAddress,
+  ethSignPersonalMessage,
+} from "../src/modules/signers/ledger/protocol/ethereum.ts";
+import {
+  solanaAddress,
+  solanaSignTransaction,
+} from "../src/modules/signers/ledger/protocol/solana.ts";
+import {
+  tronAddress,
+  tronSignPersonalMessage,
+} from "../src/modules/signers/ledger/protocol/tron.ts";
 
 const PATH = [0x80_00_00_2c, 0x80_00_00_3c, 0x80_00_00_00, 0, 0];
 const SOL_PATH = [0x80_00_00_2c, 0x80_00_01_f5, 0x80_00_00_00, 0x80_00_00_00];

@@ -18,10 +18,10 @@ import type { ChainSignRequest, ChainTemplate } from "@qntx/wallet/protocol";
 import type { PinnedNode } from "../src/derive/pinned.ts";
 import { KernelError } from "../src/errors.ts";
 import type { ChainPlan } from "../src/modules/chains/run.ts";
-import { LedgerError } from "../src/modules/ledger/protocol/errors.ts";
 import type { HardwarePin, SignContext } from "../src/modules/signers/driver.ts";
 import { LEDGER_DRIVER } from "../src/modules/signers/ledger/driver.ts";
 import { call, mapLedgerError } from "../src/modules/signers/ledger/errors.ts";
+import { LedgerError } from "../src/modules/signers/ledger/protocol/errors.ts";
 import { edAt, nodeAt } from "./signers-fake.ts";
 import {
   caseSteps,
