@@ -1612,7 +1612,9 @@ vault alongside them.
    the cyclic UR frames to animate and `qrReader` folds scanned frames back into the payload
    (`keystoneQrIo` in the snippet). A `sign` operation takes the same `verify` factor as
    `chains().sign` and its result passes the same verification. `pairKeystone` and
-   `signOnDevice` show the two calls a host makes.
+   `signOnDevice` show the two calls a host makes. An engine host wires the same transports once
+   as `EngineOptions.deviceIo` and the engine's own signing paths run these operations under
+   `engine.signers` (§31) — a host does not call `start` for an engine sign.
 5. **Ledger.** `HARDWARE_DEVICES` gains `"ledger"`; an exhaustive switch over `HardwareDevice`
    needs the new arm. The kernel exchanges one APDU per `{ kind: "message", data }` request and
    the host frames it: `ledgerHidExchange(port, channel)` for USB (WebHID / RN HID — a
@@ -1844,8 +1846,9 @@ that does not opt in. Gateway operators deploy a new Durable Object class.
    token)` whenever the platform hands you a token, then `enable(walletId)` for each wallet the user
    turns notifications on for. `disable(walletId)` and removing a wallet delete its subscriptions.
    `engine.notifications.getState()` shows per-wallet, per-family `active` / `pending` /
-   `failed`, and `device-required` for a family whose addresses live on a hardware device that
-   has not pinned that path — other wallets and families keep subscribing normally.
+   `failed`, and `device-required` for a family whose addresses only an external signer can
+   answer — a hardware device that has not pinned that path, or a card wallet with no cached
+   material for it — while families with material and other wallets subscribe normally.
 3. **Handle deliveries.** iOS: ship a Notification Service Extension; the alert carries
    `mutable-content: 1` and the message under `userInfo.qntx`. Open it with `openPush` from
    `@qntx/wallet-engine/push` (or a native AES-256-GCM port checked against `vectors/push.json`)
@@ -2109,7 +2112,9 @@ The vault gains a `card-wallet` record kind; existing vault wallets are unchange
    operation's `CardOpResult`. A `sign` result is verified exactly like `chains.sign`'s before
    `done` is reported. There is no call that answers a step: the kernel collects the code from
    `SecureInput` and talks to the card itself, and it sets the NFC sheet's text from the decoded
-   request. Starting a second task cancels the first.
+   request. Starting a second task cancels the first. Inside the engine every card signature
+   runs under `engine.signers` as a `card` activity (§31) — a send or dApp request taps without
+   the host calling `start`.
 3. **Operations.** `status`, `add` (register a card that already holds a wallet in this vault),
    `accounts`, `health`, `change-access`, `erase` (`last: true` for the last card of a
    card-generated wallet), `create` (1–3 cards; `source: { kind: "generate" }` or
@@ -2126,7 +2131,7 @@ The vault gains a `card-wallet` record kind; existing vault wallets are unchange
    `card.*` call `unsupported`. Production builds pin no card certificate anchor yet, so every
    card is `card-not-genuine` until a release ships the production anchor.
 6. **New error codes** (§14): `card-not-genuine` (the certificate does not chain to a pinned
-   anchor — never offer to continue), `card-id-mismatch` (another card than the step asked for;
+   anchor, or the card never finished personalisation — never offer to continue), `card-id-mismatch` (another card than the step asked for;
    nothing was sent), `wrong-device` (a card of another wallet), `card-erased`, `card-locked`,
    `card-tampered` (the card's failure counter moved without this wallet — offer `reseal` from
    another member), `card-fault` (the card answered outside the protocol), `card-unsupported` (the
@@ -2141,3 +2146,206 @@ The vault gains a `card-wallet` record kind; existing vault wallets are unchange
    wallets adds the NFC entitlement and the `Info.plist` keys in the package README.
 9. **`@qntx/wallet-native/secure-input`** (`SecureInput`) collects the access code and short ID.
    Never collect a card access code or short ID in a JS `TextInput`.
+
+## 31. Engine signing through external signers
+
+Compiled snippet: [`tests/migration/engine-signers.ts`](tests/migration/engine-signers.ts).
+Additive for a host that pairs no device, except the one breaking change in item 6. Sections 24
+and 30 cover the wallet-level `hardware(wallet)` / `card(wallet)` facades; this section is how the
+engine drives the same signers for its own signing paths.
+
+1. **`EngineOptions.deviceIo`.** The engine runs card and hardware operations itself, so a host
+   wires its transports once at `createWalletEngine`: `deviceIo: (device) => DeviceIo` resolves
+   the paired device kind to the same `DeviceIo` a `hardware(wallet)` call takes
+   (`withDeviceIo` — a Keystone's QR channel is the host's own `DeviceIo`, Ledger and OneKey reuse
+   the shipped `ledgerIo` / `oneKeyIo` over `HidPort` / `BlePort`). Without it every hardware
+   operation answers `unavailable` and nothing publishes an activity. Card wallets need no entry:
+   the kernel talks to the reader itself.
+2. **`engine.signers` — one activity at a time.** `getState` / `store.subscribe` reports
+   `SignersState.active`, a single `SignerActivity` (`walletId`, `custody`, `operation`
+   `sign | accounts | verify-address`, `step` `starting | card | device`); a card operation's
+   `card` steps are the kernel's own steps (mount `SecureInput` on `input`, hold the card on
+   `tap`), a hardware operation's `device` steps are the exchange progress (`describeSignerActivity`,
+   `watchSigners`). Starting a second operation while one runs refuses `conflict` and never
+   touches the running one — a `conflict` is safe to queue behind; locking the vault cancels the
+   running operation (`cancelSigner`).
+3. **Every engine signature runs through it.** Sends, dApp requests, revokes, NFT sends, app
+   enables — the request wallet's custody decides: a vault wallet signs through `chains`, a card
+   wallet runs a card task, a hardware wallet a device operation. What the kernel already refuses
+   stays refused and lands before any activity publishes: `sessions.create`, Spark and Nostr
+   answer `unsupported`, a Fiat24 session grant `invalid-input`.
+4. **`fetchAccounts` and `AccountGroup.signer`.** A group on an external signer has no public
+   material for a family until the signer exports it: the family's entry in the group's `signer`
+   map is `device-required` — discovery neither counts it used nor errored, and a group whose
+   every chain family waits on the signer stops discovery.
+   `engine.signers.fetchAccounts({ walletId, groupIndex, family })` runs the accounts operation
+   (hardware with the family's app open; a card tap; Bitcoin derives once per enabled network,
+   the other families once) and re-runs that family's check when the material lands
+   (`fetchMissingFamily`).
+5. **`verifyAddress`** (`checkAddressOnDevice`) shows an address on the device's screen —
+   hardware only; a card answers `unsupported`. The user's on-screen rejection reports
+   `device-rejected`.
+6. **`TransactionController` `Options.chains` is required** — the transaction controller signs
+   through the injected apis so a card or hardware request routes to its signer; what was a test
+   seam defaulting to `chains(wallet)` is now a required option. A host constructing the
+   controller directly passes `chains(wallet)` for vault-only use or the engine's signer-aware
+   `apis`.
+7. **Account-tree wallet entries carry `custody` and `state`** (`walletRow`). `incomplete` — a
+   card wallet still waiting on a member card — has no groups and no addresses:
+   `transactions.nextReceiveAddress` and any send on it throw until the wallet is `ready`, and
+   notifications report `device-required` for a card wallet's uncached families exactly like a
+   hardware device's (§27).
+
+[`tests/migration/engine-signers.ts`](tests/migration/engine-signers.ts):
+
+```ts
+/**
+ * Engine signing through external signers: `EngineOptions.deviceIo` hands the engine the host's
+ * per-device transport; `engine.signers` reports the one card/hardware operation that can run at a
+ * time and offers `cancel`, `verifyAddress` and `fetchAccounts`; the account tree marks the
+ * families only the signer can answer and the wallets still waiting on a member card.
+ */
+import { WalletError } from "@qntx/wallet";
+import type {
+  AccountGroup,
+  AccountTreeState,
+  EngineOptions,
+  SignerActivity,
+  SignerFamily,
+  WalletEngine,
+} from "@qntx/wallet-engine";
+import { ledgerHidExchange, ledgerIo, oneKeyHidExchange, oneKeyIo } from "@qntx/wallet/hardware";
+import type { DeviceIo, HardwareDevice, HidPort } from "@qntx/wallet/hardware";
+
+/**
+ * `EngineOptions.deviceIo` is the same `DeviceIo` a `hardware(wallet)` call takes, resolved per
+ * paired device kind — the engine runs the device operations itself now, so a host wires its
+ * transports once at `createWalletEngine` instead of passing `io` to every call. A Keystone's QR
+ * channel is the host's own `DeviceIo` (§24's `keystoneQrIo`); Ledger and OneKey reuse the shipped
+ * exchanges. Card wallets need no entry here: the kernel talks to the reader itself.
+ */
+export const withDeviceIo = (
+  options: EngineOptions,
+  transports: {
+    readonly keystoneQr: () => DeviceIo;
+    readonly ledgerHid: () => HidPort;
+    readonly oneKeyHid: () => HidPort;
+  },
+): EngineOptions => ({
+  ...options,
+  // oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
+  deviceIo: (device: HardwareDevice): DeviceIo => {
+    switch (device) {
+      case "keystone":
+        return transports.keystoneQr();
+      case "ledger":
+        return ledgerIo(ledgerHidExchange(transports.ledgerHid(), 0x2a3f));
+      case "onekey":
+        return oneKeyIo(oneKeyHidExchange(transports.oneKeyHid()));
+    }
+  },
+});
+
+/**
+ * At most one signer operation runs at a time, for every custody: `engine.signers.getState()` (or
+ * `store.subscribe`) reports it as one `SignerActivity` — `starting`, then `card` steps (the card
+ * task's own steps: mount `SecureInput` on `input`, hold the card on `tap`) or `device` exchanges —
+ * and the activity clears when the operation ends. A second start while one runs fails `conflict`
+ * and leaves the running operation alone; locking the vault cancels it.
+ */
+// oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
+export function describeSignerActivity(
+  // oxlint-disable-next-line typescript/no-restricted-types -- spec shape: no activity → null
+  activity: SignerActivity | null,
+): string {
+  if (activity === null) {
+    return "idle";
+  }
+  const who = `${activity.custody} ${activity.walletId} (${activity.operation})`;
+  switch (activity.step.kind) {
+    case "starting":
+      return `${who}: starting`;
+    case "card":
+      return `${who}: card ${activity.step.step.kind}`;
+    case "device":
+      return `${who}: device exchange`;
+  }
+}
+
+/** Wire the activity feed into UI; the unsubscribe handle ends it. */
+export function watchSigners(engine: WalletEngine, show: (text: string) => void): () => void {
+  return engine.signers.store.subscribe((state) => {
+    show(describeSignerActivity(state.active));
+  });
+}
+
+/** The user cancelled the sheet, or a lock/leave ends the flow: cancel the running operation. */
+export async function cancelSigner(engine: WalletEngine): Promise<void> {
+  await engine.signers.cancel();
+}
+
+/**
+ * A group on an external signer has no material for a family until the device exports it: the
+ * family's `signer` map entry is `device-required` and discovery neither counts it used nor errored
+ * — the group stops being provable once every chain family waits on the signer.
+ * `engine.signers.fetchAccounts` runs the accounts operation (hardware: the family's app on the
+ * device; card: a tap) and re-runs that family's check when the material lands.
+ */
+export async function fetchMissingFamily(
+  engine: WalletEngine,
+  group: AccountGroup,
+  family: SignerFamily,
+): Promise<void> {
+  if (group.signer?.[family] !== "device-required") {
+    return;
+  }
+  try {
+    await engine.signers.fetchAccounts({
+      walletId: group.walletId,
+      groupIndex: group.index,
+      family,
+    });
+  } catch (error) {
+    // Two operations never overlap: queue the fetch behind whatever is running.
+    if (error instanceof WalletError && error.code === "conflict") {
+      return;
+    }
+    throw error;
+  }
+}
+
+/**
+ * `AccountTreeState.wallets` entries carry `custody` and `state`. A `card` wallet still waiting on
+ * a member card is `incomplete`: it has no groups and no addresses (asks like
+ * `transactions.nextReceiveAddress` throw) — show the pending-member UI instead of a receive
+ * address until `ready`.
+ */
+export function walletRow(entry: AccountTreeState["wallets"][number]): {
+  readonly key: string;
+  readonly receiveReady: boolean;
+} {
+  return {
+    key: `${entry.custody}:${entry.walletId}`,
+    receiveReady: entry.state === "ready",
+  };
+}
+
+/**
+ * `verifyAddress` shows an address on the device screen — hardware only; a card has no screen and
+ * answers `unsupported`.
+ */
+export async function checkAddressOnDevice(
+  engine: WalletEngine,
+  walletId: string,
+  groupIndex: number,
+): Promise<string> {
+  const { address } = await engine.signers.verifyAddress({
+    walletId,
+    groupIndex,
+    template: "evm.bip44",
+    network: "eip155:1",
+    index: 0,
+  });
+  return address;
+}
+```

@@ -163,6 +163,9 @@ Engine options, facades and the in-app browser:
   cross-check clients are gone from the engine; controller constructors take new required options
   (`AssetsController` `chains`, `gateway`, `fetch`, `now`; `SparkControllerOptions.random` is
   removed). `engine.bridges.quote` requires `maxFeeBps`. (MIGRATION §2, §13)
+- `@qntx/wallet-engine`: `TransactionController`'s `Options.chains` is required — the controller
+  signs through the injected apis so an external-custody request routes to its signer; what was a
+  test seam defaulting to `chains(wallet)` is a constructor requirement. (MIGRATION §31)
 - `@qntx/wallet-engine`: `RequestEndedError`'s constructor takes a third `signed` argument; read
   `error.signed` to tell whether anything may have been broadcast. `EvmSignInput.nonce` pins the
   nonce of an app's `evm.transaction` (`NonceConflictError` at `prepare`). (MIGRATION §29)
@@ -812,7 +815,8 @@ Gateway (operators):
   the kernel, not yet wired to any kernel command). A self-contained host implementation of the
   qntx card protocol 1 (`qntx/wallet-applet` `spec/protocol.md`): card IDs and short IDs,
   certificate verification against batch anchors (`PRODUCTION_ANCHORS` is empty until the first
-  production batch; a card that chains to no anchor is `card-not-genuine`), `accessHash` through
+  production batch; a card that chains to no anchor — including one that never finished
+  personalisation — is `card-not-genuine`), `accessHash` through
   the injected Argon2id (6–64 printable ASCII characters, `m = 64 MiB, t = 3, p = 4`), OPEN with
   the signed ephemeral ECDH and SP 800-56C key schedule, the AES-CBC/CMAC record layer with
   counters, pre-wrapped records and teardown on any failure (`session-broken`, keys wiped), encoders
@@ -1025,7 +1029,8 @@ Gateway (operators):
   report its settlement or on-chain failure. New `EngineOptions.pushKeys` (`PushKeyStore`) hands the
   per-subscription payload keys to the host for its notification extension. A family whose
   addresses need a hardware device that has not pinned that path reports `device-required` in the
-  per-wallet `NotificationStatus` instead of silently staying pending, and a failing family no
+  per-wallet `NotificationStatus` — the same for a card wallet's family with no cached
+  material — instead of silently staying pending, and a failing family no
   longer aborts the reconcile for the remaining wallets and families.
 - `@qntx/wallet-engine/push`: `openPush(message, keys)`, the dependency-light opener (only
   `@noble/ciphers` and `@scure/base`, no runtime globals) a notification extension or headless task
@@ -1072,14 +1077,18 @@ Gateway (operators):
   serves `wallet.accounts`, including public derivation off the non-hardened tail. A wallet whose
   `custody` is `"hardware"` carries no seed, so no hardware secret ever exists in the kernel.
 - `@qntx/wallet`: `WalletInfo` is a `custody` union — `VaultWalletInfo` (the existing shape) or
-  `HardwareWalletInfo` (`device`, `fingerprint`, optional `model`/`firmware`). `HARDWARE_DEVICES`
+  `HardwareWalletInfo` (`device`, `fingerprint`, optional `model`/`firmware`, and `supported`:
+  whether this build ships a driver for `device` — a wallet paired under a device kind a later
+  build dropped stays inert, not unreadable). `HARDWARE_DEVICES`
   lists the supported devices. Error codes `device-required`, `device-locked`,
   `device-app-closed`, `device-rejected`, `wrong-device`.
 - `@qntx/wallet/hardware`: `hardware(wallet)` — `start(op, { io, verify? })` runs one operation
   (`pair`, `accounts`, `sign`, `verify-address`) over a host-supplied `DeviceIo` and returns a
   `SignerTask`; `sign` takes the same `verify` factor and re-runs the same result checks as
-  `chains().sign`. `qrParts`/`qrReader` are the UR plumbing for air-gapped transports:
-  cyclic uppercase fountain parts and a strict incremental decoder over `@qntx/ur` (optional
+  `chains().sign`. `HidPort`/`BlePort` are the host transport contracts the shipped
+  `ledgerHidExchange`/`ledgerBleExchange`/`oneKeyHidExchange`/`oneKeyBleExchange` run over.
+  `qrParts`/`qrReader` are the UR plumbing for air-gapped transports:
+  cyclic uppercase fountain parts and a strict incremental decoder over `@qntx/ur` 4.0.0 (optional
   peer).
 - **Keystone 3 Pro over QR** (`modules/signers/keystone/`): pairing from the sync
   `crypto-multi-accounts`, per-group account keys via `qr-hardware-call` key derivation (firmware
@@ -1140,6 +1149,25 @@ Gateway (operators):
   device releases on Speculos, replayed byte for byte in unit tests). CI `ledger.yml` builds the
   pinned apps (`scripts/ledger/apps.json`) and re-checks the transcripts and the end-to-end
   signing flow live on Speculos.
+- `@qntx/wallet-engine`: `EngineOptions.deviceIo` — the host's per-device-kind `DeviceIo`
+  factory, wired once at `createWalletEngine` — and `engine.signers`, the engine's
+  external-signer orchestration. `getState`/`store.subscribe` reports the one `SignerActivity`
+  allowed at a time (a card operation publishes the kernel's `card` steps, a hardware operation
+  `device` exchanges); a second start refuses `conflict` without touching the running operation;
+  a vault lock cancels it. `cancel()` ends the running operation; `verifyAddress` shows an
+  address on the device's screen; `fetchAccounts` pulls one family's pinned accounts (Bitcoin
+  once per enabled network, the others once) and re-runs that family's discovery check. Every
+  engine signature routes through it — vault material signs directly, a card request runs a card
+  task, a hardware request a device operation — and the typed refusals (`unsupported` for
+  sessions/Spark/Nostr, `invalid-input` for a Fiat24 session grant) land before any activity
+  publishes. `SignersController`, `SignerActivity`, `SignerFamily` and `SignersState` are
+  exported. (MIGRATION §31)
+- `@qntx/wallet-engine`: the account tree knows external custody. Wallet entries carry
+  `custody` and `state` — an `incomplete` card wallet (still waiting on a member card) holds no
+  groups and no addresses: `nextReceiveAddress` and sends on it throw until it is `ready`.
+  `AccountGroup.signer` marks a family only the signer can answer as `device-required` — neither
+  used nor an error in discovery, and a group whose every chain family waits on the signer ends
+  the scan. (MIGRATION §31)
 
 ### Changed
 
@@ -1317,6 +1345,19 @@ Gateway (operators):
 
 ### Fixed
 
+- `@qntx/wallet-engine`: a second signer operation started while one runs no longer cancels the
+  running one — `card()`/`hardware()` start semantics tore down the tap or device confirmation in
+  progress before the `conflict` refusal; the op now refuses before it starts, and an unsupported
+  device refuses without publishing an activity.
+- `@qntx/wallet-kernel`: fetching a non-bitcoin family's accounts on a Ledger re-proves the live
+  device's identity against the wallet's pinned fingerprint — those apps cannot reveal the master
+  fingerprint, so material from a different device answering could merge undetected.
+- `@qntx/wallet-kernel`: a user rejecting an on-device address verification reports
+  `device-rejected` on every driver — a Ledger rejection was previously read as `wrong-device`,
+  the code reserved for a device showing a different address.
+- `@qntx/wallet`: the OneKey HID/BLE exchanges collect a device answer to its announced length
+  exactly — short HID reports, an empty read and a BLE stream past the declared payload are
+  `integrity` like the Ledger assemblers report them.
 - `@qntx/wallet-native`: the kernel bytecode is compiled with `-Xes6-block-scoping`. hermesc
   leaves ES6 block scoping off by default, so on React Native a closure over a loop-scoped
   `let`/`const` in kernel code saw the last iteration's value. The kernel now refuses to start in
