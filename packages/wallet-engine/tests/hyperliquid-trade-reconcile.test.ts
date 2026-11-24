@@ -40,8 +40,8 @@ const VERIFY = { kind: "password" as const, password: PASSWORD };
 const HL_LIMITS = {
   notional: "1000000000000",
   maxLeverage: 100,
-  assets: [0, 1, 3, 4, 5, 7, 40, 42],
-} as const;
+  assets: [0, 1, 3, 4, 5, 7, 40, 42].map((asset) => ({ asset, size: "1000000" })),
+};
 const NOW = Date.now();
 const DAY = 86_400_000;
 const CLOID = "0x07070707070707070707070707070707";
@@ -1419,7 +1419,7 @@ describe("hyperliquid trade — agents and vectors", () => {
       validUntil: NOW + DAY,
       createdAt: NOW,
       limits: null,
-      spent: "0",
+      spent: null,
     };
     const registry = createHyperliquidAgentRegistry({
       agents: { list: async () => Promise.resolve([agent]) },
@@ -1447,7 +1447,7 @@ describe("hyperliquid trade — agents and vectors", () => {
       validUntil,
       createdAt: NOW,
       limits: null,
-      spent: "0",
+      spent: null,
     });
     const registry = createHyperliquidAgentRegistry({
       agents: {
@@ -1488,7 +1488,7 @@ describe("hyperliquid trade — agents and vectors", () => {
               validUntil: NOW + DAY,
               createdAt: NOW,
               limits: null,
-              spent: "0",
+              spent: null,
             },
           ]),
       },

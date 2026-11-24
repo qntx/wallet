@@ -7,11 +7,11 @@
  *
  * A value-moving scheme (one that declares `metering`) is bound to the limits the user approved:
  * create and `open` verify a factor against the scheme's approval prompt, `sign` refuses until the
- * session is opened in this kernel's memory and charges every action's notional into the record's
- * `spent` — the updated header is committed before the signature leaves the kernel, so a killed
- * kernel never signs past what the vault records. On a keystore host whose vault still carries a
- * `device` factor the app lock is off and presence cannot be enforced at all: every presence-bound
- * operation answers `app-lock-required`.
+ * session is opened in this kernel's memory and charges every action into the record's `spent` —
+ * the updated header is committed before the signature leaves the kernel, so a killed kernel never
+ * signs past what the vault records. On a keystore host whose vault still carries a `device` factor
+ * the app lock is off and presence cannot be enforced at all: every presence-bound operation
+ * answers `app-lock-required`.
  */
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { HDKey } from "@scure/bip32";
@@ -25,7 +25,7 @@ import type { Handler } from "../../commands/context.ts";
 import { withWalletSeed } from "../../commands/vault.ts";
 import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt, KernelPlatform } from "../../platform.ts";
-import { promptLocale } from "../../prompts.ts";
+import { PROMPT_BOUNDS, promptFits, promptLocale } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import type { StoredRecord, VaultImage } from "../../vault/store.ts";
 import {
@@ -42,6 +42,12 @@ import { isSchemeId, schemeOf } from "./schemes/index.ts";
 
 /** At most 64 live session keys across schemes — also the protocol's sessions.list array cap. */
 const MAX_SESSIONS = 64;
+/* At most this many unexpired metered sessions may share one owner and scope: the engine keeps one
+   agent per account and network plus one more during renewal. Each session's limits are separately
+   approved, so the aggregate exposure per account and network is the sum of at most two approvals —
+   the venue's own allowance (1 unnamed + 3 named agents per account plus 2 named per sub-account,
+   docs exchange-endpoint §Approve an API wallet) is too loose to rely on. */
+const MAX_METERED_PER_OWNER = 2;
 /** Random draws retried before giving up on a valid secp256k1 scalar. */
 const MAX_KEY_DRAWS = 8;
 
@@ -85,14 +91,15 @@ const assertAppLock = (
 const meteredHeader = (
   metering: SessionMetering,
   header: SessionHeader,
-): { limits: unknown; spent: string } => {
+): { limits: unknown; spent: unknown } => {
   if (header.limits === undefined || header.spent === undefined) {
     throw new KernelError("integrity", "the session record carries no metering", undefined, true);
   }
   try {
-    return { limits: metering.parseLimits(header.limits), spent: header.spent };
+    const limits = metering.parseLimits(header.limits);
+    return { limits, spent: metering.parseSpent(header.spent, limits) };
   } catch {
-    throw new KernelError("integrity", "invalid session limits in the vault", undefined, true);
+    throw new KernelError("integrity", "invalid session metering in the vault", undefined, true);
   }
 };
 
@@ -101,7 +108,7 @@ const approvalPrompt =
   (
     platform: KernelPlatform,
     metering: SessionMetering,
-    session: { scope: string; name: string; validUntil: number; limits: unknown; spent: string },
+    session: { scope: string; name: string; validUntil: number; limits: unknown; spent: unknown },
     open: boolean,
   ) =>
   (): KeystorePrompt =>
@@ -122,7 +129,7 @@ export function sessionInfo(record: StoredRecord): SessionInfo {
     validUntil: header.validUntil,
     createdAt: header.createdAt,
     limits: header.limits ?? null,
-    spent: header.spent ?? "0",
+    spent: header.spent ?? null,
   };
 }
 
@@ -168,17 +175,63 @@ export const createSession: (opened: Set<string>) => Handler<"sessions.create"> 
       throw new KernelError("invalid-input", "the scheme takes no limits");
     }
     const records = ctx.image.records.filter((record) => record.kind === SESSION_KIND);
+    let perOwner = 0;
+    let perScheme = 0;
+    for (const record of records) {
+      const header = parseSessionHeader(record.header);
+      if (header.scheme !== scheme.id) {
+        continue;
+      }
+      perScheme++;
+      if (
+        header.walletId === params.owner.walletId &&
+        header.groupIndex === params.owner.groupIndex &&
+        header.scope === scope &&
+        now < header.validUntil
+      ) {
+        perOwner++;
+      }
+    }
     if (
       records.length >= MAX_SESSIONS ||
-      records.filter((record) => parseSessionHeader(record.header).scheme === scheme.id).length >=
-        scheme.maxPerVault
+      perScheme >= scheme.maxPerVault ||
+      (metering !== undefined && perOwner >= MAX_METERED_PER_OWNER)
     ) {
       throw new KernelError("conflict", "session limit reached");
     }
     /* Presence before the expensive derivations: on an app-lock-less keystore host the scheme
        refuses here, before any verification prompt could appear. */
     assertAppLock(ctx.platform, ctx.image, metering);
-    if (metering !== undefined) {
+    if (metering !== undefined && limits !== undefined) {
+      const approval = {
+        scope,
+        name: params.name,
+        validUntil: params.validUntil,
+        limits,
+      };
+      /* On a keystore host the approval text goes to a bounded system dialog: the create variant
+         and the open variant at its longest must both fit, so no later open can overflow. A host
+         without a keystore shows no system dialog. */
+      const { keystore } = ctx.platform;
+      if (keystore !== undefined) {
+        const locale = promptLocale(keystore.locale);
+        const bound = PROMPT_BOUNDS[keystore.platform];
+        if (
+          !promptFits(
+            metering.prompt({ ...approval, spent: metering.fresh(limits) }, false, locale),
+            bound,
+          ) ||
+          !promptFits(
+            metering.prompt({ ...approval, spent: metering.worstSpent(limits) }, true, locale),
+            bound,
+          )
+        ) {
+          throw new KernelError(
+            "invalid-input",
+            "the session limits do not fit the approval dialog",
+          );
+        }
+      }
       await verifyFactor(
         ctx.platform,
         ctx.image,
@@ -188,7 +241,7 @@ export const createSession: (opened: Set<string>) => Handler<"sessions.create"> 
         approvalPrompt(
           ctx.platform,
           metering,
-          { scope, name: params.name, validUntil: params.validUntil, limits, spent: "0" },
+          { ...approval, spent: metering.fresh(limits) },
           false,
         ),
       );
@@ -222,7 +275,9 @@ export const createSession: (opened: Set<string>) => Handler<"sessions.create"> 
         name: params.name,
         validUntil: params.validUntil,
         createdAt: now,
-        ...(limits === undefined ? {} : { limits, spent: "0" }),
+        ...(metering === undefined || limits === undefined
+          ? {}
+          : { limits, spent: metering.fresh(limits) }),
       });
       const record = sealRecord(
         ctx.platform,
@@ -278,6 +333,26 @@ export const openSession: (opened: Set<string>) => Handler<"sessions.open"> =
     }
     const { limits, spent } = meteredHeader(metering, header);
     assertAppLock(ctx.platform, ctx.image, metering);
+    const { keystore } = ctx.platform;
+    if (
+      keystore !== undefined &&
+      !promptFits(
+        metering.prompt(
+          {
+            scope: header.scope,
+            name: header.name,
+            validUntil: header.validUntil,
+            limits,
+            spent,
+          },
+          true,
+          promptLocale(keystore.locale),
+        ),
+        PROMPT_BOUNDS[keystore.platform],
+      )
+    ) {
+      throw new KernelError("invalid-input", "the session limits do not fit the approval dialog");
+    }
     await verifyFactor(
       ctx.platform,
       ctx.image,
@@ -340,7 +415,7 @@ export const signSession: (opened: Set<string>) => Handler<"sessions.sign"> =
       }
     }
     const typedData = scheme.document(params.params, header, now);
-    let spent: string | undefined;
+    let spent: ProtocolValue | undefined;
     if (metering !== undefined) {
       const metered = meteredHeader(metering, header);
       spent = metering.meter(params.params, metered.limits, metered.spent);

@@ -115,7 +115,12 @@ async function setup(start?: number): Promise<{
  * Generous default limits for tests that only exercise signing — the metering tests pin their own
  * budgets instead. Covers every asset id the oracle vectors carry (0–5) plus a spot id.
  */
-const LIMITS = { notional: "1000000000", maxLeverage: 100, assets: [0, 1, 2, 3, 4, 5, 10107] };
+const LIMITS = {
+  notional: "1000000000",
+  maxLeverage: 100,
+  assets: [0, 1, 2, 3, 4, 5, 10107].map((asset) => ({ asset, size: "1000" })),
+};
+const FRESH_SPENT = { notional: "0", size: LIMITS.assets.map(() => "0") };
 
 const createParams = (
   walletId: string,
@@ -561,7 +566,7 @@ describe("session-key lifecycle", () => {
     const record = sessionRecord(image);
     expect(record?.id).toBe(address.toLowerCase());
     expect(record?.header).toBe(
-      `{"scheme":"${SCHEME}","walletId":"${walletId}","groupIndex":0,"owner":"${EVM_ADDRESS}","scope":"Testnet","name":"bot-2","validUntil":${T0 + 30 * DAY},"createdAt":${T0},"limits":${JSON.stringify(LIMITS)},"spent":"0"}`,
+      `{"scheme":"${SCHEME}","walletId":"${walletId}","groupIndex":0,"owner":"${EVM_ADDRESS}","scope":"Testnet","name":"bot-2","validUntil":${T0 + 30 * DAY},"createdAt":${T0},"limits":${JSON.stringify(LIMITS)},"spent":${JSON.stringify(FRESH_SPENT)}}`,
     );
 
     const list = ok(await h.call("sessions.list", null, session)) as unknown as Array<
@@ -580,7 +585,7 @@ describe("session-key lifecycle", () => {
         validUntil: T0 + 30 * DAY,
         createdAt: T0,
         limits: LIMITS,
-        spent: "0",
+        spent: FRESH_SPENT,
       },
     ]);
 
@@ -617,12 +622,23 @@ describe("session-key lifecycle", () => {
 
   it("caps live sessions of one scheme at 16", async () => {
     const { h, session, walletId } = await setup(T0);
+    /* The per-owner cap would refuse a third agent on one account long before 16, so the 16 live
+       sessions are spread across account groups — the scheme cap is what refuses the 17th. */
     for (let i = 0; i < 16; i++) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- creates run serially on the session
-      await createSession(h, session, walletId, { name: `bot-${i}` });
+      await createSession(h, session, walletId, {
+        name: `bot-${i}`,
+        owner: { walletId, groupIndex: i },
+      });
     }
     expect(
-      errCode(await h.call("sessions.create", createParams(walletId, { name: "bot-16" }), session)),
+      errCode(
+        await h.call(
+          "sessions.create",
+          createParams(walletId, { name: "bot-16", owner: { walletId, groupIndex: 16 } }),
+          session,
+        ),
+      ),
     ).toBe("conflict");
     const list = ok(await h.call("sessions.list", null, session)) as unknown as unknown[];
     expect(list).toHaveLength(16);
@@ -667,10 +683,19 @@ describe("session-key lifecycle", () => {
     }
     for (let i = 0; i < 15; i++) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- creates run serially on the session
-      await createSession(h, session, walletId, { name: `bot-${i}` });
+      await createSession(h, session, walletId, {
+        name: `bot-${i}`,
+        owner: { walletId, groupIndex: i },
+      });
     }
     expect(
-      errCode(await h.call("sessions.create", createParams(walletId, { name: "bot-15" }), session)),
+      errCode(
+        await h.call(
+          "sessions.create",
+          createParams(walletId, { name: "bot-15", owner: { walletId, groupIndex: 15 } }),
+          session,
+        ),
+      ),
     ).toBe("conflict");
     const list = ok(await h.call("sessions.list", null, session)) as unknown as unknown[];
     expect(list).toHaveLength(64);
@@ -899,8 +924,8 @@ describe("session defense-in-depth checks", () => {
         name: "bot-1",
         validUntil: T0 + DAY,
         createdAt: T0,
-        limits: { notional: "10", maxLeverage: 1, assets: [0] },
-        spent: "0",
+        limits: { notional: "10", maxLeverage: 1, assets: [{ asset: 0, size: "10" }] },
+        spent: { notional: "0", size: ["0"] },
       }),
       new Uint8Array(EVM_SECRET), // authentic seal — the key inside is not `wrongId`
     );
@@ -1180,7 +1205,7 @@ describe("unknown schemes stay inert", () => {
         validUntil: T0 + DAY,
         createdAt: T0,
         limits: null,
-        spent: "0",
+        spent: null,
       },
     ]);
 

@@ -92,13 +92,21 @@ Summary, per platform — details in the sections below:
   (`packages/wallet-kernel/src/modules/sessions/sessions.ts:61-76`). While
   a session _is_ open, `sessions.sign` still signs — but bounded:
   - `hyperliquid-l1-agent` enforces the approved `limits` — a notional
-    budget (sum of price × size in each market's quote currency), a
-    `maxLeverage` cap, and an asset allow-list (ids 0..99999; builder-dex
-    HIP-3 ids ≥ 100000 are never admissible). `spent` is committed to the
-    vault record before the signature returns, so relaunching cannot reset
-    it. **The budget is the bound on loss**: the kernel cannot know market
-    prices — a spot asset priced absurdly into a thin book can still lose
-    up to `notional`. TWAP cannot be metered and is refused. Each agent
+    budget buys charge (sum of max(price, triggerPx) × size in each
+    market's quote currency), a `maxLeverage` cap, and a per-asset size
+    cap buys and sells share (ids 0..99999; builder-dex HIP-3 ids ≥ 100000
+    are never admissible). `spent` is committed to the vault record before
+    the signature returns, so relaunching cannot reset it. **The limits
+    are the bound on loss**: the kernel cannot know market prices, so a
+    sell's self-declared price never bounds it — buys lose at most
+    `notional`; sells (and shorts) dispose of at most `size` of each
+    listed asset at any price the exchange accepts (its far-from-oracle
+    price bands are unverified and not relied on). Cancels are free but
+    stay inside the allow-list so a session cannot strip protection on
+    positions it never touched, and at most two live metered sessions may
+    share one account and network, so the aggregate exposure is the sum of
+    at most two approvals. TWAP orders cannot be metered and are
+    refused. Each agent
     signature also stays inside a 60 s document window (`expiresAfter`,
     nonce, device clock — the kernel has no trusted time; a clock running
     S ahead stretches post-lock exposure to S + 60 s, and the engine's

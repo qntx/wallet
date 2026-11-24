@@ -580,7 +580,7 @@ signature allow-list covers only the owner account's actions.
 ### Security
 
 > An unlocked agent and a compromised main runtime can place, modify and cancel any order,
-> change leverage, adjust isolated margin, set a scheduled cancel and trade for sub-accounts or
+> change leverage, adjust isolated margin and trade for sub-accounts or
 > vaults — including filling against an attacker's resting orders at extreme prices in an
 > illiquid market, which "trades" funds to the attacker; it can attach a builder fee up to the
 > rate the main account approved. It cannot withdraw, transfer or deposit into vaults: the
@@ -590,7 +590,7 @@ signature allow-list covers only the owner account's actions.
 > time): `assertClock()` refuses to sign when the device is more than 5 s off Hyperliquid's server
 > time, but a compromised main runtime can skip that check, so a device clock running S ahead
 > stretches the window by S (Hyperliquid accepts nonces up to a day ahead); actions already submitted keep their effects (resting
-> orders, a scheduled cancel); deleting the local agent does not revoke it on Hyperliquid (it stays
+> orders); deleting the local agent does not revoke it on Hyperliquid (it stays
 > valid until `validUntil`), but nothing can sign with it again.
 
 ## Polymarket

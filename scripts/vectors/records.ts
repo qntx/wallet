@@ -202,8 +202,12 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
       name: "bot-1",
       validUntil: CREATED_AT + 180 * 86_400_000,
       createdAt: CREATED_AT,
-      limits: { notional: "10000", maxLeverage: 25, assets: [0, 1, 2, 3, 10007] },
-      spent: "0",
+      limits: {
+        notional: "10000",
+        maxLeverage: 25,
+        assets: [0, 1, 2, 3, 10007].map((asset) => ({ asset, size: "10000" })),
+      },
+      spent: { notional: "0", size: ["0", "0", "0", "0", "0"] },
     },
   },
   {

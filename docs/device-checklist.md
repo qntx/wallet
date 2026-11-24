@@ -37,14 +37,16 @@ and emoji to confirm the platform measures code points/glyphs rather than UTF-16
 whose vault holds a `device` factor (app lock off), `sessions.create` and
 `sessions.open` must answer `app-lock-required` before any prompt.
 
-- [ ] iOS — Touch ID / passcode sheet: create a session with the worst-case
-      limits (16 five-digit asset ids, max-length notional, 16-char agent
-      name); confirm the agent name, scope, deadline, budget, leverage cap and
-      asset lines are all visible in both locales.
+- [ ] iOS — Touch ID / passcode sheet: create a session with a large-but-
+      fitting limits set (several five-digit asset ids with size caps,
+      max-length notional, 16-char agent name); confirm the agent name, scope,
+      deadline, buy budget, leverage cap, size-cap lines and the sells note are
+      all visible in both locales — a limits set that does not fit is refused
+      at create, never clipped.
 - [ ] iOS — Face ID device: confirm no kernel text is shown; approval is
       presence-only.
-- [ ] Android: same worst-case prompt — confirm the bound (title ≤ 60,
-      description ≤ 12 lines / 640 code points) is not clipped.
+- [ ] Android: same large limits prompt — confirm the bound (title ≤ 60,
+      description ≤ 12 lines / 640 code points) is met.
 - [ ] Both platforms, app lock off (`device` factor present): create and open
       answer `app-lock-required` with no prompt; with the app lock on, open
       restates the remaining budget.

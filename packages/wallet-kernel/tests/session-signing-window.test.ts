@@ -87,7 +87,14 @@ const setup = async (validUntil = T0 + 32 * DAY) => {
         scope: "Mainnet",
         name: "bot-1",
         validUntil,
-        limits: { notional: "1000000000", maxLeverage: 100, assets: [0, 1] },
+        limits: {
+          notional: "1000000000",
+          maxLeverage: 100,
+          assets: [
+            { asset: 0, size: "1000000000" },
+            { asset: 1, size: "1000000000" },
+          ],
+        },
         verify: PASSKEY(),
       },
       session,

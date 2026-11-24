@@ -7,7 +7,7 @@
  * with a scope flag: every path that enumerates `key` records (chain.sign imported pass,
  * keys.list/export/remove, backups) structurally cannot see it.
  */
-import { isProtocolValue, SESSION_SPENT } from "@qntx/wallet/protocol";
+import { isProtocolValue } from "@qntx/wallet/protocol";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import {
@@ -23,13 +23,13 @@ import type { StoredRecord, VaultImage } from "../../vault/store.ts";
 /** The record kind this module owns. */
 export const SESSION_KIND = "session-key";
 
-/* `limits` and `spent` sit in the header of every metered record this kernel seals — the scheme's
-   approved limits as a canonical JSON object and the charged notional as a canonical decimal.
-   They stay optional on parse: records of schemes this build does not know, and of schemes that
-   declare no metering, may carry neither. A metered scheme's record without them is `integrity`
-   where the sessions handlers use it — this kernel seals metered records only with both.
-   `SESSION_SPENT` is the one decimal grammar the protocol exports, so a value the meter produces
-   always passes the `SessionInfo` validator on the way out. */
+/* `limits` and `spent` sit in the header of every metered record this kernel seals — both are the
+   scheme's canonical JSON objects (the approved limits and the charged metering). They stay
+   optional on parse: records of schemes this build does not know, and of schemes that declare no
+   metering, may carry neither. A metered scheme's record without them is `integrity` where the
+   sessions handlers use it — this kernel seals metered records only with both. The scheme's own
+   strict validators — limits at create, both at every read — are what give the objects meaning;
+   here they only need to be plain JSON objects so a sealed record always parses. */
 
 const SCHEME = /^[a-z][a-z0-9-]{1,31}$/;
 const OWNER = /^0x[0-9a-fA-F]{40}$/;
@@ -50,8 +50,8 @@ export type SessionHeader = {
   readonly createdAt: number;
   /** The scheme's approved limits as a plain JSON object — the scheme itself revalidates it. */
   readonly limits?: ProtocolValue;
-  /** The notional already charged against `limits` — a canonical decimal string. */
-  readonly spent?: string;
+  /** The metering already charged against `limits` — a plain JSON object like `limits`. */
+  readonly spent?: ProtocolValue;
 };
 
 const HEADER_KEYS = [
@@ -66,6 +66,13 @@ const HEADER_KEYS = [
 ] as const;
 
 const HEADER_OPTIONAL = ["limits", "spent"] as const;
+
+const plainObject = (value: unknown): value is ProtocolValue =>
+  isProtocolValue(value) &&
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  !(value instanceof Uint8Array);
 
 const asField =
   (pattern: RegExp) =>
@@ -115,19 +122,16 @@ export function parseSessionHeader(text: string): SessionHeader {
   };
   const { limits, spent } = object;
   if (limits !== undefined) {
-    if (
-      !isProtocolValue(limits) ||
-      typeof limits !== "object" ||
-      limits === null ||
-      Array.isArray(limits) ||
-      limits instanceof Uint8Array
-    ) {
+    if (!plainObject(limits)) {
       throw headerFailure();
     }
     header.limits = limits;
   }
   if (spent !== undefined) {
-    header.spent = asField(SESSION_SPENT)(spent);
+    if (!plainObject(spent)) {
+      throw headerFailure();
+    }
+    header.spent = spent;
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- required fields are set above
   return header as SessionHeader;

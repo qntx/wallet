@@ -2154,7 +2154,10 @@ import { sessions } from "@qntx/wallet/sessions";
 const LIMITS: HyperliquidAgentLimits = {
   notional: "1000",
   maxLeverage: 10,
-  assets: [0, 10_001],
+  assets: [
+    { asset: 0, size: "10" },
+    { asset: 10_001, size: "100" },
+  ],
 };
 
 /** Create approves the limits once; open re-approves the same limits after every lock. */
@@ -2176,7 +2179,7 @@ export async function agentSession(wallet: Wallet, walletId: string): Promise<Se
   if (info === undefined) {
     throw new Error("the session is gone");
   }
-  return info; // info.limits restates LIMITS; info.spent is the charged notional so far.
+  return info; // info.limits restates LIMITS; info.spent is the charged metering so far.
 }
 
 /** Map the metering refusals to UX. */

@@ -9,7 +9,7 @@
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
-import { concat, packArray, packBool, packInt, packMap, packStr } from "./msgpack.ts";
+import { concat, packArray, packBool, packInt, packMap, packStr, u64be } from "./msgpack.ts";
 
 export type HyperliquidNetwork = "Mainnet" | "Testnet";
 
@@ -86,12 +86,6 @@ export type HyperliquidL1Params = {
 };
 
 type Entry = readonly [string, Uint8Array];
-
-const u64be = (value: number): Uint8Array => {
-  const out = new Uint8Array(8);
-  new DataView(out.buffer).setBigUint64(0, BigInt(value));
-  return out;
-};
 
 /** The order-wire map, H2-T order: a,b,p,s,r,t,c? — `c` only when present. */
 const orderWire = (order: HyperliquidL1Order): Uint8Array => {
@@ -250,8 +244,8 @@ export function l1ConnectionId(args: {
   const expiry =
     args.expiresAfter === undefined
       ? new Uint8Array(0)
-      : concat(new Uint8Array([0x00]), u64be(args.expiresAfter));
-  return keccak_256(concat(packed, u64be(args.nonce), vault, expiry));
+      : concat(new Uint8Array([0x00]), u64be(BigInt(args.expiresAfter)));
+  return keccak_256(concat(packed, u64be(BigInt(args.nonce)), vault, expiry));
 }
 
 /* The phantom-agent document the L1 signature covers — the kernel builds it, the host never
@@ -292,13 +286,5 @@ export function hyperliquidL1Document(
   params: HyperliquidL1Params,
   network: HyperliquidNetwork,
 ): string {
-  return phantomAgentTypedData(
-    l1ConnectionId({
-      action: params.action,
-      nonce: params.nonce,
-      ...(params.vaultAddress === undefined ? {} : { vaultAddress: params.vaultAddress }),
-      expiresAfter: params.expiresAfter,
-    }),
-    network,
-  );
+  return phantomAgentTypedData(l1ConnectionId(params), network);
 }
