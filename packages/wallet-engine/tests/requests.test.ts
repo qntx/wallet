@@ -21,12 +21,13 @@ import type { chains } from "@qntx/wallet/chains";
 import { UNIVERSAL_RESOLVER } from "../src/names/ens.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import {
+  AcknowledgementRequiredError,
   BlindSigningDisabledError,
   NonceConflictError,
   REQUEST_TTL_MS,
   RequestController,
 } from "../src/requests/controller.ts";
-import { isRequestOrigin, OriginBusyError } from "../src/requests/types.ts";
+import { isRequestOrigin, OriginBusyError, SignInOriginError } from "../src/requests/types.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -62,6 +63,7 @@ const SEPOLIA = "eip155:11155111";
 const GATEWAY = "https://gw.test";
 const HOST = "https://host.test/evm";
 const VERIFY = { kind: "password" as const, password: "pw" };
+const MESSAGE_SIGNATURE = new Uint8Array(65).fill(7);
 const TYPED_DATA = JSON.stringify({
   types: {
     EIP712Domain: [{ name: "name", type: "string" }],
@@ -642,7 +644,9 @@ function evmWorld(options: {
       }
       return rejectSign
         ? Promise.reject(new Error("cancelled"))
-        : Promise.resolve(fakeSignedEvm(request));
+        : request.kind === "evm.personal-message"
+          ? Promise.resolve({ kind: "evm.personal-message" as const, signature: MESSAGE_SIGNATURE })
+          : Promise.resolve(fakeSignedEvm(request));
     },
   } as unknown as ReturnType<typeof chains>;
   const transactions = new TransactionController({
@@ -1949,13 +1953,31 @@ describe("a scanned QR request in the pipeline", () => {
     );
   });
 
-  it("a sign-in text warns that a QR origin cannot be verified", async () => {
+  it("a QR sign-in for a foreign domain needs the unverifiable-domain acknowledgement", async () => {
     const w = evmWorld({});
     await w.start();
     const request = await w.requests.prepare(
       qrSign(qrMessage(new TextEncoder().encode(SIWE_BODY))),
     );
-    expect(request.risk).toContainEqual({ code: "qr-sign-in-unverified", level: "warning" });
+    expect(request.risk).toStrictEqual([{ code: "qr-sign-in-unverified", level: "danger" }]);
+    // A danger finding must be acknowledged exactly — an unchecked approve refuses.
+    await expect(
+      w.requests.approve(request.id, "evm-sign", { verify: VERIFY }),
+    ).rejects.toBeInstanceOf(AcknowledgementRequiredError);
+    await expect(
+      w.requests.approve(request.id, "evm-sign", approval(request, VERIFY)),
+    ).resolves.toStrictEqual({ kind: "evm.personal-message", signature: MESSAGE_SIGNATURE });
+  });
+
+  it("the same sign-in text from a browser origin is refused at prepare", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await expect(
+      w.requests.prepare({
+        ...evmSign(qrMessage(new TextEncoder().encode(SIWE_BODY))),
+        origin: { kind: "browser", origin: "https://evil.example" },
+      }),
+    ).rejects.toBeInstanceOf(SignInOriginError);
   });
 
   it("a blind message is refused while blind signing is off, like for a dApp", async () => {

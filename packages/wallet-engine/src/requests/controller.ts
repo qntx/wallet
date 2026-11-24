@@ -2018,9 +2018,10 @@ export class RequestController extends Controller<RequestControllerState> {
       return [];
     }
     /* A QR request carries no verifiable page domain: the sign-in's domain claim is display-only,
-       so the domain check cannot run — warn instead. */
+       so the domain check cannot run — the host must surface the unverifiable domain and the
+       user must acknowledge it, matching what a refused dApp origin would have cost. */
     if (origin.kind === "qr") {
-      return [{ code: "qr-sign-in-unverified", level: "warning" }];
+      return [{ code: "qr-sign-in-unverified", level: "danger" }];
     }
     const assessed = assessSignIn({
       signIn,

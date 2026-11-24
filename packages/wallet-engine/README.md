@@ -1043,6 +1043,9 @@ The account must also match: fingerprint, keypath and — where the type carries
 must equal the pinned account (EVM case-insensitive, TRON/Solana exact), else `account-mismatch`.
 Solana and Bitcoin QR requests are sign-only: `send` is refused and broadcasting stays with the
 watch wallet — every response is a signature or an envelope/PSBT the counterpart broadcasts.
+A sign-in message over QR carries no verifiable page domain: where a dApp claiming a foreign
+domain is refused, the QR path prepares with a `qr-sign-in-unverified` danger finding the host
+must surface and the user must acknowledge to approve.
 
 ### Export and inspection
 

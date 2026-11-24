@@ -23,7 +23,9 @@ import type { WalletConnectVerify } from "./types.ts";
  * Request risk, pure. A recipient the wallet has never paid or saved is a `warning`; one that looks
  * like a known address (same first and last four characters, different address) is a `danger` — the
  * shape of an address-poisoning lookalike. Both can apply to one recipient. A page the user trusts
- * despite the phishing list is a `danger`; one that could not be checked is a `warning`.
+ * despite the phishing list is a `danger`; one that could not be checked is a `warning`. A sign-in
+ * over QR carries no verifiable domain at all — a `danger` the user must acknowledge, since a dApp
+ * claiming a domain it does not own is refused outright.
  */
 export type RiskFinding = {
   readonly code:
