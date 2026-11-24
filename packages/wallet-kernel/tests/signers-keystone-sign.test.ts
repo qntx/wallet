@@ -786,7 +786,7 @@ describe("keystone signing byte-identical to local signing", () => {
     const prompt = fake.calls
       .flatMap((c) => (c.op === "open" && c.prompt !== undefined ? [c.prompt] : []))
       .at(-1);
-    expect(prompt?.description.endsWith(devicePromptLine("en", "clear", "keystone"))).toBe(true);
+    expect(prompt?.description.startsWith(devicePromptLine("en", "clear", "keystone"))).toBe(true);
     expect(prompt?.description).toContain("m/84'/0'/0'/1/5000");
   });
 });
