@@ -14,9 +14,11 @@ import { ChainsApi } from '@qntx/wallet/chains';
 import { ChainTemplate } from '@qntx/wallet/protocol';
 import { CooperativeExitResult } from '@qntx/spark';
 import { decodeEvm } from '@qntx/wallet-chains/evm';
+import { DeviceIo } from '@qntx/wallet/hardware';
 import { DisplayExcerpt } from '@qntx/wallet-chains';
 import { Event as Event_2 } from '@qntx/nostr';
 import { Filter } from '@qntx/nostr';
+import { HardwareWalletInfo } from '@qntx/wallet';
 import { InitialFactor } from '@qntx/wallet';
 import { KeyInfo } from '@qntx/wallet';
 import { KeysApi } from '@qntx/wallet';
@@ -1114,6 +1116,9 @@ export type DelegationStatus = {
     readonly address?: string;
 };
 
+// @public
+export type DeviceTransport = (wallet: HardwareWalletInfo) => DeviceIo;
+
 // @public (undocumented)
 type DiscoveryNetworks = {
     readonly client: (network: string) => {
@@ -1236,6 +1241,7 @@ export type EngineOptions = {
     };
     readonly allowLocalhostOrigins?: boolean;
     readonly setTimer?: (ms: number, fn: () => void) => () => void;
+    readonly devices?: DeviceTransport;
     readonly metaSync?: MetaSyncConfig;
     readonly pushKeys?: PushKeyStore;
     readonly sparkApis?: SparkControllerOptions["spark"];
