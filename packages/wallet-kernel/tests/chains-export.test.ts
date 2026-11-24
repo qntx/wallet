@@ -12,7 +12,7 @@ import type { ProtocolValue } from "@qntx/wallet/protocol";
 import type { VaultAnchor } from "../src/platform.ts";
 import { PROMPT_BOUNDS, promptFits } from "../src/prompts.ts";
 import { decodeAnchor } from "../src/vault/anchor.ts";
-import { createHarness } from "./harness.ts";
+import { createHarness, detachTransferables } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { loadVectors } from "./helpers.ts";
 import { fakeKeystore } from "./keystore.ts";
@@ -406,6 +406,51 @@ describe("chain.exportAccount", () => {
       nodes: [{ kind: "leaf", template: "solana.bip44-change" }],
     });
     expect(errCode(solana)).toBe("device-required");
+  });
+
+  it("serves repeated exports and account reads from an intact pin", async () => {
+    const { h, session } = await setup(vectors.wallets[0]!.mnemonic);
+    const begin = ok(
+      await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+    );
+    const done = ok(
+      await h.call(
+        "hardware.step",
+        {
+          opId: strField(begin, "opId"),
+          response: { kind: "qr", ur: { type: "crypto-multi-accounts", cbor: SYNC } },
+        },
+        session,
+      ),
+    );
+    const walletId = strField(field(field(done, "result"), "wallet"), "walletId");
+    const wallet = vectors.wallets[0]!;
+    const nodes = [
+      { kind: "evm.account" },
+      { kind: "leaf", template: "evm.bip44" },
+      { kind: "leaf", template: "solana.bip44-change" },
+    ];
+    const first = await exportAccount(h, session, { walletId, groupIndex: 0, nodes });
+    /* A real port detaches every exact-view buffer the reply carries — the pin must keep its
+       own arrays or the next read sees zeroed keys. */
+    detachTransferables(first);
+    const second = keysOf(
+      await exportAccount(h, session, { walletId, groupIndex: 0, nodes }),
+    );
+    const byPath = new Map(wallet.keys.map((k) => [k.path, k]));
+    for (const key of second) {
+      expectKey(key, byPath.get(key["path"] as string)!);
+    }
+    detachTransferables(second);
+    const accounts = ok(
+      await h.call(
+        "wallet.accounts",
+        { walletId, groupIndex: 0, template: "btc.bip84", network: MAINNET },
+        session,
+      ),
+    );
+    expect(strField(accounts, "fingerprint")).toBe("73c5da0a");
+    expect(strField(accounts, "path")).toBe("m/84'/0'/0'");
   });
 });
 

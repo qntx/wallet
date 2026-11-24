@@ -224,20 +224,20 @@ export const pinnedMaterial = (pin: Pin): PublicMaterial => ({
       if (pin.master === undefined) {
         throw deviceRequired();
       }
-      return pin.master;
+      return new Uint8Array(pin.master);
     }
     const key = nodeAt(pin, path)?.publicKey;
     if (key === undefined || key === null) {
       throw deviceRequired();
     }
-    return key;
+    return new Uint8Array(key);
   },
   ed25519: async (path) => {
     const key = pin.keys.ed25519.find((k) => samePath(k.path, path));
     if (key === undefined) {
       throw deviceRequired();
     }
-    return key.publicKey;
+    return new Uint8Array(key.publicKey);
   },
   extendedPublicKey: async (path, versions: Versions) => {
     const node = path.length === 0 ? undefined : nodeAt(pin, path);
@@ -279,6 +279,6 @@ export const pinnedMaterial = (pin: Pin): PublicMaterial => ({
     if (pin.fingerprint === undefined) {
       throw new KernelError("integrity", "the pin carries neither master key nor fingerprint");
     }
-    return pin.fingerprint;
+    return new Uint8Array(pin.fingerprint);
   },
 });

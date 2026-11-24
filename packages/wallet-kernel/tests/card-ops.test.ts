@@ -47,7 +47,7 @@ import { testSecureInput } from "./card/input.ts";
 import { testCardReader } from "./card/reader.ts";
 import { CA1_ANCHOR } from "./card/sim.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
-import { createHarness } from "./harness.ts";
+import { createHarness, detachTransferables } from "./harness.ts";
 import { quickArgon2id, subtlePbkdf2 } from "./helpers.ts";
 import { fakeKeystore } from "./keystore.ts";
 import { LOOKUP_RECIPIENT, lookupTransferRequest } from "./solana-lookup-fixture.ts";
@@ -3400,5 +3400,56 @@ describe("card sign (fake card)", () => {
         console[name] = fn;
       }
     }
+  });
+
+  it("serves repeated exports and account reads from an intact pin", async () => {
+    const r = await keystoreRig();
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    const nodes = [
+      { kind: "leaf", template: "evm.bip44" },
+      { kind: "leaf", template: "solana.bip44-change" },
+    ];
+    const exportOnce = async () =>
+      ok(
+        await r.h.call(
+          "chain.exportAccount",
+          { walletId, groupIndex: 0, nodes, verify: HARDWARE },
+          r.session,
+        ),
+      );
+    const pubHexes = (res: unknown): ReadonlyArray<string> =>
+      (field(res, "keys") as unknown[]).map((k) =>
+        bytesToHex(field(k, "publicKey") as Uint8Array),
+      );
+    const first = await exportOnce();
+    const firstHexes = pubHexes(first);
+    /* A real port detaches every exact-view buffer the reply carries — the pin must keep its
+       own arrays or the next read sees zeroed keys. */
+    detachTransferables(first);
+    const second = await exportOnce();
+    expect(pubHexes(second)).toStrictEqual(firstHexes);
+    const leafKey = new Uint8Array(
+      field((field(second, "keys") as unknown[])[0], "publicKey") as Uint8Array,
+    );
+    detachTransferables(second);
+    const accounts = ok(
+      await r.h.call(
+        "wallet.accounts",
+        { walletId, groupIndex: 0, template: "evm.bip44", network: "eip155:1" },
+        r.session,
+      ),
+    );
+    expect(strField(accounts, "address")).toBe(evmAddressFromPublicKey(leafKey));
+    const bitcoin = ok(
+      await r.h.call(
+        "wallet.accounts",
+        { walletId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+        r.session,
+      ),
+    );
+    expect(strField(bitcoin, "fingerprint")).toBe(
+      HDKey.fromMasterSeed(seed2).fingerprint.toString(16).padStart(8, "0"),
+    );
   });
 });

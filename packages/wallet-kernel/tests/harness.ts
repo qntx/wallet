@@ -365,3 +365,29 @@ export function createHarness(opts?: {
     },
   };
 }
+
+/**
+ * Detaches every exact-view `Uint8Array` buffer inside `value` — what a real `port.post` does to
+ * the buffers `collectTransferables` lists. Hand the awaited kernel reply to it: kernel internals
+ * must keep no reference to a buffer it posted, and this is how a test proves it.
+ */
+export const detachTransferables = (value: unknown, depth = 0): void => {
+  if (depth > 8 || value === null || typeof value !== "object") {
+    return;
+  }
+  if (value instanceof Uint8Array) {
+    const buffer = value.buffer;
+    if (
+      buffer instanceof ArrayBuffer &&
+      value.byteOffset === 0 &&
+      value.byteLength === buffer.byteLength
+    ) {
+      (buffer as ArrayBuffer & { transfer(): ArrayBuffer }).transfer();
+    }
+    return;
+  }
+  const items: ReadonlyArray<unknown> = Array.isArray(value) ? value : Object.values(value);
+  for (const item of items) {
+    detachTransferables(item, depth + 1);
+  }
+};
