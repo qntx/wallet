@@ -50,9 +50,9 @@ export const oneKeyAnswerLength = (firstChunk: Uint8Array, transport: "usb" | "b
 
 /**
  * Reads `port` until `answerLength(first chunk)` bytes have arrived; returns the whole sequence.
- * Over USB every report is exactly 64 bytes; over BLE a notification may be any size, but the stream
- * must stop exactly at the announced length — a short or long transport read is `integrity`, like
- * the Ledger assembler's violations.
+ * Over USB every report is exactly 64 bytes; over BLE a notification may be any size, but the
+ * stream must stop exactly at the announced length — a short or long transport read is `integrity`,
+ * like the Ledger assembler's violations.
  */
 const collect = async (port: HidPort | BlePort, transport: "usb" | "ble"): Promise<Uint8Array> => {
   const first = await port.read();
