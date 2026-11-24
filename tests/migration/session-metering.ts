@@ -1,8 +1,13 @@
 /**
  * Value-moving session keys are approved and metered (section 31): `sessions.create` and the new
- * `sessions.open` take a `verify` factor, `create` takes the scheme's `limits`, `SessionInfo`
- * reports `limits`/`spent`, and out-of-bounds or app-lock-less use answers `limit-exceeded` /
- * `app-lock-required`. The engine's Hyperliquid `enable`/`renew` take `{ limits, verify }` and
+ * `sessions.open` take a `verify` factor, `create` takes the scheme's `limits` (a notional budget,
+ * a leverage cap and per-asset `{ asset, size }` caps), `SessionInfo` reports `limits`/`spent` —
+ * `spent` is the scheme's `HyperliquidAgentSpent` as opaque `ProtocolValue`, there is no
+ * `SESSION_SPENT` grammar. Out-of-bounds use answers `limit-exceeded`, a third live metered session
+ * per owner and scope `conflict`, an approval text that cannot fit the dialog `invalid-input`, and
+ * app-lock-less use `app-lock-required`; on iOS the limits are confirmed by a 4-digit code on the
+ * secure-input hub (`cancelled` / `unsupported`). Only allow-listed actions sign — `scheduleCancel`
+ * is not among them. The engine's Hyperliquid `enable`/`renew` take `{ limits, verify }` and
  * `provider.reopen(group, verify)` re-approves the agent after a lock; `trade.twap` /
  * `actions.twap` are gone. Compiled only.
  */
@@ -69,6 +74,34 @@ export async function signWithinBudget(
       if (error.code === "app-lock-required") {
         return "app-lock"; // a `device`-factor vault cannot hold a metered session
       }
+    }
+    throw error;
+  }
+}
+
+/**
+ * `spent` is opaque `ProtocolValue` — the scheme's `{ notional, size }` JSON — and `conflict` means
+ * a third live metered session for the same owner and scope; delete one, then retry.
+ */
+export async function createOrReuse(
+  wallet: Wallet,
+  input: Parameters<ReturnType<typeof sessions>["create"]>[0],
+): Promise<{ created: boolean; spent: SessionInfo["spent"] | undefined }> {
+  const api = sessions(wallet);
+  try {
+    await api.create(input);
+    return { created: true, spent: undefined };
+  } catch (error) {
+    if (error instanceof WalletError && error.code === "conflict") {
+      const all = await api.list();
+      const live = all.find(
+        (s) =>
+          s.supported &&
+          s.walletId === input.owner.walletId &&
+          s.groupIndex === input.owner.groupIndex &&
+          s.scope === input.scope,
+      );
+      return { created: false, spent: live?.spent };
     }
     throw error;
   }

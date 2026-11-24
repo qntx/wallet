@@ -110,6 +110,19 @@ Signing and requests:
   verify; `SafeTransaction.refund` is `{ receiver?, gasPrice, amount }` (`gasToken` /
   `refundReceiver` are removed) and `SignInParse` `malformed` carries `claims`. (MIGRATION §13,
   §15, §18)
+- `@qntx/wallet-chains/bitcoin`: `decodeBitcoinPsbt` takes a `BitcoinOwn` (`{ change, unusual }`)
+  as its second argument — an own-key output is hidden as change only when the wallet can
+  discover it (the group's `/1/i` key, a script type a signed input shares, `i` within
+  `BITCOIN_GAP_LIMIT` of the highest proven same-purpose change index); every other own-key
+  output is a verified outflow whose `AssetFlow.ownPath` carries its `m/…` path, plus an
+  `unusual-own-output` `IntentWarning` surfaced to the user as the `bitcoin-unusual-output`
+  warning finding. The engine's own change selection obeys the same rule: change lands on the
+  spending template's own chain at `min(first unused, bound)` — `btc.bip44`/`btc.bip49` sends no
+  longer migrate change to native segwit. (MIGRATION §33)
+- Kernel prompts render every warning row before the detail rows, and a bounded prompt drops only
+  detail rows — a request whose warnings alone cannot fit the dialog is `unsupported` even with
+  blind signing on. `@qntx/wallet-native` locks the session after 15 idle minutes counted on
+  presence-bearing methods only. (MIGRATION §33)
 
 Transactions:
 
@@ -186,17 +199,24 @@ Session keys, apps and native factors:
 
 - `@qntx/wallet/sessions`: a `hyperliquid-l1-agent` session is approved and metered.
   `sessions.create` takes the scheme's `limits` (`HyperliquidAgentLimits` — a notional budget, a
-  `maxLeverage` cap and an asset allow-list of ids 0..99999) and a `verify` factor, and the new
-  `sessions.open(address, verify)` re-approves it after every lock; `sessions.sign` on an
-  unopened session answers `approval-required`, an order outside the approved bounds
-  `limit-exceeded`, and create, open and sign all answer `app-lock-required` while a React Native
-  vault still holds its `device` factor (app lock off). `SessionInfo` gains `limits` and `spent`.
-  (MIGRATION §31)
+  `maxLeverage` cap and per-asset `{ asset, size }` caps over ids 0..99999 that buys and sells
+  both charge) and a `verify` factor, and the new `sessions.open(address, verify)` re-approves it
+  after every lock; `sessions.sign` on an unopened session answers `approval-required`, an order
+  outside the approved bounds `limit-exceeded`, and create, open and sign all answer
+  `app-lock-required` while a React Native vault still holds its `device` factor (app lock off).
+  `SessionInfo` gains `limits` and `spent` (the scheme's `HyperliquidAgentSpent` as opaque
+  `ProtocolValue` — no `SESSION_SPENT` grammar). The signable actions are an explicit allow-list —
+  `scheduleCancel` is not among it — at most two live metered sessions may exist per owner and
+  scope (`conflict`), and an approval text that cannot fit the platform dialog is `invalid-input`.
+  On iOS create/open confirm the limits with a kernel-chosen 4-digit code on the secure-input hub
+  before the factor ceremony — the new `SecureInputKind` `"session-approval"`, `cancelled` on a
+  wrong code, `unsupported` on a host without a secure-input surface. (MIGRATION §31)
 - `@qntx/wallet-engine/apps/hyperliquid`: `enable` and `renew` take `{ limits, verify }`
   (`HyperliquidEnableInput`), and `provider.reopen(group, verify)` re-opens the agent session in
   the kernel. `HyperliquidErrorCategory` gains `reopen-required`, `app-lock-required` and
   `limit-exceeded`. `trade.twap` and `actions.twap` are removed — a TWAP's slices carry no price
-  the kernel can meter (`trade.twapCancel` stays). (MIGRATION §13, §31)
+  the kernel can meter (`trade.twapCancel` stays) — and `trade.scheduleCancel` /
+  `actions.scheduleCancel` are removed with the kernel's allow-list. (MIGRATION §13, §31)
 - `@qntx/wallet`: `BackupFactorInput`'s password arm is `{ kind: "password"; password?: string }`
   — on React Native the kernel collects the entry through `SecureInput` and a `password` field is
   `unsupported`; on Web and Node it stays required. (MIGRATION §8, §30)
@@ -1107,7 +1127,13 @@ Gateway (operators):
   `qrSigner({ engine, wallet }).prepare` binds it (per-family network binding, account match,
   refuse-list) into an ordinary engine request (`prepare` → approve → `respond`) and `exportAccount`
   produces the pairing QR (`crypto-hdkey`, `crypto-account`, `crypto-multi-accounts`) with a
-  `discloses` list for the prompt, `qrFrames` animates the answer. The counterpart side:
+  `discloses` list for the prompt, `qrFrames` animates the answer. A scanned SIWE sign-in is the
+  `qr-sign-in-unverified` `danger` finding — `approve` needs it acknowledged. `inspectQrRequest`
+  reports `displays`, one `QrDisplay` per network encoding a frame can mean (a coin-type `1'` PSBT
+  yields `tb1…` testnet/signet and `bcrt1…` regtest displays; mixed or missing coin types are
+  `network-ambiguous`), and `shownBy` is set only where a device display has a primary source.
+  The export prompt is rendered from the requested nodes — one row per key the QR discloses.
+  The counterpart side:
   `readQrExport`, `qrSignRequest`, `readQrSignature` and the `QrLink`/`QrSignInput`/
   `QrSentRequest`/`QrSignature` types. `WatchAccount.qr` persists a phone link on a watch-only
   account so a Web session can sign through it without holding keys. (MIGRATION §32)

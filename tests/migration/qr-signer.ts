@@ -7,8 +7,15 @@ import type {
   WalletEngine,
   DeviceTransport,
 } from "@qntx/wallet-engine";
-import { createQrScanner, qrFrames, qrSigner, readQrRequest } from "@qntx/wallet-engine/qr";
-import type { QrExport } from "@qntx/wallet-engine/qr";
+import { requiredAcknowledgement } from "@qntx/wallet-engine";
+import {
+  createQrScanner,
+  inspectQrRequest,
+  qrFrames,
+  qrSigner,
+  readQrRequest,
+} from "@qntx/wallet-engine/qr";
+import type { QrExport, QrInspection, QrPayload } from "@qntx/wallet-engine/qr";
 
 /**
  * `RequestOrigin` gains `{ kind: "qr", declared? }` — a request that entered through a scanned UR
@@ -116,4 +123,28 @@ export async function exportForWatch(
     verify,
   });
   return { frames: qrFrames(out.payload), discloses: out.discloses };
+}
+
+/**
+ * A QR sign-in request's `risk` carries the `qr-sign-in-unverified` danger — `approve` refuses it
+ * until `acknowledged` names exactly the findings and checks the request carries.
+ */
+export async function qrSignApproval(
+  engine: WalletEngine,
+  pending: PendingRequest,
+  verify: { kind: "password"; password: string },
+): Promise<void> {
+  await engine.requests.approve(pending.id, "evm-sign", {
+    verify,
+    acknowledged: requiredAcknowledgement(pending),
+  });
+}
+
+/**
+ * `inspectQrRequest` decodes the frame without a wallet: `displays` lists one `QrDisplay` per
+ * network encoding — a coin-type `1'` PSBT yields a `tb1…` (testnet/signet) and a `bcrt1…`
+ * (regtest) display, labelled — and throws `network-ambiguous` on mixed or missing coin types.
+ */
+export function inspectDisplays(payload: QrPayload): QrInspection["displays"] {
+  return inspectQrRequest(readQrRequest(payload)).displays;
 }
