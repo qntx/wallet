@@ -64,4 +64,16 @@ jobs:
           --model ${{ matrix.model }} --out "$RUNNER_TEMP/onekey"
       - run: ONEKEY_TRANSCRIPTS="$RUNNER_TEMP/onekey" bunx vitest run tests/onekey-*.test.ts
         working-directory: packages/wallet-kernel
+      # The engine sessions start from an uninitialized device too: replace the seeded container.
+      - run: |
+          docker rm -f onekey-emu
+          docker run -d --name onekey-emu -p 127.0.0.1:54935:54935/udp -p 127.0.0.1:54936:54936/udp onekey-emu-${{ matrix.model }}
+          sleep 15
+      # The recorder loads the engine harness + @qntx/wallet(-worker) dist — build them first.
+      - run: bunx vp run @qntx/wallet-engine#build
+      - run: >-
+          bun scripts/vectors/onekey-emulator.ts --engine
+          --model ${{ matrix.model }} --out "$RUNNER_TEMP/onekey"
+      - run: ONEKEY_TRANSCRIPTS="$RUNNER_TEMP/onekey" bunx vitest run tests/signers-e2e/onekey.test.ts
+        working-directory: packages/wallet-engine
       - run: bun scripts/vectors/onekey-check.ts --model ${{ matrix.model }} --fresh "$RUNNER_TEMP/onekey"

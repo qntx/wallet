@@ -28,7 +28,7 @@ if (FRESH === "") {
 }
 
 let drift = 0;
-for (const name of ["emulator", "driver"]) {
+for (const name of ["emulator", "driver", "engine"]) {
   const committed = JSON.parse(
     readFileSync(
       resolve(import.meta.dirname, `../../vectors/onekey/${name}-${MODEL}.json`),
