@@ -649,13 +649,13 @@
 	var keyFamily = union(literal("evm"), literal("solana"), literal("bitcoin"), literal("tron"));
 	var publicKey = str(64, /^[0-9a-f]{64}$/);
 	var credentialId = str(1364, /^[A-Za-z0-9_-]+$/);
-	var safeTime$1 = int(0, Number.MAX_SAFE_INTEGER);
+	var safeTime = int(0, Number.MAX_SAFE_INTEGER);
 	var groupIndex = int(0, 2147483647);
 	var keyInfo = obj({
 		keyId,
 		family: keyFamily,
 		address: str(90, /^.+$/),
-		createdAt: safeTime$1
+		createdAt: safeTime
 	});
 	/** Identity indices stop below 2^31 - 1 — the top segment derives the wallet sync key. */
 	var identityIndex = int(0, 2147483646);
@@ -678,20 +678,20 @@
 	var factorInfo$1 = union(obj({
 		kind: literal("device"),
 		id: sessionId,
-		createdAt: safeTime$1
+		createdAt: safeTime
 	}), obj({
 		kind: literal("hardware"),
 		id: sessionId,
-		createdAt: safeTime$1
+		createdAt: safeTime
 	}), obj({
 		kind: literal("passkey"),
 		id: sessionId,
 		credentialId,
-		createdAt: safeTime$1
+		createdAt: safeTime
 	}), obj({
 		kind: literal("password"),
 		id: sessionId,
-		createdAt: safeTime$1
+		createdAt: safeTime
 	}));
 	var RP_ID = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 	var label = (max) => str(max, new RegExp("^\\S(?:.*\\S)?$", "su"));
@@ -752,7 +752,7 @@
 		words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
 		backup: union(literal("none"), literal("passkey"), literal("mnemonic")),
 		passphrase: bool,
-		createdAt: safeTime$1
+		createdAt: safeTime
 	});
 	var walletInfo$1 = union(vaultWalletInfo, obj({
 		custody: literal("hardware"),
@@ -761,7 +761,7 @@
 		fingerprint: str(8, /^[0-9a-f]{8}$/),
 		model: opt(str(64, DEVICE_TEXT$2)),
 		firmware: opt(str(64, DEVICE_TEXT$2)),
-		createdAt: safeTime$1
+		createdAt: safeTime
 	}));
 	/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
 	var passphraseBytes = bytes(1, 1024);
@@ -1007,7 +1007,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-DTUqx_5M.mjs
+	// packages/wallet/dist/protocol-vM7YZI3J.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1054,7 +1054,7 @@
 	var backupInfo = obj({
 		id: str(32, /^[0-9a-f]{32}$/),
 		factors: arr(union(literal("passkey"), literal("password")), 5, 1),
-		createdAt: safeTime$1
+		createdAt: safeTime
 	});
 	var template = union(literal("evm.bip44"), literal("solana.bip44-change"), literal("tron.bip44"), union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84")), literal("btc.bip86"));
 	var btcTemplate = union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84"), literal("btc.bip86"));
@@ -1079,14 +1079,14 @@
 	var evmAddress$1 = str(42, /^0x[0-9a-fA-F]{40}$/);
 	var solanaAddress = str(44, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 	var bitcoinAddress = str(90, /^(bc1|tb1|bcrt1|[13mn2])[a-zA-Z0-9]{4,87}$/);
-	var safeInt = int(0, 9007199254740991);
+	var safeInt$1 = int(0, 9007199254740991);
 	var accessList$1 = arr(obj({
 		address: evmAddress$1,
 		storageKeys: arr(str(66, /^0x[0-9a-fA-F]{64}$/), 256)
 	}), 256);
 	var txBase = {
-		chainId: safeInt,
-		nonce: safeInt,
+		chainId: safeInt$1,
+		nonce: safeInt$1,
 		gas: hexQuantity,
 		value: hexQuantity,
 		data: hexData,
@@ -1375,7 +1375,7 @@
 			index: identityIndex
 		}),
 		publicKey,
-		createdAt: safeTime$1
+		createdAt: safeTime
 	});
 	/** The nostr section of the status payload, composed by protocol/index.ts. */
 	var nostrStatus$1 = obj({ keys: arr(nostrKeyInfo$1, MAX_SNAPSHOT_ITEMS) });
@@ -1386,7 +1386,7 @@
 	var tags = arr(arr(str(MAX_TAG_ITEM), 64), MAX_TAGS);
 	var signEventInput = obj({
 		kind: int(0, 65535),
-		created_at: safeTime$1,
+		created_at: safeTime,
 		tags,
 		content: str(MAX_TEXT),
 		pubkey: opt(publicKey)
@@ -1396,7 +1396,7 @@
 		pubkey: publicKey,
 		sig: hex128,
 		kind: int(0, 65535),
-		created_at: safeTime$1,
+		created_at: safeTime,
 		tags,
 		content: str(MAX_TEXT)
 	});
@@ -1404,7 +1404,7 @@
 		id: publicKey,
 		pubkey: publicKey,
 		kind: int(0, 65535),
-		created_at: safeTime$1,
+		created_at: safeTime,
 		tags,
 		content: str(MAX_TEXT)
 	});
@@ -1530,14 +1530,6 @@
 			result: textResult
 		}
 	};
-	/**
-	* The canonical grammar of a session record's `spent` — the decimal the kernel's meter produces.
-	* The scheme's `positive` params grammar admits at most eight fractional digits, so an
-	* order-notional charge (price × size) is exact at sixteen; the integer part is bounded by the
-	* ~1e15 notional budget `spent` can never exceed. The kernel's record parser and the `SessionInfo`
-	* validator share this one grammar so a value the kernel seals always parses.
-	*/
-	var SESSION_SPENT = /^(?:0|[1-9][0-9]{0,14})(?:\.[0-9]{0,15}[1-9])?$/;
 	var schemeId = str(32, /^[a-z][a-z0-9-]{1,31}$/);
 	var scope = str(64, /^[A-Za-z0-9._:-]{1,64}$/);
 	var evmAddress = str(42, /^0x[0-9a-fA-F]{40}$/);
@@ -1551,10 +1543,10 @@
 		owner: evmAddress,
 		scope,
 		name: str(16, /^[A-Za-z0-9._-]{1,16}$/),
-		validUntil: safeTime$1,
-		createdAt: safeTime$1,
+		validUntil: safeTime,
+		createdAt: safeTime,
 		limits: paramsValue,
-		spent: str(32, SESSION_SPENT)
+		spent: paramsValue
 	});
 	var SESSIONS_METHODS = {
 		"sessions.create": {
@@ -1568,7 +1560,7 @@
 				}),
 				scope,
 				name: str(16, /^[A-Za-z0-9._-]{1,16}$/),
-				validUntil: safeTime$1,
+				validUntil: safeTime,
 				limits: paramsValue,
 				verify: verifier
 			}),
@@ -1744,13 +1736,13 @@
 		domain: str(253),
 		username: str(64, /^[a-z0-9\-_.+]{1,64}$/u),
 		description: str(512),
-		timestamp: safeTime$1
+		timestamp: safeTime
 	}), obj({
 		kind: literal("lightning-address"),
 		action: literal("unregister"),
 		domain: str(253),
 		username: str(64, /^[a-z0-9\-_.+]{1,64}$/u),
-		timestamp: safeTime$1
+		timestamp: safeTime
 	}));
 	var htlcTimeoutRequest = obj({
 		transaction: bytes(1, MAX_TX_BYTES),
@@ -2074,7 +2066,7 @@
 	var lockReason = union(literal("cold-start"), literal("user"), literal("idle"), literal("background"), literal("expired"), literal("crashed"), literal("invalidated"));
 	obj({
 		code: walletErrorCode,
-		retryAt: opt(safeTime$1),
+		retryAt: opt(safeTime),
 		detail: opt(str(80, /^[A-Za-z0-9_.:-]+$/))
 	});
 	obj({
@@ -4220,10 +4212,6 @@
 			reset: {
 				title: "重置钱包",
 				description: "验证设备所有者身份以删除本设备上的全部钱包数据"
-			},
-			"export-account": {
-				title: "连接观察钱包",
-				description: "验证身份以共享公开账户密钥——扩展公钥会暴露该账户的全部地址，但不会泄露任何私钥"
 			}
 		},
 		en: {
@@ -4278,15 +4266,42 @@
 			reset: {
 				title: "Reset wallet",
 				description: "Verify you own this device to erase all wallet data on it"
-			},
-			"export-account": {
-				title: "Connect watch-only wallet",
-				description: "Verify your identity to share public account keys — extended keys reveal every address of the account, never a private key"
 			}
 		}
 	};
 	function corePrompt(locale, kind) {
 		return CORE[locale][kind];
+	}
+	var EXPORT_ACCOUNT = {
+		en: {
+			title: "Connect watch-only wallet",
+			share: (g) => `Share public keys of account ${g} — never a private key`,
+			evmAccount: (path) => `EVM: the addresses of every account of this wallet (${path})`,
+			leaf: (family, g, path) => `${family} address of account ${g} (${path})`,
+			btcAccount: (template, network, g, path) => `Bitcoin ${template} on ${network}: every address of account ${g} (${path})`,
+			btcTemplate: {
+				"btc.bip44": "Legacy (BIP-44)",
+				"btc.bip49": "Wrapped SegWit (BIP-49)",
+				"btc.bip84": "Native SegWit (BIP-84)",
+				"btc.bip86": "Taproot (BIP-86)"
+			}
+		},
+		"zh-Hans": {
+			title: "连接观察钱包",
+			share: (g) => `共享账户 ${g} 的公开密钥——绝不包含私钥`,
+			evmAccount: (path) => `EVM：本钱包所有账户的地址（${path}）`,
+			leaf: (family, g, path) => `${family} 账户 ${g} 的地址（${path}）`,
+			btcAccount: (template, network, g, path) => `${network} ${template}：账户 ${g} 的全部地址（${path}）`,
+			btcTemplate: {
+				"btc.bip44": "传统（BIP-44）",
+				"btc.bip49": "兼容隔离见证（BIP-49）",
+				"btc.bip84": "原生隔离见证（BIP-84）",
+				"btc.bip86": "Taproot（BIP-86）"
+			}
+		}
+	};
+	function exportAccountText(locale) {
+		return EXPORT_ACCOUNT[locale];
 	}
 	/**
 	* The secure-input labels for the kernel's backup-password ceremony: enable asks for the new
@@ -4323,6 +4338,17 @@
 		"zh-Hans": "云备份密钥",
 		en: "Cloud backup key"
 	};
+	var SESSION_APPROVAL_CODE = {
+		"zh-Hans": (code) => `在下方输入 ${code} 以批准以上限额`,
+		en: (code) => `Type ${code} below to approve these limits`
+	};
+	/**
+	* The last line of a `session-approval` label — always last, so a clipped label drops the code line
+	* first and a submitted code proves the lines above it were on screen.
+	*/
+	function sessionApprovalCode(locale, code) {
+		return SESSION_APPROVAL_CODE[locale](code);
+	}
 	/** A prompt thunk for a core operation — the keystore locale is read only when it runs. */
 	var corePromptFor = (keystore, kind) => () => {
 		var _keystore$locale;
@@ -11615,7 +11641,7 @@
 			}
 		});
 	}
-	var EMPTY$2, NULL, restrictedKeys, validateFieldName, findBytes, createView, _0n$5, _1n$4, _2n$3, _8n$1, _10n, _255n, hasOwn, utils, lengthCoder, Bitset, Path, _Reader, _Writer, swapEndianness, wrap$1, isBaseCoder, numberBigint, reverse, coders, bigint, U256LE, U64LE, I64LE, view, intView, U32LE, U32BE, I32LE, U16LE, U8, createBytes, string, flag;
+	var EMPTY$2, NULL, restrictedKeys, validateFieldName, findBytes, createView, _0n$5, _1n$4, _2n$3, _8n$1, _10n, _255n, hasOwn, utils, lengthCoder, Bitset, Path, _Reader, _Writer, swapEndianness, wrap$1, isBaseCoder, numberBigint, reverse, coders, bigint, U256LE, U64LE, I64LE, view, intView, U32LE, U32BE, I32LE, U16LE, U8, createBytes, string, flag$1;
 	var init_micro_packed = __esmMin((() => {
 		init_base();
 		init_defineProperty();
@@ -12269,7 +12295,7 @@
 			if (typeof value !== "string") throw new Error(`expected string, got ${typeof value}`);
 			return value;
 		});
-		flag = (flagValue, xor = false) => {
+		flag$1 = (flagValue, xor = false) => {
 			if (!isBytes$2(flagValue)) throw new TypeError(`flag/flagValue: expected Uint8Array, got ${typeof flagValue}`);
 			if (flagValue.length === 0) throw new Error("flag/flagValue: empty marker");
 			if (typeof xor !== "boolean") throw new TypeError(`flag/xor: expected boolean, got ${typeof xor}`);
@@ -19131,16 +19157,16 @@
 		value: c.value,
 		callData: hex$2(c.data)
 	}))])]);
-	var list = (v) => Array.isArray(v) ? v : [];
+	var list$1 = (v) => Array.isArray(v) ? v : [];
 	var isExecution = (e) => typeof e === "object" && e !== null && "target" in e && "value" in e && "callData" in e && typeof e.target === "string" && isEvmAddress(e.target) && typeof e.value === "bigint" && typeof e.callData === "string";
 	/** Decodes an `execute` call; undefined unless the encoding is canonical batch-default mode. */
 	var decodeBatchExecute = (data) => {
 		try {
-			const [mode, executionData] = list(decodeData(EXECUTE, hex$2(data)));
+			const [mode, executionData] = list$1(decodeData(EXECUTE, hex$2(data)));
 			if (mode !== "0x0100000000000000000000000000000000000000000000000000000000000000" || typeof executionData !== "string") return;
-			const [inner] = list(decode$2(EXECUTIONS, hex$2(executionData)));
+			const [inner] = list$1(decode$2(EXECUTIONS, hex$2(executionData)));
 			const executions = [];
-			for (const e of list(inner)) {
+			for (const e of list$1(inner)) {
 				if (!isExecution(e)) return;
 				executions.push({
 					to: checksumEvmAddress(e.target),
@@ -28285,7 +28311,7 @@ zoo`.split("\n"));
 		new DataView(out.buffer).setBigInt64(0, value);
 		return out;
 	};
-	var u64be$1 = (value) => {
+	var u64be = (value) => {
 		const out = /* @__PURE__ */ new Uint8Array(8);
 		new DataView(out.buffer).setBigUint64(0, value);
 		return out;
@@ -28298,7 +28324,7 @@ zoo`.split("\n"));
 			if (value <= 255) return new Uint8Array([204, value]);
 			if (value <= 65535) return concat$3(new Uint8Array([205]), u16be(value));
 			if (value <= 4294967295) return concat$3(new Uint8Array([206]), u32be(value));
-			return concat$3(new Uint8Array([207]), u64be$1(BigInt(value)));
+			return concat$3(new Uint8Array([207]), u64be(BigInt(value)));
 		}
 		if (value >= -32) return new Uint8Array([value + 256]);
 		if (value >= -128) return new Uint8Array([208, value + 256]);
@@ -28327,11 +28353,6 @@ zoo`.split("\n"));
 			throw new ChainError("invalid-request", "unreachable: msgpack map over 65535 entries");
 		})(), ...entries.flatMap(([key, value]) => [packStr(key), value]));
 	}
-	var u64be = (value) => {
-		const out = /* @__PURE__ */ new Uint8Array(8);
-		new DataView(out.buffer).setBigUint64(0, BigInt(value));
-		return out;
-	};
 	/** The order-wire map, H2-T order: a,b,p,s,r,t,c? — `c` only when present. */
 	var orderWire$1 = (order) => {
 		const t = "limit" in order.t ? packMap([["limit", packMap([["tif", packStr(order.t.limit.tif)]])]]) : packMap([["trigger", packMap([
@@ -28374,11 +28395,6 @@ zoo`.split("\n"));
 				["order", orderWire$1(action.order)]
 			], "a", action.a);
 			case "batchModify": return optFlag([["type", packStr("batchModify")], ["modifies", packArray(action.modifies.map((modify) => packMap([["oid", packOid(modify.oid)], ["order", orderWire$1(modify.order)]])))]], "a", action.a);
-			case "scheduleCancel": {
-				const entries = [["type", packStr("scheduleCancel")]];
-				if (action.time !== void 0) entries.push(["time", packInt(action.time)]);
-				return packMap(entries);
-			}
 			case "updateLeverage": return packMap([
 				["type", packStr("updateLeverage")],
 				["asset", packInt(action.asset)],
@@ -28401,8 +28417,8 @@ zoo`.split("\n"));
 	function l1ConnectionId(args) {
 		const packed = encodeL1Action(args.action);
 		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$3(new Uint8Array([1]), hexToBytes$4(args.vaultAddress.slice(2)));
-		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$3(new Uint8Array([0]), u64be(args.expiresAfter));
-		return keccak_256(concat$3(packed, u64be(args.nonce), vault, expiry));
+		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$3(new Uint8Array([0]), u64be(BigInt(args.expiresAfter)));
+		return keccak_256(concat$3(packed, u64be(BigInt(args.nonce)), vault, expiry));
 	}
 	function phantomAgentTypedData(connectionId, network) {
 		return JSON.stringify({
@@ -28448,10 +28464,7 @@ zoo`.split("\n"));
 	}
 	/** The phantom-agent typed-data JSON an L1 `params` signs, shared by kernel and host. */
 	function hyperliquidL1Document(params, network) {
-		return phantomAgentTypedData(l1ConnectionId(_objectSpread2(_objectSpread2({
-			action: params.action,
-			nonce: params.nonce
-		}, params.vaultAddress === void 0 ? {} : { vaultAddress: params.vaultAddress }), {}, { expiresAfter: params.expiresAfter })), network);
+		return phantomAgentTypedData(l1ConnectionId(params), network);
 	}
 	/**
 	* Normalizes a SignRequest for the EVM family: exact key sets, chainId vs the CAIP-2 `network`,
@@ -32865,7 +32878,7 @@ zoo`.split("\n"));
 	* else — an explicitly-encoded default, a non-minimal form the reader itself missed — is
 	* non-canonical.
 	*/
-	var canonical = (f, encoded) => {
+	var canonical$1 = (f, encoded) => {
 		if (f !== void 0 && !equalBytes$2(f.bytes, encoded !== null && encoded !== void 0 ? encoded : EMPTY$1)) malformed$1("non-canonical encoding");
 	};
 	var encAddress = (n, address) => requiredBytesField(n, tronAddressToBytes(address));
@@ -32876,8 +32889,8 @@ zoo`.split("\n"));
 		const fs = readFields(f.wire === 2 && f.data !== void 0 ? f.data : malformed$1("vote has the wrong wire type"));
 		const witness = addressOf(required(fs, 1, "vote_address"), "vote_address");
 		const count = int64Of(field$1(fs, 2), "vote_count");
-		canonical(required(fs, 1, "vote_address"), encAddress(1, witness));
-		canonical(field$1(fs, 2), encInt(2, count));
+		canonical$1(required(fs, 1, "vote_address"), encAddress(1, witness));
+		canonical$1(field$1(fs, 2), encInt(2, count));
 		return {
 			vote: {
 				witness,
@@ -32890,8 +32903,8 @@ zoo`.split("\n"));
 		const fs = readFields(f.wire === 2 && f.data !== void 0 ? f.data : malformed$1("key has the wrong wire type"));
 		const address = addressOf(required(fs, 1, "key.address"), "key.address");
 		const weight = int64Of(field$1(fs, 2), "key.weight");
-		canonical(required(fs, 1, "key.address"), encAddress(1, address));
-		canonical(field$1(fs, 2), encInt(2, weight));
+		canonical$1(required(fs, 1, "key.address"), encAddress(1, address));
+		canonical$1(field$1(fs, 2), encInt(2, weight));
 		return {
 			key: {
 				address,
@@ -32923,12 +32936,12 @@ zoo`.split("\n"));
 			keys.push(key);
 			extras.push(...extra);
 		}
-		canonical(field$1(fs, 1), encInt(1, type));
-		canonical(field$1(fs, 2), encInt(2, id));
-		canonical(field$1(fs, 3), stringField(3, name));
-		canonical(field$1(fs, 4), encInt(4, threshold));
-		canonical(field$1(fs, 5), encInt(5, parentId));
-		canonical(field$1(fs, 6), encBytes(6, operations));
+		canonical$1(field$1(fs, 1), encInt(1, type));
+		canonical$1(field$1(fs, 2), encInt(2, id));
+		canonical$1(field$1(fs, 3), stringField(3, name));
+		canonical$1(field$1(fs, 4), encInt(4, threshold));
+		canonical$1(field$1(fs, 5), encInt(5, parentId));
+		canonical$1(field$1(fs, 6), encBytes(6, operations));
 		return {
 			permission: {
 				type,
@@ -32948,9 +32961,9 @@ zoo`.split("\n"));
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
 			const to = addressOf(required(fs, 2, "to_address"), "to_address");
 			const amount = int64Of(field$1(fs, 3), "amount");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 2), encAddress(2, to));
-			canonical(field$1(fs, 3), encInt(3, amount));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 2), encAddress(2, to));
+			canonical$1(field$1(fs, 3), encInt(3, amount));
 			return {
 				contract: {
 					type: "TransferContract",
@@ -32971,10 +32984,10 @@ zoo`.split("\n"));
 			const owner = addressOf(required(fs, 2, "owner_address"), "owner_address");
 			const to = addressOf(required(fs, 3, "to_address"), "to_address");
 			const amount = int64Of(field$1(fs, 4), "amount");
-			canonical(field$1(fs, 1), stringField(1, assetId));
-			canonical(field$1(fs, 2), encAddress(2, owner));
-			canonical(field$1(fs, 3), encAddress(3, to));
-			canonical(field$1(fs, 4), encInt(4, amount));
+			canonical$1(field$1(fs, 1), stringField(1, assetId));
+			canonical$1(field$1(fs, 2), encAddress(2, owner));
+			canonical$1(field$1(fs, 3), encAddress(3, to));
+			canonical$1(field$1(fs, 4), encInt(4, amount));
 			return {
 				contract: {
 					type: "TransferAssetContract",
@@ -33006,8 +33019,8 @@ zoo`.split("\n"));
 				extras.push(...extra);
 			}
 			const support = boolOf(field$1(fs, 3), "support");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 3), encBool(3, support));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 3), encBool(3, support));
 			return {
 				contract: {
 					type: "VoteWitnessContract",
@@ -33021,7 +33034,7 @@ zoo`.split("\n"));
 		13(value) {
 			const fs = readFields(value);
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
-			canonical(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
 			return {
 				contract: {
 					type: "WithdrawBalanceContract",
@@ -33038,12 +33051,12 @@ zoo`.split("\n"));
 			const data = bytesOf$3(field$1(fs, 4));
 			const callTokenValue = int64Of(field$1(fs, 5), "call_token_value");
 			const tokenId = int64Of(field$1(fs, 6), "token_id");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 2), encAddress(2, contract));
-			canonical(field$1(fs, 3), encInt(3, callValue));
-			canonical(field$1(fs, 4), encBytes(4, data));
-			canonical(field$1(fs, 5), encInt(5, callTokenValue));
-			canonical(field$1(fs, 6), encInt(6, tokenId));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 2), encAddress(2, contract));
+			canonical$1(field$1(fs, 3), encInt(3, callValue));
+			canonical$1(field$1(fs, 4), encBytes(4, data));
+			canonical$1(field$1(fs, 5), encInt(5, callTokenValue));
+			canonical$1(field$1(fs, 6), encInt(6, tokenId));
 			return {
 				contract: {
 					type: "TriggerSmartContract",
@@ -33069,9 +33082,9 @@ zoo`.split("\n"));
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
 			const amount = int64Of(field$1(fs, 2), "frozen_balance");
 			const resource = int32Of(field$1(fs, 3), "resource");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 2), encInt(2, amount));
-			canonical(field$1(fs, 3), encInt(3, resource));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 2), encInt(2, amount));
+			canonical$1(field$1(fs, 3), encInt(3, resource));
 			return {
 				contract: {
 					type: "FreezeBalanceV2Contract",
@@ -33091,9 +33104,9 @@ zoo`.split("\n"));
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
 			const amount = int64Of(field$1(fs, 2), "unfreeze_balance");
 			const resource = int32Of(field$1(fs, 3), "resource");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 2), encInt(2, amount));
-			canonical(field$1(fs, 3), encInt(3, resource));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 2), encInt(2, amount));
+			canonical$1(field$1(fs, 3), encInt(3, resource));
 			return {
 				contract: {
 					type: "UnfreezeBalanceV2Contract",
@@ -33111,7 +33124,7 @@ zoo`.split("\n"));
 		56(value) {
 			const fs = readFields(value);
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
-			canonical(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
 			return {
 				contract: {
 					type: "WithdrawExpireUnfreezeContract",
@@ -33128,12 +33141,12 @@ zoo`.split("\n"));
 			const receiver = addressOf(required(fs, 4, "receiver_address"), "receiver_address");
 			const lock = boolOf(field$1(fs, 5), "lock");
 			const lockPeriod = int64Of(field$1(fs, 6), "lock_period");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 2), encInt(2, resource));
-			canonical(field$1(fs, 3), encInt(3, balance));
-			canonical(field$1(fs, 4), encAddress(4, receiver));
-			canonical(field$1(fs, 5), encBool(5, lock));
-			canonical(field$1(fs, 6), encInt(6, lockPeriod));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 2), encInt(2, resource));
+			canonical$1(field$1(fs, 3), encInt(3, balance));
+			canonical$1(field$1(fs, 4), encAddress(4, receiver));
+			canonical$1(field$1(fs, 5), encBool(5, lock));
+			canonical$1(field$1(fs, 6), encInt(6, lockPeriod));
 			return {
 				contract: {
 					type: "DelegateResourceContract",
@@ -33160,10 +33173,10 @@ zoo`.split("\n"));
 			const resource = int32Of(field$1(fs, 2), "resource");
 			const balance = int64Of(field$1(fs, 3), "balance");
 			const receiver = addressOf(required(fs, 4, "receiver_address"), "receiver_address");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 2), encInt(2, resource));
-			canonical(field$1(fs, 3), encInt(3, balance));
-			canonical(field$1(fs, 4), encAddress(4, receiver));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 2), encInt(2, resource));
+			canonical$1(field$1(fs, 3), encInt(3, balance));
+			canonical$1(field$1(fs, 4), encAddress(4, receiver));
 			return {
 				contract: {
 					type: "UnDelegateResourceContract",
@@ -33183,7 +33196,7 @@ zoo`.split("\n"));
 		59(value) {
 			const fs = readFields(value);
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
-			canonical(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
 			return {
 				contract: {
 					type: "CancelAllUnfreezeV2Contract",
@@ -33216,7 +33229,7 @@ zoo`.split("\n"));
 				actives.push(permission);
 				extras.push(...extra);
 			}
-			canonical(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
 			return {
 				contract: _objectSpread2(_objectSpread2({
 					type: "AccountPermissionUpdateContract",
@@ -36205,7 +36218,7 @@ zoo`.split("\n"));
 		})))();
 		_RawTx = /* @__PURE__ */ (() => struct({
 			version: I32LE,
-			segwitFlag: flag(new Uint8Array([0, 1])),
+			segwitFlag: flag$1(new Uint8Array([0, 1])),
 			inputs: BTCArray(RawInput),
 			outputs: BTCArray(RawOutput),
 			witnesses: flagged("segwitFlag", array("inputs/length", _RawWitness)),
@@ -39184,6 +39197,7 @@ zoo`.split("\n"));
 	init_transaction();
 	init_bip32();
 	init_script();
+	init_objectSpread2();
 	/**
 	* BIP-32 derivation paths carry a coin type: 0 for mainnet, 1 for every test network. This is what
 	* binds PSBT metadata to the requested network — the raw output scripts themselves carry no network
@@ -39293,6 +39307,26 @@ zoo`.split("\n"));
 		if (address === void 0) throw new ChainError("invalid-request", "could not encode the derived address");
 		return address;
 	}
+	var EMPTY_BITCOIN_OWN = {
+		change: /* @__PURE__ */ new Set(),
+		unusual: /* @__PURE__ */ new Map()
+	};
+	/**
+	* An output is discoverable change only on the change chain (`/1/i`), under a purpose at least one
+	* signed input shares, at an index inside what the gap-limited scan reaches: the highest proven
+	* change index among the same-purpose signed inputs plus the gap limit.
+	*/
+	var isDiscoverableChange = (output, signed) => {
+		if (output.change !== 1) return false;
+		let samePurpose = false;
+		let highest = -1;
+		for (const input of signed) {
+			if (input.purpose !== output.purpose) continue;
+			samePurpose = true;
+			if (input.change === 1 && input.index > highest) highest = input.index;
+		}
+		return samePurpose && output.index <= Math.max(0, highest) + 20;
+	};
 	var SATS = "sats";
 	var SIGHASH_SINGLE_ANYONECANPAY = 131;
 	var OP_RETURN = 106;
@@ -39313,15 +39347,17 @@ zoo`.split("\n"));
 		return out;
 	};
 	/**
-	* Decodes a normalized bitcoin.psbt request for display. `ownScripts` is the set of output script
-	* hexes the caller has independently verified as this account's (e.g. the kernel re-deriving
-	* change) — not a display hint.
+	* Decodes a normalized bitcoin.psbt request for display. `own` is the caller's independently
+	* verified classification of the account's own-key outputs — `change` script hexes are hidden,
+	* `unusual` script hexes become outflows to the caller's own address carrying the path text and one
+	* warning each — not a display hint.
 	*/
-	var decodeBitcoinPsbt = (request, ownScripts = /* @__PURE__ */ new Set()) => {
+	var decodeBitcoinPsbt = (request, own = EMPTY_BITCOIN_OWN) => {
 		const tx = parsePsbt(request.psbt);
 		const coder = Address(bitcoinNetwork(request.network).params);
 		const signed = new Set(request.sign.map((s) => s.index));
 		const outflows = [];
+		const ownWarnings = [];
 		let canFee = true;
 		let outSum = 0n;
 		for (let i = 0; i < tx.outputsLength; i++) {
@@ -39330,7 +39366,7 @@ zoo`.split("\n"));
 			if (script === void 0 || amount === void 0) throw new ChainError("invalid-request", "PSBT output without script or amount");
 			const scriptHex = bytesToHex$2(script);
 			outSum += amount;
-			if (ownScripts.has(scriptHex)) continue;
+			if (own.change.has(scriptHex)) continue;
 			if (unspendable(script)) {
 				if (amount > 0n) outflows.push({
 					to: scriptHex,
@@ -39350,14 +39386,19 @@ zoo`.split("\n"));
 			} catch (_unused2) {
 				addr = void 0;
 			}
-			outflows.push({
+			const ownPath = own.unusual.get(scriptHex);
+			if (ownPath !== void 0) ownWarnings.push({
+				kind: "unusual-own-output",
+				message: ownPath
+			});
+			outflows.push(_objectSpread2({
 				to: (_addr = addr) !== null && _addr !== void 0 ? _addr : scriptHex,
 				amount: {
 					asset: SATS,
 					amount: amount.toString(10)
 				},
-				verified: addr !== void 0
-			});
+				verified: ownPath !== void 0 || addr !== void 0
+			}, ownPath === void 0 ? {} : { ownPath }));
 		}
 		const amountsCommitted = request.sign.some((s) => isTaprootInput(tx.getInput(s.index)) && tx.getInput(s.index).sighashType !== SIGHASH_SINGLE_ANYONECANPAY);
 		let inSum = 0n;
@@ -39387,10 +39428,10 @@ zoo`.split("\n"));
 			outflows,
 			approvals: [],
 			fee,
-			warnings: listing ? [{
+			warnings: [...ownWarnings, ...listing ? [{
 				kind: "sighash-single-anyonecanpay",
 				message: "signed inputs bind only their same-index outputs; the rest of the transaction can change"
-			}] : [],
+			}] : []],
 			verifiability
 		}, request.network, SATS, 8);
 	};
@@ -39520,6 +39561,7 @@ zoo`.split("\n"));
 		"createdAt"
 	];
 	var HEADER_OPTIONAL = ["limits", "spent"];
+	var plainObject$1 = (value) => isProtocolValue(value) && typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Uint8Array);
 	var asField = (pattern) => (value) => {
 		if (typeof value !== "string" || !pattern.test(value)) throw headerFailure();
 		return value;
@@ -39556,10 +39598,13 @@ zoo`.split("\n"));
 		};
 		const { limits, spent } = object;
 		if (limits !== void 0) {
-			if (!isProtocolValue(limits) || typeof limits !== "object" || limits === null || Array.isArray(limits) || limits instanceof Uint8Array) throw headerFailure();
+			if (!plainObject$1(limits)) throw headerFailure();
 			header.limits = limits;
 		}
-		if (spent !== void 0) header.spent = asField(SESSION_SPENT)(spent);
+		if (spent !== void 0) {
+			if (!plainObject$1(spent)) throw headerFailure();
+			header.spent = spent;
+		}
 		return header;
 	}
 	/** The stored session-key record for an address (any case), or undefined — never throws. */
@@ -39567,6 +39612,138 @@ zoo`.split("\n"));
 		const id = address.toLowerCase();
 		return image.records.find((record) => record.kind === "session-key" && record.id === id);
 	}
+	// packages/wallet-kernel/src/modules/chains/keys.ts
+	/**
+	* Key sources — the kernel's bridge between a signing secret and a plan's tasks. `material` is the
+	* only way public keys leave the secret (addresses, BTC ownership, fingerprints, xpubs are all
+	* derived through it); `backend` answers one 64-byte signature per task through a family task
+	* signer. BIP-32 and SLIP-10 nodes are cached by path and each child derives from its cached
+	* parent, so a many-input PSBT derives the account node once; `wipe` zeroes every cached node.
+	*/
+	init_secp256k1();
+	init_bip32();
+	init_utils();
+	var HARDENED$7 = 2147483648;
+	/** `m/…` notation of a task path — hardened indices print with `'`. */
+	var pathString = (path) => `m${path.map((i) => i >= HARDENED$7 ? `/${i - HARDENED$7}'` : `/${i}`).join("")}`;
+	var accountKey = async (material, path, versions) => {
+		const parsed = HDKey$1.fromExtendedKey(await material.extendedPublicKey(path, versions), versions);
+		if (parsed.publicKey === null || parsed.chainCode === null) throw new KernelError("integrity", "extended public key carries no node");
+		return {
+			publicKey: parsed.publicKey,
+			chainCode: parsed.chainCode,
+			parentFingerprint: parsed.parentFingerprint
+		};
+	};
+	/** The HD source: BIP-32 for secp256k1 schemes, SLIP-10 for ed25519, both lazy and path-cached. */
+	var seedKeys = (seed, random) => {
+		const secpNodes = /* @__PURE__ */ new Map();
+		const edNodes = /* @__PURE__ */ new Map();
+		let wiped = false;
+		const alive = () => {
+			if (wiped) throw new KernelError("integrity", "key source is wiped");
+		};
+		const secpNode = (path) => {
+			var _path$at;
+			alive();
+			const key = path.join("/");
+			const hit = secpNodes.get(key);
+			if (hit !== void 0) return hit;
+			const node = path.length === 0 ? HDKey$1.fromMasterSeed(seed) : secpNode(path.slice(0, -1)).deriveChild((_path$at = path.at(-1)) !== null && _path$at !== void 0 ? _path$at : 0);
+			secpNodes.set(key, node);
+			return node;
+		};
+		const edNode = (path) => {
+			var _path$at2;
+			alive();
+			const key = path.join("/");
+			const hit = edNodes.get(key);
+			if (hit !== void 0) return hit;
+			const node = path.length === 0 ? HDKey.fromMasterSeed(seed) : edNode(path.slice(0, -1)).deriveChild((_path$at2 = path.at(-1)) !== null && _path$at2 !== void 0 ? _path$at2 : 0);
+			edNodes.set(key, node);
+			return node;
+		};
+		const privateAt = (task) => {
+			if (task.scheme === "ed25519") return edNode(task.path).privateKey;
+			const priv = secpNode(task.path).privateKey;
+			if (priv === null) throw new KernelError("integrity", "no private key at path");
+			return priv;
+		};
+		return {
+			material: {
+				secp256k1: async (path) => {
+					const pub = secpNode(path).publicKey;
+					if (pub === null) throw new KernelError("integrity", "no public key at path");
+					return pub;
+				},
+				ed25519: async (path) => ed25519.getPublicKey(edNode(path).privateKey),
+				fingerprint: async () => {
+					const pub = secpNode([]).publicKey;
+					if (pub === null) throw new KernelError("integrity", "no public key at path");
+					return hash160(pub).subarray(0, 4);
+				},
+				extendedPublicKey: async (path, versions) => {
+					alive();
+					const master = HDKey$1.fromMasterSeed(seed, versions);
+					try {
+						const node = master.derive(pathString(path));
+						try {
+							return node.publicExtendedKey;
+						} finally {
+							node.wipePrivateData();
+						}
+					} finally {
+						master.wipePrivateData();
+					}
+				}
+			},
+			backend: (sign) => ({ sign: async (task) => sign(task, privateAt(task), task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array()) }),
+			wipe: () => {
+				wiped = true;
+				for (const node of secpNodes.values()) node.wipePrivateData();
+				for (const node of edNodes.values()) wipe(node.privateKey);
+				secpNodes.clear();
+				edNodes.clear();
+			}
+		};
+	};
+	/** The imported-key source: one raw key serves only path `[]` and only its own curve's tasks. */
+	var importedKeys = (secret, curve, random) => {
+		let wiped = false;
+		const alive = () => {
+			if (wiped) throw new KernelError("integrity", "key source is wiped");
+		};
+		return {
+			material: {
+				secp256k1: async (path) => {
+					alive();
+					if (curve !== "secp256k1" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
+					return secp256k1.getPublicKey(secret, true);
+				},
+				ed25519: async (path) => {
+					alive();
+					if (curve !== "ed25519" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
+					return ed25519.getPublicKey(secret);
+				},
+				extendedPublicKey: async () => {
+					throw new KernelError("integrity", "imported keys have no extended public key");
+				},
+				fingerprint: async () => {
+					throw new KernelError("integrity", "imported keys have no fingerprint");
+				}
+			},
+			backend: (sign) => ({ sign: async (task) => {
+				alive();
+				const ownCurve = curve === "secp256k1" ? task.scheme !== "ed25519" : task.scheme === "ed25519";
+				if (task.path.length > 0 || !ownCurve) throw new KernelError("integrity", "an imported key signs only its own tasks at []");
+				return sign(task, secret, task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array());
+			} }),
+			wipe: () => {
+				wiped = true;
+				wipe(secret);
+			}
+		};
+	};
 	// packages/wallet-kernel/src/modules/chains/prompt.ts
 	/**
 	* The system verification prompt for `chain.sign`, rendered from the kernel's own decode of the
@@ -39667,6 +39844,7 @@ zoo`.split("\n"));
 		safeRefund: (receiver, amount, price) => `向 ${receiver !== null && receiver !== void 0 ? receiver : "执行者"} 支付 gas 退款：最多 ${amount}，另按每单位 gas ${price} 支付调用开销`,
 		send: (amount, to) => `发送 ${amount} 到 ${to}`,
 		sendTokenAccount: (amount, tokenAccount, to) => `从代币账户 ${tokenAccount} 发送 ${amount} 个最小单位到 ${to}`,
+		sendOwnUnusual: (amount, to, path) => `发送 ${amount} 到非常规路径 ${path} 上你自己的地址 ${to}`,
 		burn: (amount) => `销毁 ${amount}：转入无法花费的输出，永久丢失`,
 		burnTokenAccount: (amount, account) => `从代币账户 ${account} 销毁 ${amount}，永久消失`,
 		allow: (spender, amount) => `授权 ${spender} 使用 ${amount}`,
@@ -39706,7 +39884,8 @@ zoo`.split("\n"));
 			"fiat24-swap-quote": () => "到 USDC 的兑换在交易内部定价；你没有设置滑点上限",
 			"fiat24-account-link": () => "开通账户会将此地址与你向 Fiat24 验证的身份永久关联",
 			"fiat24-account-move": (message) => `危险：这将转移 Fiat24 账户 ${message} 的控制权——包括其中的资金与已验证身份`,
-			"fiat24-account-burn": () => "开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度"
+			"fiat24-account-burn": () => "开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度",
+			"unusual-own-output": () => "转入非常规路径上你自己的地址的资金可能不会显示在此钱包中"
 		},
 		bridgeLine: (network, amount, to, deadline, refundTo) => `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
 		delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
@@ -39906,6 +40085,7 @@ zoo`.split("\n"));
 		safeRefund: (receiver, amount, price) => `Pays ${receiver !== null && receiver !== void 0 ? receiver : "whoever executes it"} a gas refund of up to ${amount}, plus ${price} per gas of call overhead`,
 		send: (amount, to) => `Send ${amount} to ${to}`,
 		sendTokenAccount: (amount, tokenAccount, to) => `Send ${amount} base units of the token in account ${tokenAccount} to ${to}`,
+		sendOwnUnusual: (amount, to, path) => `Send ${amount} to your own address ${to} at unusual path ${path}`,
 		burn: (amount) => `Burn ${amount}: it goes to an unspendable output and is lost`,
 		burnTokenAccount: (amount, account) => `Burn ${amount} from token account ${account}; it is destroyed`,
 		allow: (spender, amount) => `Allow ${spender} to spend ${amount}`,
@@ -39945,7 +40125,8 @@ zoo`.split("\n"));
 			"fiat24-swap-quote": () => "The swap to USDC is priced inside the transaction itself; you set no slippage limit",
 			"fiat24-account-link": () => "Opening the account permanently links this address to the identity you verify with Fiat24",
 			"fiat24-account-move": (message) => `Danger: this moves control of Fiat24 account ${message} — its money and the identity verified for it`,
-			"fiat24-account-burn": () => "Opening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract"
+			"fiat24-account-burn": () => "Opening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract",
+			"unusual-own-output": () => "Funds sent to your own address at an unusual path may not appear in this wallet"
 		},
 		bridgeLine: (network, amount, to, deadline, refundTo) => `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
 		delegateTo: (name, version) => `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
@@ -40204,7 +40385,7 @@ zoo`.split("\n"));
 		return [
 			...delegation,
 			...contractLines(catalog, intent),
-			...intent.outflows.map((flow) => flow.fiat24 === void 0 ? flow.tokenAccount === void 0 ? flow.burn === true && intent.family === "solana" ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to) : flow.burn === true ? catalog.burn(formatAmount(catalog, flow.amount)) : catalog.send(formatAmount(catalog, flow.amount), flow.to) : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to) : "account" in flow.fiat24 ? catalog.fiat24SendToAccount(formatAmount(catalog, flow.amount), flow.fiat24.account) : catalog.fiat24Payout(formatAmount(catalog, flow.amount))),
+			...intent.outflows.map((flow) => flow.ownPath === void 0 ? flow.fiat24 === void 0 ? flow.tokenAccount === void 0 ? flow.burn === true && intent.family === "solana" ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to) : flow.burn === true ? catalog.burn(formatAmount(catalog, flow.amount)) : catalog.send(formatAmount(catalog, flow.amount), flow.to) : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to) : "account" in flow.fiat24 ? catalog.fiat24SendToAccount(formatAmount(catalog, flow.amount), flow.fiat24.account) : catalog.fiat24Payout(formatAmount(catalog, flow.amount)) : catalog.sendOwnUnusual(formatAmount(catalog, flow.amount), flow.to, flow.ownPath)),
 			...((_intent$calls2 = intent.calls) !== null && _intent$calls2 !== void 0 ? _intent$calls2 : [intent]).flatMap((call) => call.fiat24 === void 0 ? [] : fiat24Lines(catalog, call.fiat24)),
 			...((_intent$staking = intent.staking) !== null && _intent$staking !== void 0 ? _intent$staking : []).flatMap((action) => catalog.stakeLines(action, sol)),
 			...received,
@@ -40212,6 +40393,16 @@ zoo`.split("\n"));
 			...intent.approvals.map((change) => approvalLine(catalog, change))
 		];
 	}
+	/** A prompt with no warning rows — its whole description truncates as detail. */
+	var rowsOf = (prompt) => ({
+		title: prompt.title,
+		lead: [],
+		detail: prompt.description.split("\n")
+	});
+	var flatten = (rendered) => ({
+		title: rendered.title,
+		description: joinLines([...rendered.lead, ...rendered.detail])
+	});
 	function transactionPrompt(catalog, intent) {
 		var _intent$programs, _intent$warnings;
 		const { tron } = intent;
@@ -40226,19 +40417,21 @@ zoo`.split("\n"));
 		const memo = (tron === null || tron === void 0 ? void 0 : tron.memo) === void 0 ? [] : tron.memo.kind === "text" ? [catalog.tronMemoHeading, ...requesterText(catalog, tron.memo.text)] : tron.memo.hex.length - 2 <= 128 ? [catalog.tronMemoData(tron.memo.hex)] : [catalog.tronMemoLength((tron.memo.hex.length - 2) / 2)];
 		return {
 			title: intent.blind === void 0 ? catalog.titles[intent.summary] : catalog.blindTitle,
-			description: joinLines([
+			lead: [
 				...(tron === null || tron === void 0 ? void 0 : tron.permissionUpdate) === void 0 ? [] : [catalog.tronTakeover(tronNewKeyAddresses(tron.permissionUpdate))],
-				...network,
 				...programAuthorityLines(catalog, intent),
 				...caveat,
+				...warningLines(catalog, warnings)
+			],
+			detail: [
+				...network,
 				...effectLines(catalog, intent),
 				...permissions,
 				...(tron === null || tron === void 0 ? void 0 : tron.permissionId) === void 0 ? [] : [catalog.tronPermissionId(tron.permissionId)],
 				...memo,
 				...tron === void 0 ? [] : [catalog.tronExpires(utcDateTime(Math.floor(tron.expiration / 1e3)))],
-				intent.family === "tron" ? intent.fee === void 0 ? catalog.tronBandwidthFee : catalog.tronFeeLimit(formatAmount(catalog, intent.fee.max)) : intent.fee === void 0 ? catalog.feeUnknown : catalog.maxFee(formatAmount(catalog, intent.fee.max)),
-				...warningLines(catalog, warnings)
-			])
+				intent.family === "tron" ? intent.fee === void 0 ? catalog.tronBandwidthFee : catalog.tronFeeLimit(formatAmount(catalog, intent.fee.max)) : intent.fee === void 0 ? catalog.feeUnknown : catalog.maxFee(formatAmount(catalog, intent.fee.max))
+			]
 		};
 	}
 	/** The lines a recognized Fiat24 action adds to a call's effects. */
@@ -40452,25 +40645,28 @@ zoo`.split("\n"));
 			case "batch": return polymarketBatchLines(catalog, intent, content);
 		}
 	}
-	function typedDataLines(catalog, intent, message) {
+	function typedDataRows(catalog, intent, message) {
 		const { name, chainId, verifyingContract } = message.domain;
-		const hazard = intent.blind === "message-bytes" ? [catalog.textHazard["hidden-characters"]] : [];
-		if (message.hyperliquid !== void 0) return [
-			...hazard,
-			catalog.hlChain[message.hyperliquid.chain],
-			...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld)
-		];
-		if (message.polymarket !== void 0) return [...hazard, ...polymarketLines(catalog, intent, message.polymarket)];
+		const lead = [...intent.blind === "message-bytes" ? [catalog.textHazard["hidden-characters"]] : [], ...warningLines(catalog, intent.warnings)];
+		if (message.hyperliquid !== void 0) return {
+			lead,
+			detail: [catalog.hlChain[message.hyperliquid.chain], ...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld)]
+		};
+		if (message.polymarket !== void 0) return {
+			lead,
+			detail: polymarketLines(catalog, intent, message.polymarket)
+		};
 		const network = intent.family === "tron" ? intent.network : chainId === void 0 ? intent.network : `eip155:${chainId}`;
-		return [
-			...hazard,
-			...name === void 0 ? [] : [catalog.typedApp(field(name))],
-			...network === void 0 ? [] : [catalog.networkLine(networkLabel(catalog, network))],
-			...verifyingContract === void 0 ? [] : [catalog.typedContract(verifyingContract)],
-			catalog.typedType(field(message.primaryType)),
-			...typedContentLines(catalog, intent, message),
-			...warningLines(catalog, intent.warnings)
-		];
+		return {
+			lead,
+			detail: [
+				...name === void 0 ? [] : [catalog.typedApp(field(name))],
+				...network === void 0 ? [] : [catalog.networkLine(networkLabel(catalog, network))],
+				...verifyingContract === void 0 ? [] : [catalog.typedContract(verifyingContract)],
+				catalog.typedType(field(message.primaryType)),
+				...typedContentLines(catalog, intent, message)
+			]
+		};
 	}
 	function messagePrompt(catalog, intent, message) {
 		var _intent$fiat, _message$signIn;
@@ -40478,54 +40674,59 @@ zoo`.split("\n"));
 			const bytes = (message.hex.length - 2) / 2;
 			return {
 				title: catalog.blindTitle,
-				description: joinLines([catalog.blindBytes, bytes <= 64 ? catalog.bytesData(message.hex) : catalog.bytesLength(bytes)])
+				lead: [],
+				detail: [catalog.blindBytes, bytes <= 64 ? catalog.bytesData(message.hex) : catalog.bytesLength(bytes)]
 			};
 		}
 		if (message.kind === "typed-data") {
 			var _message$polymarket, _message$polymarket2;
-			return {
-				title: intent.blind === void 0 ? ((_message$polymarket = message.polymarket) === null || _message$polymarket === void 0 ? void 0 : _message$polymarket.kind) === "order" ? catalog.pmOrderTitle : ((_message$polymarket2 = message.polymarket) === null || _message$polymarket2 === void 0 ? void 0 : _message$polymarket2.kind) === "auth" ? catalog.signInTitle : catalog.titles[intent.summary] : catalog.blindTitle,
-				description: joinLines(typedDataLines(catalog, intent, message))
-			};
+			return _objectSpread2({ title: intent.blind === void 0 ? ((_message$polymarket = message.polymarket) === null || _message$polymarket === void 0 ? void 0 : _message$polymarket.kind) === "order" ? catalog.pmOrderTitle : ((_message$polymarket2 = message.polymarket) === null || _message$polymarket2 === void 0 ? void 0 : _message$polymarket2.kind) === "auth" ? catalog.signInTitle : catalog.titles[intent.summary] : catalog.blindTitle }, typedDataRows(catalog, intent, message));
 		}
 		if (message.kind === "text" && ((_intent$fiat = intent.fiat24) === null || _intent$fiat === void 0 ? void 0 : _intent$fiat.kind) === "session-grant") {
 			const grant = intent.fiat24;
 			return {
 				title: catalog.fiat24SessionTitle,
-				description: joinLines([
+				lead: [],
+				detail: [
 					catalog.fiat24SessionBearer(utcDateTime(grant.deadline)),
 					catalog.fiat24SessionPower,
 					catalog.fiat24SessionSigns(message.text)
-				])
+				]
 			};
 		}
 		if (intent.blind === void 0 && ((_message$signIn = message.signIn) === null || _message$signIn === void 0 ? void 0 : _message$signIn.status) === "valid") return {
 			title: catalog.signInTitle,
-			description: joinLines(signInLines(catalog, message.signIn))
+			lead: [],
+			detail: signInLines(catalog, message.signIn)
 		};
 		const hazard = intent.blind === void 0 ? void 0 : messageTextHazard(message.text);
 		const digest = hazard === "digest-length" ? `0x${bytesToHex$5(utf8ToBytes$1(message.text))}` : void 0;
 		return {
 			title: intent.blind === void 0 ? catalog.titles.message : catalog.blindTitle,
-			description: joinLines([
-				...intent.blind === void 0 ? message.signIn === void 0 ? [] : signInLines(catalog, message.signIn) : intent.blind === "fiat24-session-grant" ? [catalog.fiat24Grant, ...hazard === void 0 ? [] : [catalog.textHazard[hazard]]] : hazard === void 0 ? [] : [catalog.textHazard[hazard]],
+			lead: intent.blind === void 0 ? [] : intent.blind === "fiat24-session-grant" ? [catalog.fiat24Grant, ...hazard === void 0 ? [] : [catalog.textHazard[hazard]]] : hazard === void 0 ? [] : [catalog.textHazard[hazard]],
+			detail: [
+				...intent.blind === void 0 && message.signIn !== void 0 ? signInLines(catalog, message.signIn) : [],
 				...digest === void 0 ? [] : [catalog.bytesData(digest)],
 				...digest !== void 0 && !isPlainText(message.text) ? [] : textLines(catalog, message.text)
-			])
+			]
 		};
 	}
-	function chainPrompt(locale, intent) {
+	var renderPrompt = (locale, intent) => {
 		const catalog = CATALOGS$1[locale];
 		return intent.message === void 0 ? transactionPrompt(catalog, intent) : messagePrompt(catalog, intent, intent.message);
+	};
+	function chainPrompt(locale, intent) {
+		return flatten(renderPrompt(locale, intent));
 	}
 	/**
 	* The rendered prompt bounded to what the platform's verification dialog can show. An over-long
 	* prompt counts as blind — the caller gates `oversize` like a decoder blind reason — and the
-	* returned prompt shows the blind title with the longest whole-line prefix that leaves room for one
-	* closing "more lines not shown" line: the kernel truncates, never the OS.
+	* returned prompt shows the blind title with every lead row whole, the longest detail prefix that
+	* leaves room for one closing "more lines not shown" line: the kernel truncates, never the OS. A
+	* prompt whose warnings alone cannot fit is refused, whatever the blind policy.
 	*/
 	function boundChainPrompt(locale, intent, bound) {
-		return boundPrompt(locale, chainPrompt(locale, intent), bound);
+		return boundPrompt(locale, renderPrompt(locale, intent), bound);
 	}
 	/**
 	* The same bound applied to a rendered prompt from outside the chains module (Spark approvals share
@@ -40533,15 +40734,21 @@ zoo`.split("\n"));
 	*/
 	function boundPrompt(locale, rendered, bound) {
 		const catalog = CATALOGS$1[locale];
-		if (promptFits(rendered, bound)) return {
-			prompt: rendered,
+		const flat = flatten(rendered);
+		if (promptFits(flat, bound)) return {
+			prompt: flat,
 			oversize: false
 		};
-		const lines = rendered.description.split("\n");
-		let keep = Math.min(lines.length - 1, bound.lines - 1);
+		if (bound.title !== void 0 && codePoints(catalog.blindTitle) > bound.title) throw new KernelError("unsupported", "the prompt's warnings do not fit the dialog");
+		let keep = Math.min(rendered.detail.length - 1, bound.lines - rendered.lead.length - 1);
 		for (;;) {
-			const candidate = joinLines([...lines.slice(0, keep), catalog.moreLines(lines.length - keep)]);
-			if (keep === 0 || codePoints(candidate) <= bound.characters) return {
+			if (keep < 0) throw new KernelError("unsupported", "the prompt's warnings do not fit the dialog");
+			const candidate = joinLines([
+				...rendered.lead,
+				...rendered.detail.slice(0, keep),
+				catalog.moreLines(rendered.detail.length - keep)
+			]);
+			if (codePoints(candidate) <= bound.characters) return {
 				prompt: {
 					title: catalog.blindTitle,
 					description: candidate
@@ -40562,19 +40769,19 @@ zoo`.split("\n"));
 		"btc.bip84": 84,
 		"btc.bip86": 86
 	};
-	var HARDENED$7 = 2147483648;
+	var HARDENED$6 = 2147483648;
 	/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
 	var leafPath = (family, groupIndex) => {
 		if (family === "solana") return [
 			2147483692,
 			2147484149,
-			groupIndex + HARDENED$7,
-			HARDENED$7
+			groupIndex + HARDENED$6,
+			HARDENED$6
 		];
 		return [
 			2147483692,
-			(family === "tron" ? 195 : 60) + HARDENED$7,
-			HARDENED$7,
+			(family === "tron" ? 195 : 60) + HARDENED$6,
+			HARDENED$6,
 			0,
 			groupIndex
 		];
@@ -40651,6 +40858,7 @@ zoo`.split("\n"));
 	* key. A template that disagrees with the input's script type fails the path or script check.
 	*/
 	var bitcoinInput = async (b, tx, entry) => {
+		var _der$path$, _der$path$2;
 		const purpose = BTC_PURPOSE[entry.template];
 		if (purpose === void 0) throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
 		const { index: idx } = entry;
@@ -40676,6 +40884,11 @@ zoo`.split("\n"));
 			key: {
 				path: der.path,
 				publicKey: pub
+			},
+			tail: {
+				purpose,
+				change: (_der$path$ = der.path[3]) !== null && _der$path$ !== void 0 ? _der$path$ : 0,
+				index: (_der$path$2 = der.path[4]) !== null && _der$path$2 !== void 0 ? _der$path$2 : 0
 			}
 		};
 	};
@@ -40683,10 +40896,13 @@ zoo`.split("\n"));
 	* Output binding, independent of which templates sign inputs: an output is this group's own when it
 	* carries a derivation entry with our fingerprint — tap entries only for bip86, bip32 entries for
 	* 44/49/84 — whose path is a valid `m/purpose'/coin'/group'/{0,1}/i` of this group and whose script
-	* equals that key's script for the purpose. Failures just mean "not own".
+	* equals that key's script for the purpose. Failures just mean "not own". A verified own output is
+	* hidden as change only when `isDiscoverableChange` says the wallet can reach it — anything else is
+	* shown as a send to the user's own address at the unusual path it names.
 	*/
-	var bitcoinOwnScripts = async (b, tx) => {
-		const ownScripts = /* @__PURE__ */ new Set();
+	var bitcoinOwn = async (b, tx, signed) => {
+		const change = /* @__PURE__ */ new Set();
+		const unusual = /* @__PURE__ */ new Map();
 		for (let i = 0; i < tx.outputsLength; i++) {
 			const output = tx.getOutput(i);
 			if (output.script === void 0) continue;
@@ -40694,21 +40910,40 @@ zoo`.split("\n"));
 				const entry = derivationOf(output, b.fingerprint, purpose);
 				if (entry === void 0) continue;
 				try {
+					var _entry$path$, _entry$path$2;
 					const pub = await childAt(b, purpose, entry.path);
-					if (deepEqual(output.script, expectedScript(purpose, pub))) ownScripts.add(hex(output.script));
+					if (!deepEqual(output.script, expectedScript(purpose, pub))) continue;
+					if (isDiscoverableChange({
+						purpose,
+						change: (_entry$path$ = entry.path[3]) !== null && _entry$path$ !== void 0 ? _entry$path$ : 0,
+						index: (_entry$path$2 = entry.path[4]) !== null && _entry$path$2 !== void 0 ? _entry$path$2 : 0
+					}, signed)) change.add(hex(output.script));
+					else unusual.set(hex(output.script), pathString(entry.path));
+					break;
 				} catch (_unused) {
 					continue;
 				}
 			}
 		}
-		return ownScripts;
+		return {
+			change,
+			unusual
+		};
 	};
 	/** The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. */
 	var prepareBitcoinPsbt = async (b, request) => {
 		const tx = Transaction.fromPSBT(request.psbt);
 		const inputs = [];
-		for (const entry of request.sign) inputs.push(await bitcoinInput(b, tx, entry));
-		const ownScripts = await bitcoinOwnScripts(b, tx);
+		const signed = [];
+		for (const entry of request.sign) {
+			const input = await bitcoinInput(b, tx, entry);
+			inputs.push({
+				index: input.index,
+				key: input.key
+			});
+			signed.push(input.tail);
+		}
+		const own = await bitcoinOwn(b, tx, signed);
 		let normalized;
 		try {
 			normalized = normalizeBitcoin(request);
@@ -40718,7 +40953,7 @@ zoo`.split("\n"));
 		if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
 		let intent;
 		try {
-			intent = decodeBitcoinPsbt(request, ownScripts);
+			intent = decodeBitcoinPsbt(request, own);
 		} catch (error) {
 			mapChainError(error);
 		}
@@ -40836,143 +41071,11 @@ zoo`.split("\n"));
 			plan
 		};
 	};
-	// packages/wallet-kernel/src/modules/chains/keys.ts
-	/**
-	* Key sources — the kernel's bridge between a signing secret and a plan's tasks. `material` is the
-	* only way public keys leave the secret (addresses, BTC ownership, fingerprints, xpubs are all
-	* derived through it); `backend` answers one 64-byte signature per task through a family task
-	* signer. BIP-32 and SLIP-10 nodes are cached by path and each child derives from its cached
-	* parent, so a many-input PSBT derives the account node once; `wipe` zeroes every cached node.
-	*/
-	init_secp256k1();
-	init_bip32();
-	init_utils();
-	var HARDENED$6 = 2147483648;
-	/** `m/…` notation of a task path — hardened indices print with `'`. */
-	var pathString = (path) => `m${path.map((i) => i >= HARDENED$6 ? `/${i - HARDENED$6}'` : `/${i}`).join("")}`;
-	var accountKey = async (material, path, versions) => {
-		const parsed = HDKey$1.fromExtendedKey(await material.extendedPublicKey(path, versions), versions);
-		if (parsed.publicKey === null || parsed.chainCode === null) throw new KernelError("integrity", "extended public key carries no node");
-		return {
-			publicKey: parsed.publicKey,
-			chainCode: parsed.chainCode,
-			parentFingerprint: parsed.parentFingerprint
-		};
-	};
-	/** The HD source: BIP-32 for secp256k1 schemes, SLIP-10 for ed25519, both lazy and path-cached. */
-	var seedKeys = (seed, random) => {
-		const secpNodes = /* @__PURE__ */ new Map();
-		const edNodes = /* @__PURE__ */ new Map();
-		let wiped = false;
-		const alive = () => {
-			if (wiped) throw new KernelError("integrity", "key source is wiped");
-		};
-		const secpNode = (path) => {
-			var _path$at;
-			alive();
-			const key = path.join("/");
-			const hit = secpNodes.get(key);
-			if (hit !== void 0) return hit;
-			const node = path.length === 0 ? HDKey$1.fromMasterSeed(seed) : secpNode(path.slice(0, -1)).deriveChild((_path$at = path.at(-1)) !== null && _path$at !== void 0 ? _path$at : 0);
-			secpNodes.set(key, node);
-			return node;
-		};
-		const edNode = (path) => {
-			var _path$at2;
-			alive();
-			const key = path.join("/");
-			const hit = edNodes.get(key);
-			if (hit !== void 0) return hit;
-			const node = path.length === 0 ? HDKey.fromMasterSeed(seed) : edNode(path.slice(0, -1)).deriveChild((_path$at2 = path.at(-1)) !== null && _path$at2 !== void 0 ? _path$at2 : 0);
-			edNodes.set(key, node);
-			return node;
-		};
-		const privateAt = (task) => {
-			if (task.scheme === "ed25519") return edNode(task.path).privateKey;
-			const priv = secpNode(task.path).privateKey;
-			if (priv === null) throw new KernelError("integrity", "no private key at path");
-			return priv;
-		};
-		return {
-			material: {
-				secp256k1: async (path) => {
-					const pub = secpNode(path).publicKey;
-					if (pub === null) throw new KernelError("integrity", "no public key at path");
-					return pub;
-				},
-				ed25519: async (path) => ed25519.getPublicKey(edNode(path).privateKey),
-				fingerprint: async () => {
-					const pub = secpNode([]).publicKey;
-					if (pub === null) throw new KernelError("integrity", "no public key at path");
-					return hash160(pub).subarray(0, 4);
-				},
-				extendedPublicKey: async (path, versions) => {
-					alive();
-					const master = HDKey$1.fromMasterSeed(seed, versions);
-					try {
-						const node = master.derive(pathString(path));
-						try {
-							return node.publicExtendedKey;
-						} finally {
-							node.wipePrivateData();
-						}
-					} finally {
-						master.wipePrivateData();
-					}
-				}
-			},
-			backend: (sign) => ({ sign: async (task) => sign(task, privateAt(task), task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array()) }),
-			wipe: () => {
-				wiped = true;
-				for (const node of secpNodes.values()) node.wipePrivateData();
-				for (const node of edNodes.values()) wipe(node.privateKey);
-				secpNodes.clear();
-				edNodes.clear();
-			}
-		};
-	};
-	/** The imported-key source: one raw key serves only path `[]` and only its own curve's tasks. */
-	var importedKeys = (secret, curve, random) => {
-		let wiped = false;
-		const alive = () => {
-			if (wiped) throw new KernelError("integrity", "key source is wiped");
-		};
-		return {
-			material: {
-				secp256k1: async (path) => {
-					alive();
-					if (curve !== "secp256k1" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
-					return secp256k1.getPublicKey(secret, true);
-				},
-				ed25519: async (path) => {
-					alive();
-					if (curve !== "ed25519" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
-					return ed25519.getPublicKey(secret);
-				},
-				extendedPublicKey: async () => {
-					throw new KernelError("integrity", "imported keys have no extended public key");
-				},
-				fingerprint: async () => {
-					throw new KernelError("integrity", "imported keys have no fingerprint");
-				}
-			},
-			backend: (sign) => ({ sign: async (task) => {
-				alive();
-				const ownCurve = curve === "secp256k1" ? task.scheme !== "ed25519" : task.scheme === "ed25519";
-				if (task.path.length > 0 || !ownCurve) throw new KernelError("integrity", "an imported key signs only its own tasks at []");
-				return sign(task, secret, task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array());
-			} }),
-			wipe: () => {
-				wiped = true;
-				wipe(secret);
-			}
-		};
-	};
 	// packages/wallet-kernel/src/modules/chains/export.ts
 	var EVM_ACCOUNT = [
-		44 + HARDENED$7,
-		60 + HARDENED$7,
-		HARDENED$7
+		44 + HARDENED$6,
+		60 + HARDENED$6,
+		HARDENED$6
 	];
 	var MAINNET_VERSIONS = {
 		public: 76067358,
@@ -40986,9 +41089,9 @@ zoo`.split("\n"));
 		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${node.template}`);
 		const { coinType } = bitcoinNetwork(node.network);
 		return [
-			purpose + HARDENED$7,
-			coinType + HARDENED$7,
-			groupIndex + HARDENED$7
+			purpose + HARDENED$6,
+			coinType + HARDENED$6,
+			groupIndex + HARDENED$6
 		];
 	};
 	var fp8 = (value) => value.toString(16).padStart(8, "0");
@@ -41020,7 +41123,33 @@ zoo`.split("\n"));
 		fingerprint: fpHex(await material.fingerprint()),
 		keys: await Promise.all(params.nodes.map(async (node) => exportKey$1(material, node, params.groupIndex)))
 	});
+	var LEAF_FAMILY = {
+		"evm.bip44": "EVM",
+		"tron.bip44": "TRON",
+		"solana.bip44-change": "Solana"
+	};
+	/**
+	* The verification prompt rendered from the requested nodes — one row each, so the approved scope
+	* is the shown scope: `evm.account` names the wallet-wide disclosure its fixed `m/44'/60'/0'` path
+	* understates.
+	*/
+	var exportPrompt = (locale, params) => {
+		const text = exportAccountText(locale);
+		const row = (node) => {
+			var _networkMeta$name, _networkMeta;
+			const path = pathString(nodePath(node, params.groupIndex));
+			if (node.kind === "evm.account") return text.evmAccount(path);
+			if (node.kind === "leaf") return text.leaf(LEAF_FAMILY[node.template], params.groupIndex, path);
+			const network = (_networkMeta$name = (_networkMeta = networkMeta(node.network)) === null || _networkMeta === void 0 ? void 0 : _networkMeta.name) !== null && _networkMeta$name !== void 0 ? _networkMeta$name : node.network;
+			return text.btcAccount(text.btcTemplate[node.template], network, params.groupIndex, path);
+		};
+		return {
+			title: text.title,
+			description: joinLines([text.share(params.groupIndex), ...params.nodes.map(row)])
+		};
+	};
 	var exportAccount = (external) => async (ctx, params, session) => {
+		var _ctx$platform$keystor, _ctx$platform$keystor2, _ctx$platform$keystor3;
 		const { dek } = ctx.session.require(session);
 		const record = findWalletRecord(ctx.image, params.walletId);
 		if (record === void 0) {
@@ -41033,7 +41162,10 @@ zoo`.split("\n"));
 			if (seen.has(nodeId(node))) throw new KernelError("invalid-input", "duplicate export node");
 			seen.add(nodeId(node));
 		}
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "export-account"));
+		const prompt = exportPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), params);
+		const host = (_ctx$platform$keystor3 = ctx.platform.keystore) === null || _ctx$platform$keystor3 === void 0 ? void 0 : _ctx$platform$keystor3.platform;
+		if ((host === "ios" || host === "android") && !promptFits(prompt, PROMPT_BOUNDS[host])) throw new KernelError("invalid-input", "the export prompt does not fit the verification dialog");
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => prompt);
 		ctx.session.require(session);
 		if (record.kind !== "entropy") return result(external(ctx.image, record), params);
 		return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
@@ -41312,9 +41444,9 @@ zoo`.split("\n"));
 		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
 		const net = bitcoinNetwork(network);
 		const path = [
-			purpose + HARDENED$7,
-			net.coinType + HARDENED$7,
-			groupIndex + HARDENED$7
+			purpose + HARDENED$6,
+			net.coinType + HARDENED$6,
+			groupIndex + HARDENED$6
 		];
 		const fingerprint = await material.fingerprint();
 		return {
@@ -43227,29 +43359,43 @@ zoo`.split("\n"));
 	}
 	// packages/wallet-kernel/src/modules/sessions/scheme.ts
 	init_objectSpread2();
+	var asJsonObject = (value) => {
+		if (!isProtocolValue(value) || typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) throw new KernelError("integrity", "the scheme's spent is not a JSON object");
+		return value;
+	};
 	function defineSessionScheme(definition) {
 		const declared = definition.metering;
 		const metering = declared === void 0 ? void 0 : {
 			parseLimits: declared.limits,
+			parseSpent: (value, limits) => declared.spent(value, declared.limits(limits)),
+			fresh: (limits) => asJsonObject(declared.fresh(declared.limits(limits))),
+			worstSpent: (limits) => asJsonObject(declared.worstSpent(declared.limits(limits))),
 			meter: (params, limits, spent) => {
 				let checked;
 				let checkedLimits;
+				let checkedSpent;
 				try {
 					checked = definition.params(params);
 					checkedLimits = declared.limits(limits);
+					checkedSpent = declared.spent(spent, checkedLimits);
 				} catch (_unused) {
 					throw new KernelError("invalid-input", "malformed params");
 				}
-				return declared.meter(checked, checkedLimits, spent);
+				return asJsonObject(declared.meter(checked, checkedLimits, checkedSpent));
 			},
 			prompt: (session, open, locale) => {
 				let limits;
+				let spent;
 				try {
 					limits = declared.limits(session.limits);
+					spent = declared.spent(session.spent, limits);
 				} catch (_unused2) {
-					throw new KernelError("integrity", "invalid session limits in the vault");
+					throw new KernelError("integrity", "invalid session metering in the vault");
 				}
-				return declared.prompt(_objectSpread2(_objectSpread2({}, session), {}, { limits }), open, locale);
+				return declared.prompt(_objectSpread2(_objectSpread2({}, session), {}, {
+					limits,
+					spent
+				}), open, locale);
 			}
 		};
 		return _objectSpread2({
@@ -43274,9 +43420,10 @@ zoo`.split("\n"));
 	/**
 	* Canonical-decimal ↔ fixed-point codec shared by every metered session scheme: a scheme's meter
 	* charges in units of `DECIMAL_SCALE` and the record header stores the canonical decimal string
-	* (`SESSION_SPENT`). Arithmetic is exact on bigints — no float is ever involved. 1e-16 admits the
-	* sixteen fractional digits an 8-decimal price times an 8-decimal size produces exactly; a meter
-	* whose grammar admits finer decimals picks a coarser scale and rounds a charge up, never down.
+	* (the scheme's spent grammar). Arithmetic is exact on bigints — no float is ever involved. 1e-16
+	* admits the sixteen fractional digits an 8-decimal price times an 8-decimal size produces exactly;
+	* a meter whose grammar admits finer decimals picks a coarser scale and rounds a charge up, never
+	* down.
 	*/
 	var DECIMAL_SCALE = 10n ** 16n;
 	/** A canonical decimal to units of `DECIMAL_SCALE` — throws `integrity` past its precision. */
@@ -43294,62 +43441,74 @@ zoo`.split("\n"));
 		return frac === "" ? whole.toString() : `${whole}.${frac}`;
 	};
 	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/meter.ts
-	/** The notional of one order in 1e-16 units — a trigger order is charged at its worse price. */
+	/** One order's buy charge in 1e-16 units — a trigger order is charged at its worse price. */
 	var orderNotional = (order) => {
-		let price = decimalToUnits(order.p);
-		if ("trigger" in order.t) {
-			const trigger = decimalToUnits(order.t.trigger.triggerPx);
-			if (trigger > price) price = trigger;
-		}
-		return price * decimalToUnits(order.s) / DECIMAL_SCALE;
+		const trigger = "trigger" in order.t ? decimalToUnits(order.t.trigger.triggerPx) : 0n;
+		const price = decimalToUnits(order.p);
+		return (trigger > price ? trigger : price) * decimalToUnits(order.s) / DECIMAL_SCALE;
 	};
-	var inAllowList = (limits, asset) => {
-		if (!limits.assets.includes(asset)) throw new KernelError("limit-exceeded", "the asset is outside the session's allow-list");
+	/** The limits slot of an asset, or KernelError `limit-exceeded` when it is not allow-listed. */
+	var slotOf = (limits, asset) => {
+		const index = limits.assets.findIndex((entry) => entry.asset === asset);
+		if (index === -1) throw new KernelError("limit-exceeded", "the asset is outside the session's allow-list");
+		return index;
 	};
 	/**
 	* The session's new `spent` after this action — or KernelError `limit-exceeded` when the signature
-	* would exceed the approved budget. `spent` is the record's current value; the exact boundary
-	* `spent + notional == notional limit` still signs.
+	* would exceed an approved budget. `spent` is the record's current parsed value; the exact boundary
+	* `spent + charge == cap` still signs.
 	*/
 	function meterHyperliquid(params, limits, spent) {
 		const { action } = params;
-		let charge = 0n;
+		const sizes = spent.size.map(decimalToUnits);
+		const caps = limits.assets.map((entry) => decimalToUnits(entry.size));
+		let notional = decimalToUnits(spent.notional);
+		const charge = (order) => {
+			var _sizes$index, _caps$index;
+			const index = slotOf(limits, order.a);
+			const size = ((_sizes$index = sizes[index]) !== null && _sizes$index !== void 0 ? _sizes$index : 0n) + decimalToUnits(order.s);
+			if (size > ((_caps$index = caps[index]) !== null && _caps$index !== void 0 ? _caps$index : 0n)) throw new KernelError("limit-exceeded", "the asset's size budget is exhausted");
+			sizes[index] = size;
+			if (order.b) notional += orderNotional(order);
+		};
 		switch (action.type) {
 			case "order":
-				for (const order of action.orders) {
-					inAllowList(limits, order.a);
-					charge += orderNotional(order);
-				}
+				for (const order of action.orders) charge(order);
 				break;
 			case "modify":
-				inAllowList(limits, action.order.a);
-				charge = orderNotional(action.order);
+				charge(action.order);
 				break;
 			case "batchModify":
-				for (const entry of action.modifies) {
-					inAllowList(limits, entry.order.a);
-					charge += orderNotional(entry.order);
-				}
+				for (const entry of action.modifies) charge(entry.order);
 				break;
 			case "updateLeverage":
-				inAllowList(limits, action.asset);
+				slotOf(limits, action.asset);
 				if (action.leverage > limits.maxLeverage) throw new KernelError("limit-exceeded", "leverage is above the session's cap");
 				break;
-			case "updateIsolatedMargin": inAllowList(limits, action.asset);
+			case "cancel":
+			case "cancelByCloid":
+				for (const cancel of action.cancels) slotOf(limits, "a" in cancel ? cancel.a : cancel.asset);
+				break;
+			case "updateIsolatedMargin":
+			case "twapCancel": slotOf(limits, "asset" in action ? action.asset : action.a);
 		}
-		const next = decimalToUnits(spent) + charge;
-		if (next > decimalToUnits(limits.notional)) throw new KernelError("limit-exceeded", "the session's notional budget is exhausted");
-		return unitsToDecimal(next);
+		if (notional > decimalToUnits(limits.notional)) throw new KernelError("limit-exceeded", "the session's notional budget is exhausted");
+		return {
+			notional: unitsToDecimal(notional),
+			size: sizes.map(unitsToDecimal)
+		};
 	}
 	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/params.ts
+	init_objectSpread2();
 	var hyperliquidNetwork = union(literal("Mainnet"), literal("Testnet"));
 	var lowerAddress = str(42, /^0x[0-9a-f]{40}$/);
-	var safeTime = int(0, Number.MAX_SAFE_INTEGER);
+	var safeInt = int(0, Number.MAX_SAFE_INTEGER);
 	/** A positive canonical decimal (nktkas's normalised output) — prices, sizes, trigger prices. */
 	var positive = str(24, /^(?:[1-9][0-9]{0,14}(?:\.[0-9]{0,7}[1-9])?|0\.[0-9]{0,7}[1-9])$/);
 	var cloid = str(34, /^0x[0-9a-f]{32}$/);
 	var asset = int(0, 4294967295);
-	var id = int(0, 9007199254740991);
+	var flag = opt(literal(true));
+	var list = (item) => arr(item, 64, 1);
 	var orderWire = obj({
 		a: asset,
 		b: bool,
@@ -43363,12 +43522,12 @@ zoo`.split("\n"));
 		}) })),
 		c: opt(cloid)
 	});
-	var oid = union(id, cloid);
+	var oid = union(safeInt, cloid);
 	/** The params `sessions.sign` takes for this scheme — `expiresAfter` is required. */
 	var hyperliquidL1Params = obj({
 		action: union(obj({
 			type: literal("order"),
-			orders: arr(orderWire, 64, 1),
+			orders: list(orderWire),
 			grouping: union(literal("na"), literal("normalTpsl"), literal("positionTpsl")),
 			builder: opt(obj({
 				b: lowerAddress,
@@ -43376,33 +43535,30 @@ zoo`.split("\n"));
 			}))
 		}), obj({
 			type: literal("cancel"),
-			cancels: arr(obj({
+			cancels: list(obj({
 				a: asset,
-				o: id
-			}), 64, 1),
-			f: opt(literal(true))
+				o: safeInt
+			})),
+			f: flag
 		}), obj({
 			type: literal("cancelByCloid"),
-			cancels: arr(obj({
+			cancels: list(obj({
 				asset,
 				cloid
-			}), 64, 1),
-			f: opt(literal(true))
+			})),
+			f: flag
 		}), obj({
 			type: literal("modify"),
 			oid,
 			order: orderWire,
-			a: opt(literal(true))
+			a: flag
 		}), obj({
 			type: literal("batchModify"),
-			modifies: arr(obj({
+			modifies: list(obj({
 				oid,
 				order: orderWire
-			}), 64, 1),
-			a: opt(literal(true))
-		}), obj({
-			type: literal("scheduleCancel"),
-			time: opt(id)
+			})),
+			a: flag
 		}), obj({
 			type: literal("updateLeverage"),
 			asset,
@@ -43416,18 +43572,21 @@ zoo`.split("\n"));
 		}), obj({
 			type: literal("twapCancel"),
 			a: asset,
-			t: id
+			t: safeInt
 		})),
-		nonce: safeTime,
+		nonce: safeInt,
 		vaultAddress: opt(lowerAddress),
-		expiresAfter: safeTime
+		expiresAfter: safeInt
 	});
 	var assetList = (value) => {
-		const list = arr(int(0, 99999), 16, 1)(value);
+		const list = arr(obj({
+			asset: int(0, 99999),
+			size: positive
+		}), 16, 1)(value);
 		let prev = -1;
 		for (const entry of list) {
-			if (entry <= prev) throw new Error("assets must be sorted and distinct");
-			prev = entry;
+			if (entry.asset <= prev) throw new Error("assets must be sorted and distinct");
+			prev = entry.asset;
 		}
 		return list;
 	};
@@ -43436,15 +43595,38 @@ zoo`.split("\n"));
 		maxLeverage: int(1, 100),
 		assets: assetList
 	});
+	var canonical = str(32, /^(?:0|[1-9][0-9]{0,14})(?:\.[0-9]{0,15}[1-9])?$/);
+	var hyperliquidL1Spent = (value, limits) => {
+		const spent = obj({
+			notional: canonical,
+			size: arr(canonical, limits.assets.length, limits.assets.length)
+		})(value);
+		if (decimalToUnits(spent.notional) > decimalToUnits(limits.notional)) throw new Error("spent exceeds the buy budget");
+		for (const [i, cap] of limits.assets.entries()) {
+			var _spent$size$i;
+			if (decimalToUnits((_spent$size$i = spent.size[i]) !== null && _spent$size$i !== void 0 ? _spent$size$i : "0") > decimalToUnits(cap.size)) throw new Error("spent exceeds an asset's cap");
+		}
+		return spent;
+	};
+	/** The all-zero metering a fresh record is sealed with — one size slot per limits entry. */
+	var hyperliquidFreshSpent = (limits) => ({
+		notional: "0",
+		size: limits.assets.map(() => "0")
+	});
+	var hyperliquidWorstSpent = (limits) => _objectSpread2(_objectSpread2({}, hyperliquidFreshSpent(limits)), {}, { notional: "0.0000000000000001" });
 	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/prompt.ts
 	var SPOT_ASSET_BASE = 1e4;
-	var kindLines = (limits, perp, spot) => {
-		const perps = [];
-		const spots = [];
-		for (const asset of limits.assets) (asset < SPOT_ASSET_BASE ? perps : spots).push(asset);
+	var capLines = (limits, perp, spot) => {
+		let perps = "";
+		let spots = "";
+		for (const entry of limits.assets) {
+			const item = `${entry.asset} ≤ ${entry.size}`;
+			if (entry.asset < SPOT_ASSET_BASE) perps += perps === "" ? item : `, ${item}`;
+			else spots += spots === "" ? item : `, ${item}`;
+		}
 		const lines = [];
-		if (perps.length > 0) lines.push(`${perp}${perps.join(",")}`);
-		if (spots.length > 0) lines.push(`${spot}${spots.join(",")}`);
+		if (perps !== "") lines.push(`${perp}${perps}`);
+		if (spots !== "") lines.push(`${spot}${spots}`);
 		return lines;
 	};
 	function hyperliquidApproval(session, open, locale) {
@@ -43453,19 +43635,21 @@ zoo`.split("\n"));
 		const lines = locale === "zh-Hans" ? [
 			`Hyperliquid 交易代理 "${session.name}"（${session.scope}）`,
 			`有效期至 ${day}`,
-			`预算：${limits.notional}（价格 × 数量之和，按各市场报价币计）`,
+			`买入预算：${limits.notional}（买单价格 × 数量之和，按各市场报价币计）`,
 			`最大杠杆：${limits.maxLeverage}x`,
-			...kindLines(limits, "永续资产：", "现货资产：")
+			...capLines(limits, "最大数量，买与卖——永续：", "最大数量，买与卖——现货："),
+			"卖单可按交易所接受的任意价格成交"
 		] : [
 			`Hyperliquid trading agent "${session.name}" on ${session.scope}`,
 			`Valid until ${day}`,
-			`Budget: ${limits.notional} (sum of price × size, in each market's quote currency)`,
+			`Buy budget: ${limits.notional} (sum of price × size of buys, quote currency)`,
 			`Max leverage: ${limits.maxLeverage}x`,
-			...kindLines(limits, "Perp assets: ", "Spot assets: ")
+			...capLines(limits, "Max size, buys and sells — perp: ", "Max size, buys and sells — spot: "),
+			"Sells may fill at any price the exchange accepts"
 		];
 		if (open) {
-			const left = unitsToDecimal(decimalToUnits(limits.notional) - decimalToUnits(session.spent));
-			lines.push(locale === "zh-Hans" ? `剩余预算：${left}` : `Remaining: ${left}`);
+			const left = unitsToDecimal(decimalToUnits(limits.notional) - decimalToUnits(session.spent.notional));
+			lines.push(locale === "zh-Hans" ? `剩余买入预算：${left}` : `Remaining buy budget: ${left}`);
 		}
 		return {
 			title: locale === "zh-Hans" ? "批准 Hyperliquid 代理" : "Approve Hyperliquid agent",
@@ -43473,26 +43657,24 @@ zoo`.split("\n"));
 		};
 	}
 	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/index.ts
-	var AGENT_MAX_TTL_MS = 15552e6;
-	var MAX_AGENTS = 16;
-	var EXPIRES_AFTER_MS = 6e4;
-	var NONCE_WINDOW_MS = 6e4;
-	var SCHEDULE_CANCEL_MIN_MS = 5e3;
+	var WINDOW_MS = 6e4;
 	// packages/wallet-kernel/src/modules/sessions/schemes/index.ts
 	var SESSION_SCHEMES = { "hyperliquid-l1-agent": defineSessionScheme({
 		id: "hyperliquid-l1-agent",
-		maxTtlMs: AGENT_MAX_TTL_MS,
-		maxPerVault: MAX_AGENTS,
+		maxTtlMs: 15552e6,
+		maxPerVault: 16,
 		parseScope: hyperliquidNetwork,
 		params: hyperliquidL1Params,
-		document: (params, header, scope, now) => {
-			if (!(now < params.expiresAfter && params.expiresAfter <= now + EXPIRES_AFTER_MS)) throw new KernelError("invalid-input", "expiresAfter outside the signing window");
-			if (Math.abs(params.nonce - now) > NONCE_WINDOW_MS) throw new KernelError("invalid-input", "nonce outside the signing window");
-			if (params.action.type === "scheduleCancel" && params.action.time !== void 0 && !(params.action.time >= now + SCHEDULE_CANCEL_MIN_MS && params.action.time <= header.validUntil)) throw new KernelError("invalid-input", "schedule time outside the session");
+		document: (params, _header, scope, now) => {
+			if (!(now < params.expiresAfter && params.expiresAfter <= now + WINDOW_MS)) throw new KernelError("invalid-input", "expiresAfter outside the signing window");
+			if (Math.abs(params.nonce - now) > WINDOW_MS) throw new KernelError("invalid-input", "nonce outside the signing window");
 			return hyperliquidL1Document(params, scope);
 		},
 		metering: {
 			limits: hyperliquidL1Limits,
+			spent: hyperliquidL1Spent,
+			fresh: hyperliquidFreshSpent,
+			worstSpent: hyperliquidWorstSpent,
 			meter: meterHyperliquid,
 			prompt: hyperliquidApproval
 		}
@@ -43509,6 +43691,7 @@ zoo`.split("\n"));
 	init_objectSpread2();
 	/** At most 64 live session keys across schemes — also the protocol's sessions.list array cap. */
 	var MAX_SESSIONS = 64;
+	var MAX_METERED_PER_OWNER = 2;
 	/** Random draws retried before giving up on a valid secp256k1 scalar. */
 	var MAX_KEY_DRAWS = 8;
 	/** `platform.random(32)` until the bytes are a valid secret key; rejects are wiped. */
@@ -43531,18 +43714,43 @@ zoo`.split("\n"));
 	var meteredHeader = (metering, header) => {
 		if (header.limits === void 0 || header.spent === void 0) throw new KernelError("integrity", "the session record carries no metering", void 0, true);
 		try {
+			const limits = metering.parseLimits(header.limits);
 			return {
-				limits: metering.parseLimits(header.limits),
-				spent: header.spent
+				limits,
+				spent: metering.parseSpent(header.spent, limits)
 			};
 		} catch (_unused) {
-			throw new KernelError("integrity", "invalid session limits in the vault", void 0, true);
+			throw new KernelError("integrity", "invalid session metering in the vault", void 0, true);
 		}
 	};
 	/** The approval prompt a scheme renders — shared by create and open. */
 	var approvalPrompt = (platform, metering, session, open) => () => {
 		var _platform$keystore$lo, _platform$keystore;
 		return metering.prompt(session, open, promptLocale((_platform$keystore$lo = (_platform$keystore = platform.keystore) === null || _platform$keystore === void 0 ? void 0 : _platform$keystore.locale) !== null && _platform$keystore$lo !== void 0 ? _platform$keystore$lo : "en"));
+	};
+	var confirmLimits = async (platform, prompt) => {
+		const { keystore } = platform;
+		if ((keystore === null || keystore === void 0 ? void 0 : keystore.platform) !== "ios") return;
+		const { secureInput } = platform;
+		if (secureInput === void 0) throw new KernelError("unsupported", "this host cannot display the session limits");
+		let code = "";
+		while (code === "") {
+			var _draw$, _draw$2;
+			const draw = platform.random(2);
+			const value = ((_draw$ = draw[0]) !== null && _draw$ !== void 0 ? _draw$ : 0) * 256 + ((_draw$2 = draw[1]) !== null && _draw$2 !== void 0 ? _draw$2 : 0);
+			wipe(draw);
+			if (value < 6e4) code = String(value % 1e4).padStart(4, "0");
+		}
+		const { title, description } = prompt();
+		const label = `${title}\n${description}\n${sessionApprovalCode(promptLocale(keystore.locale), code)}`;
+		const result = await secureInput.request("session-approval", label);
+		if (!result.ok) throw new KernelError(result.failure, `session approval input: ${result.failure}`);
+		const entered = result.value;
+		try {
+			if (entered.length !== 4 || !entered.every((byte, index) => byte === code.codePointAt(index))) throw new KernelError("cancelled", "the confirmation code did not match");
+		} finally {
+			wipe(entered);
+		}
 	};
 	/** The public snapshot of one stored session — the record id is the lowercase address. */
 	function sessionInfo(record) {
@@ -43560,7 +43768,7 @@ zoo`.split("\n"));
 			validUntil: header.validUntil,
 			createdAt: header.createdAt,
 			limits: (_header$limits = header.limits) !== null && _header$limits !== void 0 ? _header$limits : null,
-			spent: (_header$spent = header.spent) !== null && _header$spent !== void 0 ? _header$spent : "0"
+			spent: (_header$spent = header.spent) !== null && _header$spent !== void 0 ? _header$spent : null
 		};
 	}
 	var createSession = (opened) => async (ctx, params, session) => {
@@ -43588,15 +43796,33 @@ zoo`.split("\n"));
 			limits = parsed;
 		} else if (params.limits !== null) throw new KernelError("invalid-input", "the scheme takes no limits");
 		const records = ctx.image.records.filter((record) => record.kind === SESSION_KIND);
-		if (records.length >= MAX_SESSIONS || records.filter((record) => parseSessionHeader(record.header).scheme === scheme.id).length >= scheme.maxPerVault) throw new KernelError("conflict", "session limit reached");
+		let perOwner = 0;
+		let perScheme = 0;
+		for (const record of records) {
+			const header = parseSessionHeader(record.header);
+			if (header.scheme !== scheme.id) continue;
+			perScheme++;
+			if (header.walletId === params.owner.walletId && header.groupIndex === params.owner.groupIndex && header.scope === scope && now < header.validUntil) perOwner++;
+		}
+		if (records.length >= MAX_SESSIONS || perScheme >= scheme.maxPerVault || metering !== void 0 && perOwner >= MAX_METERED_PER_OWNER) throw new KernelError("conflict", "session limit reached");
 		assertAppLock(ctx.platform, ctx.image, metering);
-		if (metering !== void 0) await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, approvalPrompt(ctx.platform, metering, {
-			scope,
-			name: params.name,
-			validUntil: params.validUntil,
-			limits,
-			spent: "0"
-		}, false));
+		if (metering !== void 0 && limits !== void 0) {
+			const approval = {
+				scope,
+				name: params.name,
+				validUntil: params.validUntil,
+				limits
+			};
+			const { keystore } = ctx.platform;
+			if (keystore !== void 0) {
+				const locale = promptLocale(keystore.locale);
+				const bound = PROMPT_BOUNDS[keystore.platform];
+				if (!promptFits(metering.prompt(_objectSpread2(_objectSpread2({}, approval), {}, { spent: metering.fresh(limits) }), false, locale), bound) || !promptFits(metering.prompt(_objectSpread2(_objectSpread2({}, approval), {}, { spent: metering.worstSpent(limits) }), true, locale), bound)) throw new KernelError("invalid-input", "the session limits do not fit the approval dialog");
+			}
+			const prompt = approvalPrompt(ctx.platform, metering, _objectSpread2(_objectSpread2({}, approval), {}, { spent: metering.fresh(limits) }), false);
+			await confirmLimits(ctx.platform, prompt);
+			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, prompt);
+		}
 		const entropy = findSeedWallet(ctx.image, params.owner.walletId);
 		const owner = await withWalletSeed(ctx.platform.pbkdf2, dek, entropy, (seed) => {
 			const master = HDKey$1.fromMasterSeed(seed);
@@ -43624,9 +43850,9 @@ zoo`.split("\n"));
 				name: params.name,
 				validUntil: params.validUntil,
 				createdAt: now
-			}, limits === void 0 ? {} : {
+			}, metering === void 0 || limits === void 0 ? {} : {
 				limits,
-				spent: "0"
+				spent: metering.fresh(limits)
 			}));
 			const record = sealRecord(ctx.platform, dek, SESSION_KIND, address.toLowerCase(), header, priv);
 			await ctx.commit([{
@@ -43664,13 +43890,23 @@ zoo`.split("\n"));
 		if (ctx.platform.now() >= header.validUntil) throw new KernelError("invalid-input", "the session has expired");
 		const { limits, spent } = meteredHeader(metering, header);
 		assertAppLock(ctx.platform, ctx.image, metering);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, approvalPrompt(ctx.platform, metering, {
+		const { keystore } = ctx.platform;
+		if (keystore !== void 0 && !promptFits(metering.prompt({
 			scope: header.scope,
 			name: header.name,
 			validUntil: header.validUntil,
 			limits,
 			spent
-		}, true));
+		}, true, promptLocale(keystore.locale)), PROMPT_BOUNDS[keystore.platform])) throw new KernelError("invalid-input", "the session limits do not fit the approval dialog");
+		const prompt = approvalPrompt(ctx.platform, metering, {
+			scope: header.scope,
+			name: header.name,
+			validUntil: header.validUntil,
+			limits,
+			spent
+		}, true);
+		await confirmLimits(ctx.platform, prompt);
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, prompt);
 		opened.add(record.id);
 		return null;
 	};
@@ -60157,7 +60393,7 @@ zoo`.split("\n"));
 		if (liveApprovals(state, ctx, key).length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
 		const { summary, decoded } = decodeIntent(await sparkRuntime(state), params.account, params.intent);
 		const { keystore } = ctx.platform;
-		const shown = keystore === void 0 ? void 0 : boundPrompt(promptLocale(keystore.locale), sparkPrompt(promptLocale(keystore.locale), summary), PROMPT_BOUNDS[keystore.platform]);
+		const shown = keystore === void 0 ? void 0 : boundPrompt(promptLocale(keystore.locale), rowsOf(sparkPrompt(promptLocale(keystore.locale), summary)), PROMPT_BOUNDS[keystore.platform]);
 		if ((shown === null || shown === void 0 ? void 0 : shown.oversize) === true && !policyEnabled(ctx.image, dek, "blind-signing")) throw new KernelError("blind-signing-disabled", "blind signing is turned off for this vault");
 		const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
 		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => shown === void 0 ? sparkPrompt(locale, summary) : shown.prompt);
@@ -63365,6 +63601,21 @@ zoo`.split("\n"));
 			}
 		};
 	}
+	// packages/wallet-native/kernel/policy.ts
+	/**
+	* The native session policy: a 15-minute presence idle lock, same semantics as the Web — only
+	* presence-bearing methods count, so `sessions.sign` trading or background traffic cannot hold the
+	* vault open — under a 24-hour absolute session. The host still locks on backgrounding after
+	* autoLock.backgroundSeconds (W7).
+	*/
+	var NATIVE_POLICY = {
+		maxSessionMs: 864e5,
+		maxScryptLogN: 18,
+		idle: {
+			ms: 9e5,
+			activity: "presence"
+		}
+	};
 	// packages/wallet-native/kernel/secure-input.ts
 	var isValidUtf8 = (value) => {
 		try {
@@ -63377,11 +63628,13 @@ zoo`.split("\n"));
 	/**
 	* The hub's contract for `kind`, rechecked here: an access code is 1..64 printable-ASCII bytes, a
 	* short id is exactly 8 upper-case hex characters, a backup password is 1..1024 bytes of valid
-	* UTF-8. A platform that hands over out-of-shape bytes gets them wiped, not forwarded.
+	* UTF-8, a session approval is exactly 4 ASCII digits. A platform that hands over out-of-shape
+	* bytes gets them wiped, not forwarded.
 	*/
 	function validFor(kind, value) {
 		if (kind === "access-code") return value.length > 0 && value.length <= 64 && value.every((byte) => byte >= 32 && byte <= 126);
 		if (kind === "short-id") return value.length === 8 && value.every((byte) => byte >= 48 && byte <= 57 || byte >= 65 && byte <= 70);
+		if (kind === "session-approval") return value.length === 4 && value.every((byte) => byte >= 48 && byte <= 57);
 		return value.length > 0 && value.length <= 1024 && isValidUtf8(value);
 	}
 	function bindNativeSecureInput(raw) {
@@ -63808,10 +64061,7 @@ zoo`.split("\n"));
 		keystore: bindNativeKeystore(__qntx.keystore),
 		passkey: bindNativePasskey(__qntx.passkey, (length) => __qntx.random(length)),
 		secureInput: bindNativeSecureInput(__qntx.secureInput),
-		policy: {
-			maxSessionMs: 864e5,
-			maxScryptLogN: 18
-		},
+		policy: NATIVE_POLICY,
 		backends: {
 			nostr: bindNativeNostr(__qntx.backends.nostr),
 			spark: async () => spark
