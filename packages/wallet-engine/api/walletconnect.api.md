@@ -4,6 +4,7 @@
 
 ```ts
 
+import { BackupFactorInput } from '@qntx/wallet';
 import { BackupHeader } from '@qntx/wallet';
 import { BackupInfo } from '@qntx/wallet';
 import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
@@ -40,7 +41,6 @@ import { SparkSigner } from '@qntx/wallet/spark';
 import { SparkStore } from '@qntx/spark';
 import { SparkTransfer } from '@qntx/spark';
 import { StoreApi } from 'zustand/vanilla';
-import { UnlockFactor } from '@qntx/wallet';
 import { UnsignedEvent } from '@qntx/nostr';
 import { VerifyFactor } from '@qntx/wallet';
 import { Wallet } from '@qntx/wallet';
@@ -475,7 +475,7 @@ class BackupController extends Controller<BackupControllerState> {
     // (undocumented)
     enable(options: {
         readonly verify: VerifyFactor;
-        readonly factors: ReadonlyArray<UnlockFactor>;
+        readonly factors: ReadonlyArray<BackupFactorInput>;
     }): Promise<void>;
     // (undocumented)
     init(): Promise<void>;
@@ -487,7 +487,7 @@ class BackupController extends Controller<BackupControllerState> {
     lock(): void;
     restore(options: {
         readonly name: string;
-        readonly backupFactor: UnlockFactor;
+        readonly backupFactor: BackupFactorInput;
         readonly passphrases?: ReadonlyArray<{
             readonly walletId: string;
             readonly passphrase: string;
