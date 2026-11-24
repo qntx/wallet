@@ -3,25 +3,14 @@ import { readFileSync } from "node:fs";
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
-import { card } from "@qntx/wallet/card";
 import type { DeviceIo } from "@qntx/wallet/hardware";
 import { hardware } from "@qntx/wallet/hardware";
-import { connectKernel } from "@qntx/wallet/host";
 
-import { shortId } from "../../wallet-kernel/src/modules/card/protocol/identity.ts";
-import { createFakeCard } from "../../wallet-kernel/tests/card/fake-card.ts";
-import type { FakeCard } from "../../wallet-kernel/tests/card/fake-card.ts";
-import { testSecureInput } from "../../wallet-kernel/tests/card/input.ts";
-import type { TestSecureInput } from "../../wallet-kernel/tests/card/input.ts";
-import { testCardReader } from "../../wallet-kernel/tests/card/reader.ts";
-import type { TestCardReader } from "../../wallet-kernel/tests/card/reader.ts";
-import { CA1_ANCHOR } from "../../wallet-kernel/tests/card/sim.ts";
-import { createHarness } from "../../wallet-kernel/tests/harness.ts";
 import { SignersController } from "../src/signers/controller.ts";
 import type { SignerFamily, SignersState } from "../src/signers/controller.ts";
-import { MNEMONIC, nodeWallet, until, VERIFY } from "./apps-helpers.ts";
+import { nodeWallet, until, VERIFY } from "./apps-helpers.ts";
+import { cardRig, CARD_CODE, CARD_VERIFY } from "./card-rig.ts";
 import { keystoneIo } from "./keystone-io.ts";
 
 const SYNC = hexToBytes(
@@ -90,112 +79,6 @@ const typedData = (hwId: string) => ({
     message: { contents: "hello" },
   }),
 });
-
-const CODE_TEXT = "card rig access";
-const CARD_VERIFY = { kind: "password" as const, password: "card rig password" };
-
-type CardRig = {
-  wallet: Wallet;
-  cardWalletId: string;
-  input: TestSecureInput;
-  reader: TestCardReader;
-  member: FakeCard;
-};
-
-/**
- * A real Wallet over the in-process kernel with the fake card platform bound — the created card
- * wallet is a k=1 import of the abandon mnemonic, so its access code is CODE_TEXT.
- */
-const cardRig = async (): Promise<CardRig> => {
-  const field = testCardReader();
-  const input = testSecureInput();
-  // A real `open` polls the field until a card enters or the platform window ends — the scripted
-  // reader answers `timeout` on the spot, which on an empty queue would spin `tapRetry` at
-  // microtask pace and starve the event loop. Park the poll until `present` queues a card or
-  // `close` ends the session.
-  let ended = false;
-  let wake: (() => void) | undefined;
-  const nextPoll = async (): Promise<void> =>
-    new Promise<void>((resolve) => {
-      wake = resolve;
-    });
-  const reader: TestCardReader = {
-    ...field,
-    reader: {
-      open: async (prompt) => {
-        ended = false;
-        for (;;) {
-          if (ended) {
-            return { ok: false, failure: "interrupted", detail: undefined };
-          }
-          // oxlint-disable-next-line eslint/no-await-in-loop -- one field poll at a time
-          const opened = await field.reader.open(prompt);
-          if (opened.ok || opened.failure !== "timeout") {
-            return opened;
-          }
-          // oxlint-disable-next-line eslint/no-await-in-loop -- the field poll waits for a card
-          await nextPoll();
-        }
-      },
-      transmit: async (apdu) => field.reader.transmit(apdu),
-      close: (outcome, text) => {
-        ended = true;
-        wake?.();
-        wake = undefined;
-        field.reader.close(outcome, text);
-      },
-    },
-    present: (card) => {
-      field.present(card);
-      wake?.();
-    },
-  };
-  const h = createHarness({
-    card: { reader: reader.reader, secureInput: input.secureInput, anchors: [CA1_ANCHOR] },
-  });
-  const wallet = await connectKernel({
-    verifyEvent,
-    spawn: () => h.hostPort,
-    factors: "software",
-    passkey: {
-      rpId: "qntx.test",
-      rpName: "qntx",
-      walletSalt: "qntx/wallet",
-      backupSalt: "qntx/backup",
-      vaultSalt: "qntx/vault",
-    },
-    ceremony: undefined,
-    setTimer: (ms, fn) => {
-      const id = setTimeout(fn, ms);
-      return () => clearTimeout(id);
-    },
-  });
-  const { walletId: sourceId } = await wallet.wallets.importMnemonic({
-    mnemonic: MNEMONIC,
-    factor: CARD_VERIFY,
-  });
-  const member = createFakeCard();
-  const created = card(wallet).start(
-    { kind: "create", cards: 1, source: { kind: "wallet", walletId: sourceId } },
-    { verify: CARD_VERIFY },
-  );
-  created.observe((step) => {
-    if (step.kind === "input") {
-      input.push(
-        step.purpose === "short-id"
-          ? utf8ToBytes(shortId(member.identity))
-          : utf8ToBytes(CODE_TEXT),
-      );
-    } else if (step.kind === "tap") {
-      reader.present(member);
-    }
-  });
-  const made = await created.result;
-  if (made.kind !== "create") {
-    throw new Error("the card wallet was not created");
-  }
-  return { wallet, cardWalletId: made.walletId, input, reader, member };
-};
 
 /** The inner card step the activity currently shows, if any. */
 const activeCardStep = (signers: SignersController): string | undefined => {
@@ -282,7 +165,7 @@ describe("the signers controller", () => {
     const { wallet, cardWalletId, input, reader, member } = await cardRig();
     const signers = controller(wallet);
     // Pre-queue the access code — the op consumes it on the spot and parks at the tap wait.
-    input.push(utf8ToBytes(CODE_TEXT));
+    input.push(utf8ToBytes(CARD_CODE));
     const first = signers.apis.sign({ request: typedData(cardWalletId), verify: CARD_VERIFY });
     // The member-card prompt is on screen — the card op is in flight.
     await until(() => activeCardStep(signers) === "tap");
