@@ -395,8 +395,26 @@ describe("ledger driver verifyAddress", () => {
     fake.done();
   });
 
-  it("reports a user rejection as unmatched, not an error", async () => {
+  it("refuses a user rejection as device-rejected", async () => {
     const fake = scriptedLedger("ethereum", [{ response: "6985" }]);
+    await expect(
+      code(async () =>
+        LEDGER_DRIVER.verifyAddress(
+          fake.link,
+          {
+            template: "evm.bip44",
+            network: "eip155:1",
+            path: ETH_PATH,
+            address: "0x0000000000000000000000000000000000000000",
+          },
+          pin,
+        ),
+      ),
+    ).resolves.toBe("device-rejected");
+  });
+
+  it("reports a different evm address as unmatched", async () => {
+    const fake = scriptedLedger("ethereum", caseSteps("ethereum", "address-display"));
     const verdict = await LEDGER_DRIVER.verifyAddress(
       fake.link,
       {
@@ -408,6 +426,7 @@ describe("ledger driver verifyAddress", () => {
       pin,
     );
     expect(verdict).toStrictEqual({ method: "device", matched: false });
+    fake.done();
   });
 
   it("matches a solana address the device shows", async () => {

@@ -376,6 +376,14 @@ describe("verifyAddress", () => {
     expect(verdict).toStrictEqual({ method: "device", matched: false });
   });
 
+  it("refuses a user rejection on the device as device-rejected", async () => {
+    const { link } = scripted([PRO, nodeReply(EVM_ACCOUNT), failure(4)]);
+    const error = await kernelErrorOf(async () =>
+      ONEKEY_DRIVER.verifyAddress(link, evmTarget, PIN),
+    );
+    expect(error.code).toBe("device-rejected");
+  });
+
   it("rejects a device whose account node differs from the pin", async () => {
     const { link } = scripted([PRO, nodeReply(EVM_ACCOUNT, OTHER_SEED)]);
     const error = await kernelErrorOf(async () =>
