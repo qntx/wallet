@@ -19,6 +19,8 @@ import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, it } from "vite-plus/test";
 
 import type { DisplayIntent, PolymarketContent } from "@qntx/wallet-chains";
+import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
 
 /* The SDK's exports map hides its builders; tests deep-import dist/ by relative path (test-only).
    The dist .d.ts for this module declares no members — the names resolve at runtime only. */
@@ -252,6 +254,8 @@ const env = (
     setTimer: timers.setTimer,
     now: () => timers.time,
     wallet: w.wallet,
+    account: async (params: Parameters<ChainsApi["account"]>[0]) =>
+      chains(w.wallet).account(params),
     credentials: w.credentials,
     networks: NETWORKS,
     requests: {
@@ -760,6 +764,8 @@ it("masks the salt to 53 bits — it always serializes as an exact JSON number",
     setTimer: timers.setTimer,
     now: () => timers.time,
     wallet: w.wallet,
+    account: async (params: Parameters<ChainsApi["account"]>[0]) =>
+      chains(w.wallet).account(params),
     credentials: w.credentials,
     networks: NETWORKS,
     requests: {

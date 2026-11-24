@@ -51,7 +51,7 @@ export function createHyperliquidAgentRegistry(options: {
   readonly agents: {
     readonly list: () => Promise<ReadonlyArray<SessionInfo>>;
   };
-  /** The group's `evm.bip44` address on the signature chain — `chains(wallet).account`. */
+  /** The group's `evm.bip44` address on the signature chain — the apps account seam. */
   readonly evmAddress: (group: HyperliquidGroup) => Promise<string>;
   readonly network: HyperliquidNetwork;
   readonly now: () => number;

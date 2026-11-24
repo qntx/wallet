@@ -10,6 +10,9 @@
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, it } from "vite-plus/test";
 
+import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
+
 import { CLOB_HOST, RELAYER_HOST } from "../src/apps/polymarket/constants.ts";
 import { PolymarketError } from "../src/apps/polymarket/errors.ts";
 import { createPolymarketProvider } from "../src/apps/polymarket/provider.ts";
@@ -174,6 +177,8 @@ const env = (
     setTimer: timers.setTimer,
     now: () => timers.time,
     wallet: w.wallet,
+    account: async (params: Parameters<ChainsApi["account"]>[0]) =>
+      chains(w.wallet).account(params),
     credentials: w.credentials,
     networks: NETWORKS,
     requests: {

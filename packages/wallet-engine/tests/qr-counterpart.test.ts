@@ -58,7 +58,7 @@ import type { QrPayload } from "@qntx/wallet/hardware";
 import type { ChainSignRequest, ChainSignResult } from "@qntx/wallet/protocol";
 
 import { WatchController } from "../src/accounts/watch.ts";
-import { signingApis } from "../src/chains/signing.ts";
+import { SignersController } from "../src/signers/controller.ts";
 import type { WalletEngine } from "../src/engine.ts";
 import {
   createQrScanner,
@@ -268,12 +268,20 @@ const EIP1559_TX: EvmTransaction = {
 
 /**
  * The phone's QR world: `qrSigner` over a real `RequestController` whose chain options submit
- * through `signingApis` — the vault kernel signs every request exactly as the engine would.
+ * through `signers.apis` — the vault kernel signs every request exactly as the engine would.
  */
 const world = async (): Promise<World> => {
   const { wallet } = await nodeWallet();
   await wallet.vault.unlock(VERIFY).catch(() => undefined);
-  const signing = signingApis(wallet, undefined);
+  const signers = new SignersController({
+    wallet,
+    recheck: async () => {
+      await Promise.resolve();
+    },
+    random: webRandom,
+    logger: { warn: () => undefined },
+  });
+  const signing = signers.apis;
   const signedTransaction = (
     request: ChainSignRequest,
     result: ChainSignResult,
@@ -495,6 +503,7 @@ const world = async (): Promise<World> => {
   const engine = {
     requests,
     networks: { enabled: (family: string) => ENABLED[family] ?? [] },
+    signers: { apis: signers.apis },
   } as unknown as WalletEngine;
   return { wallet, requests, signer: qrSigner({ engine, wallet }) };
 };

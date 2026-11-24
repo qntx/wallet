@@ -15,6 +15,7 @@ import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
 
 import { hyperliquid as hyperliquidApp } from "../src/apps/hyperliquid/index.ts";
 import { createHyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
@@ -191,6 +192,8 @@ describe.runIf(RUN && MNEMONIC !== undefined)("hyperliquid e2e: testnet enable +
     const { controller, hyperliquid, destroy } = createApps({
       networks,
       wallet,
+      account: async (params: Parameters<ChainsApi["account"]>[0]) =>
+        chains(wallet).account(params),
       requests,
       fetch,
       now,

@@ -15,6 +15,8 @@ import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { sessions } from "@qntx/wallet/sessions";
+import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
 
 import { HyperliquidError } from "../src/apps/hyperliquid/errors.ts";
 import { createHyperliquidProvider } from "../src/apps/hyperliquid/provider.ts";
@@ -212,6 +214,8 @@ const rig = async (
     now: timers.now,
     setTimer: timers.setTimer,
     wallet,
+    account: async (params: Parameters<ChainsApi["account"]>[0]) =>
+      chains(wallet).account(params),
     random: RANDOM,
     logger: LOGGER,
   });

@@ -19,7 +19,6 @@ import {
   decodeSolanaTransaction,
   normalizeSolana,
 } from "@qntx/wallet-chains/solana";
-import { chains } from "@qntx/wallet/chains";
 import type { DeviceIo } from "@qntx/wallet/hardware";
 import { nostr } from "@qntx/wallet/nostr";
 import { sessions } from "@qntx/wallet/sessions";
@@ -258,7 +257,10 @@ export type WalletEngine = {
    * Every engine signature runs through its `apis` — the request's wallet custody decides whether
    * the vault signs directly or the signer runs first.
    */
-  readonly signers: HostController<SignersController, "cancel" | "verifyAddress" | "fetchAccounts">;
+  readonly signers: HostController<
+    SignersController,
+    "apis" | "cancel" | "verifyAddress" | "fetchAccounts"
+  >;
   readonly addressBook: HostController<
     AddressBookController,
     "add" | "rename" | "setNote" | "remove"
@@ -510,10 +512,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
 
   const assets = new AssetsController({
     networks,
-    // Deferred like every other chains() call here — resolving the api at construction would
+    // Deferred like every other account seam here — resolving the api at construction would
     // validate the wallet before any balance read needs it.
     chains: {
-      account: async (params) => chains(options.wallet).account(params),
+      account: async (params) => signers.apis.account(params),
     },
     ownBitcoinTxids: () => ownBitcoinTxids(transactions.getState().txs),
     openStore: sessionStore,
@@ -578,10 +580,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
 
   const history = new HistoryController({
     networks,
-    // Deferred like every other chains() call here — resolving the api at construction would
+    // Deferred like every other account seam here — resolving the api at construction would
     // validate the wallet before any history read needs it.
     chains: {
-      account: async (params) => chains(options.wallet).account(params),
+      account: async (params) => signers.apis.account(params),
     },
     spark: controller,
     sparkNetwork: options.sparkNetwork,
@@ -671,10 +673,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     spark: controller,
     sparkNetwork: options.sparkNetwork,
     networks,
-    // Deferred like every other chains() call here — resolving the api at construction would
+    // Deferred like every other account seam here — resolving the api at construction would
     // validate the wallet before any discovery check needs it.
     chains: {
-      account: async (params) => chains(options.wallet).account(params),
+      account: async (params) => signers.apis.account(params),
     },
     logger: options.logger,
     now: options.now,
@@ -702,7 +704,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
           ).flatMap(([template, family]) =>
             networks.enabled(family).map(async (network) => {
               try {
-                const account = await chains(options.wallet).account({
+                const account = await signers.apis.account({
                   walletId,
                   groupIndex: group.index,
                   template,
@@ -921,7 +923,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     purpose: "payment" | "ordinals",
   ): Promise<{ address: string; publicKey: Uint8Array }> => {
     const template = purpose === "payment" ? "btc.bip84" : "btc.bip86";
-    const account = await chains(options.wallet).account({ ...group, template, network });
+    const account = await signers.apis.account({ ...group, template, network });
     if (!("xpub" in account) || account.xpub === undefined) {
       throw new Error("no Bitcoin account for the group");
     }
@@ -949,7 +951,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     if (account.kind === "imported") {
       return importedAddressOf(account, "evm");
     }
-    const resolved = await chains(options.wallet).account({
+    const resolved = await signers.apis.account({
       walletId: account.walletId,
       groupIndex: account.groupIndex,
       template: "evm.bip44",
@@ -961,7 +963,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     if (account.kind === "imported") {
       return importedAddressOf(account, "solana");
     }
-    const resolved = await chains(options.wallet).account({
+    const resolved = await signers.apis.account({
       walletId: account.walletId,
       groupIndex: account.groupIndex,
       template: "solana.bip44-change",
@@ -990,7 +992,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
           : ("tron.bip44" as const);
     try {
       // One derivation serves every network of the family: the address does not depend on it.
-      const account = await chains(options.wallet).account({
+      const account = await signers.apis.account({
         ...group,
         template,
         network: first,
@@ -1086,7 +1088,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       requests.invalidateAll();
     },
     evmAddress: async (group, network) => {
-      const account = await chains(options.wallet).account({
+      const account = await signers.apis.account({
         ...group,
         template: "evm.bip44",
         network,
@@ -1097,7 +1099,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       return account.address;
     },
     solanaAddress: async (group, network) => {
-      const account = await chains(options.wallet).account({
+      const account = await signers.apis.account({
         ...group,
         template: "solana.bip44-change",
         network,
@@ -1108,7 +1110,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       return account.address;
     },
     tronAddress: async (group, network) => {
-      const account = await chains(options.wallet).account({
+      const account = await signers.apis.account({
         ...group,
         template: "tron.bip44",
         network,
@@ -1172,7 +1174,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     connections,
     requests,
     solanaAccount: async (group, network) => {
-      const account = await chains(options.wallet).account({
+      const account = await signers.apis.account({
         ...group,
         template: "solana.bip44-change",
         network,

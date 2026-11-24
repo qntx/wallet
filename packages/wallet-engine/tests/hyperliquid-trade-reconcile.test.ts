@@ -13,6 +13,8 @@ import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import type { HyperliquidL1Action } from "@qntx/wallet/protocol";
 import { sessions } from "@qntx/wallet/sessions";
+import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
 
 import { createHyperliquidAccount } from "../src/apps/hyperliquid/account.ts";
 import { createHyperliquidAgentRegistry } from "../src/apps/hyperliquid/agents.ts";
@@ -302,6 +304,8 @@ const rig = async (
     now: timers.now,
     setTimer: timers.setTimer,
     wallet,
+    account: async (params: Parameters<ChainsApi["account"]>[0]) =>
+      chains(wallet).account(params),
     random,
     logger: { warn: () => undefined },
     ...(extra.sockets === undefined

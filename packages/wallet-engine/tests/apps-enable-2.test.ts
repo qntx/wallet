@@ -1011,6 +1011,7 @@ describe("app-sourced request origins", () => {
     } as unknown as Wallet;
     const created = createApps({
       wallet,
+      account: async (): Promise<never> => Promise.reject(new Error("unused")),
       requests,
       networks: {} as Pick<NetworkController, "client" | "independentClient">,
       fetch: async () => Promise.reject(new Error("unused")),
@@ -1077,6 +1078,7 @@ describe("app-sourced request origins", () => {
         getSnapshot: () => ({ vault: "locked", wallets: [] }),
         subscribe: () => () => undefined,
       } as unknown as Wallet,
+      account: async (): Promise<never> => Promise.reject(new Error("unused")),
       requests: {
         prepare: async (): Promise<PendingRequest> => Promise.reject(new Error("unused")),
         outcome: async (): Promise<never> => Promise.reject(new Error("unused")),
@@ -1153,6 +1155,7 @@ describe("app context accessors and guards", () => {
     });
     const created = createApps({
       wallet,
+      account: async (): Promise<never> => Promise.reject(new Error("unused")),
       requests: {
         prepare: async (): Promise<PendingRequest> => Promise.reject(new Error("unused")),
         outcome: async (): Promise<never> => Promise.reject(new Error("unused")),

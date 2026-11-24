@@ -757,6 +757,7 @@ export const world = async (
   ];
   const created = createApps({
     wallet,
+    account: signers.apis.account,
     requests: options.wrapRequests === undefined ? requests : options.wrapRequests(requests),
     networks,
     fetch,

@@ -33,6 +33,8 @@ import type { TaskKey, SignRequest } from "@qntx/wallet-chains";
 import { assembleEvm, planEvm, decodeEvm } from "@qntx/wallet-chains/evm";
 import { parseCompiledMessage } from "@qntx/wallet-chains/solana";
 import { tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
+import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
 import type { QrPayload } from "@qntx/wallet/hardware";
 
 import vectors from "../../../vectors/qr/requests.json" with { type: "json" };
@@ -380,6 +382,14 @@ const world = async (options: { clusterError?: boolean } = {}): Promise<World> =
   const engine = {
     requests,
     networks: { enabled: (family: string) => ENABLED[family] ?? [] },
+    signers: {
+      apis: {
+        account: async (params: Parameters<ChainsApi["account"]>[0]) =>
+          chains(wallet).account(params),
+        exportAccount: async (params: Parameters<ChainsApi["exportAccount"]>[0]) =>
+          chains(wallet).exportAccount(params),
+      },
+    },
   } as unknown as WalletEngine;
   return {
     wallet,

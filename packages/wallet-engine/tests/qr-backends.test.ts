@@ -2,11 +2,11 @@
 /**
  * Origins × backends through the one signing seam: a QR request (like a dApp's or an internal one)
  * is signed by whatever backs the account — a vault mnemonic, a passkey-derived wallet, or a paired
- * Keystone 3 Pro through `EngineOptions.devices`. The RequestController and `qrSigner` are real;
- * the transaction/solana/bitcoin options submit through `signingApis` so every signature reaches
- * the kernel (vault) or the simulated device (hardware). A hardware sign is asserted to need
- * exactly one device exchange and none before approval; the response UR and its CBOR keys are
- * identical whichever custody signed.
+ * Keystone 3 Pro through `EngineOptions.deviceIo`. The RequestController and `qrSigner` are real;
+ * the transaction/solana/bitcoin options submit through the SignersController's `apis` so every
+ * signature reaches the kernel (vault) or the simulated device (hardware). A hardware sign is
+ * asserted to need exactly one device exchange and none before approval; the response UR and its
+ * CBOR keys are identical whichever custody signed.
  */
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
@@ -51,9 +51,10 @@ import { hardware } from "@qntx/wallet/hardware";
 import type { DeviceIo } from "@qntx/wallet/hardware";
 import type { ChainSignRequest, ChainSignResult, ChainTemplate } from "@qntx/wallet/protocol";
 
-import { signingApis } from "../src/chains/signing.ts";
-import type { DeviceTransport } from "../src/chains/signing.ts";
+import type { HardwareDevice } from "@qntx/wallet/protocol";
+
 import type { WalletEngine } from "../src/engine.ts";
+import { SignersController } from "../src/signers/controller.ts";
 import { QrError } from "../src/qr/index.ts";
 import type { QrRequest } from "../src/qr/request.ts";
 import { qrSigner } from "../src/qr/signer.ts";
@@ -69,8 +70,8 @@ import type {
   PreparedRequest,
 } from "../src/transactions/route.ts";
 import { approval } from "./approval.ts";
-import { VERIFY, nodeWallet } from "./apps-helpers.ts";
-import { keystoneIo } from "./keystone-device.ts";
+import { until, VERIFY, nodeWallet } from "./apps-helpers.ts";
+import { keystoneSimIo } from "./keystone-io.ts";
 import { bookDeps, idleNetworkDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 
 const H = 0x80000000;
@@ -169,8 +170,14 @@ const backends = async (): Promise<Backends> => {
   const { wallet, walletId } = await nodeWallet();
   await wallet.vault.unlock(VERIFY).catch(() => undefined);
   const passkey = await wallet.wallets.createWithPasskey({ name: "qr backends passkey" });
-  const device = keystoneIo(DEVICE_SEED, deviceFingerprint);
-  const paired = await hardware(wallet).pair("keystone", device.io);
+  const device = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
+  const pairResult = await hardware(wallet)
+    .start({ kind: "pair", device: "keystone" }, { io: device.io })
+    .result;
+  if (pairResult.kind !== "pair") {
+    throw new Error("expected a pair result");
+  }
+  const paired = pairResult.wallet;
   shared = {
     wallet,
     mnemonic: await factsOf(wallet, walletId),
@@ -371,18 +378,34 @@ type World = {
   readonly wallet: Wallet;
   readonly requests: RequestController;
   readonly signer: ReturnType<typeof qrSigner>;
-  readonly signing: ReturnType<typeof signingApis>;
+  readonly signers: SignersController;
 };
 
+const RANDOM = (length: number): Uint8Array => new Uint8Array(length).fill(7);
+
+/** The signer seam built the way the engine builds it — `deviceIo` resolves per paired kind. */
+const signersOf = (wallet: Wallet, deviceIo?: (device: HardwareDevice) => DeviceIo) =>
+  new SignersController({
+    wallet,
+    deviceIo,
+    recheck: async () => {
+      await Promise.resolve();
+    },
+    networks: { enabled: (family) => ENABLED[family] ?? [] },
+    random: RANDOM,
+    logger: { warn: () => undefined },
+  });
+
 /**
- * The QR world with real signing: every option the pipeline calls signs through `signing`, the seam
- * an engine builds from `options.devices` — the kernel for vault wallets, the device for hardware
- * custody.
+ * The QR world with real signing: every option the pipeline calls signs through `signers.apis`,
+ * the seam an engine builds from `options.deviceIo` — the kernel for vault wallets, the device
+ * for hardware custody.
  */
-const world = async (devices: DeviceTransport | undefined): Promise<World> => {
+const world = async (deviceIo: ((device: HardwareDevice) => DeviceIo) | undefined): Promise<World> => {
   const { wallet } = await nodeWallet();
   await wallet.vault.unlock(VERIFY).catch(() => undefined);
-  const signing = signingApis(wallet, devices);
+  const signers = signersOf(wallet, deviceIo);
+  const signing = signers.apis;
   const signedTransaction = (
     request: ChainSignRequest,
     result: ChainSignResult,
@@ -619,8 +642,9 @@ const world = async (devices: DeviceTransport | undefined): Promise<World> => {
   const engine = {
     requests,
     networks: { enabled: (family: string) => ENABLED[family] ?? [] },
+    signers: { apis: signers.apis },
   } as unknown as WalletEngine;
-  return { wallet, requests, signer: qrSigner({ engine, wallet }), signing };
+  return { wallet, requests, signer: qrSigner({ engine, wallet }), signers };
 };
 
 /** One signature round-trip through the QR facade; `prepare` never asks the device. */
@@ -689,7 +713,7 @@ describe("qr backends — origin × custody matrix", () => {
   for (const name of NAMES) {
     it(`qr personal-message signs through the ${name} backend`, { timeout: 60_000 }, async () => {
       const b = await backends();
-      const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
       const w = await world(() => io.io);
       const f = b[name];
       expect(io.exchanges()).toBe(0);
@@ -710,7 +734,7 @@ describe("qr backends — origin × custody matrix", () => {
 
     it(`qr typed-data signs through the ${name} backend`, { timeout: 60_000 }, async () => {
       const b = await backends();
-      const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
       const w = await world(() => io.io);
       const f = b[name];
       const payload = await signQr(w, qrTypedData(f), { walletId: f.walletId, groupIndex: 0 }, io);
@@ -733,7 +757,7 @@ describe("qr backends — origin × custody matrix", () => {
       { timeout: 60_000 },
       async () => {
         const b = await backends();
-        const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+        const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
         const w = await world(() => io.io);
         const f = b[name];
         const request = {
@@ -761,7 +785,7 @@ describe("qr backends — origin × custody matrix", () => {
 
     it(`a dApp typed-data signs through the ${name} backend`, { timeout: 60_000 }, async () => {
       const b = await backends();
-      const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
       const w = await world(() => io.io);
       const f = b[name];
       const request = {
@@ -791,7 +815,7 @@ describe("qr backends — origin × custody matrix", () => {
       { timeout: 60_000 },
       async () => {
         const b = await backends();
-        const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+        const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
         const w = await world(() => io.io);
         const f = b[name];
         const request = {
@@ -821,7 +845,7 @@ describe("qr backends — origin × custody matrix", () => {
   for (const name of NAMES) {
     it(`qr evm transaction signs through the ${name} backend`, { timeout: 60_000 }, async () => {
       const b = await backends();
-      const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
       const w = await world(() => io.io);
       const f = b[name];
       const request = qrTransaction(f);
@@ -873,7 +897,7 @@ describe("qr backends — origin × custody matrix", () => {
 
     it(`qr solana transaction signs through the ${name} backend`, { timeout: 60_000 }, async () => {
       const b = await backends();
-      const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
       const w = await world(() => io.io);
       const f = b[name];
       const message = solanaMessage(f.solana);
@@ -899,7 +923,7 @@ describe("qr backends — origin × custody matrix", () => {
 
     it(`qr tron transaction signs through the ${name} backend`, { timeout: 60_000 }, async () => {
       const b = await backends();
-      const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
       const w = await world(() => io.io);
       const f = b[name];
       const payload = await signQr(w, qrTron(f), { walletId: f.walletId, groupIndex: 0 }, io);
@@ -916,7 +940,7 @@ describe("qr backends — origin × custody matrix", () => {
 
     it(`qr bitcoin psbt signs through the ${name} backend`, { timeout: 60_000 }, async () => {
       const b = await backends();
-      const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
       const w = await world(() => io.io);
       const f = b[name];
       const request = qrPsbt(f);
@@ -941,7 +965,7 @@ describe("qr backends — the device hop", () => {
     { timeout: 60_000 },
     async () => {
       const b = await backends();
-      const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
       const w = await world(() => io.io);
       const f = b.keystone;
       const pending = await w.signer.prepare(qrPersonal(f), {
@@ -966,21 +990,21 @@ describe("qr backends — the device hop", () => {
   );
 
   it(
-    "the host aborting the io signal cancels the operation with no payload",
+    "cancelling the signers operation aborts the request with no payload",
     { timeout: 60_000 },
     async () => {
       const b = await backends();
-      const device = keystoneIo(DEVICE_SEED, deviceFingerprint);
-      const abort = new AbortController();
-      /* The host aborts while the device holds the request — the kernel checks the flag after
+      const device = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      /* The host cancels while the device holds the request — the kernel checks the flag after
          the exchange and cancels the operation. */
       const io: DeviceIo = {
-        signal: abort.signal,
-        exchange: async (request) => {
-          const response = await device.io.exchange(request, {
-            device: "keystone",
-          });
-          abort.abort();
+        exchange: async (request, context) => {
+          const response = await device.io.exchange(request, context);
+          await gate;
           return response;
         },
       };
@@ -990,10 +1014,18 @@ describe("qr backends — the device hop", () => {
         walletId: f.walletId,
         groupIndex: 0,
       });
-      await expect(approvePending(w.requests, pending)).rejects.toSatisfy(
+      const approving = approvePending(w.requests, pending).then(
+        () => {
+          throw new Error("expected the approval to be cancelled");
+        },
+        (error: unknown) => error,
+      );
+      await until(() => device.exchanges() === 1);
+      await w.signers.cancel();
+      release();
+      await expect(approving).resolves.toSatisfy(
         (error) => error instanceof WalletError && error.code === "cancelled",
       );
-      expect(device.exchanges()).toBe(1);
       await expect(w.signer.respond(pending.id)).rejects.toSatisfy(
         (error) => error instanceof RequestEndedError,
       );
@@ -1001,7 +1033,7 @@ describe("qr backends — the device hop", () => {
   );
 
   it(
-    "no device transport answers a hardware request with device-required and no exchanges",
+    "no device transport answers a hardware request with unsupported and no exchanges",
     { timeout: 60_000 },
     async () => {
       const b = await backends();
@@ -1012,7 +1044,7 @@ describe("qr backends — the device hop", () => {
         groupIndex: 0,
       });
       await expect(approvePending(w.requests, pending)).rejects.toSatisfy(
-        (error) => error instanceof WalletError && error.code === "device-required",
+        (error) => error instanceof WalletError && error.code === "unsupported",
       );
       await expect(w.signer.respond(pending.id)).rejects.toSatisfy(
         (error) => error instanceof RequestEndedError,
@@ -1025,7 +1057,7 @@ describe("qr backends — the device hop", () => {
     { timeout: 60_000 },
     async () => {
       const b = await backends();
-      const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
       const w = await world(() => io.io);
       const f = b.keystone;
       const foreign = { ...qrPersonal(f), xfp: f.fingerprint + 1 };
@@ -1052,7 +1084,7 @@ describe("qr backends — export and indistinguishability", () => {
     { timeout: 60_000 },
     async () => {
       const b = await backends();
-      const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
       const w = await world(() => io.io);
       const f = b.keystone;
       const exported = await w.signer.exportAccount({
@@ -1102,7 +1134,7 @@ describe("qr backends — export and indistinguishability", () => {
     { timeout: 60_000 },
     async () => {
       const b = await backends();
-      const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
       const w = await world(() => io.io);
       const requestId = new Uint8Array(16).fill(3);
       const decode = (payload: { type: string; cbor: Uint8Array }) =>
@@ -1132,7 +1164,7 @@ describe("qr backends — export and indistinguishability", () => {
   );
 });
 
-describe("signingApis dispatch", () => {
+describe("the signers dispatch", () => {
   const personalRequest = (
     account: Extract<ChainSignRequest, { kind: "evm.personal-message" }>["account"],
   ): ChainSignRequest => ({
@@ -1147,10 +1179,10 @@ describe("signingApis dispatch", () => {
     { timeout: 60_000 },
     async () => {
       const b = await backends();
-      const signing = signingApis(b.wallet, () => {
+      const signers = signersOf(b.wallet, () => {
         throw new Error("a vault account must not reach the device transport");
       });
-      const result = await signing.sign({
+      const result = await signers.apis.sign({
         request: personalRequest(hdRef(b.mnemonic, "evm.bip44")),
         verify: VERIFY,
       });
@@ -1166,18 +1198,18 @@ describe("signingApis dispatch", () => {
   );
 
   it(
-    "a hardware wallet signs on the device the transport returns for its info",
+    "a hardware wallet signs on the device the transport resolves for its kind",
     { timeout: 60_000 },
     async () => {
       const b = await backends();
-      const io = keystoneIo(DEVICE_SEED, deviceFingerprint);
-      let seen: string | undefined;
-      const signing = signingApis(b.wallet, (info) => {
-        seen = info.fingerprint;
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
+      let seen: HardwareDevice | undefined;
+      const signers = signersOf(b.wallet, (device) => {
+        seen = device;
         return io.io;
       });
       const request = personalRequest(hdRef(b.keystone, "evm.bip44"));
-      const result = await signing.sign({ request, verify: VERIFY });
+      const result = await signers.apis.sign({ request, verify: VERIFY });
       if (result.kind !== "evm.personal-message") {
         throw new Error("expected a personal-message result");
       }
@@ -1189,7 +1221,7 @@ describe("signingApis dispatch", () => {
           .getSnapshot()
           .wallets.find((entry) => entry.walletId === b.keystone.walletId);
         expect(info?.custody).toBe("hardware");
-        expect(seen).toBe(info?.custody === "hardware" ? info.fingerprint : "");
+        expect(seen).toBe("keystone");
       }
       expect(io.exchanges()).toBe(1);
     },
@@ -1202,11 +1234,11 @@ describe("signingApis dispatch", () => {
       const b = await backends();
       const leaf = secp256k1.utils.randomSecretKey();
       const key = await b.wallet.keys.import("evm", leaf);
-      const signing = signingApis(b.wallet, () => {
+      const signers = signersOf(b.wallet, () => {
         throw new Error("an imported key must not reach the device transport");
       });
       const request = personalRequest({ kind: "imported", keyId: key.keyId, family: "evm" });
-      const result = await signing.sign({ request, verify: VERIFY });
+      const result = await signers.apis.sign({ request, verify: VERIFY });
       if (result.kind !== "evm.personal-message") {
         throw new Error("expected a personal-message result");
       }
@@ -1221,18 +1253,18 @@ describe("signingApis dispatch", () => {
     { timeout: 60_000 },
     async () => {
       const b = await backends();
-      const signing = signingApis(b.wallet, () => {
+      const signers = signersOf(b.wallet, () => {
         throw new Error("an unknown wallet must not reach the device transport");
       });
       await expect(
-        signing.sign({
+        signers.apis.sign({
           request: personalRequest(hdRef({ walletId: "00000000" }, "evm.bip44")),
           verify: VERIFY,
         }),
       ).rejects.toSatisfy(
         (error) =>
           error instanceof WalletError &&
-          error.code !== "device-required" &&
+          error.code !== "unsupported" &&
           error.code !== "cancelled",
       );
     },

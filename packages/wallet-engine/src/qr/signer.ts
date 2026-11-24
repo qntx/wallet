@@ -7,7 +7,7 @@
  */
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
 import { parseCompiledMessage } from "@qntx/wallet-chains/solana";
-import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
 import type { QrPayload } from "@qntx/wallet/hardware";
 import type { ChainAccount, ChainExportNode, ChainSignResult } from "@qntx/wallet/protocol";
 
@@ -36,6 +36,11 @@ const isBindingRefusal = (error: unknown): boolean =>
 export type QrEngineSurface = {
   readonly requests: Pick<RequestController, "prepare" | "outcome">;
   readonly networks: Pick<NetworkController, "enabled">;
+  /**
+   * The one account seam — the engine's `signers.apis`: vault material derives in the kernel,
+   * card and hardware wallets read their pinned material.
+   */
+  readonly signers: { readonly apis: Pick<ChainsApi, "account" | "exportAccount"> };
 };
 
 /** The networks a QR counterpart can address: mainnet first for the binding-fallback order. */
@@ -77,7 +82,7 @@ const accountFacts = async (
       "a QR signer must be a vault or hardware wallet — imported keys cannot sign",
     );
   }
-  const apis = chains(deps.wallet);
+  const apis = deps.engine.signers.apis;
   const { walletId, groupIndex } = account;
   const [evm, tron, solana, bitcoin] = await Promise.all([
     apis.account({
@@ -260,7 +265,7 @@ export const qrSigner = (deps: {
       return qrResponse(entry.request, toChainResult(result, entry.signer), entry.signer);
     },
     exportAccount: async (params) => {
-      const apis = chains(deps.wallet);
+      const apis = deps.engine.signers.apis;
       const nodes: ChainExportNode[] = exportNodes(params);
       const result = await apis.exportAccount({
         walletId: params.account.walletId,

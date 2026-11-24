@@ -43,6 +43,7 @@ export function polymarket(
         setTimer: context.setTimer,
         now: context.now,
         wallet: context.wallet,
+        account: context.account,
         credentials,
         requests: context.requests,
         random: context.random,
