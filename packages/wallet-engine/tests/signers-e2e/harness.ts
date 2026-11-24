@@ -18,7 +18,9 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { createBase58check } from "@scure/base";
+import { HDKey } from "@scure/bip32";
 import { Address, NETWORK, OutScript, Transaction } from "@scure/btc-signer";
+import { p2wpkh } from "@scure/btc-signer/payment.js";
 import {
   getTransferSolInstructionDataDecoder,
   SYSTEM_PROGRAM_ADDRESS,
@@ -465,6 +467,19 @@ export const e2eWorld = async (options: {
     },
   });
   return { w, caught, fund: (address, sats) => fundBtc(btc, address, sats) };
+};
+
+/**
+ * The receive address at `index` of a BTC account-level xpub (chain 0) — what `chains().account`
+ * hands back for bitcoin templates is the xpub, so tests and the recorder derive the funded address
+ * the same way.
+ */
+export const btcAddressFromXpub = (xpub: string, index = 0): string => {
+  const pub = HDKey.fromExtendedKey(xpub).deriveChild(0).deriveChild(index).publicKey;
+  if (pub === undefined || pub === null) {
+    throw new Error(`no public key under ${xpub}`);
+  }
+  return p2wpkh(pub, NETWORK).address;
 };
 
 /** One engine send through the request pipeline: prepare → approve → broadcast → returns tracked. */

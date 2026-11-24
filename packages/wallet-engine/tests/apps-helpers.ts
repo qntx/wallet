@@ -460,27 +460,30 @@ export const swallow = async (promise: Promise<unknown>): Promise<void> => {
 
 let shared: { wallet: Wallet; walletId: string } | undefined;
 
+/** A brand-new node wallet + mnemonic import — each call gets its own kernel and vault. */
+export const freshNodeWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
+  const wallet = await createNodeWallet({
+    verifyEvent,
+    passkey: {
+      rpId: "qntx.test",
+      rpName: "qntx",
+      walletSalt: "qntx/wallet",
+      backupSalt: "qntx/backup",
+      vaultSalt: "qntx/vault",
+    },
+    autoLock: { platform: "web", idleMinutes: 15 },
+    authenticator: createSoftwarePasskey(new Uint8Array(32).fill(11)),
+    kernelUrl: KERNEL_URL,
+  });
+  const { walletId } = await wallet.wallets.importMnemonic({
+    mnemonic: MNEMONIC,
+    factor: VERIFY,
+  });
+  return { wallet, walletId };
+};
+
 export const nodeWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
-  if (shared === undefined) {
-    const wallet = await createNodeWallet({
-      verifyEvent,
-      passkey: {
-        rpId: "qntx.test",
-        rpName: "qntx",
-        walletSalt: "qntx/wallet",
-        backupSalt: "qntx/backup",
-        vaultSalt: "qntx/vault",
-      },
-      autoLock: { platform: "web", idleMinutes: 15 },
-      authenticator: createSoftwarePasskey(new Uint8Array(32).fill(11)),
-      kernelUrl: KERNEL_URL,
-    });
-    const { walletId } = await wallet.wallets.importMnemonic({
-      mnemonic: MNEMONIC,
-      factor: VERIFY,
-    });
-    shared = { wallet, walletId };
-  }
+  shared ??= await freshNodeWallet();
   return shared;
 };
 

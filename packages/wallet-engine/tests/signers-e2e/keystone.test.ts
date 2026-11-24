@@ -7,9 +7,6 @@
 import { readFileSync } from "node:fs";
 
 import { hexToBytes } from "@noble/hashes/utils.js";
-import { HDKey } from "@scure/bip32";
-import { p2wpkh } from "@scure/btc-signer/payment.js";
-import { NETWORK } from "@scure/btc-signer/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { WalletError } from "@qntx/wallet";
@@ -20,6 +17,7 @@ import { keystoneIo } from "../keystone-io.ts";
 import {
   BTC_NETWORK,
   BTC_TO,
+  btcAddressFromXpub,
   caughtOne,
   e2eWorld,
   EVM_NETWORK,
@@ -88,11 +86,7 @@ const address = async (
     return account.address;
   }
   /* BTC answers the account-level xpub; the funded address is receive index 0. */
-  const pub = HDKey.fromExtendedKey(account.xpub).deriveChild(0).deriveChild(0).publicKey;
-  if (pub === undefined || pub === null) {
-    throw new Error(`no public key under ${account.xpub}`);
-  }
-  return p2wpkh(pub, NETWORK).address;
+  return btcAddressFromXpub(account.xpub);
 };
 
 const accountRef = (hwId: string, template: FamilyTemplate) =>

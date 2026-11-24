@@ -82,6 +82,8 @@ import {
   debugYes,
   udpExchange,
 } from "../../packages/wallet-kernel/tests/onekey-emulator/index.ts";
+import type { ChainTemplate } from "../../packages/wallet/src/protocol/chains.ts";
+import type { DeviceRequest } from "../../packages/wallet/src/protocol/hardware.ts";
 
 function arg(name: string, fallback: string): string {
   const at = process.argv.indexOf(`--${name}`);
@@ -93,9 +95,14 @@ const PORT = Number(arg("port", "54935"));
 const DEBUG_PORT = Number(arg("debug-port", "54936"));
 const DEVICE = arg("model", "classic1s");
 const DRIVER_MODE = process.argv.includes("--driver");
+const ENGINE_MODE = process.argv.includes("--engine");
 const OUT = resolve(
   arg("out", resolve(import.meta.dirname, "../../vectors/onekey")),
-  DRIVER_MODE ? `driver-${DEVICE}.json` : `emulator-${DEVICE}.json`,
+  ENGINE_MODE
+    ? `engine-${DEVICE}.json`
+    : DRIVER_MODE
+      ? `driver-${DEVICE}.json`
+      : `emulator-${DEVICE}.json`,
 );
 
 const exchange = udpExchange(HOST, PORT);
@@ -276,7 +283,120 @@ const recordDriverSessions = async (): Promise<void> => {
     console.log(`driver-sign-evm-eip7702: ${sig1.length}+${sig2.length} sigs`);
   }
 };
-if (DRIVER_MODE) {
+/**
+ * --engine: record the whole engine send flow against the live device — the same DeviceIo the
+ * kernel talks to, over the UDP link — one session per phase (`engine-pair`, then one
+ * `engine-send-<family>` per send) so the replay test can assert request bytes phase by phase. The
+ * harness builds the real engine over its hermetic stub upstreams, so every request byte the kernel
+ * produces is deterministic: fixed clock, fill-7 platform random, fixed stub answers.
+ */
+const recordEngineSessions = async (): Promise<void> => {
+  const harness = await import("../../packages/wallet-engine/tests/signers-e2e/harness.ts");
+  /* Same dist modules the engine resolves — a second instance would split the Wallet internals
+     WeakMap ("not a Wallet from @qntx/wallet"). */
+  const { chains } = await import("../../packages/wallet/dist/chains.mjs");
+  const { hardware } = await import("../../packages/wallet/dist/hardware.mjs");
+  type EngineSendParams = Parameters<typeof harness.sendOnce>[1];
+
+  let session = { name: "engine-pair", exchanges: [] as Step[] };
+  sessions.push(session);
+  const io = {
+    exchange: async (request: DeviceRequest) => {
+      if (request.kind !== "message") {
+        throw new Error(`the onekey driver sent a non-message request (${request.kind})`);
+      }
+      return { kind: "message" as const, data: await recording(session)(request.data) };
+    },
+  };
+
+  const { w, fund } = await harness.e2eWorld({ deviceIo: () => io });
+  try {
+    const result = await hardware(w.wallet).start({ kind: "pair", device: "onekey" }, { io })
+      .result;
+    if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
+      throw new Error("pair did not return a hardware wallet");
+    }
+    const hwId = result.wallet.walletId;
+    console.log(`engine-pair: ${session.exchanges.length} exchanges`);
+
+    const accountRef = (template: ChainTemplate) =>
+      ({ kind: "hd", walletId: hwId, groupIndex: 0, template }) as const;
+    const address = async (template: ChainTemplate, network: string): Promise<string> => {
+      const account = await chains(w.wallet).account({
+        walletId: hwId,
+        groupIndex: 0,
+        template,
+        network,
+      });
+      if ("address" in account) {
+        return account.address;
+      }
+      return harness.btcAddressFromXpub(account.xpub);
+    };
+
+    const funded = fund(await address("btc.bip84", harness.BTC_NETWORK), 100_000);
+    console.log(`funded ${funded.txid}:${funded.vout} sats=${funded.value}`);
+
+    const sends: ReadonlyArray<readonly [string, EngineSendParams]> = [
+      [
+        "engine-send-evm",
+        {
+          account: accountRef("evm.bip44"),
+          network: harness.EVM_NETWORK,
+          to: harness.EVM_TO,
+          amount: 1_000_000_000_000_000n,
+          fee: "normal",
+        },
+      ],
+      [
+        "engine-send-bitcoin",
+        {
+          account: accountRef("btc.bip84"),
+          network: harness.BTC_NETWORK,
+          to: harness.BTC_TO,
+          amount: 20_000n,
+          fee: "normal",
+        },
+      ],
+      [
+        "engine-send-solana",
+        {
+          account: accountRef("solana.bip44-change"),
+          network: harness.SOL_NETWORK,
+          to: harness.SOL_TO,
+          amount: 1_000_000n,
+          fee: "normal",
+        },
+      ],
+      [
+        "engine-send-tron",
+        {
+          account: accountRef("tron.bip44"),
+          network: harness.TRON_NETWORK,
+          to: harness.TRON_TO,
+          amount: 5_000_000n,
+          fee: "normal",
+        },
+      ],
+    ];
+    for (const [name, params] of sends) {
+      session = { name, exchanges: [] as Step[] };
+      sessions.push(session);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+      const tx = await harness.sendOnce(w, params);
+      if (tx.state === "failed") {
+        throw new Error(`${name}: engine send failed`);
+      }
+      console.log(`${name}: state=${tx.state} exchanges=${session.exchanges.length}`);
+    }
+  } finally {
+    await w.destroy();
+  }
+};
+
+if (ENGINE_MODE) {
+  await recordEngineSessions();
+} else if (DRIVER_MODE) {
   await recordDriverSessions();
 } else {
   for (const [name, path, scriptType] of [

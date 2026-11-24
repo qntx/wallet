@@ -60,11 +60,12 @@ export type Transcript = {
 /**
  * The transcript for `model` from ONEKEY_TRANSCRIPTS when set (CI's fresh recordings), otherwise
  * the committed vectors/onekey directory. `name` selects the file: protocol sessions live in
- * `emulator-<model>.json`, driver-level sessions in `driver-<model>.json`.
+ * `emulator-<model>.json`, driver-level sessions in `driver-<model>.json`, engine sends in
+ * `engine-<model>.json`.
  */
 export function loadTranscript(
   model: "classic1s" | "pro",
-  name: "emulator" | "driver" = "emulator",
+  name: "emulator" | "driver" | "engine" = "emulator",
 ): Transcript {
   const dir = process.env["ONEKEY_TRANSCRIPTS"];
   const path =
