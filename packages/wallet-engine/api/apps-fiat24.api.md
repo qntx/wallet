@@ -16,6 +16,7 @@ import { CardCurrency } from '@qntx/fiat24/flows';
 import { CardOperation } from '@qntx/fiat24/flows';
 import { CardState } from '@qntx/fiat24/flows';
 import { chains } from '@qntx/wallet/chains';
+import { ChainsApi } from '@qntx/wallet/chains';
 import { CooperativeExitResult } from '@qntx/spark';
 import { Countries } from '@qntx/fiat24/api';
 import { CountryCities } from '@qntx/fiat24/api';
@@ -175,6 +176,7 @@ type AppAvailability = "available" | "close-only" | "blocked";
 // @public
 type AppContext<D extends AppDetail = Record<never, never>> = {
     readonly wallet: Wallet;
+    readonly account: ChainsApi["account"];
     readonly requests: AppRequests;
     readonly networks: AppNetworks;
     readonly fetch: typeof globalThis.fetch;

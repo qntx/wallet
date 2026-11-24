@@ -8,6 +8,7 @@ import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
 import { BitcoinOwn } from '@qntx/wallet-chains/bitcoin';
 import { BitcoinTemplate } from '@qntx/wallet-chains';
 import { chains } from '@qntx/wallet/chains';
+import { ChainsApi } from '@qntx/wallet/chains';
 import { CooperativeExitResult } from '@qntx/spark';
 import { decodeEvm } from '@qntx/wallet-chains/evm';
 import { Event as Event_2 } from '@qntx/nostr';
@@ -138,6 +139,7 @@ type AppAvailability = "available" | "close-only" | "blocked";
 // @public
 type AppContext<D extends AppDetail = Record<never, never>> = {
     readonly wallet: Wallet;
+    readonly account: ChainsApi["account"];
     readonly requests: AppRequests;
     readonly networks: AppNetworks;
     readonly fetch: typeof globalThis.fetch;

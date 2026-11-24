@@ -9,6 +9,7 @@ import { BitcoinOwn } from '@qntx/wallet-chains/bitcoin';
 import { BitcoinTemplate } from '@qntx/wallet-chains';
 import { ChainExportResult } from '@qntx/wallet/protocol';
 import { chains } from '@qntx/wallet/chains';
+import { ChainsApi } from '@qntx/wallet/chains';
 import { ChainSignResult } from '@qntx/wallet/protocol';
 import { CooperativeExitResult } from '@qntx/spark';
 import { decodeEvm } from '@qntx/wallet-chains/evm';
@@ -697,7 +698,8 @@ type Options = {
     readonly now: () => number;
     readonly logger: EngineLogger;
     readonly pollMs?: number;
-    readonly chains?: ReturnType<typeof chains>;
+    readonly chains: ReturnType<typeof chains>;
+    readonly isWalletIncomplete?: (walletId: string) => boolean;
 };
 
 // @public
@@ -910,9 +912,9 @@ export type QrAccountFacts = {
     readonly groupIndex: number;
     readonly fingerprint: number;
     readonly addresses: {
-        readonly evm: string;
-        readonly tron: string;
-        readonly solana: string;
+        readonly evm?: string;
+        readonly tron?: string;
+        readonly solana?: string;
     };
     readonly networks: {
         readonly evm: ReadonlyArray<string>;
@@ -950,6 +952,9 @@ export type QrDisplay = {
 export type QrEngineSurface = {
     readonly requests: Pick<RequestController, "prepare" | "outcome">;
     readonly networks: Pick<NetworkController, "enabled">;
+    readonly signers: {
+        readonly apis: Pick<ChainsApi, "account" | "exportAccount">;
+    };
 };
 
 // @public

@@ -13,6 +13,7 @@ import { CandleParameters } from '@nktkas/hyperliquid/api/subscription';
 import { CandleSnapshotParameters } from '@nktkas/hyperliquid/api/info';
 import { CandleSnapshotResponse } from '@nktkas/hyperliquid/api/info';
 import { chains } from '@qntx/wallet/chains';
+import { ChainsApi } from '@qntx/wallet/chains';
 import { ClearinghouseStateEvent } from '@nktkas/hyperliquid/api/subscription';
 import { ClearinghouseStateParameters } from '@nktkas/hyperliquid/api/info';
 import { ClearinghouseStateResponse } from '@nktkas/hyperliquid/api/info';
@@ -180,6 +181,7 @@ type AppAvailability = "available" | "close-only" | "blocked";
 // @public
 type AppContext<D extends AppDetail = Record<never, never>> = {
     readonly wallet: Wallet;
+    readonly account: ChainsApi["account"];
     readonly requests: AppRequests;
     readonly networks: AppNetworks;
     readonly fetch: typeof globalThis.fetch;
