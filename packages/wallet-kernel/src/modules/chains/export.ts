@@ -8,12 +8,21 @@
  */
 import type { KeyPath } from "@qntx/wallet-chains";
 import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
+import { networkMeta } from "@qntx/wallet-chains/networks";
 import type { ChainExportedKey, ChainExportNode, ChainExportResult } from "@qntx/wallet/protocol";
 
 import type { Handler } from "../../commands/context.ts";
 import { withWalletSeed } from "../../commands/vault.ts";
 import { KernelError } from "../../errors.ts";
-import { corePromptFor } from "../../prompts.ts";
+import type { KeystorePrompt } from "../../platform.ts";
+import type { PromptLocale } from "../../prompts.ts";
+import {
+  exportAccountText,
+  joinLines,
+  PROMPT_BOUNDS,
+  promptFits,
+  promptLocale,
+} from "../../prompts.ts";
 import { findWalletRecord, verifyFactor } from "../../vault/vault.ts";
 import { accountKey, pathString, seedKeys } from "./keys.ts";
 import type { PublicMaterial } from "./keys.ts";
@@ -97,6 +106,38 @@ const result = async (material: PublicMaterial, params: Params): Promise<ChainEx
   ),
 });
 
+const LEAF_FAMILY: Readonly<
+  Record<"evm.bip44" | "tron.bip44" | "solana.bip44-change", "EVM" | "TRON" | "Solana">
+> = {
+  "evm.bip44": "EVM",
+  "tron.bip44": "TRON",
+  "solana.bip44-change": "Solana",
+};
+
+/**
+ * The verification prompt rendered from the requested nodes — one row each, so the approved scope
+ * is the shown scope: `evm.account` names the wallet-wide disclosure its fixed `m/44'/60'/0'` path
+ * understates.
+ */
+const exportPrompt = (locale: PromptLocale, params: Params): KeystorePrompt => {
+  const text = exportAccountText(locale);
+  const row = (node: ChainExportNode): string => {
+    const path = pathString(nodePath(node, params.groupIndex));
+    if (node.kind === "evm.account") {
+      return text.evmAccount(path);
+    }
+    if (node.kind === "leaf") {
+      return text.leaf(LEAF_FAMILY[node.template], params.groupIndex, path);
+    }
+    const network = networkMeta(node.network)?.name ?? node.network;
+    return text.btcAccount(text.btcTemplate[node.template], network, params.groupIndex, path);
+  };
+  return {
+    title: text.title,
+    description: joinLines([text.share(params.groupIndex), ...params.nodes.map(row)]),
+  };
+};
+
 export const exportAccount =
   (external: ExternalMaterial): Handler<"chain.exportAccount"> =>
   async (ctx, params, session) => {
@@ -118,14 +159,19 @@ export const exportAccount =
       }
       seen.add(nodeId(node));
     }
-    await verifyFactor(
-      ctx.platform,
-      ctx.image,
-      params.verify,
-      dek,
-      ctx.commit,
-      corePromptFor(ctx.platform.keystore, "export-account"),
-    );
+    const prompt = exportPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), params);
+    const host = ctx.platform.keystore?.platform;
+    /* The verification dialog is the only thing standing between the call and the disclosure:
+       a prompt the dialog cannot show whole would hide rows of the share — refuse before any
+       verification rather than ask for a clipped approval (the same fit the bound chain prompt
+       enforces, as refusal rather than truncation). */
+    if ((host === "ios" || host === "android") && !promptFits(prompt, PROMPT_BOUNDS[host])) {
+      throw new KernelError(
+        "invalid-input",
+        "the export prompt does not fit the verification dialog",
+      );
+    }
+    await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => prompt);
     // The session may have ended while the prompt was up, exactly as in chain.sign.
     ctx.session.require(session);
     if (record.kind !== "entropy") {

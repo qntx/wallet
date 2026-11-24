@@ -10,6 +10,7 @@ import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import type { VaultAnchor } from "../src/platform.ts";
+import { PROMPT_BOUNDS, promptFits } from "../src/prompts.ts";
 import { decodeAnchor } from "../src/vault/anchor.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
@@ -405,5 +406,123 @@ describe("chain.exportAccount", () => {
       nodes: [{ kind: "leaf", template: "solana.bip44-change" }],
     });
     expect(errCode(solana)).toBe("device-required");
+  });
+});
+
+describe("the export prompt names every node it shares", () => {
+  const keystoreSetup = async (platform: "ios" | "android", locale: string) => {
+    const fake = fakeKeystore(locale, platform);
+    const h = createHarness({ keystore: fake.keystore });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(vectors.wallets[0]!.mnemonic),
+        factor: { kind: "device" },
+      }),
+    );
+    return {
+      fake,
+      h,
+      session: strField(res, "session"),
+      walletId: strField(field(res, "wallet"), "walletId"),
+    };
+  };
+
+  /** The prompt the verifying `open` was shown — the last presence call carries it. */
+  const shownPrompt = (
+    fake: ReturnType<typeof fakeKeystore>,
+  ): { title: string; description: string } => {
+    const calls = fake.calls.filter((c) => c.op === "open" && c.prompt !== undefined);
+    const last = calls.at(-1);
+    if (last === undefined || last.op !== "open" || last.prompt === undefined) {
+      throw new Error("no presence prompt was recorded");
+    }
+    return last.prompt;
+  };
+
+  it("renders one row per node kind in en", async () => {
+    const { fake, h, session, walletId } = await keystoreSetup("ios", "en-US");
+    const res = await exportAccount(h, session, {
+      walletId,
+      groupIndex: 2,
+      nodes: [
+        { kind: "evm.account" },
+        { kind: "leaf", template: "evm.bip44" },
+        { kind: "leaf", template: "tron.bip44" },
+        { kind: "leaf", template: "solana.bip44-change" },
+      ],
+      verify: { kind: "hardware" },
+    });
+    expect("ok" in res).toBe(true);
+    expect(shownPrompt(fake).description.split("\n")).toStrictEqual([
+      "Share public keys of account 2 — never a private key",
+      "EVM: the addresses of every account of this wallet (m/44'/60'/0')",
+      "EVM address of account 2 (m/44'/60'/0'/0/2)",
+      "TRON address of account 2 (m/44'/195'/0'/0/2)",
+      "Solana address of account 2 (m/44'/501'/2'/0')",
+    ]);
+  });
+
+  it("names the template and network of every btc.account row", async () => {
+    const { fake, h, session, walletId } = await keystoreSetup("ios", "en-US");
+    const res = await exportAccount(h, session, {
+      walletId,
+      groupIndex: 1,
+      nodes: [
+        { kind: "btc.account", template: "btc.bip44", network: MAINNET },
+        { kind: "btc.account", template: "btc.bip84", network: TESTNET },
+      ],
+      verify: { kind: "hardware" },
+    });
+    expect("ok" in res).toBe(true);
+    expect(shownPrompt(fake).description.split("\n")).toStrictEqual([
+      "Share public keys of account 1 — never a private key",
+      "Bitcoin Legacy (BIP-44) on Bitcoin: every address of account 1 (m/44'/0'/1')",
+      "Bitcoin Native SegWit (BIP-84) on Bitcoin Testnet4: every address of account 1 (m/84'/1'/1')",
+    ]);
+  });
+
+  it("renders the same rows in zh-Hans", async () => {
+    const { fake, h, session, walletId } = await keystoreSetup("ios", "zh-CN");
+    const res = await exportAccount(h, session, {
+      walletId,
+      groupIndex: 0,
+      nodes: [
+        { kind: "evm.account" },
+        { kind: "btc.account", template: "btc.bip86", network: MAINNET },
+      ],
+      verify: { kind: "hardware" },
+    });
+    expect("ok" in res).toBe(true);
+    expect(shownPrompt(fake).description.split("\n")).toStrictEqual([
+      "共享账户 0 的公开密钥——绝不包含私钥",
+      "EVM：本钱包所有账户的地址（m/44'/60'/0'）",
+      "Bitcoin Taproot（BIP-86）：账户 0 的全部地址（m/86'/0'/0'）",
+    ]);
+  });
+
+  /* The protocol caps nodes at 4: the widest prompt — share row + evm.account + two btc.account
+     rows + a leaf — must fit both platform dialogs in both locales, or the check before
+     verification would refuse a legal request. */
+  it.each([
+    ["ios", "en-US"],
+    ["ios", "zh-CN"],
+    ["android", "en-US"],
+    ["android", "zh-CN"],
+  ] as const)("the worst-case export fits %s in %s", async (platform, locale) => {
+    const { fake, h, session, walletId } = await keystoreSetup(platform, locale);
+    const res = await exportAccount(h, session, {
+      walletId,
+      groupIndex: 0,
+      nodes: [
+        { kind: "evm.account" },
+        { kind: "btc.account", template: "btc.bip84", network: TESTNET },
+        { kind: "btc.account", template: "btc.bip86", network: MAINNET },
+        { kind: "leaf", template: "solana.bip44-change" },
+      ],
+      verify: { kind: "hardware" },
+    });
+    expect("ok" in res).toBe(true);
+    expect(promptFits(shownPrompt(fake), PROMPT_BOUNDS[platform])).toBe(true);
   });
 });
