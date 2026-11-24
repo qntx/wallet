@@ -3,55 +3,16 @@
  * with a typed `device-required` WalletError and the request ends terminally (rejected), nothing is
  * tracked, and a Hyperliquid enable ends in a typed, resumable state rather than a stuck flow.
  */
-import { readFileSync } from "node:fs";
-
-import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { WalletError } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
-import { hardware } from "@qntx/wallet/hardware";
 
 import { approval } from "./approval.ts";
 import type { Arb1Rpc } from "./apps-helpers.ts";
 import { VERIFY, world } from "./apps-helpers.ts";
-import { keystoneIo } from "./keystone-io.ts";
-
-const SYNC = hexToBytes(
-  (
-    JSON.parse(
-      readFileSync(new URL("../../../vectors/keystone/sync.json", import.meta.url), "utf8"),
-    ) as { sync: { cbor: string } }
-  ).sync.cbor,
-);
+import { keystoneIo, pairKeystone } from "./keystone-io.ts";
 
 const NETWORK = "eip155:42161";
-
-/** Pairs the Keystone sync vector through the real wallet/hardware coroutine. */
-const pairKeystone = async (w: Awaited<ReturnType<typeof world>>): Promise<string> => {
-  /* The world wallet is shared across tests — a device already paired is reused. */
-  try {
-    const result = await hardware(w.wallet).start(
-      { kind: "pair", device: "keystone" },
-      {
-        io: {
-          exchange: async () =>
-            Promise.resolve({ kind: "qr", ur: { type: "crypto-multi-accounts", cbor: SYNC } }),
-        },
-      },
-    ).result;
-    if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
-      throw new WalletError("integrity", "pair did not return a hardware wallet");
-    }
-    return result.wallet.walletId;
-  } catch (error) {
-    if (!(error instanceof WalletError && error.code === "already-exists")) {
-      throw error;
-    }
-    const existing = w.wallet.getSnapshot().wallets.find((entry) => entry.custody === "hardware");
-    return existing?.walletId ?? "";
-  }
-};
 
 const hwAccount = (hwId: string) =>
   ({ kind: "hd", walletId: hwId, groupIndex: 0, template: "evm.bip44" }) as const;
@@ -190,7 +151,7 @@ const hwEvmAddress = async (w: World, hwId: string): Promise<string> => {
 describe("hardware wallet × engine features", () => {
   it("typed-data approvals sign on the device; fiat24-session is a typed refusal", async () => {
     const w = await world(11, { deviceIo: () => keystoneIo() });
-    const hwId = await pairKeystone(w);
+    const hwId = await pairKeystone(w.wallet);
     await expectDeviceSigned(w, typedDataRequest(hwId), "evm-sign");
     /* An app-scheme document is not a chain sign request the device can check — the kernel
        refuses it typed, and the request ends rejected rather than reaching the wire. */
@@ -206,7 +167,7 @@ describe("hardware wallet × engine features", () => {
     /* `hwAddress` is filled in after pairing; the rpc reads it lazily per call. */
     let hwAddress = "";
     const w = await world(11, { arb1: hwRpc(() => hwAddress), deviceIo: () => keystoneIo() });
-    const hwId = await pairKeystone(w);
+    const hwId = await pairKeystone(w.wallet);
     hwAddress = await hwEvmAddress(w, hwId);
     const submitted = [
       await expectDeviceSigned(
@@ -243,7 +204,7 @@ describe("hardware wallet × engine features", () => {
 
   it("a hardware group's Hyperliquid enable ends typed and resumable, not stuck", async () => {
     const w = await world(12);
-    const hwId = await pairKeystone(w);
+    const hwId = await pairKeystone(w.wallet);
     const group = { walletId: hwId, groupIndex: 0 };
     const gkey = `${hwId}/0`;
     await w.apps.acknowledgeTerms(group, "hyperliquid");

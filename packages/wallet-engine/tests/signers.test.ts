@@ -1,25 +1,14 @@
-import { readFileSync } from "node:fs";
-
-import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
 import type { DeviceIo } from "@qntx/wallet/hardware";
-import { hardware } from "@qntx/wallet/hardware";
 
 import { SignersController } from "../src/signers/controller.ts";
 import type { SignerFamily, SignersState } from "../src/signers/controller.ts";
 import { nodeWallet, until, VERIFY } from "./apps-helpers.ts";
 import { cardRig, CARD_CODE, CARD_VERIFY } from "./card-rig.ts";
-import { keystoneIo } from "./keystone-io.ts";
-
-const SYNC = hexToBytes(
-  (
-    JSON.parse(
-      readFileSync(new URL("../../../vectors/keystone/sync.json", import.meta.url), "utf8"),
-    ) as { sync: { cbor: string } }
-  ).sync.cbor,
-);
+import { keystoneIo, pairKeystone } from "./keystone-io.ts";
 
 const stepKind = (state: SignersState): string => state.active?.step.kind ?? "none";
 
@@ -43,29 +32,6 @@ const controller = (
     random: (n) => new Uint8Array(n).fill(7),
     logger: { warn: () => undefined },
   });
-};
-
-const pairKeystone = async (wallet: Wallet): Promise<string> => {
-  const existing = wallet.getSnapshot().wallets.find((w) => w.custody === "hardware");
-  if (existing !== undefined) {
-    return existing.walletId;
-  }
-  const result = await hardware(wallet).start(
-    { kind: "pair", device: "keystone" },
-    {
-      io: {
-        exchange: async () =>
-          Promise.resolve({
-            kind: "qr",
-            ur: { type: "crypto-multi-accounts", cbor: SYNC },
-          }),
-      },
-    },
-  ).result;
-  if (result.kind !== "pair") {
-    throw new Error("pair did not return a wallet");
-  }
-  return result.wallet.walletId;
 };
 
 const typedData = (hwId: string) => ({
@@ -227,13 +193,7 @@ describe("the signers controller", () => {
     const hwId = await pairKeystone(wallet);
     const rechecked: string[] = [];
     const signers = controller(wallet, {
-      deviceIo: {
-        exchange: async () =>
-          Promise.resolve({
-            kind: "qr",
-            ur: { type: "crypto-multi-accounts", cbor: SYNC },
-          }),
-      },
+      deviceIo: keystoneIo(),
       recheck: async (walletId, groupIndex, family) => {
         rechecked.push(`${walletId}:${groupIndex}:${family}`);
         await Promise.resolve();

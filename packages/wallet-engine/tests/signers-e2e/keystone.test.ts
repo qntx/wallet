@@ -4,16 +4,11 @@
  * pipeline against the hermetic stubs. The caught wire bytes verify with independent libraries —
  * viem, @scure/btc-signer + noble, @solana/kit + noble, tronweb protobufs + noble.
  */
-import { readFileSync } from "node:fs";
-
-import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { WalletError } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
-import { hardware } from "@qntx/wallet/hardware";
 
-import { keystoneIo } from "../keystone-io.ts";
+import { keystoneIo, pairKeystone } from "../keystone-io.ts";
 import {
   BTC_NETWORK,
   BTC_TO,
@@ -34,39 +29,6 @@ import {
   watchSignerActivity,
 } from "./harness.ts";
 import type { E2eWorld } from "./harness.ts";
-
-const SYNC = hexToBytes(
-  (
-    JSON.parse(
-      readFileSync(new URL("../../../../vectors/keystone/sync.json", import.meta.url), "utf8"),
-    ) as { sync: { cbor: string } }
-  ).sync.cbor,
-);
-
-/** Pairs the Keystone sync vector through the real wallet/hardware coroutine. */
-const pairKeystone = async (w: E2eWorld["w"]): Promise<string> => {
-  try {
-    const result = await hardware(w.wallet).start(
-      { kind: "pair", device: "keystone" },
-      {
-        io: {
-          exchange: async () =>
-            Promise.resolve({ kind: "qr", ur: { type: "crypto-multi-accounts", cbor: SYNC } }),
-        },
-      },
-    ).result;
-    if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
-      throw new WalletError("integrity", "pair did not return a hardware wallet");
-    }
-    return result.wallet.walletId;
-  } catch (error) {
-    if (!(error instanceof WalletError && error.code === "already-exists")) {
-      throw error;
-    }
-    const existing = w.wallet.getSnapshot().wallets.find((entry) => entry.custody === "hardware");
-    return existing?.walletId ?? "";
-  }
-};
 
 type FamilyTemplate = "evm.bip44" | "btc.bip84" | "solana.bip44-change" | "tron.bip44";
 
@@ -95,7 +57,7 @@ const accountRef = (hwId: string, template: FamilyTemplate) =>
 describe("keystone engine sends", () => {
   it("signs and broadcasts a native transfer per family, verified byte-exact", async () => {
     const { w, caught, fund } = await e2eWorld({ deviceIo: () => keystoneIo() });
-    const hwId = await pairKeystone(w);
+    const hwId = await pairKeystone(w.wallet);
 
     /* Account material comes off the pinned sync — no second device round-trip. */
     const evmFrom = await address(w, hwId, "evm.bip44", EVM_NETWORK);
