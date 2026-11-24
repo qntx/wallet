@@ -5,8 +5,8 @@ import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { DisplayIntent, SignRequest } from "@qntx/wallet-chains";
-import { messageContent } from "@qntx/wallet-chains";
-import { decodeEvm } from "@qntx/wallet-chains/evm";
+import { ChainError, messageContent } from "@qntx/wallet-chains";
+import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
 import { decodeSolana } from "@qntx/wallet-chains/solana";
 import { decodeTron } from "@qntx/wallet-chains/tron";
 
@@ -28,7 +28,11 @@ const vectors = JSON.parse(
     resolve(import.meta.dirname, "../../../vectors/chains/signing-classes.json"),
     "utf8",
   ),
-) as { signers: { evm: string; tron: string; solana: string }; cases: VectorCase[] };
+) as {
+  signers: { evm: string; tron: string; solana: string };
+  cases: VectorCase[];
+  rejected: ReadonlyArray<{ name: string; request: SignRequest; error: string }>;
+};
 
 const request = (v: VectorCase): SignRequest => {
   if (
@@ -69,5 +73,16 @@ describe("signing-classes vectors", () => {
     const intent = intentOf(v);
     expect(chainPrompt("en", intent)).toStrictEqual(v.prompt.en);
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual(v.prompt["zh-Hans"]);
+  });
+
+  it.each(vectors.rejected)("$name is refused as $error", (v) => {
+    let thrown: unknown;
+    try {
+      normalizeEvm(v.request);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ChainError);
+    expect((thrown as ChainError).code).toBe(v.error);
   });
 });

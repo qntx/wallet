@@ -543,7 +543,7 @@ describe("verifiability + decode", () => {
     ]);
   });
 
-  it("a Revoke's token account resolves through a lookup table", () => {
+  it("a Revoke's token account resolved through a lookup table is blind", () => {
     const revoke = getRevokeInstruction({ source: SRC_TOKEN, owner: feePayerSigner });
     const message = compile([revoke], 0, { [LOOKUP_TABLE]: [SRC_TOKEN] });
     const intent = decodeSolana(
@@ -553,10 +553,8 @@ describe("verifiability + decode", () => {
       } as never,
       FEE_PAYER,
     );
-    expect(intent.verifiability).toBe("partial");
-    expect(intent.approvals).toStrictEqual([
-      { kind: "delegate-revoked", account: SRC_TOKEN, verified: false },
-    ]);
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.blind).toBe("lookup-table-account");
   });
 
   it("two Revokes in one transaction each name their token account", () => {
@@ -685,7 +683,7 @@ describe("verifiability + decode", () => {
     expect(verifiabilitySolana(req(compile([unknown])) as never, FEE_PAYER)).toBe("opaque");
   });
 
-  it("lookup tables present → partial", () => {
+  it("a recipient resolved through a lookup table → opaque, lookup-table-account", () => {
     const message = compile([transferIx()], 0, { [LOOKUP_TABLE]: [DEST] });
     const n = normalizeSolana(
       {
@@ -694,7 +692,9 @@ describe("verifiability + decode", () => {
       },
       FEE_PAYER,
     );
-    expect(verifiabilitySolana(n as never, FEE_PAYER)).toBe("partial");
+    const intent = decodeSolana(n as never, FEE_PAYER);
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.blind).toBe("lookup-table-account");
   });
 
   it("parseCompiledMessage returns each lookup's writable and readonly indexes", () => {

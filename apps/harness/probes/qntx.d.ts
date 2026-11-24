@@ -25,7 +25,7 @@ declare const __qntx: {
   };
   readonly secureInput: {
     readonly request: (
-      kind: "access-code" | "short-id",
+      kind: "access-code" | "short-id" | "backup-password",
       label: string,
       done: (value: Uint8Array | undefined, code: string | undefined) => void,
     ) => void;

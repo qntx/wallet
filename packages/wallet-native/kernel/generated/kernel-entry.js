@@ -524,7 +524,7 @@
 		"ledger",
 		"onekey"
 	];
-	// packages/wallet/dist/core-DZyoTqpO.mjs
+	// packages/wallet/dist/core-Cx7p-0nG.mjs
 	init_defineProperty();
 	/**
 	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
@@ -748,10 +748,13 @@
 		credentialId: bytes(1, 1023),
 		prfBackup: bytes(32)
 	});
-	var backupPassword = obj({
+	var backupPassword = union(obj({
 		kind: literal("password"),
 		password: bytes(1, 1024)
-	});
+	}), obj({
+		kind: literal("password"),
+		ceremony: literal("kernel")
+	}));
 	var backupFactor = union(backupPassword, hostBackupPasskey, obj({
 		kind: literal("passkey"),
 		ceremony: literal("kernel"),
@@ -803,7 +806,7 @@
 	}));
 	/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
 	var passphraseBytes = bytes(1, 1024);
-	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("verification-unavailable"), literal("blind-signing-disabled"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("card-not-genuine"), literal("card-id-mismatch"), literal("card-erased"), literal("card-locked"), literal("card-tampered"), literal("card-fault"), literal("card-unsupported"), literal("crashed"), literal("device-required"), literal("device-locked"), literal("device-app-closed"), literal("device-rejected"), literal("wrong-device"));
+	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("verification-unavailable"), literal("blind-signing-disabled"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("card-not-genuine"), literal("card-id-mismatch"), literal("card-erased"), literal("card-locked"), literal("card-tampered"), literal("card-fault"), literal("card-unsupported"), literal("app-lock-required"), literal("limit-exceeded"), literal("crashed"), literal("device-required"), literal("device-locked"), literal("device-app-closed"), literal("device-rejected"), literal("wrong-device"));
 	var createdResult = obj({
 		wallet: vaultWalletInfo,
 		session: sessionId
@@ -1045,7 +1048,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-D2Veq8OJ.mjs
+	// packages/wallet/dist/protocol-DSTaNtgL.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1670,9 +1673,18 @@
 			result: textResult
 		}
 	};
+	/**
+	* The canonical grammar of a session record's `spent` — the decimal the kernel's meter produces.
+	* The scheme's `positive` params grammar admits at most eight fractional digits, so an
+	* order-notional charge (price × size) is exact at sixteen; the integer part is bounded by the
+	* ~1e15 notional budget `spent` can never exceed. The kernel's record parser and the `SessionInfo`
+	* validator share this one grammar so a value the kernel seals always parses.
+	*/
+	var SESSION_SPENT = /^(?:0|[1-9][0-9]{0,14})(?:\.[0-9]{0,15}[1-9])?$/;
 	var schemeId = str(32, /^[a-z][a-z0-9-]{1,31}$/);
 	var scope = str(64, /^[A-Za-z0-9._:-]{1,64}$/);
 	var evmAddress = str(42, /^0x[0-9a-fA-F]{40}$/);
+	var paramsValue = (value) => value;
 	var sessionInfo$1 = obj({
 		address: evmAddress,
 		scheme: schemeId,
@@ -1683,9 +1695,10 @@
 		scope,
 		name: str(16, /^[A-Za-z0-9._-]{1,16}$/),
 		validUntil: safeTime$1,
-		createdAt: safeTime$1
+		createdAt: safeTime$1,
+		limits: paramsValue,
+		spent: str(32, SESSION_SPENT)
 	});
-	var paramsValue = (value) => value;
 	var SESSIONS_METHODS = {
 		"sessions.create": {
 			session: true,
@@ -1698,7 +1711,9 @@
 				}),
 				scope,
 				name: str(16, /^[A-Za-z0-9._-]{1,16}$/),
-				validUntil: safeTime$1
+				validUntil: safeTime$1,
+				limits: paramsValue,
+				verify: verifier
 			}),
 			result: obj({ address: evmAddress })
 		},
@@ -1712,6 +1727,15 @@
 			session: true,
 			presence: true,
 			params: obj({ address: evmAddress }),
+			result: nullValue
+		},
+		"sessions.open": {
+			session: true,
+			presence: true,
+			params: obj({
+				address: evmAddress,
+				verify: verifier
+			}),
 			result: nullValue
 		},
 		"sessions.sign": {
@@ -4206,12 +4230,12 @@
 		return platform.passkey;
 	}
 	/**
-	* Serializes every system-UI ceremony — presence keystore seal/open, authenticate, clear and
-	* passkey create/get share one queue, because the platform can show only one verification at a
-	* time. Silent keystore work (device seal/open, probe, remove) bypasses the queue and never fires
-	* `onCeremony`. A rejection does not wedge the queue. Applied once by `startKernel`. `onCeremony`
-	* fires `true` when a ceremony's work starts and `false` when it settles, strictly paired per
-	* queued call.
+	* Serializes every system-UI ceremony — presence keystore seal/open, authenticate, clear, passkey
+	* create/get and secure-input requests share one queue, because the platform can show only one
+	* verification at a time. Silent keystore work (device seal/open, probe, remove) bypasses the queue
+	* and never fires `onCeremony`. A rejection does not wedge the queue. Applied once by
+	* `startKernel`. `onCeremony` fires `true` when a ceremony's work starts and `false` when it
+	* settles, strictly paired per queued call.
 	*/
 	function serializeCeremonies(platform, onCeremony) {
 		let tail = Promise.resolve();
@@ -4240,7 +4264,7 @@
 				release();
 			}
 		};
-		const { keystore, passkey, card } = platform;
+		const { keystore, passkey, card, secureInput } = platform;
 		let releaseReader;
 		const reader = card === void 0 ? void 0 : {
 			open: async (prompt) => {
@@ -4263,14 +4287,11 @@
 		return _objectSpread2(_objectSpread2({}, platform), {}, {
 			card: card === void 0 || reader === void 0 ? card : _objectSpread2({
 				anchors: card.anchors,
-				reader,
-				secureInput: {
-					request: async (kind, label) => queue(async () => card.secureInput.request(kind, label)),
-					cancel: () => card.secureInput.cancel()
-				}
+				reader
 			}, card.planMs === void 0 ? {} : { planMs: card.planMs }),
 			keystore: keystore === void 0 ? void 0 : {
 				locale: keystore.locale,
+				platform: keystore.platform,
 				seal: async (id, secret, use) => use.protection === "presence" ? queue(async () => keystore.seal(id, secret, use)) : keystore.seal(id, secret, use),
 				open: async (id, sealed, use) => use.protection === "presence" ? queue(async () => keystore.open(id, sealed, use)) : keystore.open(id, sealed, use),
 				probe: async (id, protection) => keystore.probe(id, protection),
@@ -4281,6 +4302,12 @@
 			passkey: passkey === void 0 ? void 0 : {
 				create: async (input) => queue(async () => passkey.create(input)),
 				get: async (input) => queue(async () => passkey.get(input))
+			},
+			secureInput: secureInput === void 0 ? void 0 : {
+				request: async (kind, label) => releaseReader === void 0 ? queue(async () => secureInput.request(kind, label)) : secureInput.request(kind, label),
+				cancel: () => {
+					secureInput.cancel();
+				}
 			}
 		});
 	}
@@ -4309,7 +4336,12 @@
 	}
 	// packages/wallet-kernel/src/prompts.ts
 	function promptLocale(tag) {
-		return tag.toLowerCase().startsWith("zh") ? "zh-Hans" : "en";
+		const [language, ...subtags] = tag.toLowerCase().split("-");
+		if (language !== "zh") return "en";
+		const script = subtags.find((s) => /^[a-z]{4}$/.test(s));
+		if (script !== void 0) return script === "hans" ? "zh-Hans" : "en";
+		const region = subtags.find((s) => /^[a-z]{2}$/.test(s) || /^[0-9]{3}$/.test(s));
+		return region === "tw" || region === "hk" || region === "mo" ? "en" : "zh-Hans";
 	}
 	var CORE = {
 		"zh-Hans": {
@@ -4487,6 +4519,30 @@
 		return cardPrompt(promptLocale((_keystore$locale = keystore === null || keystore === void 0 ? void 0 : keystore.locale) !== null && _keystore$locale !== void 0 ? _keystore$locale : "en"), kind, cards());
 	};
 	/**
+	* The secure-input labels for the kernel's backup-password ceremony: enable asks for the new
+	* password, then a repeat; a mismatch or a too-short entry is re-asked with the reason in the
+	* title; restore asks once.
+	*/
+	var BACKUP_PASSWORD_LABELS = {
+		"zh-Hans": {
+			choose: "选择云备份密码",
+			again: "再次输入密码",
+			mismatch: "两次输入的密码不一致——选择云备份密码",
+			short: "密码至少 12 个字符——选择云备份密码",
+			enter: "输入云备份密码"
+		},
+		en: {
+			choose: "Choose a cloud backup password",
+			again: "Enter the password again",
+			mismatch: "The passwords did not match — choose a cloud backup password",
+			short: "Use at least 12 characters — choose a cloud backup password",
+			enter: "Enter the cloud backup password"
+		}
+	};
+	function backupPasswordLabel(locale, kind) {
+		return BACKUP_PASSWORD_LABELS[locale][kind];
+	}
+	/**
 	* The display name of a backup protection credential, chosen by the kernel so password managers
 	* list it apart from the user's wallet passkeys (the RP and app name are shown next to it).
 	*/
@@ -4502,6 +4558,25 @@
 		var _keystore$locale2;
 		return corePrompt(promptLocale((_keystore$locale2 = keystore === null || keystore === void 0 ? void 0 : keystore.locale) !== null && _keystore$locale2 !== void 0 ? _keystore$locale2 : "en"), kind);
 	};
+	var PROMPT_BOUNDS = {
+		ios: {
+			lines: 8,
+			characters: 400
+		},
+		android: {
+			title: 60,
+			lines: 12,
+			characters: 640
+		}
+	};
+	/** Unicode code points of `text` — what the platform dialog measures, not UTF-16 units. */
+	function codePoints(text) {
+		return [...text].length;
+	}
+	/** Whether the rendered prompt fits the platform bound the keystore reports. */
+	function promptFits(prompt, bound) {
+		return (bound.title === void 0 || codePoints(prompt.title) <= bound.title) && prompt.description.split("\n").length <= bound.lines && codePoints(prompt.description) <= bound.characters;
+	}
 	/**
 	* An integer amount in smallest units rendered at `decimals` places with bigint arithmetic — no
 	* float rounding — and trailing fractional zeros trimmed. `amount` is a canonical decimal string.
@@ -4518,6 +4593,21 @@
 	function joinLines(lines) {
 		return lines.join("\n");
 	}
+	/** `YYYY-MM-DD` of a Unix-seconds instant in UTC (civil-from-days; no `Date` in the enclave). */
+	function utcDate(seconds) {
+		const z = Math.floor(seconds / 86400) + 719468;
+		const era = Math.floor(z / 146097);
+		const doe = z - era * 146097;
+		const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+		const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+		const mp = Math.floor((5 * doy + 2) / 153);
+		const day = doy - Math.floor((153 * mp + 2) / 5) + 1;
+		const month = mp < 10 ? mp + 3 : mp - 9;
+		const year = yoe + era * 400 + (month <= 2 ? 1 : 0);
+		return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+	}
+	/** `YYYY-MM-DD HH:MM` of a Unix-seconds instant in UTC. */
+	var utcDateTime = (seconds) => `${utcDate(seconds)} ${String(Math.floor(seconds / 3600) % 24).padStart(2, "0")}:${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}`;
 	// \0@oxc-project+runtime@0.155.0/helpers/esm/checkPrivateRedeclaration.js
 	function _checkPrivateRedeclaration(e, t) {
 		if (t.has(e)) throw new TypeError("Cannot initialize the same private elements twice on an object");
@@ -8431,8 +8521,11 @@
 	* Policy for a backup password, at creation only: at least 12 Unicode code points after NFKC. The
 	* envelope leaves the device, so unlike a vault password its guesses are never rate limited.
 	*/
+	function backupPasswordTooShort(password) {
+		return [...decodePassword(password)].length < BACKUP_PASSWORD_MIN;
+	}
 	function assertBackupPasswordPolicy(password) {
-		if ([...decodePassword(password)].length < BACKUP_PASSWORD_MIN) throw new KernelError("invalid-input", "backup password must be at least 12 characters");
+		if (backupPasswordTooShort(password)) throw new KernelError("invalid-input", "backup password must be at least 12 characters");
 	}
 	/**
 	* Backup password KEK: Argon2id(UTF-8(NFKC(password)), salt, BACKUP_PASSWORD_COST, 32). The
@@ -19213,7 +19306,7 @@
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-B5sEI0Lb.mjs
+	// packages/wallet-chains/dist/typed-data-DRtKULsH.mjs
 	init_utils$2();
 	init_secp256k1();
 	init_objectSpread2();
@@ -19335,10 +19428,10 @@
 			};
 		});
 	};
-	/** The EIP-155 part of a CAIP-2 `network` string, e.g. `eip155:1` → 1. */
+	/** The EIP-155 part of a CAIP-2 `network` string, e.g. `eip155:1` → 1. Chain 0 does not exist. */
 	var networkChainId = (network) => {
 		var _exec;
-		const idPart = (_exec = /^eip155:(\d+)$/.exec(network)) === null || _exec === void 0 ? void 0 : _exec[1];
+		const idPart = (_exec = /^eip155:([1-9]\d*)$/.exec(network)) === null || _exec === void 0 ? void 0 : _exec[1];
 		if (idPart === void 0) throw new ChainError("chain-id-mismatch", `network is not an eip155 CAIP-2 id: ${network}`);
 		const id = Number(idPart);
 		if (!Number.isSafeInteger(id)) throw new ChainError("chain-id-mismatch", `chain id is not a safe integer: ${network}`);
@@ -19433,6 +19526,7 @@
 		const list = accessList(tx["accessList"]);
 		if (type === "eip1559") return _objectSpread2(_objectSpread2({ type }, base), {}, { accessList: list }, fees);
 		if (to === void 0) throw new ChainError("invalid-request", "tx.to is required for eip7702");
+		if (chainId < 1) throw new ChainError("invalid-request", "eip7702 chainId 0 is a chain-universal authorization and is never signed");
 		const auth = tx["authorization"];
 		if (!isRecord$3(auth) || Object.keys(auth).length !== 1 || typeof auth["address"] !== "string") throw new ChainError("invalid-request", "tx.authorization must be an object with exactly address");
 		const authAddress = checksumEvmAddress(auth["address"]);
@@ -19655,7 +19749,7 @@
 		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
 		return numeric;
 	};
-	// packages/wallet-chains/dist/token-call-BSiES6KC.mjs
+	// packages/wallet-chains/dist/token-call-DH22g8BL.mjs
 	init_utils$2();
 	init_objectSpread2();
 	var MAX_UINT256 = 2n ** 256n - 1n;
@@ -22543,7 +22637,7 @@
 			...signature ? toTuple$1(signature) : []
 		]));
 	}
-	// packages/wallet-chains/dist/assemble-D8DHLqIP.mjs
+	// packages/wallet-chains/dist/assemble-B3sO9Fvc.mjs
 	init_utils$2();
 	init_objectSpread2();
 	/**
@@ -28413,21 +28507,6 @@ zoo`.split("\n"));
 			verifiability: (_ref8 = (_recognized$verifiabi = recognized === null || recognized === void 0 ? void 0 : recognized.verifiability) !== null && _recognized$verifiabi !== void 0 ? _recognized$verifiabi : app === null || app === void 0 ? void 0 : app.verifiability) !== null && _ref8 !== void 0 ? _ref8 : permit === void 0 && order === void 0 ? "opaque" : "partial"
 		}, blind === void 0 ? {} : { blind }), request.network, EVM_NATIVE_ASSET, 18);
 	};
-	/**
-	* Minimal MessagePack writer — only what the Hyperliquid L1 action hash needs: ints in the smallest
-	* form, UTF-8 strings, booleans, arrays, and maps whose entries arrive already ordered (map key
-	* order is semantic — it changes the phantom-agent connectionId).
-	*
-	* Byte-for-byte compatible with the encoder nktkas uses
-	* (https://raw.githubusercontent.com/denoland/std/main/msgpack/encode.ts) and with python
-	* `msgpack.packb` defaults: positive fixint/uint8/16/32/64, negative fixint/int8/16/32/64,
-	* fixstr/str8/16/32, fixarray/array16, fixmap/map16. Numbers ≥ 2^32 or < −2^31 go through BigInt
-	* exactly like @std/msgpack's integer path.
-	*
-	* `@std/msgpack` is deliberately not a dependency: it is a JSR package outside the workspace, and
-	* its `encode` iterates an object's own keys — the hash would then follow the host's JSON key
-	* order, exactly what must not happen.
-	*/
 	var utf8$6 = new TextEncoder();
 	function concat$6(...chunks) {
 		let length = 0;
@@ -28492,28 +28571,11 @@ zoo`.split("\n"));
 			throw new ChainError("invalid-request", "unreachable: msgpack array over 65535 items");
 		})(), ...items);
 	}
-	/**
-	* Entries arrive already in encoding order — the caller spells the schema's key order out
-	* literally; this writer never iterates an object.
-	*/
 	function packMap(entries) {
 		return concat$6(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$6(new Uint8Array([222]), u16be(entries.length)) : (() => {
 			throw new ChainError("invalid-request", "unreachable: msgpack map over 65535 entries");
 		})(), ...entries.flatMap(([key, value]) => [packStr(key), value]));
 	}
-	/**
-	* Hyperliquid L1 action encoding (research H2): msgpack with the schema key order spelled out
-	* literally per action type — the order is semantic, it feeds the phantom-agent connectionId.
-	*
-	* ConnectionId = keccak256(msgpack(action) ‖ u64be(nonce) ‖ (vaultAddress ? 0x01 ‖ 20 address bytes
-	* : 0x00) ‖ (expiresAfter !== undefined ? 0x00 ‖ u64be(expiresAfter) : ε)) (nktkas _l1.ts:31-46,
-	* python signing.py action_hash — note the 0x00 marker before expiresAfter; the vault marker is
-	* 0x00/0x01.)
-	*
-	* The connectionId then signs as `Agent(string source,bytes32 connectionId)` under domain
-	* {name:"Exchange", version:"1", chainId:1337, verifyingContract:0x0…0}, `source` "a" mainnet / "b"
-	* testnet (nktkas _l1.ts:150-170, python signing.py construct_phantom_agent).
-	*/
 	var u64be = (value) => {
 		const out = /* @__PURE__ */ new Uint8Array(8);
 		new DataView(out.buffer).setBigUint64(0, BigInt(value));
@@ -28538,10 +28600,10 @@ zoo`.split("\n"));
 		return packMap(entries);
 	};
 	var packOid = (oid) => typeof oid === "number" ? packInt(oid) : packStr(oid);
-	/**
-	* Msgpack(action) with every map's keys written in the H2-T schema order. The switch is exhaustive
-	* over the action union; a trailing return is unreachable code (TS7027).
-	*/
+	var optFlag = (entries, key, flag) => {
+		if (flag !== void 0) entries.push([key, packBool(flag)]);
+		return packMap(entries);
+	};
 	function encodeL1Action(action) {
 		switch (action.type) {
 			case "order": {
@@ -28553,30 +28615,14 @@ zoo`.split("\n"));
 				if (action.builder !== void 0) entries.push(["builder", packMap([["b", packStr(action.builder.b)], ["f", packInt(action.builder.f)]])]);
 				return packMap(entries);
 			}
-			case "cancel": {
-				const entries = [["type", packStr("cancel")], ["cancels", packArray(action.cancels.map((cancel) => packMap([["a", packInt(cancel.a)], ["o", packInt(cancel.o)]])))]];
-				if (action.f !== void 0) entries.push(["f", packBool(action.f)]);
-				return packMap(entries);
-			}
-			case "cancelByCloid": {
-				const entries = [["type", packStr("cancelByCloid")], ["cancels", packArray(action.cancels.map((cancel) => packMap([["asset", packInt(cancel.asset)], ["cloid", packStr(cancel.cloid)]])))]];
-				if (action.f !== void 0) entries.push(["f", packBool(action.f)]);
-				return packMap(entries);
-			}
-			case "modify": {
-				const entries = [
-					["type", packStr("modify")],
-					["oid", packOid(action.oid)],
-					["order", orderWire$1(action.order)]
-				];
-				if (action.a !== void 0) entries.push(["a", packBool(action.a)]);
-				return packMap(entries);
-			}
-			case "batchModify": {
-				const entries = [["type", packStr("batchModify")], ["modifies", packArray(action.modifies.map((modify) => packMap([["oid", packOid(modify.oid)], ["order", orderWire$1(modify.order)]])))]];
-				if (action.a !== void 0) entries.push(["a", packBool(action.a)]);
-				return packMap(entries);
-			}
+			case "cancel": return optFlag([["type", packStr("cancel")], ["cancels", packArray(action.cancels.map((cancel) => packMap([["a", packInt(cancel.a)], ["o", packInt(cancel.o)]])))]], "f", action.f);
+			case "cancelByCloid": return optFlag([["type", packStr("cancelByCloid")], ["cancels", packArray(action.cancels.map((cancel) => packMap([["asset", packInt(cancel.asset)], ["cloid", packStr(cancel.cloid)]])))]], "f", action.f);
+			case "modify": return optFlag([
+				["type", packStr("modify")],
+				["oid", packOid(action.oid)],
+				["order", orderWire$1(action.order)]
+			], "a", action.a);
+			case "batchModify": return optFlag([["type", packStr("batchModify")], ["modifies", packArray(action.modifies.map((modify) => packMap([["oid", packOid(modify.oid)], ["order", orderWire$1(modify.order)]])))]], "a", action.a);
 			case "scheduleCancel": {
 				const entries = [["type", packStr("scheduleCancel")]];
 				if (action.time !== void 0) entries.push(["time", packInt(action.time)]);
@@ -28594,14 +28640,6 @@ zoo`.split("\n"));
 				["isBuy", packBool(action.isBuy)],
 				["ntli", packInt(action.ntli)]
 			]);
-			case "twapOrder": return packMap([["type", packStr("twapOrder")], ["twap", packMap([
-				["a", packInt(action.twap.a)],
-				["b", packBool(action.twap.b)],
-				["s", packStr(action.twap.s)],
-				["r", packBool(action.twap.r)],
-				["m", packInt(action.twap.m)],
-				["t", packBool(action.twap.t)]
-			])]]);
 			case "twapCancel": return packMap([
 				["type", packStr("twapCancel")],
 				["a", packInt(action.a)],
@@ -28609,20 +28647,12 @@ zoo`.split("\n"));
 			]);
 		}
 	}
-	/**
-	* Keccak256(msgpack ‖ u64be(nonce) ‖ (vault ? 0x01 ‖ address : 0x00) ‖ (expiresAfter !== undefined
-	* ? 0x00 ‖ u64be(expiresAfter) : ε)).
-	*/
 	function l1ConnectionId(args) {
 		const packed = encodeL1Action(args.action);
 		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$6(new Uint8Array([1]), hexToBytes$4(args.vaultAddress.slice(2)));
 		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$6(new Uint8Array([0]), u64be(args.expiresAfter));
 		return keccak_256(concat$6(packed, u64be(args.nonce), vault, expiry));
 	}
-	/**
-	* The phantom-agent document the L1 signature actually covers — the kernel builds it, the host
-	* never supplies one. `source` is "a" on mainnet, "b" on testnet.
-	*/
 	function phantomAgentTypedData(connectionId, network) {
 		return JSON.stringify({
 			types: {
@@ -28665,7 +28695,7 @@ zoo`.split("\n"));
 			}
 		});
 	}
-	/** The phantom-agent typed-data JSON an L1 `params` signs, shared by the kernel and the host. */
+	/** The phantom-agent typed-data JSON an L1 `params` signs, shared by kernel and host. */
 	function hyperliquidL1Document(params, network) {
 		return phantomAgentTypedData(l1ConnectionId(_objectSpread2(_objectSpread2({
 			action: params.action,
@@ -30612,6 +30642,17 @@ zoo`.split("\n"));
 			return (_declared$get2 = declared.get(t.address)) === null || _declared$get2 === void 0 ? void 0 : _declared$get2[i];
 		}))][index - parsed.staticAccounts.length];
 	};
+	var namedAccounts = (parsed, lookups) => {
+		const fromTable = /* @__PURE__ */ new Set();
+		return {
+			fromTable,
+			at: (index) => {
+				if (index < parsed.staticAccounts.length) return parsed.staticAccounts[index];
+				const resolved = resolveAccountIndex(parsed, index, lookups);
+				if (resolved !== void 0) fromTable.add(resolved);
+			}
+		};
+	};
 	/** All declared lookup-table entries must be valid base58 32-byte addresses. */
 	var validateLookupTables = (tables) => {
 		if (tables === void 0) return;
@@ -30708,11 +30749,11 @@ zoo`.split("\n"));
 	* does not match a documented shape exactly — tag, data length, account count, signer slot, the AMM
 	* v4 token program — returns undefined and falls back to the program-authority rule.
 	*/
-	var decodeAmmSwapIx = (parsed, ix, lookups, program) => {
+	var decodeAmmSwapIx = (ix, named, program) => {
 		const { data } = ix;
 		const account = (i) => {
 			const index = ix.accountIndices[i];
-			return index === void 0 ? void 0 : resolveAccountIndex(parsed, index, lookups);
+			return index === void 0 ? void 0 : named.at(index);
 		};
 		if (program === "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8") {
 			const tag = data.at(0);
@@ -30872,11 +30913,11 @@ zoo`.split("\n"));
 	* authority slot resolves to the payer when it is the placeholder; it must be the signer for the
 	* call to count as a transfer the wallet is doing.
 	*/
-	var decodeCoreIx = (parsed, ix, lookups) => {
+	var decodeCoreIx = (ix, named) => {
 		const { data } = ix;
 		const account = (i) => {
 			const index = ix.accountIndices[i];
-			return index === void 0 ? void 0 : resolveAccountIndex(parsed, index, lookups);
+			return index === void 0 ? void 0 : named.at(index);
 		};
 		if (data.length !== 2 || data[0] !== TRANSFER_V1[0] || data[1] !== TRANSFER_V1[1]) return;
 		const asset = account(0);
@@ -30925,11 +30966,11 @@ zoo`.split("\n"));
 	* `route_plan` vector must declare enough remaining bytes (each step is ≥ 5 bytes on the wire). The
 	* route steps themselves stay opaque — the intent only shows the inputs and the floor.
 	*/
-	var decodeJupiterIx = (parsed, ix, lookups) => {
+	var decodeJupiterIx = (ix, named) => {
 		const { data } = ix;
 		const account = (i) => {
 			const index = ix.accountIndices[i];
-			return index === void 0 ? void 0 : resolveAccountIndex(parsed, index, lookups);
+			return index === void 0 ? void 0 : named.at(index);
 		};
 		const accountAt = (i) => {
 			var _account;
@@ -30984,9 +31025,9 @@ zoo`.split("\n"));
 	var u64le$1 = (data, offset) => u64$2.decode(data, offset);
 	var i64le = (data, offset) => i64.decode(data, offset);
 	var key$1 = (data, offset) => solanaAddressFromPublicKey(data.subarray(offset, offset + 32));
-	var account = (parsed, ix, index, lookups) => {
+	var account = (ix, index, named) => {
 		var _ix$accountIndices$in;
-		return index < ix.accountIndices.length ? resolveAccountIndex(parsed, (_ix$accountIndices$in = ix.accountIndices[index]) !== null && _ix$accountIndices$in !== void 0 ? _ix$accountIndices$in : 0, lookups) : void 0;
+		return index < ix.accountIndices.length ? named.at((_ix$accountIndices$in = ix.accountIndices[index]) !== null && _ix$accountIndices$in !== void 0 ? _ix$accountIndices$in : 0) : void 0;
 	};
 	var role = (data, offset) => {
 		const r = u32le$1(data, offset);
@@ -30997,9 +31038,9 @@ zoo`.split("\n"));
 	* current form or the legacy one (recognised by the sysvar it inserts at a fixed position).
 	* Anything else is `undefined` → the whole transaction decodes `opaque`.
 	*/
-	var decodeStakeIx = (parsed, ix, lookups) => {
+	var decodeStakeIx = (ix, named) => {
 		const { data } = ix;
-		const acc = (i) => account(parsed, ix, i, lookups);
+		const acc = (i) => account(ix, i, named);
 		const n = ix.accountIndices.length;
 		if (data.length < 4) return;
 		switch (u32le$1(data, 0)) {
@@ -31109,9 +31150,9 @@ zoo`.split("\n"));
 	* `"other"` — the program itself would reject it. `undefined` when the data is neither instruction;
 	* `"other"` when it is one but malformed.
 	*/
-	var decodeSystemCreate = (parsed, ix, lookups) => {
+	var decodeSystemCreate = (ix, named) => {
 		const { data } = ix;
-		const acc = (i) => account(parsed, ix, i, lookups);
+		const acc = (i) => account(ix, i, named);
 		if (data.length < 4) return "other";
 		if (u32le$1(data, 0) === 0) {
 			if (data.length !== 52 || ix.accountIndices.length !== 2) return "other";
@@ -31175,18 +31216,18 @@ zoo`.split("\n"));
 	* Classifies one instruction by program + discriminator/layout. Exact-length checks keep
 	* non-canonical encodings out of the `full` class.
 	*/
-	var classifyIx = (parsed, ix, lookups, signer) => {
-		const program = resolveAccountIndex(parsed, ix.programAddressIndex, lookups);
+	var classifyIx = (ix, named, signer) => {
+		const program = named.at(ix.programAddressIndex);
 		const { data } = ix;
 		if (program === PROGRAM_IDS.system) {
 			var _ix$accountIndices$, _ix$accountIndices$2;
 			if (data.length === 12 && u32le$2(data, 0) === 2) return {
 				kind: "system-transfer",
-				from: resolveAccountIndex(parsed, (_ix$accountIndices$ = ix.accountIndices[0]) !== null && _ix$accountIndices$ !== void 0 ? _ix$accountIndices$ : 0, lookups),
-				to: resolveAccountIndex(parsed, (_ix$accountIndices$2 = ix.accountIndices[1]) !== null && _ix$accountIndices$2 !== void 0 ? _ix$accountIndices$2 : 0, lookups),
+				from: named.at((_ix$accountIndices$ = ix.accountIndices[0]) !== null && _ix$accountIndices$ !== void 0 ? _ix$accountIndices$ : 0),
+				to: named.at((_ix$accountIndices$2 = ix.accountIndices[1]) !== null && _ix$accountIndices$2 !== void 0 ? _ix$accountIndices$2 : 0),
 				amount: u64le$2(data, 4)
 			};
-			const create = decodeSystemCreate(parsed, ix, lookups);
+			const create = decodeSystemCreate(ix, named);
 			if (create !== void 0 && create !== "other") return create.owner === PROGRAM_IDS.stake ? {
 				kind: "system-create",
 				stake: {
@@ -31224,58 +31265,58 @@ zoo`.split("\n"));
 				kind: "token-transfer-checked",
 				amount: u64le$2(data, 1),
 				decimals: data[9],
-				to: resolveAccountIndex(parsed, (_ix$accountIndices$3 = ix.accountIndices[2]) !== null && _ix$accountIndices$3 !== void 0 ? _ix$accountIndices$3 : 0, lookups),
-				mint: resolveAccountIndex(parsed, (_ix$accountIndices$4 = ix.accountIndices[1]) !== null && _ix$accountIndices$4 !== void 0 ? _ix$accountIndices$4 : 0, lookups)
+				to: named.at((_ix$accountIndices$3 = ix.accountIndices[2]) !== null && _ix$accountIndices$3 !== void 0 ? _ix$accountIndices$3 : 0),
+				mint: named.at((_ix$accountIndices$4 = ix.accountIndices[1]) !== null && _ix$accountIndices$4 !== void 0 ? _ix$accountIndices$4 : 0)
 			};
-			if (data.length === 9 && data[0] === 3 && ix.accountIndices.length === 3) return resolveAccountIndex(parsed, (_ix$accountIndices$5 = ix.accountIndices[2]) !== null && _ix$accountIndices$5 !== void 0 ? _ix$accountIndices$5 : 0, lookups) === signer ? {
+			if (data.length === 9 && data[0] === 3 && ix.accountIndices.length === 3) return named.at((_ix$accountIndices$5 = ix.accountIndices[2]) !== null && _ix$accountIndices$5 !== void 0 ? _ix$accountIndices$5 : 0) === signer ? {
 				kind: "token-transfer",
 				amount: u64le$2(data, 1),
-				tokenAccount: resolveAccountIndex(parsed, (_ix$accountIndices$6 = ix.accountIndices[0]) !== null && _ix$accountIndices$6 !== void 0 ? _ix$accountIndices$6 : 0, lookups),
-				to: resolveAccountIndex(parsed, (_ix$accountIndices$7 = ix.accountIndices[1]) !== null && _ix$accountIndices$7 !== void 0 ? _ix$accountIndices$7 : 0, lookups)
+				tokenAccount: named.at((_ix$accountIndices$6 = ix.accountIndices[0]) !== null && _ix$accountIndices$6 !== void 0 ? _ix$accountIndices$6 : 0),
+				to: named.at((_ix$accountIndices$7 = ix.accountIndices[1]) !== null && _ix$accountIndices$7 !== void 0 ? _ix$accountIndices$7 : 0)
 			} : { kind: "other" };
-			if ((data.length === 9 && data[0] === 8 || data.length === 10 && data[0] === 15) && ix.accountIndices.length === 3) return resolveAccountIndex(parsed, (_ix$accountIndices$8 = ix.accountIndices[2]) !== null && _ix$accountIndices$8 !== void 0 ? _ix$accountIndices$8 : 0, lookups) === signer ? {
+			if ((data.length === 9 && data[0] === 8 || data.length === 10 && data[0] === 15) && ix.accountIndices.length === 3) return named.at((_ix$accountIndices$8 = ix.accountIndices[2]) !== null && _ix$accountIndices$8 !== void 0 ? _ix$accountIndices$8 : 0) === signer ? {
 				kind: "token-burn",
 				amount: u64le$2(data, 1),
-				mint: resolveAccountIndex(parsed, (_ix$accountIndices$9 = ix.accountIndices[1]) !== null && _ix$accountIndices$9 !== void 0 ? _ix$accountIndices$9 : 0, lookups),
-				to: resolveAccountIndex(parsed, (_ix$accountIndices$10 = ix.accountIndices[0]) !== null && _ix$accountIndices$10 !== void 0 ? _ix$accountIndices$10 : 0, lookups)
+				mint: named.at((_ix$accountIndices$9 = ix.accountIndices[1]) !== null && _ix$accountIndices$9 !== void 0 ? _ix$accountIndices$9 : 0),
+				to: named.at((_ix$accountIndices$10 = ix.accountIndices[0]) !== null && _ix$accountIndices$10 !== void 0 ? _ix$accountIndices$10 : 0)
 			} : { kind: "other" };
 			if (data.length === 9 && data[0] === 4) return {
 				kind: "token-approve",
 				amount: u64le$2(data, 1),
-				to: resolveAccountIndex(parsed, (_ix$accountIndices$11 = ix.accountIndices[1]) !== null && _ix$accountIndices$11 !== void 0 ? _ix$accountIndices$11 : 0, lookups)
+				to: named.at((_ix$accountIndices$11 = ix.accountIndices[1]) !== null && _ix$accountIndices$11 !== void 0 ? _ix$accountIndices$11 : 0)
 			};
 			if (data.length === 1 && data[0] === 17) return { kind: "token-sync-native" };
-			if (data.length === 1 && data[0] === 9) return resolveAccountIndex(parsed, (_ix$accountIndices$12 = ix.accountIndices[1]) !== null && _ix$accountIndices$12 !== void 0 ? _ix$accountIndices$12 : 0, lookups) === signer ? { kind: "token-close-account" } : { kind: "other" };
+			if (data.length === 1 && data[0] === 9) return named.at((_ix$accountIndices$12 = ix.accountIndices[1]) !== null && _ix$accountIndices$12 !== void 0 ? _ix$accountIndices$12 : 0) === signer ? { kind: "token-close-account" } : { kind: "other" };
 			if (data.length === 1 && data[0] === 1 && ix.accountIndices.length === 4) return { kind: "token-initialize-account" };
 			if (data.length === 1 && data[0] === 5 && ix.accountIndices.length === 2) return {
 				kind: "token-revoke",
-				tokenAccount: resolveAccountIndex(parsed, (_ix$accountIndices$13 = ix.accountIndices[0]) !== null && _ix$accountIndices$13 !== void 0 ? _ix$accountIndices$13 : 0, lookups)
+				tokenAccount: named.at((_ix$accountIndices$13 = ix.accountIndices[0]) !== null && _ix$accountIndices$13 !== void 0 ? _ix$accountIndices$13 : 0)
 			};
 			return { kind: "other" };
 		}
 		if (program === "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4") {
-			const jupiter = decodeJupiterIx(parsed, ix, lookups);
+			const jupiter = decodeJupiterIx(ix, named);
 			return jupiter !== void 0 && jupiter.authority === signer ? {
 				kind: "jupiter",
 				jupiter
 			} : { kind: "other" };
 		}
 		if (program === "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" || program === "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK" || program === "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C" || program === "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc" || program === "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo") {
-			const amm = decodeAmmSwapIx(parsed, ix, lookups, program);
+			const amm = decodeAmmSwapIx(ix, named, program);
 			return amm !== void 0 && amm.authority === signer ? {
 				kind: "amm-swap",
 				amm
 			} : { kind: "other" };
 		}
 		if (program === "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d") {
-			const core = decodeCoreIx(parsed, ix, lookups);
+			const core = decodeCoreIx(ix, named);
 			return core !== void 0 && core.authority === signer ? {
 				kind: "core-transfer",
 				core
 			} : { kind: "other" };
 		}
 		if (program === PROGRAM_IDS.stake) {
-			const stake = decodeStakeIx(parsed, ix, lookups);
+			const stake = decodeStakeIx(ix, named);
 			return stake === void 0 || stake.kind === "split" && stake.staker !== signer ? { kind: "other" } : {
 				kind: "stake",
 				stake
@@ -31352,9 +31393,10 @@ zoo`.split("\n"));
 			address: t.address,
 			addresses: t.addresses
 		}));
-		const calls = parsed.instructions.map((ix) => classifyIx(parsed, ix, lookups, signer));
+		const named = namedAccounts(parsed, lookups);
+		const calls = parsed.instructions.map((ix) => classifyIx(ix, named, signer));
 		if (calls.filter((c) => c.kind === "cu-limit").length > 1 || calls.filter((c) => c.kind === "cu-price").length > 1) throw new ChainError("invalid-request", "duplicate compute-budget instruction");
-		const verifiability = classify$1(parsed, calls, request.network, table);
+		const verifiability = named.fromTable.size === 0 ? classify$1(parsed, calls, request.network, table) : "opaque";
 		const outflows = [];
 		const approvals = [];
 		const staking = [];
@@ -31414,9 +31456,9 @@ zoo`.split("\n"));
 				});
 				const minimum = (swap.quotedOut * BigInt(1e4 - swap.slippageBps) + 9999n) / 10000n;
 				const buy = lookupSolanaToken(table, request.network, swap.destinationMint);
-				const destAta = associatedTokenAddress(signer, swap.destinationMint, swap.destinationTokenProgram);
+				const destAta = swap.destinationMint === "" || swap.destinationTokenProgram === "" ? void 0 : associatedTokenAddress(signer, swap.destinationMint, swap.destinationTokenProgram);
 				minimumReceived.push({
-					to: swap.destinationAccount === destAta ? signer : swap.destinationAccount,
+					to: swap.destinationAccount === "" ? "" : swap.destinationAccount === destAta ? signer : swap.destinationAccount,
 					amount: swap.destinationMint === "So11111111111111111111111111111111111111112" ? {
 						asset: SOLANA_NATIVE_ASSET,
 						amount: minimum.toString(10)
@@ -31681,6 +31723,7 @@ zoo`.split("\n"));
 			authority.set(program, entry);
 			if (blind === void 0 && (altWritable || entry.accounts.length > 12)) blind = "program-authority";
 		}
+		if (named.fromTable.size > 0) blind = "lookup-table-account";
 		const summary = hasSwap ? "swap" : otherTransfer ? "transfer" : staking.length > 0 ? "stake" : outflows.length > 0 ? "transfer" : "contract-call";
 		const programAuthority = [...authority.entries()].map(([program, entry]) => ({
 			program,
@@ -31774,7 +31817,7 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/plan-CLgrC8kj.mjs
+	// packages/wallet-chains/dist/plan-wCnxHqRu.mjs
 	init_utils$2();
 	init_secp256k1();
 	init_sha2();
@@ -34182,7 +34225,7 @@ zoo`.split("\n"));
 			dek.wipe();
 			return { session: ctx.session.current().id };
 		}
-		const session = await openSession(ctx, dek, keyId);
+		const session = await openSession$1(ctx, dek, keyId);
 		await probeKeystoreFactor(ctx, params.factor.kind).catch(() => void 0);
 		return { session };
 	}
@@ -34212,7 +34255,7 @@ zoo`.split("\n"));
 	* raises the vault anchor's floor to the image's revision. Shared by `vault.unlock` and the
 	* establish paths that open a session on commit.
 	*/
-	async function openSession(ctx, dek, keyId) {
+	async function openSession$1(ctx, dek, keyId) {
 		for (const module of ctx.modules) module.lock();
 		const session = ctx.session.open(dek, keyId);
 		ctx.reconcile(EMPTY_IMAGE$1);
@@ -34916,7 +34959,7 @@ zoo`.split("\n"));
 			dek.wipe();
 			throw error;
 		}
-		return openSession(ctx, dek, keyId);
+		return openSession$1(ctx, dek, keyId);
 	}
 	function ensureNewWallet(ctx, material) {
 		if (findWalletRecord(ctx.image, material.walletId) !== void 0) throw new KernelError("already-exists", "wallet already exists");
@@ -35410,8 +35453,25 @@ zoo`.split("\n"));
 	* registration returns no PRF); restoring asserts one of `allowCredentials` — the envelope's own
 	* passkey factors. Each platform accepts only its own ceremony shape.
 	*/
-	async function backupMaterial(ctx, factor, allowCredentials) {
-		if (factor.kind === "password") return factor;
+	async function backupMaterial(ctx, factor, allowCredentials, purpose) {
+		if (factor.kind === "password") {
+			if ("password" in factor) {
+				if (ctx.platform.keystore !== void 0) throw new KernelError("unsupported", "on this platform the kernel collects the backup password itself");
+				return {
+					kind: "password",
+					ceremony: "host",
+					password: factor.password
+				};
+			}
+			if (ctx.platform.keystore === void 0) throw new KernelError("unsupported", "this platform supplies the backup password over the wire");
+			const { secureInput } = ctx.platform;
+			if (secureInput === void 0) throw new KernelError("unsupported", "this platform has no secure input");
+			return {
+				kind: "password",
+				ceremony: "kernel",
+				password: await kernelBackupPassword(ctx, secureInput, purpose)
+			};
+		}
 		if (ctx.platform.passkey !== void 0 !== (factor.ceremony === "kernel")) throw new KernelError("unsupported", "this platform runs passkey ceremonies elsewhere");
 		if (factor.ceremony === "host") return {
 			kind: "passkey",
@@ -35444,12 +35504,50 @@ zoo`.split("\n"));
 		}));
 	}
 	/**
+	* The kernel's backup-password ceremony: the bytes arrive through the secure input, never the wire.
+	* Enable asks for the new password and a repeat — a mismatch or an entry under the 12-code-point
+	* policy is re-asked with the reason in the label, three rounds at most. Restore asks once; a wrong
+	* entry fails later at the envelope unwrap (`wrong-password`). Every buffer the input did not
+	* return is wiped on every path.
+	*/
+	async function kernelBackupPassword(ctx, secureInput, purpose) {
+		var _ctx$platform$keystor3, _ctx$platform$keystor4;
+		const locale = promptLocale((_ctx$platform$keystor3 = (_ctx$platform$keystor4 = ctx.platform.keystore) === null || _ctx$platform$keystor4 === void 0 ? void 0 : _ctx$platform$keystor4.locale) !== null && _ctx$platform$keystor3 !== void 0 ? _ctx$platform$keystor3 : "en");
+		const ask = async (label) => {
+			const result = await secureInput.request("backup-password", backupPasswordLabel(locale, label));
+			if (!result.ok) throw new KernelError(result.failure, `backup password input: ${result.failure}`);
+			return result.value;
+		};
+		if (purpose === "restore") return ask("enter");
+		let complaint = "choose";
+		for (let round = 0; round < 3; round++) {
+			const first = await ask(complaint);
+			let accepted = false;
+			try {
+				const second = await ask("again");
+				let matched;
+				try {
+					matched = equalBytes$10(first, second);
+				} finally {
+					second.fill(0);
+				}
+				accepted = matched && !backupPasswordTooShort(first);
+				complaint = matched ? "short" : "mismatch";
+			} finally {
+				if (!accepted) first.fill(0);
+			}
+			if (accepted) return first;
+		}
+		throw new KernelError("invalid-input", "backup password was not settled in three rounds");
+	}
+	/**
 	* Zeroes the secret bytes a backup factor carries — the password or a host ceremony's PRF output. A
 	* kernel-ceremony factor has no wire secret; its material's `prfBackup` is still covered.
 	*/
 	function wipeBackupSecret(factor) {
-		if (factor.kind === "password") factor.password.fill(0);
-		else if ("prfBackup" in factor) factor.prfBackup.fill(0);
+		if (factor.kind === "password") {
+			if ("password" in factor) factor.password.fill(0);
+		} else if ("prfBackup" in factor) factor.prfBackup.fill(0);
 	}
 	async function sealBackupFactors(platform, bek, backupFactors) {
 		const salts = backupFactors.map((factor) => factor.kind === "password" ? platform.random(16) : void 0);
@@ -35519,7 +35617,7 @@ zoo`.split("\n"));
 			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "backup"));
 			bek = ctx.platform.random(32);
 			if (bek.length !== 32) throw new KernelError("integrity", "random source returned a wrong-length BEK");
-			for (const factor of params.factors) materials.push(await backupMaterial(ctx, factor, []));
+			for (const factor of params.factors) materials.push(await backupMaterial(ctx, factor, [], "enable"));
 			const factors = await sealBackupFactors(ctx.platform, bek, materials);
 			const record = backupKeyRecord(ctx, dek, bek, factors);
 			await ctx.commit([{
@@ -35580,12 +35678,14 @@ zoo`.split("\n"));
 	/**
 	* Whether an establishing restore may keep the envelope's BEK. Adopting it turns backup on, so it
 	* needs what `backup.enable` needs: a user verification the main runtime cannot stand in for, by
-	* the owner of a factor of this very envelope. Only a kernel passkey ceremony is both — a
-	* user-verified assertion whose PRF never leaves the kernel runtime. A password and a host
-	* ceremony's PRF arrive over the wire: the main runtime may have minted the envelope around them,
-	* and adopting its BEK would hand it every secret a later `backup.update` seals.
+	* the owner of a factor of this very envelope. A kernel ceremony is both — a user-verified
+	* assertion or an entered password whose secret never leaves the kernel runtime. A wire password
+	* and a host ceremony's PRF arrive over the wire: the main runtime may have minted the envelope
+	* around them, and adopting its BEK would hand it every secret a later `backup.update` seals. A
+	* kernel-entered password widens nothing — a main runtime that cannot read it unwraps nothing with
+	* it, and one that can read it could have unwrapped the real envelope anyway.
 	*/
-	var adoptsBackupKey = (material) => material.kind === "passkey" && material.ceremony === "kernel";
+	var adoptsBackupKey = (material) => material.ceremony === "kernel";
 	/** Unwraps the BEK under the caller's factor. A failed open maps to the factor's wrong-* code. */
 	async function bekFromFactor(platform, envelope, backupFactor) {
 		if (backupFactor.kind === "passkey") {
@@ -35637,7 +35737,7 @@ zoo`.split("\n"));
 		let committed = false;
 		try {
 			const credentials = envelope.factors.flatMap((f) => f.kind === "passkey" ? [b64$2.dec(f.credentialId)] : []);
-			const material = await backupMaterial(ctx, params.backupFactor, credentials);
+			const material = await backupMaterial(ctx, params.backupFactor, credentials, "restore");
 			try {
 				const bek = await bekFromFactor(ctx.platform, envelope, material);
 				try {
@@ -40222,13 +40322,14 @@ zoo`.split("\n"));
 		"validUntil",
 		"createdAt"
 	];
+	var HEADER_OPTIONAL = ["limits", "spent"];
 	var asField = (pattern) => (value) => {
 		if (typeof value !== "string" || !pattern.test(value)) throw headerFailure();
 		return value;
 	};
 	/** Stored JSON, key order fixed so the text is a stable authenticated byte string. */
 	function encodeSessionHeader(header) {
-		return JSON.stringify({
+		const fields = {
 			scheme: header.scheme,
 			walletId: header.walletId,
 			groupIndex: header.groupIndex,
@@ -40237,12 +40338,16 @@ zoo`.split("\n"));
 			name: header.name,
 			validUntil: header.validUntil,
 			createdAt: header.createdAt
-		});
+		};
+		if (header.limits !== void 0) fields["limits"] = header.limits;
+		if (header.spent !== void 0) fields["spent"] = header.spent;
+		return JSON.stringify(fields);
 	}
 	function parseSessionHeader(text) {
 		const object = headerObject(text);
-		expectKeys(object, HEADER_KEYS);
-		return {
+		const optional = HEADER_OPTIONAL.filter((key) => Object.hasOwn(object, key));
+		expectKeys(object, [...HEADER_KEYS, ...optional]);
+		const header = {
 			scheme: asField(SCHEME)(object["scheme"]),
 			walletId: asWalletId(object["walletId"]),
 			groupIndex: asGroupIndex(object["groupIndex"]),
@@ -40252,6 +40357,13 @@ zoo`.split("\n"));
 			validUntil: asCreatedAt(object["validUntil"]),
 			createdAt: asCreatedAt(object["createdAt"])
 		};
+		const { limits, spent } = object;
+		if (limits !== void 0) {
+			if (!isProtocolValue(limits) || typeof limits !== "object" || limits === null || Array.isArray(limits) || limits instanceof Uint8Array) throw headerFailure();
+			header.limits = limits;
+		}
+		if (spent !== void 0) header.spent = asField(SESSION_SPENT)(spent);
+		return header;
 	}
 	/** The stored session-key record for an address (any case), or undefined — never throws. */
 	function findSession(image, address) {
@@ -40313,6 +40425,7 @@ zoo`.split("\n"));
 		externalInputs: "包含其他签名者的输入；无法核实手续费",
 		solanaPrograms: (ids) => `钱包无法解码的程序调用：${ids}`,
 		solanaProgramsWarning: "这些程序可以转移本交易涉及账户中的资产",
+		solanaLookupTable: "提示点名的账户来自地址查找表，本设备无法核实其身份",
 		programAuthority: (program, sol) => sol ? `程序 ${program} 获得本账户的签名：可以转走本账户的全部 SOL` : `程序 ${program} 获得本账户的签名`,
 		programAuthorityAccounts: (program, items) => `程序 ${program} 可以以本账户的权限操作：${items.join("；")}`,
 		programAuthorityYours: (symbol, address) => `你的 ${symbol} 账户 ${address}`,
@@ -40343,6 +40456,7 @@ zoo`.split("\n"));
 		tokenInSet: (token, root) => `${token} 中 Merkle 根 ${root} 所列的代币`,
 		zoneRestriction: (zone) => `区域合约 ${zone} 可限制或取消此订单`,
 		moreItems: (count) => `… 还有 ${count} 项未显示`,
+		moreLines: (count) => `… 还有 ${count} 行未显示`,
 		orderHeader: (name, maker) => `${name} 订单，挂单方 ${maker}`,
 		orderGiveAtMost: (amount) => `最多付出 ${amount}`,
 		orderReceiveAtLeast: (recipient, amount) => `${recipient} 至少收到 ${amount}`,
@@ -40550,6 +40664,7 @@ zoo`.split("\n"));
 		externalInputs: "Includes inputs from other signers; the fee cannot be verified",
 		solanaPrograms: (ids) => `Program calls the wallet cannot decode: ${ids}`,
 		solanaProgramsWarning: "These programs can move assets from the accounts in this transaction",
+		solanaLookupTable: "An account this prompt would name is loaded from an address lookup table the device cannot verify",
 		programAuthority: (program, sol) => sol ? `Program ${program} receives this account's signature: it can move ALL SOL in this account` : `Program ${program} receives this account's signature`,
 		programAuthorityAccounts: (program, items) => `Program ${program} can act with this account's authority on: ${items.join("; ")}`,
 		programAuthorityYours: (symbol, address) => `your ${symbol} account ${address}`,
@@ -40580,6 +40695,7 @@ zoo`.split("\n"));
 		tokenInSet: (token, root) => `a token of ${token} from the set with Merkle root ${root}`,
 		zoneRestriction: (zone) => `Zone ${zone} can restrict or cancel this order`,
 		moreItems: (count) => `… ${count} more items not shown`,
+		moreLines: (count) => `… ${count} more lines not shown`,
 		orderHeader: (name, maker) => `${name} order by ${maker}`,
 		orderGiveAtMost: (amount) => `Give at most ${amount}`,
 		orderReceiveAtLeast: (recipient, amount) => `${recipient} receives at least ${amount}`,
@@ -40755,7 +40871,7 @@ zoo`.split("\n"));
 		fiat24Grant: "This is a Fiat24 account access grant: until it expires, anyone holding the signature can read your profile and card details and change cards, payees and your email. The wallet signs Fiat24 grants only when it builds them itself.",
 		fiat24SessionTitle: "Allow Fiat24 account access",
 		fiat24SessionBearer: (date) => `A bearer grant for the Fiat24 account of the signing address, valid until ${date} (UTC)`,
-		fiat24SessionPower: "Until then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords",
+		fiat24SessionPower: "Until then, the holder can read your Fiat24 profile, contact data and card details, and create or change cards, payees and your email — the card one-time-password channel",
 		fiat24SessionSigns: (message) => `Signs: ${message}`,
 		clearApproval: (asset, id) => `Clear the approval on ${asset} #${id}`,
 		delegateRevoked: (account) => `Revoke the delegate of token account ${account}`
@@ -40776,21 +40892,6 @@ zoo`.split("\n"));
 		}
 		return amount.decimals === void 0 ? catalog.unverifiedToken(amount.amount, amount.asset) : `${formatUnits(amount.amount, amount.decimals)} ${(_amount$symbol = amount.symbol) !== null && _amount$symbol !== void 0 ? _amount$symbol : amount.asset}`;
 	}
-	/** `YYYY-MM-DD` of a Unix-seconds instant in UTC (civil-from-days; no `Date` in the enclave). */
-	function utcDate(seconds) {
-		const z = Math.floor(seconds / 86400) + 719468;
-		const era = Math.floor(z / 146097);
-		const doe = z - era * 146097;
-		const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
-		const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
-		const mp = Math.floor((5 * doy + 2) / 153);
-		const day = doy - Math.floor((153 * mp + 2) / 5) + 1;
-		const month = mp < 10 ? mp + 3 : mp - 9;
-		const year = yoe + era * 400 + (month <= 2 ? 1 : 0);
-		return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-	}
-	/** `YYYY-MM-DD HH:MM` of a Unix-seconds instant in UTC (no `Date` in the enclave). */
-	var utcDateTime = (seconds) => `${utcDate(seconds)} ${String(Math.floor(seconds / 3600) % 24).padStart(2, "0")}:${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}`;
 	/** The network's display name: the registry name, a generic EVM label, or the raw CAIP-2 id. */
 	var networkLabel = (catalog, id) => {
 		const meta = networkMeta(id);
@@ -40915,10 +41016,10 @@ zoo`.split("\n"));
 		];
 	}
 	function transactionPrompt(catalog, intent) {
-		var _intent$programs, _intent$programs2, _intent$warnings;
+		var _intent$programs, _intent$warnings;
 		const { tron } = intent;
 		const network = intent.network === void 0 ? [] : [catalog.networkLine(networkLabel(catalog, intent.network))];
-		const caveat = intent.blind === "tron-contract" && tron !== void 0 ? [catalog.tronContract(tron.contractType)] : intent.blind === "tron-field" ? [catalog.tronField] : intent.blind === void 0 ? intent.verifiability === "opaque" ? intent.family === "solana" ? [catalog.solanaPrograms(((_intent$programs = intent.programs) !== null && _intent$programs !== void 0 ? _intent$programs : []).join(", ")), catalog.solanaProgramsWarning] : intent.family === "bitcoin" ? [catalog.externalInputs] : [catalog.unverifiedEffects] : intent.verifiability === "partial" ? [catalog.otherOutflows] : [] : intent.family === "solana" && intent.verifiability === "opaque" ? [catalog.solanaPrograms(((_intent$programs2 = intent.programs) !== null && _intent$programs2 !== void 0 ? _intent$programs2 : []).join(", ")), catalog.solanaProgramsWarning] : [];
+		const caveat = intent.blind === "tron-contract" && tron !== void 0 ? [catalog.tronContract(tron.contractType)] : intent.blind === "tron-field" ? [catalog.tronField] : intent.blind === void 0 ? intent.verifiability === "opaque" ? intent.family === "solana" ? [catalog.solanaPrograms(((_intent$programs = intent.programs) !== null && _intent$programs !== void 0 ? _intent$programs : []).join(", ")), catalog.solanaProgramsWarning] : intent.family === "bitcoin" ? [catalog.externalInputs] : [catalog.unverifiedEffects] : intent.verifiability === "partial" ? [catalog.otherOutflows] : [] : intent.family === "solana" && intent.verifiability === "opaque" ? [...intent.blind === "lookup-table-account" ? [catalog.solanaLookupTable] : [], ...intent.programs === void 0 || intent.programs.length === 0 ? [] : [catalog.solanaPrograms(intent.programs.join(", ")), catalog.solanaProgramsWarning]] : [];
 		const warnings = (_intent$warnings = intent.warnings) !== null && _intent$warnings !== void 0 ? _intent$warnings : [];
 		const permissions = (tron === null || tron === void 0 ? void 0 : tron.permissionUpdate) === void 0 ? [] : [
 			tronPermissionLine(catalog, tron.permissionUpdate.owner),
@@ -41219,6 +41320,39 @@ zoo`.split("\n"));
 	function chainPrompt(locale, intent) {
 		const catalog = CATALOGS$1[locale];
 		return intent.message === void 0 ? transactionPrompt(catalog, intent) : messagePrompt(catalog, intent, intent.message);
+	}
+	/**
+	* The rendered prompt bounded to what the platform's verification dialog can show. An over-long
+	* prompt counts as blind — the caller gates `oversize` like a decoder blind reason — and the
+	* returned prompt shows the blind title with the longest whole-line prefix that leaves room for one
+	* closing "more lines not shown" line: the kernel truncates, never the OS.
+	*/
+	function boundChainPrompt(locale, intent, bound) {
+		return boundPrompt(locale, chainPrompt(locale, intent), bound);
+	}
+	/**
+	* The same bound applied to a rendered prompt from outside the chains module (Spark approvals share
+	* the blind rendering: the chains catalog owns the blind title and the count line).
+	*/
+	function boundPrompt(locale, rendered, bound) {
+		const catalog = CATALOGS$1[locale];
+		if (promptFits(rendered, bound)) return {
+			prompt: rendered,
+			oversize: false
+		};
+		const lines = rendered.description.split("\n");
+		let keep = Math.min(lines.length - 1, bound.lines - 1);
+		for (;;) {
+			const candidate = joinLines([...lines.slice(0, keep), catalog.moreLines(lines.length - keep)]);
+			if (keep === 0 || codePoints(candidate) <= bound.characters) return {
+				prompt: {
+					title: catalog.blindTitle,
+					description: candidate
+				},
+				oversize: true
+			};
+			keep -= 1;
+		}
 	}
 	// packages/wallet-kernel/src/modules/chains/shared.ts
 	/**
@@ -41871,7 +42005,7 @@ zoo`.split("\n"));
 	/** An imported account's only path is `[]`; an HD account's is its group's leaf. */
 	var requestPath = (family, account) => account.kind === "imported" ? [] : leafPath(family, account.groupIndex);
 	var checkNetwork = (template, network) => {
-		if (template.startsWith("evm.") && !network.startsWith("eip155:")) throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
+		if (template.startsWith("evm.") && !/^eip155:[1-9]\d*$/.test(network)) throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
 		if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown solana network ${network}`);
 		if (template.startsWith("btc.") && !(network in BITCOIN_NETWORKS)) throw new KernelError("invalid-input", `unknown bitcoin network ${network}`);
 		if (template.startsWith("tron.") && !TRON_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown tron network ${network}`);
@@ -41931,9 +42065,12 @@ zoo`.split("\n"));
 		cache.set(record, accounts);
 		return account;
 	};
-	/** A request the decoder marked blind is refused before any prompt unless the owner allowed it. */
-	var assertSignable = (ctx, dek, intent) => {
-		if (isBlindIntent(intent) && !policyEnabled(ctx.image, dek, "blind-signing")) throw new KernelError("blind-signing-disabled", "blind signing is turned off for this vault");
+	/**
+	* A request the decoder marked blind — or whose prompt overruns the platform's dialog bound — is
+	* refused before any prompt unless the owner allowed it.
+	*/
+	var assertSignable = (ctx, dek, intent, oversize = false) => {
+		if ((isBlindIntent(intent) || oversize) && !policyEnabled(ctx.image, dek, "blind-signing")) throw new KernelError("blind-signing-disabled", "blind signing is turned off for this vault");
 	};
 	var TEMPLATES_BY_FAMILY = {
 		evm: ["evm.bip44"],
@@ -42036,13 +42173,16 @@ zoo`.split("\n"));
 		return _objectSpread2(_objectSpread2({}, prompt), {}, { agentHeld: true });
 	};
 	var prepareApproval = async (ctx, request, material, dek) => {
+		var _shown$oversize;
 		assertHdTemplates(request);
 		const prepared = await prepareFor(request, material, ctx.platform.now());
 		const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
-		assertSignable(ctx, dek, prompt);
+		const shown = ctx.platform.keystore === void 0 ? void 0 : boundChainPrompt(promptLocale(ctx.platform.keystore.locale), prompt, PROMPT_BOUNDS[ctx.platform.keystore.platform]);
+		assertSignable(ctx, dek, prompt, (_shown$oversize = shown === null || shown === void 0 ? void 0 : shown.oversize) !== null && _shown$oversize !== void 0 ? _shown$oversize : false);
 		return {
 			request,
 			prompt,
+			shown,
 			plan: prepared.plan
 		};
 	};
@@ -42052,8 +42192,8 @@ zoo`.split("\n"));
 		const openKeys = request.account.kind === "imported" ? importedSource(ctx, request, dek) : hdSource(ctx, request, dek);
 		const prepared = await openKeys(async (keys) => prepareApproval(ctx, request, keys.material, dek));
 		await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () => {
-			var _ctx$platform$keystor, _ctx$platform$keystor2;
-			return chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prepared.prompt);
+			var _prepared$shown$promp, _prepared$shown, _ctx$platform$keystor, _ctx$platform$keystor2;
+			return (_prepared$shown$promp = (_prepared$shown = prepared.shown) === null || _prepared$shown === void 0 ? void 0 : _prepared$shown.prompt) !== null && _prepared$shown$promp !== void 0 ? _prepared$shown$promp : chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prepared.prompt);
 		});
 		ctx.session.require(session);
 		if (request.kind === "evm.fiat24-session") assertFiat24Deadline(request, ctx.platform.now());
@@ -45771,8 +45911,8 @@ zoo`.split("\n"));
 			prompt: prepared.prompt,
 			plan: prepared.plan,
 			verifyPrompt: () => {
-				var _env$ctx$platform$key, _env$ctx$platform$key2;
-				return chainPrompt(promptLocale((_env$ctx$platform$key = (_env$ctx$platform$key2 = env.ctx.platform.keystore) === null || _env$ctx$platform$key2 === void 0 ? void 0 : _env$ctx$platform$key2.locale) !== null && _env$ctx$platform$key !== void 0 ? _env$ctx$platform$key : "en"), prepared.prompt);
+				var _prepared$shown$promp, _prepared$shown, _env$ctx$platform$key, _env$ctx$platform$key2;
+				return (_prepared$shown$promp = (_prepared$shown = prepared.shown) === null || _prepared$shown === void 0 ? void 0 : _prepared$shown.prompt) !== null && _prepared$shown$promp !== void 0 ? _prepared$shown$promp : chainPrompt(promptLocale((_env$ctx$platform$key = (_env$ctx$platform$key2 = env.ctx.platform.keystore) === null || _env$ctx$platform$key2 === void 0 ? void 0 : _env$ctx$platform$key2.locale) !== null && _env$ctx$platform$key !== void 0 ? _env$ctx$platform$key : "en"), prepared.prompt);
 			},
 			tapText
 		};
@@ -46292,10 +46432,10 @@ zoo`.split("\n"));
 			if (current === active) current = void 0;
 			active.cancelTimer();
 			if (active.stepActive) {
-				var _platform$card, _platform$card2;
+				var _platform$secureInput, _platform$card;
 				active.aborted = true;
-				(_platform$card = platform.card) === null || _platform$card === void 0 || _platform$card.secureInput.cancel();
-				(_platform$card2 = platform.card) === null || _platform$card2 === void 0 || _platform$card2.reader.close("failure", "");
+				(_platform$secureInput = platform.secureInput) === null || _platform$secureInput === void 0 || _platform$secureInput.cancel();
+				(_platform$card = platform.card) === null || _platform$card === void 0 || _platform$card.reader.close("failure", "");
 			} else active.gen.return(DISCARDED);
 		};
 		const interrupt = (opId) => {
@@ -46397,7 +46537,9 @@ zoo`.split("\n"));
 					try {
 						let outcome;
 						if (active.pending.kind === "input") {
-							const response = await card.secureInput.request(active.pending.secure, active.pending.label);
+							const { secureInput } = platform;
+							if (secureInput === void 0) throw new KernelError("unsupported", "this host has no secure input");
+							const response = await secureInput.request(active.pending.secure, active.pending.label);
 							if (!response.ok) throw response.failure === "cancelled" ? new KernelError("cancelled", "the secure input was dismissed") : new KernelError("unavailable", "the secure input is unavailable");
 							outcome = response.value;
 						} else outcome = await runTap(ctx, active.pending, live, active.unaccounted);
@@ -47878,8 +48020,33 @@ zoo`.split("\n"));
 		};
 	}
 	// packages/wallet-kernel/src/modules/sessions/scheme.ts
+	init_objectSpread2();
 	function defineSessionScheme(definition) {
-		return {
+		const declared = definition.metering;
+		const metering = declared === void 0 ? void 0 : {
+			parseLimits: declared.limits,
+			meter: (params, limits, spent) => {
+				let checked;
+				let checkedLimits;
+				try {
+					checked = definition.params(params);
+					checkedLimits = declared.limits(limits);
+				} catch (_unused) {
+					throw new KernelError("invalid-input", "malformed params");
+				}
+				return declared.meter(checked, checkedLimits, spent);
+			},
+			prompt: (session, open, locale) => {
+				let limits;
+				try {
+					limits = declared.limits(session.limits);
+				} catch (_unused2) {
+					throw new KernelError("integrity", "invalid session limits in the vault");
+				}
+				return declared.prompt(_objectSpread2(_objectSpread2({}, session), {}, { limits }), open, locale);
+			}
+		};
+		return _objectSpread2({
 			id: definition.id,
 			maxTtlMs: definition.maxTtlMs,
 			maxPerVault: definition.maxPerVault,
@@ -47890,20 +48057,85 @@ zoo`.split("\n"));
 				try {
 					checked = definition.params(params);
 					scope = definition.parseScope(header.scope);
-				} catch (_unused) {
+				} catch (_unused3) {
 					throw new KernelError("invalid-input", "malformed params");
 				}
 				return definition.document(checked, header, scope, now);
 			}
-		};
+		}, metering === void 0 ? {} : { metering });
+	}
+	// packages/wallet-kernel/src/decimal.ts
+	/**
+	* Canonical-decimal ↔ fixed-point codec shared by every metered session scheme: a scheme's meter
+	* charges in units of `DECIMAL_SCALE` and the record header stores the canonical decimal string
+	* (`SESSION_SPENT`). Arithmetic is exact on bigints — no float is ever involved. 1e-16 admits the
+	* sixteen fractional digits an 8-decimal price times an 8-decimal size produces exactly; a meter
+	* whose grammar admits finer decimals picks a coarser scale and rounds a charge up, never down.
+	*/
+	var DECIMAL_SCALE = 10n ** 16n;
+	/** A canonical decimal to units of `DECIMAL_SCALE` — throws `integrity` past its precision. */
+	var decimalToUnits = (decimal) => {
+		const dot = decimal.indexOf(".");
+		const whole = dot === -1 ? decimal : decimal.slice(0, dot);
+		const frac = dot === -1 ? "" : decimal.slice(dot + 1);
+		if (frac.length > 16) throw new KernelError("integrity", "over-precise decimal");
+		return BigInt(whole) * DECIMAL_SCALE + BigInt(frac.padEnd(16, "0") || "0");
+	};
+	/** Units of `DECIMAL_SCALE` back to the canonical decimal string the header stores. */
+	var unitsToDecimal = (units) => {
+		const whole = units / DECIMAL_SCALE;
+		const frac = (units % DECIMAL_SCALE).toString().padStart(16, "0").replace(/0+$/, "");
+		return frac === "" ? whole.toString() : `${whole}.${frac}`;
+	};
+	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/meter.ts
+	/** The notional of one order in 1e-16 units — a trigger order is charged at its worse price. */
+	var orderNotional = (order) => {
+		let price = decimalToUnits(order.p);
+		if ("trigger" in order.t) {
+			const trigger = decimalToUnits(order.t.trigger.triggerPx);
+			if (trigger > price) price = trigger;
+		}
+		return price * decimalToUnits(order.s) / DECIMAL_SCALE;
+	};
+	var inAllowList = (limits, asset) => {
+		if (!limits.assets.includes(asset)) throw new KernelError("limit-exceeded", "the asset is outside the session's allow-list");
+	};
+	/**
+	* The session's new `spent` after this action — or KernelError `limit-exceeded` when the signature
+	* would exceed the approved budget. `spent` is the record's current value; the exact boundary
+	* `spent + notional == notional limit` still signs.
+	*/
+	function meterHyperliquid(params, limits, spent) {
+		const { action } = params;
+		let charge = 0n;
+		switch (action.type) {
+			case "order":
+				for (const order of action.orders) {
+					inAllowList(limits, order.a);
+					charge += orderNotional(order);
+				}
+				break;
+			case "modify":
+				inAllowList(limits, action.order.a);
+				charge = orderNotional(action.order);
+				break;
+			case "batchModify":
+				for (const entry of action.modifies) {
+					inAllowList(limits, entry.order.a);
+					charge += orderNotional(entry.order);
+				}
+				break;
+			case "updateLeverage":
+				inAllowList(limits, action.asset);
+				if (action.leverage > limits.maxLeverage) throw new KernelError("limit-exceeded", "leverage is above the session's cap");
+				break;
+			case "updateIsolatedMargin": inAllowList(limits, action.asset);
+		}
+		const next = decimalToUnits(spent) + charge;
+		if (next > decimalToUnits(limits.notional)) throw new KernelError("limit-exceeded", "the session's notional budget is exhausted");
+		return unitsToDecimal(next);
 	}
 	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/params.ts
-	/**
-	* The strict validators of the hyperliquid-l1-agent scheme — the network scope and the wire params
-	* with the ten allow-listed action schemas (research H2-T). They moved into the kernel with the
-	* scheme: the main runtime does not need them, and a failure inside `document` answers
-	* `invalid-input`.
-	*/
 	var hyperliquidNetwork = union(literal("Mainnet"), literal("Testnet"));
 	var lowerAddress = str(42, /^0x[0-9a-f]{40}$/);
 	var safeTime = int(0, Number.MAX_SAFE_INTEGER);
@@ -47976,16 +48208,6 @@ zoo`.split("\n"));
 			isBuy: bool,
 			ntli: int(-9007199254740991, 9007199254740991)
 		}), obj({
-			type: literal("twapOrder"),
-			twap: obj({
-				a: asset,
-				b: bool,
-				s: positive,
-				r: bool,
-				m: int(5, 1440),
-				t: bool
-			})
-		}), obj({
 			type: literal("twapCancel"),
 			a: asset,
 			t: id
@@ -47994,35 +48216,61 @@ zoo`.split("\n"));
 		vaultAddress: opt(lowerAddress),
 		expiresAfter: safeTime
 	});
+	var assetList = (value) => {
+		const list = arr(int(0, 99999), 16, 1)(value);
+		let prev = -1;
+		for (const entry of list) {
+			if (entry <= prev) throw new Error("assets must be sorted and distinct");
+			prev = entry;
+		}
+		return list;
+	};
+	var hyperliquidL1Limits = obj({
+		notional: positive,
+		maxLeverage: int(1, 100),
+		assets: assetList
+	});
+	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/prompt.ts
+	var SPOT_ASSET_BASE = 1e4;
+	var kindLines = (limits, perp, spot) => {
+		const perps = [];
+		const spots = [];
+		for (const asset of limits.assets) (asset < SPOT_ASSET_BASE ? perps : spots).push(asset);
+		const lines = [];
+		if (perps.length > 0) lines.push(`${perp}${perps.join(",")}`);
+		if (spots.length > 0) lines.push(`${spot}${spots.join(",")}`);
+		return lines;
+	};
+	function hyperliquidApproval(session, open, locale) {
+		const { limits } = session;
+		const day = utcDate(Math.floor(session.validUntil / 1e3));
+		const lines = locale === "zh-Hans" ? [
+			`Hyperliquid 交易代理 "${session.name}"（${session.scope}）`,
+			`有效期至 ${day}`,
+			`预算：${limits.notional}（价格 × 数量之和，按各市场报价币计）`,
+			`最大杠杆：${limits.maxLeverage}x`,
+			...kindLines(limits, "永续资产：", "现货资产：")
+		] : [
+			`Hyperliquid trading agent "${session.name}" on ${session.scope}`,
+			`Valid until ${day}`,
+			`Budget: ${limits.notional} (sum of price × size, in each market's quote currency)`,
+			`Max leverage: ${limits.maxLeverage}x`,
+			...kindLines(limits, "Perp assets: ", "Spot assets: ")
+		];
+		if (open) {
+			const left = unitsToDecimal(decimalToUnits(limits.notional) - decimalToUnits(session.spent));
+			lines.push(locale === "zh-Hans" ? `剩余预算：${left}` : `Remaining: ${left}`);
+		}
+		return {
+			title: locale === "zh-Hans" ? "批准 Hyperliquid 代理" : "Approve Hyperliquid agent",
+			description: lines.join("\n")
+		};
+	}
 	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/index.ts
-	/**
-	* The hyperliquid-l1-agent session scheme: Hyperliquid L1 trading, scoped to a network, signed as
-	* the phantom-agent `Agent(string source,bytes32 connectionId)` typed data the kernel builds.
-	*/
-	/**
-	* Hyperliquid allows an agent name's `valid_until` at most 180 days out (docs exchange-endpoint
-	* §Approve an API wallet).
-	*/
 	var AGENT_MAX_TTL_MS = 15552e6;
-	/** At most 16 live agents per vault — the protocol's sessions.list cap is 64. */
 	var MAX_AGENTS = 16;
-	/**
-	* Every signature carries `expiresAfter` at most 60 s after it was made and Hyperliquid rejects an
-	* action after its `expiresAfter` (docs exchange-endpoint §Expires After), so a signature can be
-	* submitted at most 60 s after it was made — the post-lock exposure. The nonce keeps the same 60 s
-	* symmetric window so a compromised runtime cannot pre-sign far ahead.
-	*
-	* Both are on the device clock — the kernel has no trusted time: a clock S ahead makes it S + 60 s
-	* of real time (Hyperliquid takes nonces up to a day ahead). The engine's `assertClock()` is the
-	* mitigation; a compromised main runtime can skip it (SECURITY.md).
-	*/
 	var EXPIRES_AFTER_MS = 6e4;
 	var NONCE_WINDOW_MS = 6e4;
-	/**
-	* A scheduled cancel must land at least 5 s out (docs exchange-endpoint §Schedule cancel) and no
-	* later than the session's own validUntil — the protocol publishes no maximum, so the kernel signs
-	* no scheduled effect past the authorisation the user approved.
-	*/
 	var SCHEDULE_CANCEL_MIN_MS = 5e3;
 	// packages/wallet-kernel/src/modules/sessions/schemes/index.ts
 	var SESSION_SCHEMES = { "hyperliquid-l1-agent": defineSessionScheme({
@@ -48036,6 +48284,11 @@ zoo`.split("\n"));
 			if (Math.abs(params.nonce - now) > NONCE_WINDOW_MS) throw new KernelError("invalid-input", "nonce outside the signing window");
 			if (params.action.type === "scheduleCancel" && params.action.time !== void 0 && !(params.action.time >= now + SCHEDULE_CANCEL_MIN_MS && params.action.time <= header.validUntil)) throw new KernelError("invalid-input", "schedule time outside the session");
 			return hyperliquidL1Document(params, scope);
+		},
+		metering: {
+			limits: hyperliquidL1Limits,
+			meter: meterHyperliquid,
+			prompt: hyperliquidApproval
 		}
 	}) };
 	function isSchemeId(id) {
@@ -48047,6 +48300,7 @@ zoo`.split("\n"));
 	// packages/wallet-kernel/src/modules/sessions/sessions.ts
 	init_secp256k1();
 	init_bip32();
+	init_objectSpread2();
 	/** At most 64 live session keys across schemes — also the protocol's sessions.list array cap. */
 	var MAX_SESSIONS = 64;
 	/** Random draws retried before giving up on a valid secp256k1 scalar. */
@@ -48060,8 +48314,33 @@ zoo`.split("\n"));
 		}
 		throw new KernelError("integrity", "could not draw a valid session key");
 	};
+	/**
+	* On a keystore host a `device` factor means the app lock is off: the vault — and any session in it
+	* — can be used without presence. A value-moving session must never run in that state, so
+	* create/open/sign refuse before any factor verification happens.
+	*/
+	var assertAppLock = (platform, image, metering) => {
+		if (metering !== void 0 && platform.keystore !== void 0 && image.factors.some((stored) => stored.kind === "device")) throw new KernelError("app-lock-required", "enable the app lock before using this session scheme");
+	};
+	var meteredHeader = (metering, header) => {
+		if (header.limits === void 0 || header.spent === void 0) throw new KernelError("integrity", "the session record carries no metering", void 0, true);
+		try {
+			return {
+				limits: metering.parseLimits(header.limits),
+				spent: header.spent
+			};
+		} catch (_unused) {
+			throw new KernelError("integrity", "invalid session limits in the vault", void 0, true);
+		}
+	};
+	/** The approval prompt a scheme renders — shared by create and open. */
+	var approvalPrompt = (platform, metering, session, open) => () => {
+		var _platform$keystore$lo, _platform$keystore;
+		return metering.prompt(session, open, promptLocale((_platform$keystore$lo = (_platform$keystore = platform.keystore) === null || _platform$keystore === void 0 ? void 0 : _platform$keystore.locale) !== null && _platform$keystore$lo !== void 0 ? _platform$keystore$lo : "en"));
+	};
 	/** The public snapshot of one stored session — the record id is the lowercase address. */
 	function sessionInfo(record) {
+		var _header$limits, _header$spent;
 		const header = parseSessionHeader(record.header);
 		return {
 			address: checksumEvmAddress(record.id),
@@ -48073,10 +48352,12 @@ zoo`.split("\n"));
 			scope: header.scope,
 			name: header.name,
 			validUntil: header.validUntil,
-			createdAt: header.createdAt
+			createdAt: header.createdAt,
+			limits: (_header$limits = header.limits) !== null && _header$limits !== void 0 ? _header$limits : null,
+			spent: (_header$spent = header.spent) !== null && _header$spent !== void 0 ? _header$spent : "0"
 		};
 	}
-	var createSession = async (ctx, params, session) => {
+	var createSession = (opened) => async (ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
 		const scheme = schemeOf(params.scheme);
 		if (scheme === void 0) throw new KernelError("unsupported", "unsupported session scheme");
@@ -48085,11 +48366,31 @@ zoo`.split("\n"));
 		let scope;
 		try {
 			scope = scheme.parseScope(params.scope);
-		} catch (_unused) {
+		} catch (_unused2) {
 			throw new KernelError("invalid-input", "invalid session scope");
 		}
+		const { metering } = scheme;
+		let limits;
+		if (metering !== void 0) {
+			let parsed;
+			try {
+				parsed = metering.parseLimits(params.limits);
+			} catch (_unused3) {
+				throw new KernelError("invalid-input", "invalid session limits");
+			}
+			if (!isProtocolValue(parsed) || typeof parsed !== "object" || parsed === null || Array.isArray(parsed) || parsed instanceof Uint8Array) throw new KernelError("integrity", "the scheme's limits are not a JSON object");
+			limits = parsed;
+		} else if (params.limits !== null) throw new KernelError("invalid-input", "the scheme takes no limits");
 		const records = ctx.image.records.filter((record) => record.kind === SESSION_KIND);
 		if (records.length >= MAX_SESSIONS || records.filter((record) => parseSessionHeader(record.header).scheme === scheme.id).length >= scheme.maxPerVault) throw new KernelError("conflict", "session limit reached");
+		assertAppLock(ctx.platform, ctx.image, metering);
+		if (metering !== void 0) await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, approvalPrompt(ctx.platform, metering, {
+			scope,
+			name: params.name,
+			validUntil: params.validUntil,
+			limits,
+			spent: "0"
+		}, false));
 		const entropy = findSeedWallet(ctx.image, params.owner.walletId);
 		const owner = await withWalletSeed(ctx.platform.pbkdf2, dek, entropy, (seed) => {
 			const master = HDKey$1.fromMasterSeed(seed);
@@ -48108,7 +48409,7 @@ zoo`.split("\n"));
 		const priv = drawSessionKey(ctx.platform);
 		try {
 			const address = evmAddressFromPublicKey(secp256k1.getPublicKey(priv, true));
-			const header = encodeSessionHeader({
+			const header = encodeSessionHeader(_objectSpread2({
 				scheme: scheme.id,
 				walletId: params.owner.walletId,
 				groupIndex: params.owner.groupIndex,
@@ -48117,12 +48418,16 @@ zoo`.split("\n"));
 				name: params.name,
 				validUntil: params.validUntil,
 				createdAt: now
-			});
+			}, limits === void 0 ? {} : {
+				limits,
+				spent: "0"
+			}));
 			const record = sealRecord(ctx.platform, dek, SESSION_KIND, address.toLowerCase(), header, priv);
 			await ctx.commit([{
 				op: "put-record",
 				record
 			}]);
+			if (metering !== void 0) opened.add(record.id);
 			return { address };
 		} finally {
 			wipe$1(priv);
@@ -48132,7 +48437,7 @@ zoo`.split("\n"));
 		ctx.session.require(session);
 		return ctx.image.records.filter((record) => record.kind === SESSION_KIND).map((record) => sessionInfo(record));
 	};
-	var deleteSession = async (ctx, params, session) => {
+	var deleteSession = (opened) => async (ctx, params, session) => {
 		ctx.session.require(session);
 		const record = findRecord(ctx.image, SESSION_KIND, params.address.toLowerCase());
 		await ctx.commit([{
@@ -48140,22 +48445,67 @@ zoo`.split("\n"));
 			kind: record.kind,
 			id: record.id
 		}]);
+		opened.delete(record.id);
 		return null;
 	};
-	var signSession = (ctx, params, session) => {
+	var openSession = (opened) => async (ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
-		const record = findSession(ctx.image, params.address);
+		const { record, header } = sessionOf(ctx.image, params.address);
+		const scheme = schemeOf(header.scheme);
+		if (scheme === void 0) throw new KernelError("unsupported", "this kernel does not support the session's scheme");
+		const { metering } = scheme;
+		if (metering === void 0) throw new KernelError("unsupported", "the session's scheme is not presence-bound");
+		if (ctx.platform.now() >= header.validUntil) throw new KernelError("invalid-input", "the session has expired");
+		const { limits, spent } = meteredHeader(metering, header);
+		assertAppLock(ctx.platform, ctx.image, metering);
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, approvalPrompt(ctx.platform, metering, {
+			scope: header.scope,
+			name: header.name,
+			validUntil: header.validUntil,
+			limits,
+			spent
+		}, true));
+		opened.add(record.id);
+		return null;
+	};
+	/** Shared by open and sign: the record under `params.address` and its parsed header. */
+	var sessionOf = (image, address) => {
+		const record = findSession(image, address);
 		if (record === void 0) throw new KernelError("not-found", "no such session");
-		const header = parseSessionHeader(record.header);
+		return {
+			record,
+			header: parseSessionHeader(record.header)
+		};
+	};
+	var signSession = (opened) => async (ctx, params, session) => {
+		const { dek } = ctx.session.require(session);
+		const { record, header } = sessionOf(ctx.image, params.address);
 		if (params.scheme !== header.scheme) throw new KernelError("invalid-input", "the scheme does not match the session's record");
 		const scheme = schemeOf(header.scheme);
 		if (scheme === void 0) throw new KernelError("unsupported", "this kernel does not support the session's scheme");
 		const now = ctx.platform.now();
 		if (now >= header.validUntil) throw new KernelError("invalid-input", "the session has expired");
+		const { metering } = scheme;
+		if (metering !== void 0) {
+			assertAppLock(ctx.platform, ctx.image, metering);
+			if (!opened.has(record.id)) throw new KernelError("approval-required", "the session is not open — approve it with sessions.open");
+		}
 		const typedData = scheme.document(params.params, header, now);
+		let spent;
+		if (metering !== void 0) {
+			const metered = meteredHeader(metering, header);
+			spent = metering.meter(params.params, metered.limits, metered.spent);
+		}
 		const priv = openRecord(dek, record);
 		try {
 			if (priv.length !== 32 || !secp256k1.utils.isValidSecretKey(priv) || evmAddressFromPublicKey(secp256k1.getPublicKey(priv, true)).toLowerCase() !== record.id) throw new KernelError("integrity", "session key does not match its record", void 0, true);
+			if (spent !== void 0) {
+				const updated = sealRecord(ctx.platform, dek, SESSION_KIND, record.id, encodeSessionHeader(_objectSpread2(_objectSpread2({}, header), {}, { spent })), priv);
+				await ctx.commit([{
+					op: "put-record",
+					record: updated
+				}]);
+			}
 			return { signature: signEvmTypedData(typedData, priv) };
 		} finally {
 			wipe$1(priv);
@@ -48164,6 +48514,7 @@ zoo`.split("\n"));
 	// packages/wallet-kernel/src/modules/sessions/index.ts
 	init_secp256k1();
 	function createSessionsModule() {
+		const opened = /* @__PURE__ */ new Set();
 		return {
 			vault: {
 				ownsRecord: (kind) => kind === SESSION_KIND,
@@ -48180,8 +48531,10 @@ zoo`.split("\n"));
 					}
 					return unclaimed;
 				},
-				forget: () => void 0,
-				lock: () => void 0,
+				forget: (_kind, id) => {
+					opened.delete(id);
+				},
+				lock: () => opened.clear(),
 				parseHeader: (record) => {
 					var _schemeOf;
 					const header = parseSessionHeader(record.header);
@@ -48198,10 +48551,11 @@ zoo`.split("\n"));
 				}
 			},
 			handlers: {
-				"sessions.create": createSession,
+				"sessions.create": createSession(opened),
 				"sessions.list": listSessions,
-				"sessions.delete": deleteSession,
-				"sessions.sign": signSession
+				"sessions.open": openSession(opened),
+				"sessions.delete": deleteSession(opened),
+				"sessions.sign": signSession(opened)
 			}
 		};
 	}
@@ -60025,6 +60379,12 @@ zoo`.split("\n"));
 		nodes: [...pin.nodes, ...fetched.nodes.filter((n) => !pin.nodes.some((have) => samePath(have.path, n.path)))],
 		ed25519: [...pin.ed25519, ...fetched.ed25519.filter((k) => !pin.ed25519.some((have) => samePath(have.path, k.path)))]
 	});
+	/** The bound for a prompt that gains one appended line: the line's cost comes off the top. */
+	var shrinkBound = (bound, line) => ({
+		title: bound.title,
+		lines: bound.lines - 1,
+		characters: bound.characters - codePoints(line) - 1
+	});
 	/** The verification prompt's device line, appended to the chain prompt's description (I2). */
 	var devicePrompt = (base, locale, display, device) => ({
 		title: base.title,
@@ -60171,7 +60531,7 @@ zoo`.split("\n"));
 			};
 		};
 		const beginSign = async (ctx, params, session) => {
-			var _ctx$platform$keystor, _ctx$platform$keystor2;
+			var _ctx$platform$keystor, _ctx$platform$keystor2, _shown$oversize;
 			const { dek } = ctx.session.require(session);
 			const { op } = params;
 			if (op.kind !== "sign" || params.verify === void 0) throw new KernelError("integrity", "unreachable: sign begin without the sign op or verify");
@@ -60187,7 +60547,12 @@ zoo`.split("\n"));
 			const display = driver.display(request, prepared.plan, header);
 			if (display === "unsupported") throw new KernelError("unsupported", "the device cannot sign this request");
 			const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
-			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => devicePrompt(chainPrompt(locale, prepared.prompt), locale, display, device));
+			const shown = ctx.platform.keystore === void 0 ? void 0 : boundChainPrompt(locale, prepared.prompt, shrinkBound(PROMPT_BOUNDS[ctx.platform.keystore.platform], devicePromptLine(locale, display, device)));
+			assertSignable(ctx, dek, prepared.prompt, (_shown$oversize = shown === null || shown === void 0 ? void 0 : shown.oversize) !== null && _shown$oversize !== void 0 ? _shown$oversize : false);
+			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => {
+				var _shown$prompt;
+				return devicePrompt((_shown$prompt = shown === null || shown === void 0 ? void 0 : shown.prompt) !== null && _shown$prompt !== void 0 ? _shown$prompt : chainPrompt(locale, prepared.prompt), locale, display, device);
+			});
 			ctx.session.require(session);
 			if (request.kind === "evm.fiat24-session") assertFiat24Deadline(request, ctx.platform.now());
 			return executorOf(ctx.platform).begin(device, display, async (link) => ({
@@ -70001,15 +70366,17 @@ zoo`.split("\n"));
 		}
 	};
 	var sparkApprove = async (state, ctx, params, session) => {
+		var _ctx$platform$keystor, _ctx$platform$keystor2;
 		const { dek } = ctx.session.require(session);
 		findSeedWallet(ctx.image, params.account.walletId);
 		const key = poolKey(params.account);
 		if (liveApprovals(state, ctx, key).length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
 		const { summary, decoded } = decodeIntent(await sparkRuntime(state), params.account, params.intent);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => {
-			var _ctx$platform$keystor, _ctx$platform$keystor2;
-			return sparkPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), summary);
-		});
+		const { keystore } = ctx.platform;
+		const shown = keystore === void 0 ? void 0 : boundPrompt(promptLocale(keystore.locale), sparkPrompt(promptLocale(keystore.locale), summary), PROMPT_BOUNDS[keystore.platform]);
+		if ((shown === null || shown === void 0 ? void 0 : shown.oversize) === true && !policyEnabled(ctx.image, dek, "blind-signing")) throw new KernelError("blind-signing-disabled", "blind signing is turned off for this vault");
+		const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => shown === void 0 ? sparkPrompt(locale, summary) : shown.prompt);
 		ctx.session.require(session);
 		const live = liveApprovals(state, ctx, key);
 		if (live.length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
@@ -70655,45 +71022,6 @@ zoo`.split("\n"));
 			}
 		};
 	}
-	/**
-	* The hub's contract for `kind`, rechecked here: an access code is 1..64 printable-ASCII bytes, a
-	* short id is exactly 8 upper-case hex characters. A platform that hands over out-of-shape bytes
-	* gets them wiped, not forwarded.
-	*/
-	function validFor(kind, value) {
-		if (kind === "access-code") return value.length > 0 && value.length <= 64 && value.every((byte) => byte >= 32 && byte <= 126);
-		return value.length === 8 && value.every((byte) => byte >= 48 && byte <= 57 || byte >= 65 && byte <= 70);
-	}
-	function bindNativeSecureInput(raw) {
-		return {
-			request: async (kind, label) => new Promise((resolve) => {
-				raw.request(kind, label, (value, code) => {
-					if (value instanceof Uint8Array) {
-						if (validFor(kind, value)) {
-							resolve({
-								ok: true,
-								value
-							});
-							return;
-						}
-						value.fill(0);
-						resolve({
-							ok: false,
-							failure: "unavailable"
-						});
-						return;
-					}
-					resolve({
-						ok: false,
-						failure: code === "cancelled" ? "cancelled" : "unavailable"
-					});
-				});
-			}),
-			cancel: () => {
-				raw.cancel();
-			}
-		};
-	}
 	// packages/wallet-native/kernel/keystore.ts
 	/**
 	* Binds the native `__qntx.keystore` object to the kernel's `Keystore` contract. The C++ side
@@ -70740,8 +71068,10 @@ zoo`.split("\n"));
 		});
 	}
 	function bindNativeKeystore(raw) {
+		if (raw.platform !== "ios" && raw.platform !== "android") throw new KernelError("integrity", `the platform keystore reported platform ${raw.platform}`);
 		return {
 			locale: raw.locale,
+			platform: raw.platform,
 			seal: async (id, secret, use) => bytesOf$1((done) => {
 				if (use.protection === "presence") raw.seal(id, secret, use.prompt.title, use.prompt.description, done);
 				else raw.sealDevice(id, secret, done);
@@ -73312,6 +73642,55 @@ zoo`.split("\n"));
 			}
 		};
 	}
+	// packages/wallet-native/kernel/secure-input.ts
+	var isValidUtf8 = (value) => {
+		try {
+			new TextDecoder("utf-8", { fatal: true }).decode(value);
+			return true;
+		} catch (_unused) {
+			return false;
+		}
+	};
+	/**
+	* The hub's contract for `kind`, rechecked here: an access code is 1..64 printable-ASCII bytes, a
+	* short id is exactly 8 upper-case hex characters, a backup password is 1..1024 bytes of valid
+	* UTF-8. A platform that hands over out-of-shape bytes gets them wiped, not forwarded.
+	*/
+	function validFor(kind, value) {
+		if (kind === "access-code") return value.length > 0 && value.length <= 64 && value.every((byte) => byte >= 32 && byte <= 126);
+		if (kind === "short-id") return value.length === 8 && value.every((byte) => byte >= 48 && byte <= 57 || byte >= 65 && byte <= 70);
+		return value.length > 0 && value.length <= 1024 && isValidUtf8(value);
+	}
+	function bindNativeSecureInput(raw) {
+		return {
+			request: async (kind, label) => new Promise((resolve) => {
+				raw.request(kind, label, (value, code) => {
+					if (value instanceof Uint8Array) {
+						if (validFor(kind, value)) {
+							resolve({
+								ok: true,
+								value
+							});
+							return;
+						}
+						value.fill(0);
+						resolve({
+							ok: false,
+							failure: "unavailable"
+						});
+						return;
+					}
+					resolve({
+						ok: false,
+						failure: code === "cancelled" ? "cancelled" : "unavailable"
+					});
+				});
+			}),
+			cancel: () => {
+				raw.cancel();
+			}
+		};
+	}
 	// packages/wallet-native/kernel/spark.ts
 	init_crypto();
 	function call(invoke) {
@@ -73707,9 +74086,9 @@ zoo`.split("\n"));
 		passkey: bindNativePasskey(__qntx.passkey, (length) => __qntx.random(length)),
 		card: {
 			reader: bindNativeCardReader(__qntx.cardReader),
-			secureInput: bindNativeSecureInput(__qntx.secureInput),
 			anchors: PRODUCTION_ANCHORS
 		},
+		secureInput: bindNativeSecureInput(__qntx.secureInput),
 		policy: {
 			maxSessionMs: 864e5,
 			maxScryptLogN: 18

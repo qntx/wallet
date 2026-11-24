@@ -264,7 +264,8 @@ All log lines are JSON. Besides the per-request line, the forwarder logs
 the alert condition. `mapError` logs `{"event":"internal-error","name"}` (the error class name
 only) for unexpected 500s. Log lines never carry params, bodies, addresses, client ids, IPs, error
 messages or upstream bodies. Alerting is configured on Workers Logs queries against these events;
-there is no alerting code in the worker.
+there is no alerting code in the worker. [OPERATIONS.md](OPERATIONS.md) drafts the alert
+definitions, SLO targets, the on-call runbook and the per-account capacity table.
 
 ## Layering
 

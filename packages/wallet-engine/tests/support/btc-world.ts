@@ -150,6 +150,8 @@ export type BtcWorld = {
   readonly markUsed: (hash: string, txid: string) => void;
   readonly setStatus: (txid: string, s: unknown) => void;
   readonly setIndependentStatus: (txid: string, s: unknown) => void;
+  /** While on, every `/tx/:txid/status` read fails like a dropped connection. */
+  readonly failLookups: (on: boolean) => void;
   /** The chain tip `/blocks/tip/height` serves — 200 puts a height-100 block well past final. */
   readonly setTip: (height: number) => void;
   /** Scripts an error `/blocks/tip/height` throws — a failing finality read. */
@@ -323,6 +325,8 @@ export const world = (
   const signedCalls: SignParams[] = [];
   const warnings: string[] = [];
   let postMode: PostMode = { kind: "ok" };
+  /** When set, every `/tx/:txid/status` read throws like a dropped connection. */
+  let statusFail = false;
 
   const markUsed = (hash: string, txid: string): void => {
     const set = history.get(hash) ?? new Set<string>();
@@ -406,6 +410,9 @@ export const world = (
     }
     const sm = /^\/tx\/([0-9a-f]{64})\/status$/.exec(url);
     if (sm !== null) {
+      if (statusFail) {
+        throw new TypeError("fetch failed");
+      }
       const s = statuses.get(sm[1] ?? "");
       // A scripted Error answers the read with that failure — a 503, a timeout, a 4xx.
       if (s instanceof Error) {
@@ -580,6 +587,9 @@ export const world = (
     },
     setIndependentStatus: (txid: string, s: unknown) => {
       independentStatuses.set(txid, s);
+    },
+    failLookups: (on: boolean) => {
+      statusFail = on;
     },
     setTip: (height: number) => {
       tip.h = height;

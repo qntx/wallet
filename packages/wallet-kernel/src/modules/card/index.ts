@@ -104,7 +104,7 @@ export function createCardModule(platform: KernelPlatform): CardModule {
     active.cancelTimer();
     if (active.stepActive) {
       active.aborted = true;
-      platform.card?.secureInput.cancel();
+      platform.secureInput?.cancel();
       platform.card?.reader.close("failure", "");
     } else {
       void active.gen.return(DISCARDED);
@@ -234,7 +234,11 @@ export function createCardModule(platform: KernelPlatform): CardModule {
       try {
         let outcome: StepOutcome;
         if (active.pending.kind === "input") {
-          const response = await card.secureInput.request(
+          const { secureInput } = platform;
+          if (secureInput === undefined) {
+            throw new KernelError("unsupported", "this host has no secure input");
+          }
+          const response = await secureInput.request(
             active.pending.secure,
             active.pending.label,
           );

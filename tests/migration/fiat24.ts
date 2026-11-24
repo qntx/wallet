@@ -122,6 +122,8 @@ export function describeBlind(reason: BlindReason): string {
       return "a core Solana instruction";
     case "program-authority":
       return "a Solana program authority";
+    case "lookup-table-account":
+      return "a Solana lookup-table account";
     case "tron-contract":
       return "a TRON contract";
     case "tron-field":

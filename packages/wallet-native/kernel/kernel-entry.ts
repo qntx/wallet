@@ -9,14 +9,16 @@ import { PRODUCTION_ANCHORS } from "../../wallet-kernel/src/modules/card/protoco
 import type { KernelPlatform } from "../../wallet-kernel/src/platform.ts";
 import { bindNativeAnchor } from "./anchor.ts";
 import type { KernelAnchorNative } from "./anchor.ts";
-import { bindNativeCardReader, bindNativeSecureInput } from "./card.ts";
-import type { KernelCardReaderNative, KernelSecureInputNative } from "./card.ts";
+import { bindNativeCardReader } from "./card.ts";
+import type { KernelCardReaderNative } from "./card.ts";
 import { bindNativeKeystore } from "./keystore.ts";
 import type { KernelKeystoreNative } from "./keystore.ts";
 import { bindNativeNostr } from "./nostr.ts";
 import type { KernelNostrNative } from "./nostr.ts";
 import { bindNativePasskey } from "./passkey.ts";
 import type { KernelPasskeyNative } from "./passkey.ts";
+import { bindNativeSecureInput } from "./secure-input.ts";
+import type { KernelSecureInputNative } from "./secure-input.ts";
 import { bindNativeSpark } from "./spark.ts";
 import type { KernelSparkNative } from "./spark.ts";
 import { createFileStore } from "./store.ts";
@@ -105,9 +107,9 @@ const platform: KernelPlatform = {
   passkey: bindNativePasskey(__qntx.passkey, (length) => __qntx.random(length)),
   card: {
     reader: bindNativeCardReader(__qntx.cardReader),
-    secureInput: bindNativeSecureInput(__qntx.secureInput),
     anchors: PRODUCTION_ANCHORS,
   },
+  secureInput: bindNativeSecureInput(__qntx.secureInput),
   // No foreground idle lock on native — the host locks on backgrounding after
   // autoLock.backgroundSeconds (W7); the session still ends at 24 h.
   policy: { maxSessionMs: 24 * 3_600_000, maxScryptLogN: 18 },

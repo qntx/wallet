@@ -38,6 +38,7 @@ import type { Factor, ParamsOf, ResultOf, SignedEvent } from "./protocol/index.t
 import { SingleUseSecret } from "./secret.ts";
 import { WalletError } from "./types.ts";
 import type {
+  BackupFactorInput,
   BackupApi,
   DataKeyApi,
   ExportedMnemonic,
@@ -651,7 +652,7 @@ export class KernelWallet implements Wallet {
   readonly backup: BackupApi = {
     enable: async (options: {
       readonly verify: VerifyFactor;
-      readonly factors: ReadonlyArray<UnlockFactor>;
+      readonly factors: ReadonlyArray<BackupFactorInput>;
     }): Promise<void> =>
       this.withVerifying(async () => {
         await this.secretCall("backup.enable", async (wire) => {
@@ -678,7 +679,7 @@ export class KernelWallet implements Wallet {
       }),
     restore: async (options: {
       readonly envelope: string;
-      readonly backupFactor: UnlockFactor;
+      readonly backupFactor: BackupFactorInput;
       readonly passphrases?: ReadonlyArray<{
         readonly walletId: string;
         readonly passphrase: string;

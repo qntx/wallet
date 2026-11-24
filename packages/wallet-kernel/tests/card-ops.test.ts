@@ -95,10 +95,10 @@ const rig = async (
   const h = createHarness({
     card: {
       reader: reader.reader,
-      secureInput: input.secureInput,
       anchors: [CA1_ANCHOR],
       ...(planMs === undefined ? {} : { planMs }),
     },
+    secureInput: input.secureInput,
     ...extra,
   });
   const res = ok(
@@ -1410,7 +1410,8 @@ const keystoreRig = async (): Promise<KeystoreRig> => {
   const fake = fakeKeystore();
   const h = createHarness({
     keystore: fake.keystore,
-    card: { reader: reader.reader, secureInput: input.secureInput, anchors: [CA1_ANCHOR] },
+    card: { reader: reader.reader, anchors: [CA1_ANCHOR] },
+    secureInput: input.secureInput,
   });
   const res = ok(
     await h.call("wallet.importMnemonic", {

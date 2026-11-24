@@ -26,7 +26,8 @@ import type { Handler, KernelContext, VaultHooks } from "../../commands/context.
 import { withWalletSeed } from "../../commands/vault.ts";
 import type { PublicMaterial } from "../../derive/material.ts";
 import { KernelError } from "../../errors.ts";
-import { promptLocale } from "../../prompts.ts";
+import type { KeystorePrompt } from "../../platform.ts";
+import { PROMPT_BOUNDS, promptLocale } from "../../prompts.ts";
 import type { Secret } from "../../secret/secret.ts";
 import { wipe } from "../../secret/secret.ts";
 import { parseKeyHeader } from "../../vault/headers.ts";
@@ -38,7 +39,7 @@ import { prepareBitcoin } from "./bitcoin.ts";
 import { assertFiat24Deadline, prepareEvm } from "./evm.ts";
 import { importedKeys, pathString, seedKeys } from "./keys.ts";
 import type { KeySource } from "./keys.ts";
-import { chainPrompt } from "./prompt.ts";
+import { boundChainPrompt, chainPrompt } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
 import { signPlan, taskSignerFor } from "./run.ts";
 import type { ChainPlan } from "./run.ts";
@@ -70,7 +71,7 @@ export const requestPath = (
 ): KeyPath => (account.kind === "imported" ? [] : leafPath(family, account.groupIndex));
 
 export const checkNetwork = (template: string, network: string): void => {
-  if (template.startsWith("evm.") && !network.startsWith("eip155:")) {
+  if (template.startsWith("evm.") && !/^eip155:[1-9]\d*$/.test(network)) {
     throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
   }
   if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) {
@@ -170,13 +171,17 @@ const walletAccounts = async (
   return account;
 };
 
-/** A request the decoder marked blind is refused before any prompt unless the owner allowed it. */
+/**
+ * A request the decoder marked blind — or whose prompt overruns the platform's dialog bound — is
+ * refused before any prompt unless the owner allowed it.
+ */
 export const assertSignable = (
   ctx: Parameters<Handler<"chain.sign">>[0],
   dek: Secret,
   intent: PromptIntent,
+  oversize = false,
 ): void => {
-  if (isBlindIntent(intent) && !policyEnabled(ctx.image, dek, BLIND_SIGNING)) {
+  if ((isBlindIntent(intent) || oversize) && !policyEnabled(ctx.image, dek, BLIND_SIGNING)) {
     throw new KernelError("blind-signing-disabled", "blind signing is turned off for this vault");
   }
 };
@@ -373,6 +378,9 @@ export const bindAgent = (
 export type PreparedApproval = {
   readonly request: SignRequest;
   readonly prompt: PromptIntent;
+  /* The prompt bounded to the platform's verification dialog — `undefined` off a keystore host.
+     Callers render `shown?.prompt ?? chainPrompt(...)`; the hardware device line wraps it. */
+  readonly shown: { readonly prompt: KeystorePrompt; readonly oversize: boolean } | undefined;
   readonly plan: ChainPlan;
 };
 
@@ -385,8 +393,19 @@ export const prepareApproval = async (
   assertHdTemplates(request);
   const prepared = await prepareFor(request, material, ctx.platform.now());
   const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
-  assertSignable(ctx, dek, prompt);
-  return { request, prompt, plan: prepared.plan };
+  /* A keystore host shows this text in a bounded system dialog, so it is rendered and measured
+     before the blind check: an over-long prompt counts as blind and, when allowed, reaches the
+     keystore already truncated to whole lines. */
+  const shown =
+    ctx.platform.keystore === undefined
+      ? undefined
+      : boundChainPrompt(
+          promptLocale(ctx.platform.keystore.locale),
+          prompt,
+          PROMPT_BOUNDS[ctx.platform.keystore.platform],
+        );
+  assertSignable(ctx, dek, prompt, shown?.oversize ?? false);
+  return { request, prompt, shown, plan: prepared.plan };
 };
 
 const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
@@ -403,6 +422,7 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
     prepareApproval(ctx, request, keys.material, dek),
   );
   await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () =>
+    prepared.shown?.prompt ??
     chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
   );
   // The session may have ended while the prompt was up; the fiat24 window re-checks too, as the

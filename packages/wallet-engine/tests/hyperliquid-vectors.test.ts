@@ -152,24 +152,6 @@ const equivalent = async (action: WireAction, actions: HyperliquidActions): Prom
         amount: (ntli / 1_000_000).toString(),
       });
     }
-    case "twapOrder": {
-      const twap = action["twap"] as {
-        a: number;
-        b: boolean;
-        s: string;
-        r: boolean;
-        m: number;
-        t: boolean;
-      };
-      return actions.twap({
-        coin: `COIN${twap.a}`,
-        side: twap.b ? "buy" : "sell",
-        size: twap.s,
-        minutes: twap.m,
-        randomize: twap.t,
-        reduceOnly: twap.r,
-      });
-    }
     case "twapCancel":
       return actions.twapCancel({
         coin: `COIN${action["a"] as number}`,

@@ -22,6 +22,7 @@ const PRF = new Uint8Array(32).map((_, i) => i + 1);
 /** A keystore that seals by copying: these tests are about passkeys, not the hardware factor. */
 const keystore: Keystore = {
   locale: "en",
+  platform: "ios",
   seal: async (_id, secret) => Promise.resolve(new Uint8Array(secret)),
   open: async (_id, sealed) => Promise.resolve(new Uint8Array(sealed)),
   probe: async () => Promise.resolve(true),

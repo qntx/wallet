@@ -102,7 +102,8 @@ const rig = async (harness?: Parameters<typeof createHarness>[0]): Promise<Rig> 
   const input = testSecureInput();
   const h = createHarness({
     ...harness,
-    card: { reader: reader.reader, secureInput: input.secureInput, anchors: [CA1_ANCHOR] },
+    card: { reader: reader.reader, anchors: [CA1_ANCHOR] },
+    secureInput: input.secureInput,
   });
   const res = ok(
     await h.call("wallet.createWithPasskey", {

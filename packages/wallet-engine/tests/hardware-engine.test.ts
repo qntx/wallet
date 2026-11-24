@@ -9,7 +9,7 @@ import { chains } from "@qntx/wallet/chains";
 
 import { approval } from "./approval.ts";
 import type { Arb1Rpc } from "./apps-helpers.ts";
-import { VERIFY, world } from "./apps-helpers.ts";
+import { HL_ENABLE, VERIFY, world } from "./apps-helpers.ts";
 import { keystoneIo, pairKeystone } from "./keystone-io.ts";
 
 const NETWORK = "eip155:42161";
@@ -208,14 +208,14 @@ describe("hardware wallet × engine features", () => {
     const group = { walletId: hwId, groupIndex: 0 };
     const gkey = `${hwId}/0`;
     await w.apps.acknowledgeTerms(group, "hyperliquid");
-    await expect(w.apps.enable(group, "hyperliquid")).rejects.toMatchObject({
+    await expect(w.apps.enable(group, "hyperliquid", HL_ENABLE)).rejects.toMatchObject({
       code: "unsupported",
     });
     const state = () => w.apps.getState().groups[gkey]?.hyperliquid;
     /* The flow recorded its error and left — it is resumable, not still running. */
     expect(state()?.status).toBe("enabling");
     expect(state()?.error).toBeDefined();
-    await expect(w.apps.enable(group, "hyperliquid")).rejects.toMatchObject({
+    await expect(w.apps.enable(group, "hyperliquid", HL_ENABLE)).rejects.toMatchObject({
       code: "unsupported",
     });
     await w.destroy();

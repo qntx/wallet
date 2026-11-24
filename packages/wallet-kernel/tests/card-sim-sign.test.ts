@@ -149,10 +149,10 @@ const rig = async (planMs?: number, start?: number): Promise<Rig> => {
     ...(start === undefined ? {} : { start }),
     card: {
       reader: reader.reader,
-      secureInput: input.secureInput,
       anchors: [CA1_ANCHOR],
       ...(planMs === undefined ? {} : { planMs }),
     },
+    secureInput: input.secureInput,
   });
   await h.settle();
   return { h, session: "", reader, input };

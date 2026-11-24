@@ -17,6 +17,7 @@ import type {
 } from "./protocol/index.ts";
 import { WalletError } from "./types.ts";
 import type {
+  BackupFactorInput,
   FactorInfo,
   InitialFactor,
   PasskeyConfig,
@@ -127,30 +128,45 @@ async function hostBackupPasskey(
   };
 }
 
+/**
+ * Resolves a public `BackupFactorInput` password arm. On a hardware host (React Native) the kernel
+ * collects the password through its secure input — a supplied string is refused so the main runtime
+ * never holds it, an absent one resolves to the `kernel` ceremony arm. On a software host the wire
+ * carries the bytes and the string is required.
+ */
 function backupPassword(
-  factor: UnlockFactor,
+  source: FactorSource,
+  factor: Extract<BackupFactorInput, { readonly kind: "password" }>,
   wire: SecretWire,
-): { readonly kind: "password"; readonly password: Uint8Array } | undefined {
-  if (factor.kind === "hardware" || factor.kind === "device") {
-    throw new WalletError("invalid-input", "backup factors are passkeys or passwords");
+):
+  | { readonly kind: "password"; readonly password: Uint8Array }
+  | { readonly kind: "password"; readonly ceremony: "kernel" } {
+  if (source.mode === "hardware") {
+    if (factor.password !== undefined) {
+      throw new WalletError(
+        "unsupported",
+        "on React Native the kernel collects the backup password itself",
+      );
+    }
+    return { kind: "password", ceremony: "kernel" };
   }
-  return factor.kind === "password"
-    ? { kind: "password", password: wire.text(factor.password) }
-    : undefined;
+  if (factor.password === undefined) {
+    throw new WalletError("invalid-input", "backup password factors need a password");
+  }
+  return { kind: "password", password: wire.text(factor.password) };
 }
 
 /**
- * Resolves a public `UnlockFactor` to a factor that seals a new backup key. A hardware host lets
- * the kernel register the protection credential itself; nothing secret crosses the channel.
+ * Resolves a public `BackupFactorInput` to a factor that seals a new backup key. A hardware host
+ * lets the kernel register the protection credential itself; nothing secret crosses the channel.
  */
 export async function resolveBackupFactor(
   source: FactorSource,
-  factor: UnlockFactor,
+  factor: BackupFactorInput,
   wire: SecretWire,
 ): Promise<BackupFactor> {
-  const password = backupPassword(factor, wire);
-  if (password !== undefined) {
-    return password;
+  if (factor.kind === "password") {
+    return backupPassword(source, factor, wire);
   }
   if (source.mode === "hardware") {
     return {
@@ -171,13 +187,12 @@ export async function resolveBackupFactor(
  */
 export async function resolveBackupUnlockFactor(
   source: FactorSource,
-  factor: UnlockFactor,
+  factor: BackupFactorInput,
   wire: SecretWire,
   credentialIds?: ReadonlyArray<Uint8Array>,
 ): Promise<BackupUnlockFactor> {
-  const password = backupPassword(factor, wire);
-  if (password !== undefined) {
-    return password;
+  if (factor.kind === "password") {
+    return backupPassword(source, factor, wire);
   }
   if (source.mode === "hardware") {
     return {
@@ -345,6 +360,7 @@ export type PublicBytesField =
   | "hiding"
   | "identityPublicKey"
   | "invoice"
+  | "limits"
   | "message"
   | "ownerPublicKey"
   | "package"

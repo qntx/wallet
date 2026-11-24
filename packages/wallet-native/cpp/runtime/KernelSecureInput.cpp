@@ -59,6 +59,8 @@ void installKernelSecureInput(
           kind = SecureInputKind::accessCode;
         } else if (kindText == "short-id") {
           kind = SecureInputKind::shortId;
+        } else if (kindText == "backup-password") {
+          kind = SecureInputKind::backupPassword;
         } else {
           throw jsi::JSError(rt, "__qntx.secureInput.request kind is unknown");
         }

@@ -10,9 +10,10 @@ import { integrity } from "../channel.ts";
 import { internalsOf } from "../internal.ts";
 import type { WalletInternals } from "../internal.ts";
 import type { SessionInfo, SessionSchemeId, SessionSchemes } from "../protocol/index.ts";
-import type { Wallet } from "../types.ts";
+import type { VerifyFactor, Wallet } from "../types.ts";
 
 export type {
+  HyperliquidAgentLimits,
   HyperliquidL1Action,
   HyperliquidL1Order,
   HyperliquidL1Params,
@@ -26,7 +27,10 @@ export type SessionsApi = {
   /**
    * Creates a secp256k1 session key inside the enclave for one HD account and returns its EIP-55
    * address. The kernel refuses an unknown scheme (`unsupported`), a validity window past the
-   * scheme's maximum TTL (`invalid-input`) and a scope the scheme rejects (`invalid-input`).
+   * scheme's maximum TTL (`invalid-input`) and a scope the scheme rejects (`invalid-input`). A
+   * scheme that moves value requires `limits` and `verify`: the kernel shows the approved limits in
+   * its own verification prompt, the session starts opened, and it must be opened again after every
+   * lock. On a React Native host with the app lock off it answers `app-lock-required`.
    */
   readonly create: <K extends SessionSchemeId>(params: {
     readonly scheme: K;
@@ -34,18 +38,28 @@ export type SessionsApi = {
     readonly scope: SessionSchemes[K]["scope"];
     readonly name: string;
     readonly validUntil: number;
+    readonly limits: SessionSchemes[K]["limits"];
+    readonly verify: VerifyFactor;
   }) => Promise<string>;
   /** Every session key the vault holds, across wallets, groups and schemes. */
   readonly list: () => Promise<ReadonlyArray<SessionInfo>>;
+  /**
+   * Re-approves a value-moving session after a lock: the kernel shows the session's limits and
+   * remaining budget in its verification prompt and re-opens it in memory until the next lock.
+   * `sign` answers `approval-required` until this succeeds.
+   */
+  readonly open: (address: string, verify: VerifyFactor) => Promise<void>;
   /** Destroys the session key at `address` — nothing can sign with it again. */
   readonly delete: (address: string) => Promise<void>;
   /**
    * Signs the scheme's document with the session key at `address` and returns the 65-byte r‖s‖v
    * signature. The kernel builds the exact document from `params` — the host never supplies one —
    * and refuses once `validUntil` has passed, when the scheme is not the record's, or the vault is
-   * locked. The host then verifies what came back: it rebuilds the document the record's scope
-   * implies, recovers the signer, and answers `integrity` unless the signature is the session key's
-   * over exactly that document.
+   * locked. A value-moving session must first be opened (`approval-required`) and every signature
+   * charges the action against its approved limits (`limit-exceeded`); on a React Native host with
+   * the app lock off it answers `app-lock-required`. The host then verifies what came back: it
+   * rebuilds the document the record's scope implies, recovers the signer, and answers `integrity`
+   * unless the signature is the session key's over exactly that document.
    */
   readonly sign: <K extends SessionSchemeId>(params: {
     readonly scheme: K;
@@ -69,10 +83,23 @@ const SCHEME_DOCUMENTS: {
 function createSessionsApi(internals: WalletInternals): SessionsApi {
   return {
     create: async (params) => {
-      const { address } = await internals.call("sessions.create", params);
+      const { address } = await internals.withVerifying(async () =>
+        internals.secretCall("sessions.create", async (wire) => ({
+          ...params,
+          verify: await internals.resolveVerifyFactor(params.verify, wire),
+        })),
+      );
       return address;
     },
     list: async () => internals.call("sessions.list", null),
+    open: async (address, verify) => {
+      await internals.withVerifying(async () =>
+        internals.secretCall("sessions.open", async (wire) => ({
+          address,
+          verify: await internals.resolveVerifyFactor(verify, wire),
+        })),
+      );
+    },
     delete: async (address) => {
       await internals.call("sessions.delete", { address });
     },

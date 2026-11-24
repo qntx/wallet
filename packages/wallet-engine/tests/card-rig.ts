@@ -82,7 +82,8 @@ export const cardRig = async (options?: {
     },
   };
   const h = createHarness({
-    card: { reader: reader.reader, secureInput: input.secureInput, anchors: [CA1_ANCHOR] },
+    card: { reader: reader.reader, anchors: [CA1_ANCHOR] },
+    secureInput: input.secureInput,
     ...(options?.now === undefined ? {} : { start: options.now }),
   });
   const wallet = await connectKernel({

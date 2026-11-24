@@ -3,8 +3,7 @@ import { address, getAddressEncoder } from "@solana/addresses";
 import { getU32Decoder, getU64Decoder, getI64Decoder } from "@solana/codecs";
 
 import { solanaAddressFromPublicKey } from "./ids.ts";
-import { resolveAccountIndex } from "./message.ts";
-import type { ParsedSolanaMessage } from "./message.ts";
+import type { NamedAccounts } from "./message.ts";
 
 /** Sysvars the legacy stake account lists carry; post-SIMD-0490 forms omit them. */
 export const SYSVAR_IDS: Readonly<{
@@ -86,14 +85,11 @@ export type SystemCreate = {
 };
 
 const account = (
-  parsed: ParsedSolanaMessage,
   ix: { readonly accountIndices: ReadonlyArray<number> },
   index: number,
-  lookups: Parameters<typeof resolveAccountIndex>[2],
+  named: NamedAccounts,
 ): string | undefined =>
-  index < ix.accountIndices.length
-    ? resolveAccountIndex(parsed, ix.accountIndices[index] ?? 0, lookups)
-    : undefined;
+  index < ix.accountIndices.length ? named.at(ix.accountIndices[index] ?? 0) : undefined;
 
 const role = (data: Uint8Array, offset: number): "staker" | "withdrawer" | "other" => {
   const r = u32le(data, offset);
@@ -106,12 +102,11 @@ const role = (data: Uint8Array, offset: number): "staker" | "withdrawer" | "othe
  * Anything else is `undefined` → the whole transaction decodes `opaque`.
  */
 export const decodeStakeIx = (
-  parsed: ParsedSolanaMessage,
   ix: { readonly accountIndices: ReadonlyArray<number>; readonly data: Uint8Array },
-  lookups: Parameters<typeof resolveAccountIndex>[2],
+  named: NamedAccounts,
 ): StakeIx | undefined => {
   const { data } = ix;
-  const acc = (i: number): string | undefined => account(parsed, ix, i, lookups);
+  const acc = (i: number): string | undefined => account(ix, i, named);
   const n = ix.accountIndices.length;
   if (data.length < 4) {
     return undefined;
@@ -258,12 +253,11 @@ export const decodeStakeIx = (
  * `"other"` when it is one but malformed.
  */
 export const decodeSystemCreate = (
-  parsed: ParsedSolanaMessage,
   ix: { readonly accountIndices: ReadonlyArray<number>; readonly data: Uint8Array },
-  lookups: Parameters<typeof resolveAccountIndex>[2],
+  named: NamedAccounts,
 ): SystemCreate | "other" | undefined => {
   const { data } = ix;
-  const acc = (i: number): string | undefined => account(parsed, ix, i, lookups);
+  const acc = (i: number): string | undefined => account(ix, i, named);
   if (data.length < 4) {
     return "other";
   }

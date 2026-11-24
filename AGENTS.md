@@ -48,12 +48,23 @@
   strictly validated params. Applications add no vault record kinds and no kernel command
   namespaces; material that cannot authorise moving value (API keys, HMAC secrets, bearer tokens)
   stays out of the vault. A session scheme ships with the worst case of a stolen key argued from
-  the protocol's source (it may trade or cancel, never withdraw), a strict params validator that
+  the protocol's source (a Hyperliquid agent key may trade or cancel, never withdraw — and trading
+  is itself a value-transfer channel, so a value-moving scheme is kernel-metered: a notional
+  budget, leverage cap and asset allow-list bound into the record and the approval prompt, `spent`
+  committed before each signature, and presence-bound — a verifying factor at create and after
+  every lock, refused outright while the app lock is off), a strict params validator that
   is the allow-list, time-window and TTL caps, byte-exact signing vectors from the protocol's
   official SDK, and mutation tests that kill every guard. The kernel budget for the
   `hyperliquid-l1-agent` scheme is 16 384 B by owner decision of 2026-11-22.
 - The application share of the native kernel bundle stays within the budgets enforced by
   `scripts/check-kernel-budget.ts` (run by `bun run lint`); raising one needs a recorded decision.
+- Starting at the first production release (1.0), persisted user data — the vault image, the
+  backup envelope, the engine store — is never discarded by an upgrade: every persisted-format
+  change from then on ships a one-step, tested forward upgrade from the previous released
+  format. The "no backward compatibility" rule above governs code APIs and pre-1.0 formats
+  only (there are no installed users to migrate before 1.0); an image this build cannot read
+  is surfaced as `unsupported` — never silently wiped — and `vault.reset` stays an explicit
+  user call.
 - An application signs only through the request pipeline — requests attributed to it with origin
   `{ kind: "app", id }`, approved by the user and decoded by the kernel — or through a kernel
   session scheme; it never holds a private key.
@@ -69,9 +80,9 @@
   HybridView because it exposes no content: the main runtime can mount and size it and receives
   only `idle | empty | filled | submitted` — no characters, no length, no hash. Reading the code
   stays a kernel-only host object (`__qntx.secureInput`), never registered with Nitro.
-- The access-code and short-ID fields are editable only while a kernel `secureInput.request` is
-  pending, and take focus and raise the keyboard on that request (the most recently mounted view
-  first).
+- The access-code, short-ID and backup-password fields are editable only while a kernel
+  `secureInput.request` is pending, and take focus and raise the keyboard on that request (the
+  most recently mounted view first).
 
 `design/` is local-only and never committed.
 
@@ -83,11 +94,12 @@ Local gate before a pull request:
 bun run lint && bun run typecheck && bun run test
 ```
 
-`vp` caches lint/typecheck/test results, so a green run can mask findings a
-fresh file edit introduced. To run the gate uncached before a PR:
-`bunx vp cache clean && bunx vp check && bun run lint && bun run typecheck && bun run test`
-(`bunx vp check` checks every file directly; `vp cache clean` clears the
-task cache so the subsequent `bun run` scripts re-evaluate).
+`vp` replays cached results, so a green run can mask findings a fresh file
+edit introduced. To run the gate uncached before a PR:
+`bunx vp cache clean && bun run lint && bun run typecheck && bun run test`
+(`bun run lint` builds the consumed packages before `vp check`; a bare
+`vp check` on a cold tree fails with TS2307). Any re-run meant to detect
+flakes must begin with `bunx vp cache clean`.
 
 The native kernel bundle is committed (`packages/wallet-native/kernel/generated/`). Any
 change to code bundled into the kernel (kernel modules, `@qntx/wallet-chains`, kernel

@@ -32,7 +32,7 @@
   QntxSecureTextField* _field;
   uint64_t _hubView;
   // The pending request's kind while the field is editable.
-  BOOL _accessCode;
+  qntx::SecureInputKind _kind;
   // Set when this view's own submit() was accepted, so the hub's clear
   // reports `submitted` before `idle`.
   BOOL _justSubmitted;
@@ -119,7 +119,7 @@
     return;
   }
   _justSubmitted = NO;
-  _accessCode = prompt->kind == qntx::SecureInputKind::accessCode;
+  _kind = prompt->kind;
   _label.text = [[NSString alloc] initWithBytes:prompt->label.data()
                                        length:prompt->label.size()
                                      encoding:NSUTF8StringEncoding];
@@ -128,19 +128,24 @@
 
 - (void)arm {
   _field.enabled = YES;
-  _field.secureTextEntry = _accessCode;
-  _field.keyboardType = UIKeyboardTypeASCIICapable;
+  // Everything but the short id is masked; the short id must stay readable
+  // as it is proofread against the printed card.
+  _field.secureTextEntry = _kind != qntx::SecureInputKind::shortId;
+  _field.keyboardType = _kind == qntx::SecureInputKind::backupPassword
+                            ? UIKeyboardTypeDefault
+                            : UIKeyboardTypeASCIICapable;
   _field.autocorrectionType = UITextAutocorrectionTypeNo;
   _field.spellCheckingType = UITextSpellCheckingTypeNo;
   _field.smartQuotesType = UITextSmartQuotesTypeNo;
   _field.smartDashesType = UITextSmartDashesTypeNo;
   _field.smartInsertDeleteType = UITextSmartInsertDeleteTypeNo;
-  _field.autocapitalizationType =
-      _accessCode ? UITextAutocapitalizationTypeNone : UITextAutocapitalizationTypeAllCharacters;
-  if (_accessCode) {
-    _field.font = nil;
-  } else {
+  _field.autocapitalizationType = _kind == qntx::SecureInputKind::shortId
+                                      ? UITextAutocapitalizationTypeAllCharacters
+                                      : UITextAutocapitalizationTypeNone;
+  if (_kind == qntx::SecureInputKind::shortId) {
     _field.font = [UIFont monospacedDigitSystemFontOfSize:17 weight:UIFontWeightRegular];
+  } else {
+    _field.font = nil;
   }
   [self emit:QntxSecureInputStateEmpty];
   // A mounted view that just armed takes the keyboard; the latest attach
@@ -179,7 +184,12 @@
                 replacementString:(NSString*)string {
   NSMutableString* next = [_field.text mutableCopy];
   [next replaceCharactersInRange:range withString:string];
-  if (_accessCode) {
+  if (_kind == qntx::SecureInputKind::backupPassword) {
+    // Any characters the keyboard produces, bounded in UTF-8 bytes — the
+    // wire's own limit; the hub rechecks validity on submit.
+    return [next lengthOfBytesUsingEncoding:NSUTF8StringEncoding] <= 1024;
+  }
+  if (_kind == qntx::SecureInputKind::accessCode) {
     if (next.length > 64) {
       return NO;
     }
@@ -216,16 +226,25 @@
 
 - (BOOL)textFieldShouldReturn:(UITextField*)field {
   NSString* text = _field.text;
-  const BOOL ready = _accessCode ? text.length >= 1 : text.length == 8;
+  const BOOL ready =
+      _kind == qntx::SecureInputKind::shortId ? text.length == 8 : text.length >= 1;
   if (!ready) {
     return YES;
   }
-  // Every accepted character is ASCII, so one UTF-16 unit is one byte.
-  std::vector<uint8_t> bytes(text.length);
-  for (NSUInteger i = 0; i < text.length; i++) {
-    bytes[i] = static_cast<uint8_t>([text characterAtIndex:i]);
+  qntx::SecretBytes value;
+  if (_kind == qntx::SecureInputKind::backupPassword) {
+    // A password is arbitrary Unicode — hand over its real UTF-8 bytes.
+    NSData* data = [text dataUsingEncoding:NSUTF8StringEncoding];
+    value =
+        qntx::SecretBytes(static_cast<const uint8_t*>(data.bytes), data.length);
+  } else {
+    // Every accepted character is ASCII, so one UTF-16 unit is one byte.
+    std::vector<uint8_t> bytes(text.length);
+    for (NSUInteger i = 0; i < text.length; i++) {
+      bytes[i] = static_cast<uint8_t>([text characterAtIndex:i]);
+    }
+    value = qntx::SecretBytes(std::move(bytes));
   }
-  qntx::SecretBytes value(std::move(bytes));
   _justSubmitted =
       qntx::SecureInputHub::shared().submit(_hubView, std::move(value));
   if (!_justSubmitted) {

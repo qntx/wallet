@@ -6,7 +6,8 @@ import type { BackupErrorCategory, EngineErrorCode, SparkErrorCategory } from "@
  * complete. New in this release: `verification-unavailable`, `blind-signing-disabled`
  * (`no-device-credential` is gone), the seven `card-*` codes; `weak-password`; `auth-required`;
  * `quota`; `unknown`; `EngineErrorCode` lost `integrity`; `device-required`, `device-locked`,
- * `device-app-closed`, `device-rejected`, `wrong-device`.
+ * `device-app-closed`, `device-rejected`, `wrong-device`; `app-lock-required`, `limit-exceeded`
+ * (session metering).
  */
 export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   locked: false,
@@ -34,6 +35,8 @@ export const WALLET_ERROR_IS_NEW: Readonly<Record<WalletErrorCode, boolean>> = {
   "card-tampered": true,
   "card-fault": true,
   "card-unsupported": true,
+  "app-lock-required": true,
+  "limit-exceeded": true,
   crashed: false,
   "device-required": true,
   "device-locked": true,

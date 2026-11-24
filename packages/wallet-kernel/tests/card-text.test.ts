@@ -109,7 +109,8 @@ const rig = async (keystore?: ReturnType<typeof fakeKeystore>): Promise<Rig> => 
   const reader = testCardReader();
   const input = testSecureInput();
   const h = createHarness({
-    card: { reader: reader.reader, secureInput: input.secureInput, anchors: [CA1_ANCHOR] },
+    card: { reader: reader.reader, anchors: [CA1_ANCHOR] },
+    secureInput: input.secureInput,
     ...(keystore === undefined ? {} : { keystore: keystore.keystore }),
   });
   const res = ok(

@@ -1033,6 +1033,22 @@ describe("BackupController", () => {
     },
   );
 
+  it("skips the strength check when the password arm carries no string", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      // No string → no zxcvbn; the wallet refuses the arm itself (software hosts need
+      // the password over the wire, React Native sends the kernel ceremony arm).
+      await expect(
+        r.engine.backup.enable({ verify: PW, factors: [{ kind: "password" }] }),
+      ).rejects.toMatchObject({ code: "invalid-input" });
+      expect(r.wallet.getSnapshot().backup).toBeNull();
+      expect(r.files.size).toBe(0);
+    } finally {
+      await r.close();
+    }
+  });
+
   it("scores a passphrase above a common password", async () => {
     await expect(backupPasswordStrength("password1234")).resolves.toMatchObject({
       acceptable: false,

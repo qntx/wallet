@@ -370,9 +370,9 @@ describe("chain.sign evm.fiat24-session", () => {
       description:
         "A bearer grant for the Fiat24 account of the signing address, " +
         "valid until 2026-11-21 16:20 (UTC)\n" +
-        "Until then, anyone holding this signature can read your Fiat24 profile and contact data, " +
-        "view your card details, create and change cards and payees, and change your email — " +
-        "the channel for card one-time passwords\n" +
+        "Until then, the holder can read your Fiat24 profile, contact data and card details, " +
+        "and create or change cards, payees and your email — " +
+        "the card one-time-password channel\n" +
         `Signs: ${FIAT24_MESSAGE}`,
     });
   });
@@ -457,9 +457,11 @@ describe("chain.sign evm.fiat24-session", () => {
   it.each([
     ["a trailing CRLF", `${RAW_GRANTS[0]}\r\n`, [RAW_GRANTS[0]]],
     [
+      /* The hazard line pushes this prompt over the platform bound, so the grant text itself
+         is withheld and the count line takes its place. */
       "a trailing bidi override",
       `${RAW_GRANTS[0]}\u202E`,
-      ["This text contains hidden or reordering characters", `${RAW_GRANTS[0]}�`],
+      ["This text contains hidden or reordering characters", "… 1 more lines not shown"],
     ],
   ] as const)(
     "a raw grant with %s is refused until blind signing is enabled",

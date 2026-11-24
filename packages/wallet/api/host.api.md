@@ -8,13 +8,13 @@
 type BackupApi = {
     readonly enable: (options: {
         readonly verify: VerifyFactor;
-        readonly factors: ReadonlyArray<UnlockFactor>;
+        readonly factors: ReadonlyArray<BackupFactorInput>;
     }) => Promise<void>;
     readonly update: () => Promise<string>;
     readonly disable: (verify: VerifyFactor) => Promise<void>;
     readonly restore: (options: {
         readonly envelope: string;
-        readonly backupFactor: UnlockFactor;
+        readonly backupFactor: BackupFactorInput;
         readonly passphrases?: ReadonlyArray<{
             readonly walletId: string;
             readonly passphrase: string;
@@ -24,6 +24,14 @@ type BackupApi = {
         readonly wallets: ReadonlyArray<VaultWalletInfo>;
         readonly passphraseRequired: ReadonlyArray<string>;
     }>;
+};
+
+// @public
+type BackupFactorInput = {
+    readonly kind: "passkey";
+} | {
+    readonly kind: "password";
+    readonly password?: string;
 };
 
 // @public

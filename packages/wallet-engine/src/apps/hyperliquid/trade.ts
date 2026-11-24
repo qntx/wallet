@@ -56,19 +56,10 @@ export type HyperliquidTrade = {
     group: HyperliquidGroup,
     time?: number,
   ) => Promise<HyperliquidActionOutcome>;
-  /** Start a TWAP; the outcome carries the `twapId` {@link twapCancel} needs. */
-  readonly twap: (
-    group: HyperliquidGroup,
-    params: {
-      readonly coin: string;
-      readonly side: "buy" | "sell";
-      readonly size: string;
-      readonly minutes: number;
-      readonly randomize: boolean;
-      readonly reduceOnly?: boolean;
-    },
-  ) => Promise<HyperliquidActionOutcome>;
-  /** Stop a running TWAP. */
+  /**
+   * Stop a running TWAP — starting one needs no price-less action the kernel could not meter, so it
+   * is not offered.
+   */
   readonly twapCancel: (
     group: HyperliquidGroup,
     params: { readonly coin: string; readonly twapId: number },
@@ -164,8 +155,6 @@ export function createHyperliquidTrade(options: {
     },
     scheduleCancel: async (group, time) =>
       options.exchange.action(group, options.actions.scheduleCancel(time)),
-    twap: async (group, params) =>
-      options.exchange.action(group, await options.actions.twap(params)),
     twapCancel: async (group, params) =>
       options.exchange.action(group, await options.actions.twapCancel(params)),
     setLeverage: async (group, params) =>

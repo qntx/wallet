@@ -1,6 +1,7 @@
 import type { PublicClient } from "viem";
 
-import type { Wallet } from "@qntx/wallet";
+import { WalletError } from "@qntx/wallet";
+import type { VerifyFactor, Wallet } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
 import { sessions } from "@qntx/wallet/sessions";
 
@@ -13,7 +14,7 @@ import { createHyperliquidAgentRegistry } from "./agents.ts";
 import type { HyperliquidAgentRegistry, HyperliquidGroup } from "./agents.ts";
 import { createHyperliquidClock } from "./clock.ts";
 import type { HyperliquidClock } from "./clock.ts";
-import { HyperliquidError } from "./errors.ts";
+import { HyperliquidError, SESSION_ERRORS } from "./errors.ts";
 import { createHyperliquidExchange } from "./exchange.ts";
 import { createHyperliquidLive } from "./live.ts";
 import type { HyperliquidLive } from "./live.ts";
@@ -73,6 +74,12 @@ export type HyperliquidProvider = {
    * while the group is not `enabled` or no builder is configured.
    */
   readonly approveBuilder: (group: HyperliquidGroup) => Promise<void>;
+  /**
+   * Re-approves the group's enabled agent in the kernel after a lock: the kernel shows the
+   * session's limits and remaining budget in its verification prompt and the session signs again
+   * until the next lock. Trading answers `reopen-required` while the session is unopened.
+   */
+  readonly reopen: (group: HyperliquidGroup, verify: VerifyFactor) => Promise<void>;
   /**
    * L1 trading: every method signs the exact action it posts through `sessions(wallet).sign` with
    * the group's enabled, owner-verified agent, and reconciles an unknown order outcome by cloid.
@@ -428,6 +435,17 @@ export function createHyperliquidProvider(
       ...(options.builderFor === undefined ? {} : { builderFor: options.builderFor }),
     }),
     agents,
+    reopen: async (group, verify) => {
+      /* The registry already enforces owner-verified, enabled, unexpired — the kernel re-checks
+         the rest: app lock on, limits intact, the factor verified against the recorded budget. */
+      const agent = agents.require(group);
+      try {
+        await sessions(options.wallet).open(agent.address, verify);
+      } catch (error) {
+        const mapped = error instanceof WalletError ? SESSION_ERRORS[error.code] : undefined;
+        throw new HyperliquidError(...(mapped ?? (["unavailable", "open failed"] as const)), error);
+      }
+    },
     userSigned,
     ...(options.socket === undefined
       ? {}

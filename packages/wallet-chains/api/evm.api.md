@@ -144,7 +144,7 @@ type AssetFlow = {
 type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
-type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination" | "fiat24-function" | "fiat24-session-grant";
+type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "lookup-table-account" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination" | "fiat24-function" | "fiat24-session-grant";
 
 // @public (undocumented)
 export const canonicalHex: (value: bigint) => string;
@@ -518,16 +518,6 @@ export type HyperliquidL1Action = {
     readonly asset: number;
     readonly isBuy: boolean;
     readonly ntli: number;
-} | {
-    readonly type: "twapOrder";
-    readonly twap: {
-        readonly a: number;
-        readonly b: boolean;
-        readonly s: string;
-        readonly r: boolean;
-        readonly m: number;
-        readonly t: boolean;
-    };
 } | {
     readonly type: "twapCancel";
     readonly a: number;

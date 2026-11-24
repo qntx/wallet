@@ -306,6 +306,7 @@ export const responseError: Validator<{
 }> = errorPayload;
 
 export { CARD_METHODS, HARDWARE_METHODS, NOSTR_METHODS, SESSIONS_METHODS, SPARK_METHODS };
+export { SESSION_SPENT } from "./sessions.ts";
 export type {
   DeviceDisplay,
   DeviceRequest,
@@ -326,6 +327,7 @@ export type {
   CardTapReason,
 } from "./card.ts";
 export type {
+  HyperliquidAgentLimits,
   HyperliquidL1Action,
   HyperliquidL1Order,
   HyperliquidL1Params,

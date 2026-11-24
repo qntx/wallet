@@ -7,6 +7,9 @@
  * with a scope flag: every path that enumerates `key` records (chain.sign imported pass,
  * keys.list/export/remove, backups) structurally cannot see it.
  */
+import { isProtocolValue, SESSION_SPENT } from "@qntx/wallet/protocol";
+import type { ProtocolValue } from "@qntx/wallet/protocol";
+
 import {
   asCreatedAt,
   asGroupIndex,
@@ -19,6 +22,14 @@ import type { StoredRecord, VaultImage } from "../../vault/store.ts";
 
 /** The record kind this module owns. */
 export const SESSION_KIND = "session-key";
+
+/* `limits` and `spent` sit in the header of every metered record this kernel seals — the scheme's
+   approved limits as a canonical JSON object and the charged notional as a canonical decimal.
+   They stay optional on parse: records of schemes this build does not know, and of schemes that
+   declare no metering, may carry neither. A metered scheme's record without them is `integrity`
+   where the sessions handlers use it — this kernel seals metered records only with both.
+   `SESSION_SPENT` is the one decimal grammar the protocol exports, so a value the meter produces
+   always passes the `SessionInfo` validator on the way out. */
 
 const SCHEME = /^[a-z][a-z0-9-]{1,31}$/;
 const OWNER = /^0x[0-9a-fA-F]{40}$/;
@@ -37,6 +48,10 @@ export type SessionHeader = {
   readonly name: string;
   readonly validUntil: number;
   readonly createdAt: number;
+  /** The scheme's approved limits as a plain JSON object — the scheme itself revalidates it. */
+  readonly limits?: ProtocolValue;
+  /** The notional already charged against `limits` — a canonical decimal string. */
+  readonly spent?: string;
 };
 
 const HEADER_KEYS = [
@@ -50,6 +65,8 @@ const HEADER_KEYS = [
   "createdAt",
 ] as const;
 
+const HEADER_OPTIONAL = ["limits", "spent"] as const;
+
 const asField =
   (pattern: RegExp) =>
   (value: unknown): string => {
@@ -61,7 +78,7 @@ const asField =
 
 /** Stored JSON, key order fixed so the text is a stable authenticated byte string. */
 export function encodeSessionHeader(header: SessionHeader): string {
-  return JSON.stringify({
+  const fields: Record<string, unknown> = {
     scheme: header.scheme,
     walletId: header.walletId,
     groupIndex: header.groupIndex,
@@ -70,13 +87,23 @@ export function encodeSessionHeader(header: SessionHeader): string {
     name: header.name,
     validUntil: header.validUntil,
     createdAt: header.createdAt,
-  });
+  };
+  if (header.limits !== undefined) {
+    fields["limits"] = header.limits;
+  }
+  if (header.spent !== undefined) {
+    fields["spent"] = header.spent;
+  }
+  return JSON.stringify(fields);
 }
 
 export function parseSessionHeader(text: string): SessionHeader {
   const object = headerObject(text);
-  expectKeys(object, HEADER_KEYS);
-  return {
+  const optional = HEADER_OPTIONAL.filter((key) => Object.hasOwn(object, key));
+  expectKeys(object, [...HEADER_KEYS, ...optional]);
+  const header: {
+    -readonly [K in keyof SessionHeader]?: SessionHeader[K];
+  } = {
     scheme: asField(SCHEME)(object["scheme"]),
     walletId: asWalletId(object["walletId"]),
     groupIndex: asGroupIndex(object["groupIndex"]),
@@ -86,6 +113,24 @@ export function parseSessionHeader(text: string): SessionHeader {
     validUntil: asCreatedAt(object["validUntil"]),
     createdAt: asCreatedAt(object["createdAt"]),
   };
+  const { limits, spent } = object;
+  if (limits !== undefined) {
+    if (
+      !isProtocolValue(limits) ||
+      typeof limits !== "object" ||
+      limits === null ||
+      Array.isArray(limits) ||
+      limits instanceof Uint8Array
+    ) {
+      throw headerFailure();
+    }
+    header.limits = limits;
+  }
+  if (spent !== undefined) {
+    header.spent = asField(SESSION_SPENT)(spent);
+  }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- required fields are set above
+  return header as SessionHeader;
 }
 
 /** The stored session-key record for an address (any case), or undefined — never throws. */

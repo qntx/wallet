@@ -256,10 +256,11 @@ type AppProvider<D extends AppDetail = Record<never, never>> = {
     readonly error: (category: "busy" | "unlock-required" | "unavailable" | "invalid-input", message: string) => Error;
     readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
     readonly reconcile: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
-    readonly enable: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
-    readonly renew: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
+    readonly enable: (group: AppGroup, flow: AppFlow<D>, input: unknown) => Promise<void>;
+    readonly renew: (group: AppGroup, flow: AppFlow<D>, input: unknown) => Promise<void>;
     readonly disable: (group: AppGroup, options: {
         readonly revoke: boolean;
+        readonly verify?: VerifyFactor;
     }, flow: AppFlow<D>) => Promise<void>;
     readonly cancel: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
     readonly authorities?: (group: AppGroup) => Promise<ReadonlyArray<AppAuthority>>;

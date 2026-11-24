@@ -15,6 +15,7 @@ export const basePlatform = (): Pick<
   | "keystore"
   | "passkey"
   | "card"
+  | "secureInput"
 > => ({
   random: (length) => crypto.getRandomValues(new Uint8Array(length)),
   now: () => Date.now(),
@@ -30,4 +31,5 @@ export const basePlatform = (): Pick<
   keystore: undefined,
   passkey: undefined,
   card: undefined,
+  secureInput: undefined,
 });

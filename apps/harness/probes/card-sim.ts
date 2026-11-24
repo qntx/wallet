@@ -118,9 +118,9 @@ const platform: KernelPlatform = {
   passkey: undefined,
   card: {
     reader: bindNativeCardReader(__qntx.cardReader),
-    secureInput,
     anchors: [CA1_ANCHOR],
   },
+  secureInput,
   policy: { maxSessionMs: 24 * 3_600_000, maxScryptLogN: 18 },
   backends: {
     nostr: nobleBackend,

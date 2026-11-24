@@ -21,6 +21,8 @@ import type {
 } from "../../../packages/wallet-kernel/src/platform.ts";
 import type { ProtocolValue, WalletErrorCode } from "../../../packages/wallet/src/protocol/index.ts";
 
+import { bindNativeSecureInput } from "../../../packages/wallet-native/kernel/secure-input.ts";
+
 import { postJson } from "./share.ts";
 
 // vectors/wallet/nip06.json — NIP-06 derivation path m/44'/1237'/0'/0/0.
@@ -102,6 +104,7 @@ function boot(pbkdf2: Pbkdf2): Kernel {
     keystore: undefined,
     passkey: undefined,
     card: undefined,
+    secureInput: bindNativeSecureInput(__qntx.secureInput),
     policy: { idle: { ms: 15 * 60_000, activity: "presence" }, maxSessionMs: 12 * 3_600_000, maxScryptLogN: 18 },
     backends: {
       nostr: nobleBackend,

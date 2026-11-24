@@ -110,6 +110,12 @@ export type KernelPlatform = {
   /** The card reader + secure input + trust anchors; `undefined` on hosts without NFC. */
   readonly card: CardPlatform | undefined;
   /**
+   * The trusted secure-input view — present only where the kernel runs input ceremonies itself
+   * (RN), so the cloud-backup password and the card's secrets never cross the main runtime.
+   * `undefined` on web/node, where secrets arrive over the wire from the host's own UI.
+   */
+  readonly secureInput: SecureInput | undefined;
+  /**
    * Heavy cryptographic backends the host supplies lazily. `spark` loads and verifies the wasm (or
    * native) SparkCrypto instance; the kernel calls it only when a spark.* method runs, so a
    * nostr-only session never loads it. Each call must return a backend the kernel keeps until a
@@ -151,6 +157,8 @@ export type KeyUse =
  */
 export type Keystore = {
   readonly locale: string; // host-preferred BCP 47 language tag
+  /** The OS the system prompt renders on; picks the kernel's prompt text bound. */
+  readonly platform: "ios" | "android";
   readonly seal: (id: string, secret: Uint8Array, use: KeyUse) => Promise<Uint8Array>;
   readonly open: (id: string, sealed: Uint8Array, use: KeyUse) => Promise<Uint8Array>;
   /**
@@ -211,12 +219,12 @@ export function requirePasskey(platform: KernelPlatform): PasskeyAuthenticator {
 }
 
 /**
- * Serializes every system-UI ceremony — presence keystore seal/open, authenticate, clear and
- * passkey create/get share one queue, because the platform can show only one verification at a
- * time. Silent keystore work (device seal/open, probe, remove) bypasses the queue and never fires
- * `onCeremony`. A rejection does not wedge the queue. Applied once by `startKernel`. `onCeremony`
- * fires `true` when a ceremony's work starts and `false` when it settles, strictly paired per
- * queued call.
+ * Serializes every system-UI ceremony — presence keystore seal/open, authenticate, clear, passkey
+ * create/get and secure-input requests share one queue, because the platform can show only one
+ * verification at a time. Silent keystore work (device seal/open, probe, remove) bypasses the queue
+ * and never fires `onCeremony`. A rejection does not wedge the queue. Applied once by
+ * `startKernel`. `onCeremony` fires `true` when a ceremony's work starts and `false` when it
+ * settles, strictly paired per queued call.
  */
 export function serializeCeremonies(
   platform: KernelPlatform,
@@ -250,7 +258,7 @@ export function serializeCeremonies(
       release();
     }
   };
-  const { keystore, passkey, card } = platform;
+  const { keystore, passkey, card, secureInput } = platform;
   // A reader session holds the ceremony slot from `open` until `close` (or a failed `open`) —
   // the platform's NFC sheet and the secure-input view are one surface.
   let releaseReader: (() => void) | undefined;
@@ -283,11 +291,6 @@ export function serializeCeremonies(
         : {
             anchors: card.anchors,
             reader,
-            secureInput: {
-              request: async (kind, label) =>
-                queue(async () => card.secureInput.request(kind, label)),
-              cancel: () => card.secureInput.cancel(),
-            },
             ...(card.planMs === undefined ? {} : { planMs: card.planMs }),
           },
     keystore:
@@ -295,6 +298,7 @@ export function serializeCeremonies(
         ? undefined
         : {
             locale: keystore.locale,
+            platform: keystore.platform,
             seal: async (id, secret, use) =>
               use.protection === "presence"
                 ? queue(async () => keystore.seal(id, secret, use))
@@ -314,6 +318,21 @@ export function serializeCeremonies(
         : {
             create: async (input) => queue(async () => passkey.create(input)),
             get: async (input) => queue(async () => passkey.get(input)),
+          },
+    secureInput:
+      secureInput === undefined
+        ? undefined
+        : {
+            /* A request made while the kernel's own reader session holds the slot runs inside
+               that slot — the session already owns the surface and a queue would deadlock on
+               itself. Everything else takes the queue. */
+            request: async (kind, label) =>
+              releaseReader === undefined
+                ? queue(async () => secureInput.request(kind, label))
+                : secureInput.request(kind, label),
+            cancel: () => {
+              secureInput.cancel();
+            },
           },
   };
 }
@@ -405,8 +424,11 @@ export type CardReader = {
   readonly close: (outcome: "success" | "failure", text: string) => void;
 };
 
-/** What the secure input view collects: the qntx card's access code, or its printed short ID. */
-export type SecureInputKind = "access-code" | "short-id";
+/**
+ * What the secure input view collects: the qntx card's access code, its printed short ID, or the
+ * cloud-backup password — 1..1024 bytes of valid UTF-8, masked.
+ */
+export type SecureInputKind = "access-code" | "short-id" | "backup-password";
 
 /** The outcome of a secure-input request; `value` is the confirmed bytes the user entered. */
 export type SecureInputResult =
@@ -425,13 +447,13 @@ export type SecureInput = {
 };
 
 /**
- * The card capability bundle: reader session, access-code input and the CA anchors the kernel
- * trusts. Present only on hosts with an NFC card surface — `undefined` on web/node, where every
- * `card.*` method and every card-wallet seed lookup answers `unsupported`.
+ * The card capability bundle: reader session and the CA anchors the kernel trusts — input comes
+ * through the top-level `secureInput`. Present only on hosts with an NFC card surface —
+ * `undefined` on web/node, where every `card.*` method and every card-wallet seed lookup answers
+ * `unsupported`.
  */
 export type CardPlatform = {
   readonly reader: CardReader;
-  readonly secureInput: SecureInput;
   readonly anchors: ReadonlyArray<Anchor>;
   /**
    * The host's real per-tap reader budget in ms — how long one card connection may run. iOS plans

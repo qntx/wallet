@@ -35,14 +35,21 @@ import { pinnedMaterial, samePath } from "../../derive/pinned.ts";
 import type { PinnedKeys } from "../../derive/pinned.ts";
 import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt, KernelPlatform } from "../../platform.ts";
-import { promptLocale } from "../../prompts.ts";
+import { PROMPT_BOUNDS, codePoints, promptLocale } from "../../prompts.ts";
+import type { PromptBound } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import type { StoredRecord } from "../../vault/store.ts";
 import type { OpenedRecord } from "../../vault/vault.ts";
 import { sealRecord, verifyFactor } from "../../vault/vault.ts";
 import { assertFiat24Deadline } from "../chains/evm.ts";
-import { accountFor, checkNetwork, leafPath, prepareApproval } from "../chains/index.ts";
-import { chainPrompt } from "../chains/prompt.ts";
+import {
+  accountFor,
+  assertSignable,
+  checkNetwork,
+  leafPath,
+  prepareApproval,
+} from "../chains/index.ts";
+import { boundChainPrompt, chainPrompt } from "../chains/prompt.ts";
 import { signStages } from "../chains/run.ts";
 import { BTC_PURPOSE } from "../chains/shared.ts";
 import type { DeviceLink, Driver, HardwarePin } from "./driver.ts";
@@ -181,6 +188,13 @@ const mergePin = (pin: HardwarePin, fetched: PinnedKeys): HardwarePin => ({
     ...pin.ed25519,
     ...fetched.ed25519.filter((k) => !pin.ed25519.some((have) => samePath(have.path, k.path))),
   ],
+});
+
+/** The bound for a prompt that gains one appended line: the line's cost comes off the top. */
+const shrinkBound = (bound: PromptBound, line: string): PromptBound => ({
+  title: bound.title,
+  lines: bound.lines - 1,
+  characters: bound.characters - codePoints(line) - 1,
 });
 
 /** The verification prompt's device line, appended to the chain prompt's description (I2). */
@@ -408,8 +422,22 @@ export function createSignersModule(
       throw new KernelError("unsupported", "the device cannot sign this request");
     }
     const locale = promptLocale(ctx.platform.keystore?.locale ?? "en");
+    /* The phone dialog gets the same bound as chain.sign, shrunk by the device line
+       devicePrompt appends, so the whole text still fits. */
+    const shown =
+      ctx.platform.keystore === undefined
+        ? undefined
+        : boundChainPrompt(
+            locale,
+            prepared.prompt,
+            shrinkBound(
+              PROMPT_BOUNDS[ctx.platform.keystore.platform],
+              devicePromptLine(locale, display, device),
+            ),
+          );
+    assertSignable(ctx, dek, prepared.prompt, shown?.oversize ?? false);
     await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () =>
-      devicePrompt(chainPrompt(locale, prepared.prompt), locale, display, device),
+      devicePrompt(shown?.prompt ?? chainPrompt(locale, prepared.prompt), locale, display, device),
     );
     ctx.session.require(session);
     if (request.kind === "evm.fiat24-session") {

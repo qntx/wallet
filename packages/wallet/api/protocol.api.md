@@ -61,10 +61,7 @@ export type BackupEnvelopeWire = {
 };
 
 // @public
-export type BackupFactor = {
-    readonly kind: "password";
-    readonly password: Uint8Array;
-} | HostBackupPasskey | {
+export type BackupFactor = BackupPasswordFactor | HostBackupPasskey | {
     readonly kind: "passkey";
     readonly ceremony: "kernel";
     readonly rpId: string;
@@ -113,10 +110,16 @@ type BackupInfo_2 = {
 };
 
 // @public
-export type BackupUnlockFactor = {
+type BackupPasswordFactor = {
     readonly kind: "password";
     readonly password: Uint8Array;
-} | HostBackupPasskey | {
+} | {
+    readonly kind: "password";
+    readonly ceremony: "kernel";
+};
+
+// @public
+export type BackupUnlockFactor = BackupPasswordFactor | HostBackupPasskey | {
     readonly kind: "passkey";
     readonly ceremony: "kernel";
     readonly rpId: string;
@@ -807,6 +810,13 @@ export type HtlcTimeoutSignRequest = {
     readonly hashLockPublicKey: Uint8Array;
 };
 
+// @public
+export type HyperliquidAgentLimits = {
+    readonly notional: string;
+    readonly maxLeverage: number;
+    readonly assets: ReadonlyArray<number>;
+};
+
 export { HyperliquidL1Action }
 
 export { HyperliquidL1Order }
@@ -1172,6 +1182,9 @@ export type Rumor = {
 // @public
 export const SECRET_FIELDS: readonly ["password", "prf", "prfWallet", "prfBackup", "mnemonic", "passphrase", "secret", "answers"];
 
+// @public
+export const SESSION_SPENT: RegExp;
+
 // @public (undocumented)
 export type SessionInfo = {
     readonly address: string;
@@ -1184,6 +1197,8 @@ export type SessionInfo = {
     readonly name: string;
     readonly validUntil: number;
     readonly createdAt: number;
+    readonly limits: ProtocolValue;
+    readonly spent: string;
 };
 
 // @public (undocumented)
@@ -1197,12 +1212,18 @@ export const SESSIONS_METHODS: {
         readonly scope: string;
         readonly name: string;
         readonly validUntil: number;
+        readonly limits: ProtocolValue;
+        readonly verify: VerifyFactor;
     }, {
         readonly address: string;
     }>;
     readonly "sessions.list": MethodSpec<NullValue, ReadonlyArray<SessionInfo>>;
     readonly "sessions.delete": MethodSpec<{
         readonly address: string;
+    }, NullValue>;
+    readonly "sessions.open": MethodSpec<{
+        readonly address: string;
+        readonly verify: VerifyFactor;
     }, NullValue>;
     readonly "sessions.sign": MethodSpec<{
         readonly scheme: string;
@@ -1221,6 +1242,7 @@ export type SessionSchemes = {
     readonly "hyperliquid-l1-agent": {
         readonly scope: HyperliquidNetwork;
         readonly params: HyperliquidL1Params;
+        readonly limits: HyperliquidAgentLimits;
     };
 };
 
@@ -1487,7 +1509,7 @@ export type VerifyFactor = Exclude<Factor, {
 }>;
 
 // @public (undocumented)
-export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "card-not-genuine" | "card-id-mismatch" | "card-erased" | "card-locked" | "card-tampered" | "card-fault" | "card-unsupported" | "crashed" | "device-required" | "device-locked" | "device-app-closed" | "device-rejected" | "wrong-device";
+export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "card-not-genuine" | "card-id-mismatch" | "card-erased" | "card-locked" | "card-tampered" | "card-fault" | "card-unsupported" | "app-lock-required" | "limit-exceeded" | "crashed" | "device-required" | "device-locked" | "device-app-closed" | "device-rejected" | "wrong-device";
 
 // @public (undocumented)
 export const walletErrorCode: Validator<WalletErrorCode>;

@@ -6,10 +6,8 @@
  * supplies nothing but the command name.
  */
 
-import {
-  bindNativeCardReader,
-  bindNativeSecureInput,
-} from "../../../packages/wallet-native/kernel/card.ts";
+import { bindNativeCardReader } from "../../../packages/wallet-native/kernel/card.ts";
+import { bindNativeSecureInput } from "../../../packages/wallet-native/kernel/secure-input.ts";
 
 import {
   ACCESS_CODE,

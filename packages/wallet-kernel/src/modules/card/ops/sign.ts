@@ -132,6 +132,7 @@ export const prepareSign = async (
     prompt: prepared.prompt,
     plan: prepared.plan,
     verifyPrompt: () =>
+      prepared.shown?.prompt ??
       chainPrompt(promptLocale(env.ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
     tapText,
   };

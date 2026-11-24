@@ -19,7 +19,7 @@ import type {
   BackupInfo,
   WalletInfo,
   WalletSnapshot,
-  UnlockFactor,
+  BackupFactorInput,
   VerifyFactor,
   InitialFactor,
 } from "@qntx/wallet";
@@ -267,7 +267,7 @@ export class BackupController extends Controller<BackupControllerState> {
 
   async enable(options: {
     readonly verify: VerifyFactor;
-    readonly factors: ReadonlyArray<UnlockFactor>;
+    readonly factors: ReadonlyArray<BackupFactorInput>;
   }): Promise<void> {
     // Check before the ceremony: the user must not verify and retain a BEK when there is
     // nowhere to upload it.
@@ -281,7 +281,9 @@ export class BackupController extends Controller<BackupControllerState> {
     }
     const strengths = await Promise.all(
       options.factors.flatMap((factor) =>
-        factor.kind === "password" ? [backupPasswordStrength(factor.password)] : [],
+        factor.kind === "password" && factor.password !== undefined
+          ? [backupPasswordStrength(factor.password)]
+          : [],
       ),
     );
     if (strengths.some((strength) => !strength.acceptable)) {
@@ -340,7 +342,7 @@ export class BackupController extends Controller<BackupControllerState> {
    */
   async restore(options: {
     readonly name: string;
-    readonly backupFactor: UnlockFactor;
+    readonly backupFactor: BackupFactorInput;
     readonly passphrases?: ReadonlyArray<{
       readonly walletId: string;
       readonly passphrase: string;

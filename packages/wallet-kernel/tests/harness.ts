@@ -13,6 +13,7 @@ import type {
   PasskeyAuthenticator,
   Pbkdf2,
   Port,
+  SecureInput,
   Random,
   VaultAnchor,
 } from "../src/platform.ts";
@@ -163,8 +164,10 @@ export function createHarness(opts?: {
   keystore?: Keystore;
   /** A platform passkey authenticator: the kernel runs WebAuthn ceremonies itself (React Native). */
   passkey?: PasskeyAuthenticator;
-  /** The card reader/secure-input/anchor bundle (default undefined — a no-NFC host). */
+  /** The card reader/anchor bundle (default undefined — a no-NFC host). */
   card?: CardPlatform;
+  /** The platform secure-input field: the kernel collects secrets itself (React Native). */
+  secureInput?: SecureInput;
   /** Overrides the WebCrypto PBKDF2 (spies observing seed derivation). */
   pbkdf2?: Pbkdf2;
   /** The real cost, for the vector tests; every other test stretches at a token cost. */
@@ -257,6 +260,7 @@ export function createHarness(opts?: {
     keystore: opts?.keystore,
     passkey: opts?.passkey,
     card: opts?.card,
+    secureInput: opts?.secureInput,
     backends: opts?.backends ?? {
       spark: async () => {
         await Promise.resolve();

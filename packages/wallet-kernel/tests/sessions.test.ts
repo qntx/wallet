@@ -111,6 +111,12 @@ async function setup(start?: number): Promise<{
   };
 }
 
+/**
+ * Generous default limits for tests that only exercise signing — the metering tests pin their own
+ * budgets instead. Covers every asset id the oracle vectors carry (0–5) plus a spot id.
+ */
+const LIMITS = { notional: "1000000000", maxLeverage: 100, assets: [0, 1, 2, 3, 4, 5, 10107] };
+
 const createParams = (
   walletId: string,
   extra?: Record<string, unknown>,
@@ -120,6 +126,8 @@ const createParams = (
   scope: "Mainnet",
   name: "bot-1",
   validUntil: T0 + DAY,
+  limits: LIMITS,
+  verify: PASSKEY(),
   ...extra,
 });
 
@@ -311,6 +319,8 @@ describe("sessions.sign against the oracle vectors", () => {
           scope: vector.network,
           name: "bot-1",
           validUntil: vector.nonce + DAY,
+          limits: LIMITS,
+          verify: PASSKEY(),
         },
         session,
       ),
@@ -448,7 +458,6 @@ describe("protocol: strict action validation", () => {
     { type: "scheduleCancel", time: T0 + 10_000 },
     { type: "updateLeverage", asset: 0, isCross: true, leverage: 5 },
     { type: "updateIsolatedMargin", asset: 0, isBuy: true, ntli: -100 },
-    { type: "twapOrder", twap: { a: 0, b: true, s: "1", r: false, m: 30, t: false } },
     { type: "twapCancel", a: 0, t: 1 },
   ])("allow-listed action %j is accepted", async (action) => {
     await withSession(async (h, session, address) => {
@@ -471,6 +480,7 @@ describe("protocol: strict action validation", () => {
       amount: "1",
       nonce: 1,
     },
+    { type: "twapOrder", twap: { a: 0, b: true, s: "1", r: false, m: 30, t: false } },
     { type: "createSubAccount", name: "x" },
     { type: "noop" },
     { type: "reserveRequestWeight", weight: 1 },
@@ -557,7 +567,7 @@ describe("session-key lifecycle", () => {
     const record = sessionRecord(image);
     expect(record?.id).toBe(address.toLowerCase());
     expect(record?.header).toBe(
-      `{"scheme":"${SCHEME}","walletId":"${walletId}","groupIndex":0,"owner":"${EVM_ADDRESS}","scope":"Testnet","name":"bot-2","validUntil":${T0 + 30 * DAY},"createdAt":${T0}}`,
+      `{"scheme":"${SCHEME}","walletId":"${walletId}","groupIndex":0,"owner":"${EVM_ADDRESS}","scope":"Testnet","name":"bot-2","validUntil":${T0 + 30 * DAY},"createdAt":${T0},"limits":${JSON.stringify(LIMITS)},"spent":"0"}`,
     );
 
     const list = ok(await h.call("sessions.list", null, session)) as unknown as Array<
@@ -575,6 +585,8 @@ describe("session-key lifecycle", () => {
         name: "bot-2",
         validUntil: T0 + 30 * DAY,
         createdAt: T0,
+        limits: LIMITS,
+        spent: "0",
       },
     ]);
 
@@ -705,6 +717,32 @@ describe("sessions.sign checks", () => {
         }),
       ),
     ).toBe("locked");
+  });
+
+  it("the first request after the absolute session limit answers locked", async () => {
+    const h = createHarness({ start: T0, maxSessionMs: 60_000 });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: PASSKEY(),
+      }),
+    );
+    const session = strField(res, "session");
+    const walletId = strField(field(res, "wallet"), "walletId");
+    const address = await createSession(h, session, walletId);
+    h.advance(60_001); // past maxSessionMs, well under the idle window
+    await h.settle();
+    // A session that failed to lock routes this request to a prompt the test never answers, so
+    // awaiting the call directly would hang — read the reply the kernel posted instead.
+    void signCall(h, session, {
+      scheme: SCHEME,
+      address,
+      params: { action: orderAction, nonce: T0 },
+    });
+    await h.settle();
+    const reply = h.posted.at(-1);
+    expect(reply).toMatchObject({ err: { code: "locked" } });
   });
 
   it("a session that idled out cannot sign with a previously valid key", async () => {
@@ -856,7 +894,7 @@ describe("session defense-in-depth checks", () => {
     expect(rest).toStrictEqual([other]);
   });
 
-  it("sessions.sign refuses a record whose sealed key is not the record id", () => {
+  it("sessions.sign refuses a record whose sealed key is not the record id", async () => {
     const dek = Secret.take(new Uint8Array(32).fill(7));
     const platform = {
       now: () => T0,
@@ -877,6 +915,8 @@ describe("session defense-in-depth checks", () => {
         name: "bot-1",
         validUntil: T0 + DAY,
         createdAt: T0,
+        limits: { notional: "10", maxLeverage: 1, assets: [0] },
+        spent: "0",
       }),
       new Uint8Array(EVM_SECRET), // authentic seal — the key inside is not `wrongId`
     );
@@ -884,9 +924,10 @@ describe("session defense-in-depth checks", () => {
       platform,
       image: imageOf(record),
       session: { require: () => ({ dek }) },
-    } as unknown as Parameters<typeof signSession>[0];
-    expect((): unknown =>
-      signSession(
+    } as unknown as Parameters<ReturnType<typeof signSession>>[0];
+    /* Opened so the check under test — not the approval gate — is what fails. */
+    await expect(
+      signSession(new Set([wrongId]))(
         ctx,
         {
           scheme: SCHEME,
@@ -903,7 +944,7 @@ describe("session defense-in-depth checks", () => {
         },
         "00".repeat(16),
       ),
-    ).toThrow("session key does not match its record");
+    ).rejects.toThrow("session key does not match its record");
   });
 });
 
@@ -1154,6 +1195,8 @@ describe("unknown schemes stay inert", () => {
         name: "future",
         validUntil: T0 + DAY,
         createdAt: T0,
+        limits: null,
+        spent: "0",
       },
     ]);
 
@@ -1297,10 +1340,14 @@ describe("ApproveAgent binding", () => {
         factor: DEVICE,
       }),
     );
+    const session = strField(res, "session");
+    /* A device-factor vault is app-lock-off: a value-moving session refuses everything until the
+       lock is on — the ceremony below is what these tests run under. */
+    ok(await h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, session));
     return {
       h,
       fk,
-      session: strField(res, "session"),
+      session,
       walletId: strField(field(res, "wallet"), "walletId"),
     };
   }
@@ -1308,7 +1355,7 @@ describe("ApproveAgent binding", () => {
   it("a locally held agent renders the held line and signs", async () => {
     const { h, fk, session, walletId } = await keystoreSetup();
     const validUntil = T0 + 180 * DAY;
-    const agent = await createSession(h, session, walletId, { validUntil });
+    const agent = await createSession(h, session, walletId, { validUntil, verify: HARDWARE });
     ok(
       await h.call(
         "chain.sign",
@@ -1346,7 +1393,7 @@ describe("ApproveAgent binding", () => {
   it("a record that disagrees with the approval is refused", async () => {
     const { h, session, walletId } = await keystoreSetup();
     const validUntil = T0 + 180 * DAY;
-    const agent = await createSession(h, session, walletId, { validUntil });
+    const agent = await createSession(h, session, walletId, { validUntil, verify: HARDWARE });
     for (const name of [
       "bot-1", // right name, missing the expiry the record holds
       `bot-1 valid_until ${validUntil + 1}`, // wrong expiry

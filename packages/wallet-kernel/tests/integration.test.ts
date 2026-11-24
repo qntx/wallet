@@ -2554,6 +2554,30 @@ describe("live-state reconciliation across kernels", () => {
 });
 
 describe("request structure", () => {
+  it("answers a request carrying an unknown envelope field with integrity", async () => {
+    const h = createHarness();
+    await h.settle();
+    const res = await h.sendRaw({ v: 3, id: 1, method: "status", params: null, extra: 1 });
+    expect(errCode(res)).toBe("integrity");
+  });
+
+  it("answers a request on a non-plain object with integrity", async () => {
+    const h = createHarness();
+    await h.settle();
+    // A prototype the structured-clone boundary can never produce. The refusal answers under the
+    // unattributed id because the envelope is refused before its id field is trusted, so sendRaw
+    // would wait on id 7 forever — inspect the posted replies instead.
+    const raw = Object.assign(Object.create({ sentinel: true }), {
+      v: 3,
+      id: 7,
+      method: "status",
+      params: null,
+    });
+    void h.sendRaw(raw);
+    await h.settle();
+    expect(h.posted.at(-1)).toMatchObject({ id: 0, err: { code: "integrity" } });
+  });
+
   /**
    * A depth-64 binary DAG: every level shares one live array as both children, so a validator that
    * re-walks shared references would take 2^64 steps on a value under 1 KiB on the wire.

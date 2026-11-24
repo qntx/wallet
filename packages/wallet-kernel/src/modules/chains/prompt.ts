@@ -43,8 +43,15 @@ import { tronContractType } from "@qntx/wallet-chains/tron";
 
 import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt } from "../../platform.ts";
-import { formatUnits, joinLines } from "../../prompts.ts";
-import type { PromptLocale } from "../../prompts.ts";
+import {
+  codePoints,
+  formatUnits,
+  joinLines,
+  promptFits,
+  utcDate,
+  utcDateTime,
+} from "../../prompts.ts";
+import type { PromptBound, PromptLocale } from "../../prompts.ts";
 
 export type PromptIntent = Pick<
   DisplayIntent,
@@ -106,6 +113,7 @@ type Catalog = {
   readonly externalInputs: string;
   readonly solanaPrograms: (ids: string) => string;
   readonly solanaProgramsWarning: string;
+  readonly solanaLookupTable: string;
   readonly programAuthority: (program: string, sol: boolean) => string;
   readonly programAuthorityAccounts: (program: string, items: ReadonlyArray<string>) => string;
   readonly programAuthorityYours: (symbol: string, address: string) => string;
@@ -136,6 +144,7 @@ type Catalog = {
   readonly tokenInSet: (token: string, root: string) => string;
   readonly zoneRestriction: (zone: string) => string;
   readonly moreItems: (count: number) => string;
+  readonly moreLines: (count: number) => string;
   readonly orderHeader: (name: string, maker: string) => string;
   readonly orderGiveAtMost: (amount: string) => string;
   readonly orderReceiveAtLeast: (recipient: string, amount: string) => string;
@@ -307,6 +316,7 @@ const zh: Catalog = {
   externalInputs: "包含其他签名者的输入；无法核实手续费",
   solanaPrograms: (ids) => `钱包无法解码的程序调用：${ids}`,
   solanaProgramsWarning: "这些程序可以转移本交易涉及账户中的资产",
+  solanaLookupTable: "提示点名的账户来自地址查找表，本设备无法核实其身份",
   programAuthority: (program, sol) =>
     sol
       ? `程序 ${program} 获得本账户的签名：可以转走本账户的全部 SOL`
@@ -342,6 +352,7 @@ const zh: Catalog = {
   tokenInSet: (token, root) => `${token} 中 Merkle 根 ${root} 所列的代币`,
   zoneRestriction: (zone) => `区域合约 ${zone} 可限制或取消此订单`,
   moreItems: (count) => `… 还有 ${count} 项未显示`,
+  moreLines: (count) => `… 还有 ${count} 行未显示`,
   orderHeader: (name, maker) => `${name} 订单，挂单方 ${maker}`,
   orderGiveAtMost: (amount) => `最多付出 ${amount}`,
   orderReceiveAtLeast: (recipient, amount) => `${recipient} 至少收到 ${amount}`,
@@ -617,6 +628,8 @@ const en: Catalog = {
   externalInputs: "Includes inputs from other signers; the fee cannot be verified",
   solanaPrograms: (ids) => `Program calls the wallet cannot decode: ${ids}`,
   solanaProgramsWarning: "These programs can move assets from the accounts in this transaction",
+  solanaLookupTable:
+    "An account this prompt would name is loaded from an address lookup table the device cannot verify",
   programAuthority: (program, sol) =>
     sol
       ? `Program ${program} receives this account's signature: it can move ALL SOL in this account`
@@ -654,6 +667,7 @@ const en: Catalog = {
   tokenInSet: (token, root) => `a token of ${token} from the set with Merkle root ${root}`,
   zoneRestriction: (zone) => `Zone ${zone} can restrict or cancel this order`,
   moreItems: (count) => `… ${count} more items not shown`,
+  moreLines: (count) => `… ${count} more lines not shown`,
   orderHeader: (name, maker) => `${name} order by ${maker}`,
   orderGiveAtMost: (amount) => `Give at most ${amount}`,
   orderReceiveAtLeast: (recipient, amount) => `${recipient} receives at least ${amount}`,
@@ -918,7 +932,7 @@ const en: Catalog = {
   fiat24SessionBearer: (date) =>
     `A bearer grant for the Fiat24 account of the signing address, valid until ${date} (UTC)`,
   fiat24SessionPower:
-    "Until then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords",
+    "Until then, the holder can read your Fiat24 profile, contact data and card details, and create or change cards, payees and your email — the card one-time-password channel",
   fiat24SessionSigns: (message) => `Signs: ${message}`,
   clearApproval: (asset, id) => `Clear the approval on ${asset} #${id}`,
   delegateRevoked: (account) => `Revoke the delegate of token account ${account}`,
@@ -939,26 +953,6 @@ export function formatAmount(catalog: Catalog, amount: AssetAmount): string {
     ? catalog.unverifiedToken(amount.amount, amount.asset)
     : `${formatUnits(amount.amount, amount.decimals)} ${amount.symbol ?? amount.asset}`;
 }
-
-/** `YYYY-MM-DD` of a Unix-seconds instant in UTC (civil-from-days; no `Date` in the enclave). */
-function utcDate(seconds: number): string {
-  const z = Math.floor(seconds / 86_400) + 719_468;
-  const era = Math.floor(z / 146_097);
-  const doe = z - era * 146_097;
-  const yoe = Math.floor(
-    (doe - Math.floor(doe / 1460) + Math.floor(doe / 36_524) - Math.floor(doe / 146_096)) / 365,
-  );
-  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
-  const mp = Math.floor((5 * doy + 2) / 153);
-  const day = doy - Math.floor((153 * mp + 2) / 5) + 1;
-  const month = mp < 10 ? mp + 3 : mp - 9;
-  const year = yoe + era * 400 + (month <= 2 ? 1 : 0);
-  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-/** `YYYY-MM-DD HH:MM` of a Unix-seconds instant in UTC (no `Date` in the enclave). */
-const utcDateTime = (seconds: number): string =>
-  `${utcDate(seconds)} ${String(Math.floor(seconds / 3600) % 24).padStart(2, "0")}:${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}`;
 
 /** The network's display name: the registry name, a generic EVM label, or the raw CAIP-2 id. */
 const networkLabel = (catalog: Catalog, id: string): string => {
@@ -1224,8 +1218,13 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
                title carries the refusal reason, the program list is what the signature reaches. */
             intent.family === "solana" && intent.verifiability === "opaque"
             ? [
-                catalog.solanaPrograms((intent.programs ?? []).join(", ")),
-                catalog.solanaProgramsWarning,
+                ...(intent.blind === "lookup-table-account" ? [catalog.solanaLookupTable] : []),
+                ...(intent.programs === undefined || intent.programs.length === 0
+                  ? []
+                  : [
+                      catalog.solanaPrograms(intent.programs.join(", ")),
+                      catalog.solanaProgramsWarning,
+                    ]),
               ]
             : [];
   const warnings = intent.warnings ?? [];
@@ -1818,4 +1817,44 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
   return intent.message === undefined
     ? transactionPrompt(catalog, intent)
     : messagePrompt(catalog, intent, intent.message);
+}
+
+/**
+ * The rendered prompt bounded to what the platform's verification dialog can show. An over-long
+ * prompt counts as blind — the caller gates `oversize` like a decoder blind reason — and the
+ * returned prompt shows the blind title with the longest whole-line prefix that leaves room for one
+ * closing "more lines not shown" line: the kernel truncates, never the OS.
+ */
+export function boundChainPrompt(
+  locale: PromptLocale,
+  intent: PromptIntent,
+  bound: PromptBound,
+): { readonly prompt: KeystorePrompt; readonly oversize: boolean } {
+  return boundPrompt(locale, chainPrompt(locale, intent), bound);
+}
+
+/**
+ * The same bound applied to a rendered prompt from outside the chains module (Spark approvals share
+ * the blind rendering: the chains catalog owns the blind title and the count line).
+ */
+export function boundPrompt(
+  locale: PromptLocale,
+  rendered: KeystorePrompt,
+  bound: PromptBound,
+): { readonly prompt: KeystorePrompt; readonly oversize: boolean } {
+  const catalog = CATALOGS[locale];
+  if (promptFits(rendered, bound)) {
+    return { prompt: rendered, oversize: false };
+  }
+  const lines = rendered.description.split("\n");
+  /* At least one line is withheld, so the closing line always counts down from a nonzero
+     remainder; a single over-long line leaves the closing line alone. */
+  let keep = Math.min(lines.length - 1, bound.lines - 1);
+  for (;;) {
+    const candidate = joinLines([...lines.slice(0, keep), catalog.moreLines(lines.length - keep)]);
+    if (keep === 0 || codePoints(candidate) <= bound.characters) {
+      return { prompt: { title: catalog.blindTitle, description: candidate }, oversize: true };
+    }
+    keep -= 1;
+  }
 }

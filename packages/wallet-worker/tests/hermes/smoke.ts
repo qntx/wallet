@@ -194,6 +194,7 @@ function boot(store: ReturnType<typeof createMemoryStore>): Kernel {
     keystore: undefined,
     passkey: undefined,
     card: undefined,
+    secureInput: undefined,
     now: () => 1_700_000_000_000,
     elapsed: () => 0,
     // The session's idle/max timers simply never fire in this smoke — no ambient clock advances.
@@ -556,6 +557,7 @@ export async function main(): Promise<void> {
     // reaches a factor ceremony, so only the shape is needed.
     keystore: {
       locale: "en",
+      platform: "ios",
       seal: () => undefined,
       open: () => undefined,
       authenticate: () => undefined,

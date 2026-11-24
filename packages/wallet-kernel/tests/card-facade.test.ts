@@ -151,7 +151,8 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card(wallet) facade end to end", ()
     const reader = testCardReader();
     const input = testSecureInput();
     const h = createHarness({
-      card: { reader: reader.reader, secureInput: input.secureInput, anchors: [CA1_ANCHOR] },
+      card: { reader: reader.reader, anchors: [CA1_ANCHOR] },
+    secureInput: input.secureInput,
     });
     // Every frame crossing hostPort in either direction — the leak scan asserts none
     // carries access-code bytes, per-card access hashes, drawn entropy or seed material.

@@ -427,4 +427,8 @@ std::string keystoreLocale() {
   return language == nil ? "en" : std::string(language.UTF8String);
 }
 
+std::string keystorePlatform() {
+  return "ios";
+}
+
 } // namespace qntx

@@ -4,8 +4,8 @@ import { resolve } from "node:path";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { decodeEvm } from "../src/evm/index.ts";
-import { isBlindIntent, messageBlindReason, messageContent } from "../src/index.ts";
+import { decodeEvm, normalizeEvm } from "../src/evm/index.ts";
+import { ChainError, isBlindIntent, messageBlindReason, messageContent } from "../src/index.ts";
 import type { DisplayIntent, SignRequest } from "../src/index.ts";
 import { decodeSolana } from "../src/solana/index.ts";
 import { decodeTron } from "../src/tron/decode.ts";
@@ -26,7 +26,11 @@ const vectors = JSON.parse(
     resolve(import.meta.dirname, "../../../vectors/chains/signing-classes.json"),
     "utf8",
   ),
-) as { signers: { evm: string; tron: string; solana: string }; cases: VectorCase[] };
+) as {
+  signers: { evm: string; tron: string; solana: string };
+  cases: VectorCase[];
+  rejected: ReadonlyArray<{ name: string; request: SignRequest; error: string }>;
+};
 
 /** Rehydrates the JSON-only request forms (`$bytes`, parsed typed-data doc). */
 const request = (v: VectorCase): SignRequest => {
@@ -104,5 +108,16 @@ describe("signing-classes vectors", () => {
     expect(intent.verifiability).toBe(v.verifiability);
     expect(blindOf(intent)).toBe(v.blind);
     expect(isBlindIntent(intent)).toBe(v.blind !== null);
+  });
+
+  it.each(vectors.rejected)("$name is refused as $error", (v) => {
+    let thrown: unknown;
+    try {
+      normalizeEvm(v.request);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ChainError);
+    expect((thrown as ChainError).code).toBe(v.error);
   });
 });

@@ -86,7 +86,7 @@ type AssetFlow = {
 };
 
 // @public
-type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination" | "fiat24-function" | "fiat24-session-grant";
+type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "lookup-table-account" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination" | "fiat24-function" | "fiat24-session-grant";
 
 // @public (undocumented)
 export const BUILT_IN_NETWORKS: ReadonlyArray<NetworkMeta>;

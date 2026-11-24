@@ -88,15 +88,17 @@ describe("broadcastOutcome", () => {
     expect(outcome.kind).toBe("refused");
   });
 
-  it("a refused verdict stays refused when the lookup fails", async () => {
+  it("a refused verdict is unknown when the lookup fails", async () => {
+    const sendError = new Error("nonce too low");
     const outcome = await broadcastOutcome(
       attempt({
-        send: async () => Promise.reject(new Error("nonce too low")),
+        send: async () => Promise.reject(sendError),
         verdict: () => "refused",
         known: async () => Promise.reject(new Error("lookup down")),
       }),
     );
-    expect(outcome.kind).toBe("refused");
+    // The refusal may still be a landed duplicate — the transaction keeps tracking by id.
+    expect(outcome).toStrictEqual({ kind: "unknown", error: sendError });
   });
 });
 

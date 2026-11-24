@@ -21,6 +21,8 @@ export async function sessionKeys(wallet: Wallet, walletId: string): Promise<Ses
     scope: "Mainnet",
     name: "bot-1",
     validUntil: Date.now() + 180 * 86_400_000,
+    limits: { notional: "1000", maxLeverage: 10, assets: [0] },
+    verify: { kind: "hardware" },
   });
   const listed = await api.list();
   const agents = listed.filter((s) => s.supported && s.scheme === "hyperliquid-l1-agent");

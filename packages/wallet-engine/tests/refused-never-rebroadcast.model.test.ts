@@ -9,6 +9,7 @@ import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
 import { BroadcastRefusedError } from "../src/transactions/broadcast.ts";
+import type { TrackedTransaction } from "../src/transactions/route.ts";
 import { txRowPut } from "./send-helpers.ts";
 import type { Booted, RefusedRig } from "./support/refused-worlds.ts";
 import { POLL_MS, refusedRigs } from "./support/refused-worlds.ts";
@@ -51,6 +52,8 @@ type Scenario = {
   family: keyof typeof refusedRigs;
   lockedAtRefusal: boolean;
   failWrites: number;
+  /** The does-the-network-know-this-id lookup fails: the refusal is ambiguous, never terminal. */
+  lookupFail: boolean;
   restart: "unlock" | "reboot" | "both";
   polls: number;
 };
@@ -59,6 +62,7 @@ const scenario: fc.Arbitrary<Scenario> = fc.record({
   family: fc.constantFrom("evm", "bitcoin", "solana", "tron"),
   lockedAtRefusal: fc.boolean(),
   failWrites: fc.integer({ min: 0, max: 3 }),
+  lookupFail: fc.boolean(),
   restart: fc.constantFrom("unlock", "reboot", "both"),
   polls: fc.integer({ min: 2, max: 5 }),
 });
@@ -70,6 +74,7 @@ const runScenario = async (s: Scenario): Promise<void> => {
     rig.bomb.fail = failFailedWrites(s.failWrites);
   }
   rig.refuse();
+  rig.failLookups(s.lookupFail);
   const sendRefused = s.lockedAtRefusal ? gatedSend(rig, first) : rig.send(first);
   if (s.lockedAtRefusal) {
     await until(
@@ -79,8 +84,16 @@ const runScenario = async (s: Scenario): Promise<void> => {
     first.ctl.lock();
     rig.releaseSendGate();
   }
-  // The caller has now seen the refusal; from here on the invariant applies.
-  await expect(sendRefused).rejects.toThrow(BroadcastRefusedError);
+  let ambiguous: TrackedTransaction | undefined;
+  if (s.lookupFail) {
+    /* The caller has now seen the refusal, but the lookup that would have told a landed
+       duplicate from a real rejection itself failed: the outcome is ambiguous, so the
+       transaction stays `submitted` and is tracked by id — never marked failed. */
+    ambiguous = await sendRefused;
+  } else {
+    // The caller has now seen the refusal; from here on the invariant applies.
+    await expect(sendRefused).rejects.toThrow(BroadcastRefusedError);
+  }
   const refusedRaw = rig.nodePosts.at(-1);
   expect(refusedRaw).toBeDefined();
 
@@ -93,6 +106,7 @@ const runScenario = async (s: Scenario): Promise<void> => {
     live = await rig.boot();
   }
 
+  rig.failLookups(false);
   rig.accept();
   const sibling = await rig.sendSibling(live);
   const postsAtRefusal = rig.nodePosts.length;
@@ -101,8 +115,17 @@ const runScenario = async (s: Scenario): Promise<void> => {
     await live.timers.fire(POLL_MS);
   }
 
-  const reposts = rig.nodePosts.filter((p) => p === refusedRaw).length;
-  expect(reposts, `${s.family}: refused bytes broadcast ${String(reposts)} times in total`).toBe(1);
+  if (ambiguous === undefined) {
+    const reposts = rig.nodePosts.filter((p) => p === refusedRaw).length;
+    expect(reposts, `${s.family}: refused bytes broadcast ${String(reposts)} times in total`).toBe(
+      1,
+    );
+  } else {
+    /* An ambiguous refusal is never written `failed`: the row keeps tracking by id through every
+       restart — resubmitting the same bytes then is the tracker's job, not a double-send. */
+    const tracked = live.ctl.getState().txs[ambiguous.id];
+    expect(tracked !== undefined && LIVE.has(tracked.state)).toBe(true);
+  }
   const row = live.ctl.getState().txs[sibling.id];
   expect(row !== undefined && LIVE.has(row.state)).toBe(true);
   expect(live.timers.armed(POLL_MS)).toBeGreaterThanOrEqual(1);
@@ -110,7 +133,7 @@ const runScenario = async (s: Scenario): Promise<void> => {
 };
 
 /** A send whose rejection never goes unhandled while it is held at the broadcast gate. */
-const gatedSend = async (rig: RefusedRig, first: Booted): Promise<unknown> => {
+const gatedSend = async (rig: RefusedRig, first: Booted): Promise<TrackedTransaction> => {
   rig.armSendGate();
   const sent = rig.send(first);
   void sent.catch(() => undefined);

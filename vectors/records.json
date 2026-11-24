@@ -90,9 +90,21 @@
         "scope": "Mainnet",
         "name": "bot-1",
         "validUntil": 1782777600000,
-        "createdAt": 1767225600000
+        "createdAt": 1767225600000,
+        "limits": {
+          "notional": "10000",
+          "maxLeverage": 25,
+          "assets": [
+            0,
+            1,
+            2,
+            3,
+            10007
+          ]
+        },
+        "spent": "0"
       },
-      "text": "{\"scheme\":\"hyperliquid-l1-agent\",\"walletId\":\"0011223344556677\",\"groupIndex\":0,\"owner\":\"0x9858EfFD232B4033E47d90003D41EC34EcaEda94\",\"scope\":\"Mainnet\",\"name\":\"bot-1\",\"validUntil\":1782777600000,\"createdAt\":1767225600000}"
+      "text": "{\"scheme\":\"hyperliquid-l1-agent\",\"walletId\":\"0011223344556677\",\"groupIndex\":0,\"owner\":\"0x9858EfFD232B4033E47d90003D41EC34EcaEda94\",\"scope\":\"Mainnet\",\"name\":\"bot-1\",\"validUntil\":1782777600000,\"createdAt\":1767225600000,\"limits\":{\"notional\":\"10000\",\"maxLeverage\":25,\"assets\":[0,1,2,3,10007]},\"spent\":\"0\"}"
     },
     {
       "name": "session-key-unknown",

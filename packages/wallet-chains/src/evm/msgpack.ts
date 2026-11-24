@@ -1,18 +1,8 @@
-/**
- * Minimal MessagePack writer — only what the Hyperliquid L1 action hash needs: ints in the smallest
- * form, UTF-8 strings, booleans, arrays, and maps whose entries arrive already ordered (map key
- * order is semantic — it changes the phantom-agent connectionId).
- *
- * Byte-for-byte compatible with the encoder nktkas uses
- * (https://raw.githubusercontent.com/denoland/std/main/msgpack/encode.ts) and with python
- * `msgpack.packb` defaults: positive fixint/uint8/16/32/64, negative fixint/int8/16/32/64,
- * fixstr/str8/16/32, fixarray/array16, fixmap/map16. Numbers ≥ 2^32 or < −2^31 go through BigInt
- * exactly like @std/msgpack's integer path.
- *
- * `@std/msgpack` is deliberately not a dependency: it is a JSR package outside the workspace, and
- * its `encode` iterates an object's own keys — the hash would then follow the host's JSON key
- * order, exactly what must not happen.
- */
+/* Minimal MessagePack writer — only what the Hyperliquid L1 action hash needs, byte-for-byte
+   compatible with @std/msgpack (denoland/std encode.ts) and python `msgpack.packb` defaults.
+   `@std/msgpack` is deliberately not a dependency: it is a JSR package outside the workspace, and
+   its `encode` iterates an object's own keys — the hash would then follow the host's JSON key
+   order, exactly what must not happen. */
 import { ChainError } from "../index.ts";
 
 const utf8 = new TextEncoder();
@@ -123,10 +113,8 @@ export function packArray(items: ReadonlyArray<Uint8Array>): Uint8Array {
   return concat(head, ...items);
 }
 
-/**
- * Entries arrive already in encoding order — the caller spells the schema's key order out
- * literally; this writer never iterates an object.
- */
+/* Entries arrive already in encoding order — the caller spells the schema's key order literally;
+   this writer never iterates an object. */
 export function packMap(entries: ReadonlyArray<readonly [string, Uint8Array]>): Uint8Array {
   const head =
     entries.length < 16

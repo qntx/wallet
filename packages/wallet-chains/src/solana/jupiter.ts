@@ -1,7 +1,6 @@
 import { getU16Decoder, getU32Decoder, getU64Decoder } from "@solana/codecs";
 
-import type { ParsedSolanaMessage } from "./message.ts";
-import { resolveAccountIndex } from "./message.ts";
+import type { NamedAccounts } from "./message.ts";
 
 /** Jupiter's swap program — recognised by program id like Lido's upgradeable proxies. */
 export const JUPITER_PROGRAM = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
@@ -45,14 +44,13 @@ const withinSlippage = (swap: JupiterSwap): JupiterSwap | undefined =>
  * route steps themselves stay opaque — the intent only shows the inputs and the floor.
  */
 export const decodeJupiterIx = (
-  parsed: ParsedSolanaMessage,
   ix: { readonly accountIndices: ReadonlyArray<number>; readonly data: Uint8Array },
-  lookups: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }> | undefined,
+  named: NamedAccounts,
 ): JupiterSwap | undefined => {
   const { data } = ix;
   const account = (i: number): string | undefined => {
     const index = ix.accountIndices[i];
-    return index === undefined ? undefined : resolveAccountIndex(parsed, index, lookups);
+    return index === undefined ? undefined : named.at(index);
   };
   const accountAt = (i: number): string => account(i) ?? "";
   const planWellFormed = (offset: number): boolean => {

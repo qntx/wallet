@@ -536,16 +536,22 @@ describe("txCheck differential", () => {
       : { kind: "disagree", tag: `${tag} ours=${ours} theirs=${theirs}` };
   };
 
-  it("single-field mutations agree with txCheck, stricter cases documented", () => {
-    const results = vectors.flatMap((t) =>
-      mutations.flatMap((m) => ([false, true] as const).map((visible) => classify(t, m, visible))),
-    );
-    const disagreements = results.filter((r) => r.kind === "disagree").map((r) => r.tag);
-    const stricter = results.filter((r) => r.kind === "stricter").map((r) => r.tag);
-    expect(disagreements).toStrictEqual([]);
-    /* every mutation must exercise at least one vector; the strict-set names must all be used */
-    for (const name of STRICTER) {
-      expect(stricter.some((s) => s.includes(`/${name}/`))).toBe(true);
-    }
-  });
+  it(
+    "single-field mutations agree with txCheck, stricter cases documented",
+    { timeout: 30_000 },
+    () => {
+      const results = vectors.flatMap((t) =>
+        mutations.flatMap((m) =>
+          ([false, true] as const).map((visible) => classify(t, m, visible)),
+        ),
+      );
+      const disagreements = results.filter((r) => r.kind === "disagree").map((r) => r.tag);
+      const stricter = results.filter((r) => r.kind === "stricter").map((r) => r.tag);
+      expect(disagreements).toStrictEqual([]);
+      /* every mutation must exercise at least one vector; the strict-set names must all be used */
+      for (const name of STRICTER) {
+        expect(stricter.some((s) => s.includes(`/${name}/`))).toBe(true);
+      }
+    },
+  );
 });

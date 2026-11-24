@@ -22,7 +22,7 @@ silent `device` factor and an optional app lock. TRON joins EVM, Solana and Bitc
 chain family, the EVM table grows to 41 mainnets, and Solana v1 transactions are supported.
 The engine adds fiat prices, per-group activity history, Bitcoin coin control, Spark tokens,
 WalletConnect, and opt-in apps (Hyperliquid, Polymarket) whose L1 actions are signed by
-kernel-held session keys. Signing is split into plan → backend → assemble. The qntx card wallet is
+kernel-held session keys metered against limits the owner approved. Signing is split into plan → backend → assemble. The qntx card wallet is
 not usable yet: only its experimental native groundwork ships.
 
 Upgrading is not data-preserving. Vaults written by 0.13.0 (format 3) are `unsupported` and must
@@ -182,6 +182,27 @@ Engine options, facades and the in-app browser:
   message; `BrowserBridge.message` must receive the URL of the frame that sent it
   (react-native-webview 13.13.5 or later). `BrowserBridgeOptions` requires a `tron` handler
   (`engine.tronWallet`). (MIGRATION §2, §17)
+
+Session keys, apps and native factors:
+
+- `@qntx/wallet/sessions`: a `hyperliquid-l1-agent` session is approved and metered.
+  `sessions.create` takes the scheme's `limits` (`HyperliquidAgentLimits` — a notional budget, a
+  `maxLeverage` cap and an asset allow-list of ids 0..99999) and a `verify` factor, and the new
+  `sessions.open(address, verify)` re-approves it after every lock; `sessions.sign` on an
+  unopened session answers `approval-required`, an order outside the approved bounds
+  `limit-exceeded`, and create, open and sign all answer `app-lock-required` while a React Native
+  vault still holds its `device` factor (app lock off). `SessionInfo` gains `limits` and `spent`.
+  (MIGRATION §31)
+- `@qntx/wallet-engine/apps/hyperliquid`: `enable` and `renew` take `{ limits, verify }`
+  (`HyperliquidEnableInput`), and `provider.reopen(group, verify)` re-opens the agent session in
+  the kernel. `HyperliquidErrorCategory` gains `reopen-required`, `app-lock-required` and
+  `limit-exceeded`. `trade.twap` and `actions.twap` are removed — a TWAP's slices carry no price
+  the kernel can meter (`trade.twapCancel` stays). (MIGRATION §13, §31)
+- `@qntx/wallet`: `BackupFactorInput`'s password arm is `{ kind: "password"; password?: string }`
+  — on React Native the kernel collects the entry through `SecureInput` and a `password` field is
+  `unsupported`; on Web and Node it stays required. (MIGRATION §8, §30)
+- `@qntx/wallet-native`: the keystore contract gains the required `platform: "ios" | "android"`
+  — `bindNativeKeystore` rejects any other value. (MIGRATION §3)
 
 Assets, networks and Spark:
 
@@ -472,9 +493,10 @@ Gateway (operators):
   not capped on-chain. Near misses under the three domains are blind `typed-data-variant`.
 - Kernel prompts for every described Hyperliquid and Polymarket shape in English and Simplified
   Chinese.
-- `@qntx/wallet/protocol`: `sessions.create`, `sessions.list`, `sessions.delete` and
-  `sessions.sign`. Types: `SessionInfo`, `SessionSchemes`, `SessionSchemeId`, `HyperliquidL1Action`,
-  `HyperliquidL1Order`, `HyperliquidL1Params` and `HyperliquidNetwork`.
+- `@qntx/wallet/protocol`: `sessions.create`, `sessions.list`, `sessions.open`,
+  `sessions.delete` and `sessions.sign`. Types: `SessionInfo`, `SessionSchemes`, `SessionSchemeId`,
+  `HyperliquidAgentLimits`, `SESSION_SPENT`, `HyperliquidL1Action`, `HyperliquidL1Order`,
+  `HyperliquidL1Params` and `HyperliquidNetwork`.
 - Kernel: generic session keys. Each is a secp256k1 key generated in the enclave for one HD
   account and sealed as a `session-key` vault record. A session key is never exported or backed
   up, is deleted with its wallet, and belongs to a scheme from a compile-time table. A record whose
@@ -482,13 +504,17 @@ Gateway (operators):
   deleted, and it never makes the vault `unsupported`.
 - Kernel: the `hyperliquid-l1-agent` session scheme. It signs only the allow-listed L1 trading
   actions (`order`, `cancel`, `cancelByCloid`, `modify`, `batchModify`, `scheduleCancel`,
-  `updateLeverage`, `updateIsolatedMargin`, `twapOrder`, `twapCancel`). The kernel re-encodes each
+  `updateLeverage`, `updateIsolatedMargin`, `twapCancel`). The kernel re-encodes each
   action and computes the connectionId itself. It signs only while the vault is unlocked and before
   the session's `validUntil`. Each signature needs a nonce within 60 seconds of the kernel clock and
   an `expiresAfter` at most 60 seconds ahead. Hyperliquid rejects an action after its
   `expiresAfter`, so a signature can be submitted at most a minute after it was made, including
   after a lock. A `scheduleCancel` time must be at least 5 seconds out and within the session's
-  validity.
+  validity. Create and the new open command verify the owner and bind `limits` — a cumulative
+  notional budget, a leverage cap and an asset allow-list — into the record; every signed order
+  is charged against `spent` before the signature returns and out-of-bounds use is
+  `limit-exceeded`. On a keystore host whose vault holds the `device` factor (app lock off),
+  create, open and sign all answer `app-lock-required`.
 - Kernel: when `chain.sign` signs an `approveAgent`, it reports whether this wallet holds the agent
   as a `hyperliquid-l1-agent` session key. It refuses an approval whose terms differ from the held
   session's.
@@ -578,9 +604,10 @@ Gateway (operators):
   no-double-relay; TronGrid `/v1/accounts` indexer for history and discovery. New production
   secrets `TRONGRID_API_KEY`, `TATUM_API_KEY`. CoinGecko/DefiLlama price rows for TRX and TRC-20.
 - `@qntx/wallet/sessions`: `sessions(wallet)` exposes the kernel-held session keys (`create`,
-  `list`, `delete`, `sign`) the way `spark(wallet)` and `nostr(wallet)` expose their protocols.
-  `create` and `sign` are typed per scheme. `sign` verifies the kernel's answer: it rebuilds the scheme's
-  document and rejects `integrity` unless the session key signed it.
+  `list`, `open`, `delete`, `sign`) the way `spark(wallet)` and `nostr(wallet)` expose their
+  protocols. `create` and `sign` are typed per scheme; `create`/`open` take the `verify` factor the
+  kernel approves the session's `limits` under. `sign` verifies the kernel's answer: it rebuilds
+  the scheme's document and rejects `integrity` unless the session key signed it.
 - `@qntx/wallet-engine/apps`: a separate entry (hosts that do not import it bundle nothing new).
   `createApps({ wallet, requests, networks, fetch, socket, now, setTimer, random, logger, openStore,
   gateway, apps: [hyperliquid(…), polymarket(…)] })` returns `controller` (an `AppsController` typed by
@@ -598,10 +625,12 @@ Gateway (operators):
   - `HyperliquidProvider`: market and account reads, live views (order book, trades, candles,
     account, spot balances, open orders, fills) with reconnect, resubscribe and stale marking,
     order placement (limit, market with a computed slippage cap, stop/take-profit, attached and
-    position TP/SL, reduce-only, post-only, TWAP), modify, cancel, cancel-all, scheduled cancel,
-    leverage, isolated margin, close position, perp↔spot transfers, `usdSend`, `spotSend`,
+    position TP/SL, reduce-only, post-only), modify, cancel, cancel-all, scheduled cancel, TWAP
+    cancel, leverage, isolated margin, close position, perp↔spot transfers, `usdSend`, `spotSend`,
     `withdraw3`, and USDC deposits from Arbitrum through CCTP (`depositForBurnWithHook` to the
     account's own perps or spot balance, after an exact USDC approval when the allowance is short).
+    `reopen(group, verify)` re-approves the agent session in the kernel after a lock — the prompt
+    restates the approved limits and the remaining budget.
   - L1 actions are signed by the account's own kernel-held agent without a per-order prompt;
     user-signed actions go through the request pipeline as kernel-described typed data. A lost
     order POST is reconciled by client order id and never re-sent.
@@ -850,8 +879,9 @@ Gateway (operators):
   wired into the kernel as `KernelPlatform.card` (reader, secure input and certificate anchors).
 - `@qntx/wallet-native/secure-input`: the `SecureInput` Nitro host component. The main runtime can
   mount and size it and receives only `idle | empty | filled | submitted`; the kernel decides
-  whether it collects an access code (masked, printable ASCII, ≤ 64) or a short ID (8 hex digits)
-  and which label it shows. The field is editable only while a kernel request is pending, takes
+  whether it collects an access code (masked, printable ASCII, ≤ 64), a short ID (8 hex digits)
+  or the backup password (`backup-password` — how the kernel collects it on React Native) and
+  which label it shows. The field is editable only while a kernel request is pending, takes
   focus and raises the keyboard on that request, has no edit menu (no paste, copy or cut), is
   excluded from autofill, and on Android sets `FLAG_SECURE` while an access code is being typed.
 - **qntx card wallets** (React Native). A wallet's seed can live only on one to three qntx cards:
@@ -1185,6 +1215,10 @@ Gateway (operators):
   primitive is a compare-and-swap (`__qntx.file.replace`); `__qntx.file.write` and
   `__qntx.frames.onIntegrityViolation` are removed. The Spark native backend's ABI version is
   checked when the kernel starts. Kernel crash reasons stay out of public system logs.
+- `@qntx/wallet`: every kernel prompt shown through the keystore is bound to the platform it
+  reports (`PROMPT_BOUNDS`: iOS 8 lines / 400 code points, Android a 60-code-point title and 12
+  lines / 640 code points); a prompt that cannot fit shows the blind title and a line counting
+  the withheld lines — never clipped text.
 - NIP-07 asks for confirmation of every replaceable (10000–19999), addressable (30000–39999) and
   ephemeral (20000–29999) event kind and of kinds 0, 3 and 5, whatever the origin's policy.
 - `@qntx/wallet-engine`: the injected `setTimer` is one-shot (`setTimeout` semantics); polling
@@ -1342,6 +1376,11 @@ Gateway (operators):
 - `@qntx/wallet-engine`: the account tree skips seed-bound services for `custody !== "vault"`
   wallets — `discoverSpark`/`refreshTotals`/`driveSpark` never touch Spark, a `device-required`
   family counts as unused rather than an error — and meta sync signs only for vault wallets.
+- Docs: `docs/incident-response.md`, `docs/device-checklist.md` and `apps/gateway/OPERATIONS.md`
+  ship; SECURITY.md rewrites the threat model per attacker and platform and states the rule that
+  an upgrade never discards persisted user data from the first production release on. Fenced
+  TypeScript blocks in README.md, MIGRATION.md and every package/app README compile under
+  `bun run typecheck`.
 
 ### Fixed
 
@@ -1559,6 +1598,13 @@ Gateway (operators):
   the first sync overwrite the only cloud copy of that wallet.
 - A Web passkey restore asserts with the envelope's credential ids, not the destination vault's
   (a fresh vault has none, so the ceremony failed).
+- `@qntx/wallet-engine`: a refused broadcast whose follow-up lookup of whether the network
+  holds the bytes itself fails resolves `unknown`, not `failed` — the row stays `submitted`
+  instead of latching a refusal that invites a paying retry.
+- `@qntx/wallet`: a zh-Hant locale tag or a Traditional region (zh-TW, zh-HK, zh-MO) no longer
+  gets Simplified-Chinese verification prompts — the tag parses as BCP-47 (an explicit script
+  maps Hans to zh-Hans and anything else to English; without one, TW/HK/MO map to English, else
+  zh-Hans).
 
 ### Security
 
@@ -1573,6 +1619,27 @@ Gateway (operators):
   wallet or retired backup key restored, blind signing re-enabled) and a zeroed password failure
   counter are detected through the vault anchor above, within the limits SECURITY.md lists per
   host.
+- `@qntx/wallet-kernel`: a stolen `hyperliquid-l1-agent` session key is bounded. Create and
+  re-open (`sessions.open`) need a fresh user verification and are refused `app-lock-required`
+  while the vault holds its `device` factor; every signature is metered against the approved
+  `limits` — cumulative notional budget, leverage cap, asset allow-list — and `spent` is committed
+  before the signature returns, so a compromised main runtime can trade at most up to the
+  remaining budget (the scheme signs only the allow-listed L1 actions and cannot withdraw). The
+  budget is the bound on loss: the kernel cannot know prices, so absurd spot prices in a thin
+  book can lose up to it.
+- `@qntx/wallet-kernel` + `@qntx/wallet-native`: the backup password is collected inside the
+  kernel runtime through `SecureInput` on React Native — the main runtime sees only
+  `idle | empty | filled | submitted`, never the characters; a compromised runtime can still draw
+  a look-alike field, which the kernel's own labels and the pending-request gate tell from the
+  real one (SECURITY.md).
+- `@qntx/wallet-chains/solana`: an account the prompt names that resolves through an address
+  lookup table is no longer shown as verified — a v0 signature binds only the compiled bytes
+  while the table contents are caller-supplied; any recorded table substitution makes the intent
+  blind `lookup-table-account`, and engine-built transactions pin named accounts back to static
+  metas so the prompt stays described.
+- `@qntx/wallet-chains`: an EIP-7702 authorization or `eip155` id with chain id 0 — the
+  chain-universal form that replays on every chain — is refused before any prompt, and only
+  canonical eip155 ids parse.
 - `@qntx/wallet-engine`: the price request no longer carries every family's assets under the
   `service` client id, which let the gateway link a wallet's per-family scopes by its asset set.
 - `@qntx/wallet`: `chains(wallet).sign` refuses a kernel result whose kind differs from the request's for every request kind (a Solana request previously accepted any result kind unchecked).

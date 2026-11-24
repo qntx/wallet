@@ -42,3 +42,7 @@ packages/wallet-engine/tests/browser/getwallets.js
 # SwiftPM build output (packages/wallet-native Package.swift is a test harness)
 .build/
 .swiftpm/
+
+# Generated fenced-block snippets (scripts/readme-blocks.ts)
+/tests/readme-blocks/*.ts
+/tests/readme-blocks/*.tsx

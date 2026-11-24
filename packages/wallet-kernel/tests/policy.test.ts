@@ -28,6 +28,7 @@ const platform: KernelPlatform = {
   keystore: undefined,
   passkey: undefined,
   card: undefined,
+  secureInput: undefined,
   backends: {
     spark: async () => {
       await Promise.resolve();

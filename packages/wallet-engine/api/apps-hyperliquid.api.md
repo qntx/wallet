@@ -261,10 +261,11 @@ type AppProvider<D extends AppDetail = Record<never, never>> = {
     readonly error: (category: "busy" | "unlock-required" | "unavailable" | "invalid-input", message: string) => Error;
     readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
     readonly reconcile: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
-    readonly enable: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
-    readonly renew: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
+    readonly enable: (group: AppGroup, flow: AppFlow<D>, input: unknown) => Promise<void>;
+    readonly renew: (group: AppGroup, flow: AppFlow<D>, input: unknown) => Promise<void>;
     readonly disable: (group: AppGroup, options: {
         readonly revoke: boolean;
+        readonly verify?: VerifyFactor;
     }, flow: AppFlow<D>) => Promise<void>;
     readonly cancel: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
     readonly authorities?: (group: AppGroup) => Promise<ReadonlyArray<AppAuthority>>;
@@ -860,6 +861,12 @@ export type HyperliquidErrorCategory = "network" |
 "unlock-required" |
 /** The enabled agent expired, was rejected by Hyperliquid, or is gone — re-enable is required. */
 "reauthorization-required" |
+/** The kernel session is closed since the last lock — `reopen` must verify the user again. */
+"reopen-required" |
+/** The vault has a device factor — the app lock must be on for a value-moving session. */
+"app-lock-required" |
+/** The action exceeds the agent's approved limits — the kernel refused to sign it. */
+"limit-exceeded" |
 /** The account has no enabled, owner-verified agent on this network. */
 "not-enabled" |
 /** The account has no Hyperliquid presence yet — a deposit must land before enabling. */
@@ -1006,6 +1013,7 @@ export type HyperliquidProvider = {
     readonly quote: HyperliquidQuote;
     readonly clock: HyperliquidClock;
     readonly approveBuilder: (group: HyperliquidGroup) => Promise<void>;
+    readonly reopen: (group: HyperliquidGroup, verify: VerifyFactor) => Promise<void>;
     readonly trade: HyperliquidTrade;
     readonly fund: HyperliquidFund;
     readonly transfer: {
@@ -1092,14 +1100,6 @@ export type HyperliquidTrade = {
     }>) => Promise<ReadonlyArray<HyperliquidCancelOutcome>>;
     readonly cancelAll: (group: HyperliquidGroup) => Promise<ReadonlyArray<HyperliquidCancelOutcome>>;
     readonly scheduleCancel: (group: HyperliquidGroup, time?: number) => Promise<HyperliquidActionOutcome>;
-    readonly twap: (group: HyperliquidGroup, params: {
-        readonly coin: string;
-        readonly side: "buy" | "sell";
-        readonly size: string;
-        readonly minutes: number;
-        readonly randomize: boolean;
-        readonly reduceOnly?: boolean;
-    }) => Promise<HyperliquidActionOutcome>;
     readonly twapCancel: (group: HyperliquidGroup, params: {
         readonly coin: string;
         readonly twapId: number;

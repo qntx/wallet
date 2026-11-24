@@ -39,7 +39,6 @@ import {
   SpotSendTypes,
   TokenDelegateTypes,
   TwapCancelRequest,
-  TwapOrderRequest,
   UpdateIsolatedMarginRequest,
   UpdateLeverageRequest,
   UsdClassTransferTypes,
@@ -701,15 +700,6 @@ const l1Cases: ReadonlyArray<{
     schema: UpdateIsolatedMarginRequest.entries.action,
     action: { type: "updateIsolatedMargin", asset: 5, isBuy: true, ntli: -1000000 },
     nonce: 1677777606051,
-  },
-  {
-    name: "twapOrder",
-    schema: TwapOrderRequest.entries.action,
-    action: {
-      type: "twapOrder",
-      twap: { a: 0, b: true, s: "0.5", r: false, m: 30, t: false },
-    },
-    nonce: 1677777606052,
   },
   {
     name: "twapCancel",

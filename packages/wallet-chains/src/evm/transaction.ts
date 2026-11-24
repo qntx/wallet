@@ -88,9 +88,9 @@ const accessList = (value: unknown): ReadonlyArray<EvmAccessListEntry> => {
   });
 };
 
-/** The EIP-155 part of a CAIP-2 `network` string, e.g. `eip155:1` → 1. */
+/** The EIP-155 part of a CAIP-2 `network` string, e.g. `eip155:1` → 1. Chain 0 does not exist. */
 export const networkChainId = (network: string): number => {
-  const match = /^eip155:(\d+)$/.exec(network);
+  const match = /^eip155:([1-9]\d*)$/.exec(network);
   const idPart = match?.[1];
   if (idPart === undefined) {
     throw new ChainError("chain-id-mismatch", `network is not an eip155 CAIP-2 id: ${network}`);
@@ -199,6 +199,12 @@ export const normalizeEvmTransaction = (tx: unknown): EvmTransaction => {
   }
   if (to === undefined) {
     throw new ChainError("invalid-request", "tx.to is required for eip7702");
+  }
+  if (chainId < 1) {
+    throw new ChainError(
+      "invalid-request",
+      "eip7702 chainId 0 is a chain-universal authorization and is never signed",
+    );
   }
   const auth = tx["authorization"];
   if (!isRecord(auth) || Object.keys(auth).length !== 1 || typeof auth["address"] !== "string") {

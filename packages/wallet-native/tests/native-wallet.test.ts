@@ -49,6 +49,7 @@ function fakeNativeKeystore() {
   const seal = (bytes: Uint8Array) => bytes.toReversed();
   const native: KernelKeystoreNative = {
     locale: "en-US",
+    platform: "ios",
     seal: (id, secret, _title, _description, done) => {
       const code = failures.shift() ?? (lockScreen ? undefined : "verification-unavailable");
       const sealed = seal(secret);
@@ -213,6 +214,7 @@ function platform(
     anchor: bindNativeAnchor(anchor),
     passkey: undefined,
     card: undefined,
+    secureInput: undefined,
     now: () => Date.now(),
     elapsed: () => performance.now(),
     setTimer: (ms, fn) => {
@@ -312,6 +314,13 @@ const boot = (
   startKernel(platform(store, keystore, anchor), createKernelPort(pipe));
   return host;
 };
+
+describe("bindNativeKeystore", () => {
+  it("rejects a keystore reporting an unknown platform at bind time", () => {
+    const raw = { ...fakeNativeKeystore().native, platform: "windows" };
+    expect(() => bindNativeKeystore(raw)).toThrow(/platform/);
+  });
+});
 
 describe("createNativeWallet", () => {
   it("rejects a non-native autoLock policy", async () => {

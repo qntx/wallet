@@ -33,6 +33,7 @@ export {
   type StatusPayload,
   type KeyInfo,
   type KeysApi,
+  type BackupFactorInput,
   type UnlockFactor,
   type VerifyFactor,
   type VaultApi,
