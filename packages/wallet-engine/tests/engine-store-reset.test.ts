@@ -15,6 +15,9 @@ import { WalletError } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 
 import { createWalletEngine } from "../src/engine.ts";
+import { qrSignRequest, readQrExport } from "../src/qr/counterpart.ts";
+import { readQrRequest } from "../src/qr/request.ts";
+import { qrSigner } from "../src/qr/signer.ts";
 import { createMemoryPublicStore } from "../src/store/memory.ts";
 import type { EngineCollection, EngineStore } from "../src/store/port.ts";
 import { keystoneIo, pairKeystone } from "./keystone-io.ts";
@@ -303,6 +306,161 @@ describe("engine collections across lock, unlock and reset", () => {
       ).toBe(true);
     } finally {
       release();
+      engine.unsubscribe();
+      await wallet.destroy();
+    }
+  }, 60_000);
+
+  it("a reset ends a pending QR request and the new vault's store has no qr-linked watch account", async () => {
+    const backing = new Map<string, Map<string, Uint8Array>>();
+    let opened: EngineStore | undefined;
+    let opens = 0;
+    let lastDataKey: Uint8Array | undefined;
+    const wallet = await createNodeWallet({
+      verifyEvent,
+      passkey: {
+        rpId: "qntx.test",
+        rpName: "qntx",
+        walletSalt: "qntx/wallet",
+        backupSalt: "qntx/backup",
+        vaultSalt: "qntx/vault",
+      },
+      autoLock: { platform: "web", idleMinutes: 15 },
+      authenticator: createSoftwarePasskey(randomBytes(32)),
+      kernelUrl: KERNEL_URL,
+    });
+    const engine = createWalletEngine({
+      publicStore: createMemoryPublicStore(),
+      verifyEvent,
+      weblnAlias: "test",
+      lightningMaxFee: () => 0,
+      wallet,
+      sparkNetwork: "regtest",
+      fetch: async () => Promise.reject(new Error("offline")),
+      random: (n) => randomBytes(n),
+      now: () => Date.now(),
+      logger: { warn: () => undefined },
+      showCallsStatus: () => undefined,
+      openStore: async () => {
+        opens += 1;
+        /* The host's engine store is authenticated under the vault's `wallet-db` data key —
+           a reset rotates the key and every old row reads like a deleted one, including
+           rows not keyed to a walletId (watch accounts). Model the rotation: a changed
+           data key drops the whole backing. */
+        const dataKey = await wallet.dataKeys.get("wallet-db");
+        if (
+          lastDataKey !== undefined &&
+          (dataKey.length !== lastDataKey.length || dataKey.some((b, i) => b !== lastDataKey?.[i]))
+        ) {
+          backing.clear();
+        }
+        lastDataKey = dataKey;
+        opened = persistentStore(backing);
+        return Promise.resolve(opened);
+      },
+      rpc: { "eip155:1": ["https://evm.invalid"], [SOL_NET]: ["https://solana.invalid"] },
+    });
+    const signer = qrSigner({
+      engine: {
+        requests: engine.requests,
+        networks: { enabled: (family) => engine.networks.enabled(family) },
+        signers: { apis: engine.signers.apis },
+      },
+      wallet,
+    });
+    const verify = { kind: "password" as const, password: PASSWORD };
+    try {
+      await wallet.wallets.importMnemonic({
+        mnemonic: MNEMONIC_A,
+        factor: { kind: "password", password: PASSWORD },
+      });
+      await until(() => opened !== undefined && opens === 1);
+      const walletA = wallet.getSnapshot().wallets[0]!.walletId;
+
+      /* A QR request the watch-only counterpart built from our export: prepared, parked at
+         awaiting-approval, never approved. */
+      const exported = await signer.exportAccount({
+        account: { walletId: walletA, groupIndex: 0 },
+        form: "crypto-multi-accounts",
+        families: ["evm"],
+        verify,
+      });
+      const link = readQrExport(exported.payload).find((entry) => entry.family === "evm");
+      if (link === undefined) {
+        throw new Error("no evm link in the export");
+      }
+      /* A message request parks at the same awaiting-approval stage without a chain read —
+         the offline fetch stub stays untouched. */
+      const sent = qrSignRequest(
+        link,
+        {
+          family: "evm",
+          kind: "personal-message",
+          message: new TextEncoder().encode("sign me"),
+        },
+        { random: (n) => new Uint8Array(n).fill(9), origin: "https://dapp.test" },
+      );
+      const pending = await signer.prepare(readQrRequest(sent.payload), {
+        walletId: walletA,
+        groupIndex: 0,
+      });
+      /* `outcome` rejects the moment the lock settles the request; the catch handler attaches
+         before the reset so the rejection is never unhandled. */
+      const ended = engine.requests.outcome(pending.id).then(
+        () => {
+          throw new Error("the pending QR request settled instead of being invalidated");
+        },
+        (error: unknown) => error,
+      );
+
+      /* A qr-linked watch account lands as a `watch/` row in the session store. */
+      const qrWatch = await engine.watch.add({
+        family: "evm",
+        address: "0x1111111111111111111111111111111111111111",
+        qr: { fingerprint: "aabbccdd", path: "m/44'/60'/0'/0/0" },
+      });
+      expect(engine.watch.list().some((a) => a.id === qrWatch.id)).toBe(true);
+      await expect(opened!.collection("watch").list()).resolves.toContain(`watch/${qrWatch.id}`);
+
+      await wallet.vault.reset();
+      /* The lock invalidates the parked request; the counterpart's `respond` gets the same
+         RequestEndedError the pipeline raised. */
+      await expect(ended).resolves.toMatchObject({
+        name: "RequestEndedError",
+        stage: "invalidated",
+      });
+      await expect(signer.respond(pending.id)).rejects.toMatchObject({
+        stage: "invalidated",
+      });
+
+      /* Same respawn-window retry as the tests above. */
+      const deadline = Date.now() + 20_000;
+      for (;;) {
+        try {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- retrying the respawn window
+          await wallet.wallets.importMnemonic({
+            mnemonic: MNEMONIC_B,
+            factor: { kind: "password", password: PASSWORD },
+          });
+          break;
+        } catch (error) {
+          if (!(error instanceof WalletError && error.code === "locked") || Date.now() > deadline) {
+            throw error;
+          }
+          // oxlint-disable-next-line eslint/no-await-in-loop -- retrying the respawn window
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      }
+      /* accounts.init finished ⇒ the live session store is `opened`, not a closed earlier
+         cycle. */
+      await until(() => engine.accounts.getState().wallets.length === 1);
+      const walletB = wallet.getSnapshot().wallets[0]!.walletId;
+      expect(walletB).not.toBe(walletA);
+      /* The new vault's store answers no qr-linked watch account: neither the controller's
+         state nor the collection it reads carries the old row. */
+      expect(engine.watch.list().some((a) => a.id === qrWatch.id)).toBe(false);
+      await expect(opened!.collection("watch").list()).resolves.toStrictEqual([]);
+    } finally {
       engine.unsubscribe();
       await wallet.destroy();
     }
