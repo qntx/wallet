@@ -13,7 +13,7 @@ const W = "w";
 const HD = HDKey.fromMasterSeed(new Uint8Array(64).fill(1)).derive("m/84'/0'/0'");
 const LOGGER: EngineLogger = { warn: () => {} };
 
-const walletStub = (custody: "vault" | "hardware" = "vault"): Wallet =>
+const walletStub = (custody: "vault" | "hardware" | "card" = "vault"): Wallet =>
   ({
     getSnapshot: () => ({
       wallets: [{ walletId: W, custody }],
@@ -30,7 +30,7 @@ type Rig = {
   readonly tronUsed: Set<number>;
   readonly sparkUsed: Set<number>;
   readonly deviceRequired: Set<string>;
-  readonly custody: "vault" | "hardware";
+  readonly custody: "vault" | "hardware" | "card";
   readonly failOn: Set<string>;
   readonly calls: string[];
   readonly sparkAccounts: ReadonlyArray<ReadonlyArray<unknown>>;
