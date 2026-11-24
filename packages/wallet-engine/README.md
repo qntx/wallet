@@ -966,7 +966,8 @@ progress ratio is the UI's progress) → `readQrRequest` decodes the payload and
 `qrSigner({ engine, wallet }).prepare(request, account)` binds it and opens an ordinary engine
 request at `awaiting-approval` → the user verifies the decoded intent and approves →
 `respond(id)` waits for the pipeline outcome and encodes the signature as the UR response → the
-host shows `qrFrames(payload)` until the desktop has the parts.
+host shows `qrFrames(payload)` until the desktop has the parts. `prepare` and `respond` belong to
+one `qrSigner` instance — `respond` refuses a request another instance prepared.
 
 A QR request is one more origin in the existing pipeline — the account's own backend signs: a
 vault key in the kernel, or a hardware wallet through `EngineOptions.devices` (the device
@@ -981,9 +982,10 @@ nothing half-signed.
 `readQrExport` reads the phone's `crypto-multi-accounts` export into `QrLink`s (one per family,
 strict path shapes, a bitcoin account by its xpub); `watch.add({ ..., qr })` stores a watch
 account pinned to that fingerprint/path/xpub — it signs only through frames and never reaches an
-`AccountRef`. `qrSignRequest` writes the request our own `readQrRequest` binds, refusing what
-the phone would refuse with the same codes (no EIP-7702, no contract creation, a solana message
-whose required signers exclude the link, a PSBT with no input under the link).
+`AccountRef`. `qrSignRequest` writes the request our own `readQrRequest` accepts and `prepare`
+binds, refusing what the phone would refuse with the same codes (no EIP-7702, no contract
+creation, a solana message whose required signers exclude the link, a PSBT with no input under
+the link).
 `readQrSignature` verifies the answer cryptographically — sender recovery for EVM/TRON, ed25519
 for Solana, same-content plus a new under-link signature for a PSBT — before handing it back.
 

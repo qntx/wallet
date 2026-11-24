@@ -60,13 +60,23 @@ export function engineOptions(devices: DeviceTransport): Pick<EngineOptions, "de
 }
 
 /**
- * The phone side of a QR session: decode the counterpart's frames, prepare an ordinary engine
- * request, let the user approve it, answer with the signature frames. Progress on the wire is the
- * scanner's ratio; the request's stage moves `awaiting-approval` → `signed` on its own.
+ * The phone side owns ONE `qrSigner` for the session: `prepare` records every request it bound, so
+ * `respond` must run on the instance that prepared it — a second `qrSigner({ engine, wallet })`
+ * answers "not prepared by this signer". The host creates one and passes it to every QR call.
+ */
+export type PhoneQrSigner = ReturnType<typeof qrSigner>;
+
+export function openQrSigner(engine: WalletEngine, wallet: Wallet): PhoneQrSigner {
+  return qrSigner({ engine, wallet });
+}
+
+/**
+ * Decode the counterpart's frames, prepare an ordinary engine request, let the user approve it,
+ * answer with the signature frames. Progress on the wire is the scanner's ratio; the request's
+ * stage moves `awaiting-approval` → `signed` on its own.
  */
 export async function answerQrRequest(
-  engine: WalletEngine,
-  wallet: Wallet,
+  signer: PhoneQrSigner,
   account: { walletId: string; groupIndex: number },
   readFrame: () => Promise<string>,
 ): Promise<PendingRequest> {
@@ -76,7 +86,6 @@ export async function answerQrRequest(
     const outcome = scanner.receive(await readFrame());
     if (outcome.status === "complete") {
       const { payload } = outcome;
-      const signer = qrSigner({ engine, wallet });
       return signer.prepare(readQrRequest(payload), account);
     }
   }
@@ -87,22 +96,20 @@ export async function answerQrRequest(
  * the host animates `qrFrames` until the counterpart has every part.
  */
 export async function qrAnswerFrames(
-  engine: WalletEngine,
-  wallet: Wallet,
+  signer: PhoneQrSigner,
   requestId: string,
 ): Promise<() => string> {
-  const payload = await qrSigner({ engine, wallet }).respond(requestId);
+  const payload = await signer.respond(requestId);
   return qrFrames(payload);
 }
 
 /** Show the account export QR: what it discloses belongs in the prompt. */
 export async function exportForWatch(
-  engine: WalletEngine,
-  wallet: Wallet,
+  signer: PhoneQrSigner,
   account: { walletId: string; groupIndex: number },
   verify: { kind: "password"; password: string },
 ): Promise<{ frames: () => string; discloses: QrExport["discloses"] }> {
-  const out = await qrSigner({ engine, wallet }).exportAccount({
+  const out = await signer.exportAccount({
     account,
     form: "crypto-multi-accounts",
     families: ["evm", "solana", "tron"],
