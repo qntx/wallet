@@ -306,7 +306,6 @@ export const responseError: Validator<{
 }> = errorPayload;
 
 export { CARD_METHODS, HARDWARE_METHODS, NOSTR_METHODS, SESSIONS_METHODS, SPARK_METHODS };
-export { SESSION_SPENT } from "./sessions.ts";
 export type {
   DeviceDisplay,
   DeviceRequest,
@@ -328,6 +327,8 @@ export type {
 } from "./card.ts";
 export type {
   HyperliquidAgentLimits,
+  HyperliquidAgentSpent,
+  HyperliquidAssetLimit,
   HyperliquidL1Action,
   HyperliquidL1Order,
   HyperliquidL1Params,
@@ -340,6 +341,10 @@ export { CHAINS_METHODS } from "./chains.ts";
 export type {
   ChainAccount,
   ChainAccountsParams,
+  ChainExportedKey,
+  ChainExportNode,
+  ChainExportParams,
+  ChainExportResult,
   ChainSignRequest,
   ChainSignResult,
   ChainTemplate,

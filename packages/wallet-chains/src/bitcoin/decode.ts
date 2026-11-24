@@ -2,9 +2,17 @@ import { Address, OutScript } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 
 import { ChainError } from "../index.ts";
-import type { AssetFlow, DisplayIntent, SignRequest, Verifiability } from "../index.ts";
+import type {
+  AssetFlow,
+  DisplayIntent,
+  IntentWarning,
+  SignRequest,
+  Verifiability,
+} from "../index.ts";
 import { withNativeAmountMeta } from "../networks.ts";
 import { bitcoinNetwork } from "./networks.ts";
+import type { BitcoinOwn } from "./own.ts";
+import { EMPTY_BITCOIN_OWN } from "./own.ts";
 import { isTaprootInput } from "./psbt.ts";
 
 const SATS = "sats";
@@ -37,18 +45,20 @@ export type BitcoinDisplay = {
 };
 
 /**
- * Decodes a normalized bitcoin.psbt request for display. `ownScripts` is the set of output script
- * hexes the caller has independently verified as this account's (e.g. the kernel re-deriving
- * change) — not a display hint.
+ * Decodes a normalized bitcoin.psbt request for display. `own` is the caller's independently
+ * verified classification of the account's own-key outputs — `change` script hexes are hidden,
+ * `unusual` script hexes become outflows to the caller's own address carrying the path text and one
+ * warning each — not a display hint.
  */
 export const decodeBitcoinPsbt = (
   request: Extract<SignRequest, { kind: "bitcoin.psbt" }>,
-  ownScripts: ReadonlySet<string> = new Set(),
+  own: BitcoinOwn = EMPTY_BITCOIN_OWN,
 ): DisplayIntent => {
   const tx = parsePsbt(request.psbt);
   const coder = Address(bitcoinNetwork(request.network).params);
   const signed = new Set(request.sign.map((s) => s.index));
   const outflows: AssetFlow[] = [];
+  const ownWarnings: IntentWarning[] = [];
   let canFee = true;
   let outSum = 0n;
   for (let i = 0; i < tx.outputsLength; i++) {
@@ -58,7 +68,7 @@ export const decodeBitcoinPsbt = (
     }
     const scriptHex = bytesToHex(script);
     outSum += amount;
-    if (ownScripts.has(scriptHex)) {
+    if (own.change.has(scriptHex)) {
       continue;
     }
     if (unspendable(script)) {
@@ -80,10 +90,17 @@ export const decodeBitcoinPsbt = (
     } catch {
       addr = undefined;
     }
+    const ownPath = own.unusual.get(scriptHex);
+    if (ownPath !== undefined) {
+      // A verified own-key output the wallet does not discover: named by its path so the user
+      // can find the funds — but the wallet may never show them, hence the warning.
+      ownWarnings.push({ kind: "unusual-own-output", message: ownPath });
+    }
     outflows.push({
       to: addr ?? scriptHex,
       amount: { asset: SATS, amount: amount.toString(10) },
-      verified: addr !== undefined,
+      verified: ownPath !== undefined || addr !== undefined,
+      ...(ownPath === undefined ? {} : { ownPath }),
     });
   }
   // An input amount is proven only by the full previous transaction — or by a signed taproot
@@ -138,15 +155,18 @@ export const decodeBitcoinPsbt = (
       outflows,
       approvals: [],
       fee,
-      warnings: listing
-        ? [
-            {
-              kind: "sighash-single-anyonecanpay",
-              message:
-                "signed inputs bind only their same-index outputs; the rest of the transaction can change",
-            },
-          ]
-        : [],
+      warnings: [
+        ...ownWarnings,
+        ...(listing
+          ? [
+              {
+                kind: "sighash-single-anyonecanpay" as const,
+                message:
+                  "signed inputs bind only their same-index outputs; the rest of the transaction can change",
+              },
+            ]
+          : []),
+      ],
       verifiability,
     },
     request.network,
@@ -157,5 +177,5 @@ export const decodeBitcoinPsbt = (
 
 export const verifiabilityBitcoin = (
   request: Extract<SignRequest, { kind: "bitcoin.psbt" }>,
-  ownScripts: ReadonlySet<string> = new Set(),
-): Verifiability => decodeBitcoinPsbt(request, ownScripts).verifiability;
+  own: BitcoinOwn = EMPTY_BITCOIN_OWN,
+): Verifiability => decodeBitcoinPsbt(request, own).verifiability;

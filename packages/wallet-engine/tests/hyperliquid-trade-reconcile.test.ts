@@ -11,6 +11,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
+import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
 import type { HyperliquidL1Action } from "@qntx/wallet/protocol";
 import { sessions } from "@qntx/wallet/sessions";
 
@@ -40,8 +42,8 @@ const VERIFY = { kind: "password" as const, password: PASSWORD };
 const HL_LIMITS = {
   notional: "1000000000000",
   maxLeverage: 100,
-  assets: [0, 1, 3, 4, 5, 7, 40, 42],
-} as const;
+  assets: [0, 1, 3, 4, 5, 7, 40, 42].map((asset) => ({ asset, size: "1000000" })),
+};
 const NOW = Date.now();
 const DAY = 86_400_000;
 const CLOID = "0x07070707070707070707070707070707";
@@ -302,6 +304,7 @@ const rig = async (
     now: timers.now,
     setTimer: timers.setTimer,
     wallet,
+    account: async (params: Parameters<ChainsApi["account"]>[0]) => chains(wallet).account(params),
     random,
     logger: { warn: () => undefined },
     ...(extra.sockets === undefined
@@ -596,7 +599,10 @@ describe("hyperliquid trade — unknown POST outcomes", () => {
     });
     const { group } = await enable(provider, wallet, walletId);
 
-    const result = await drive(timers, provider.trade.scheduleCancel(group, NOW + 60_000));
+    const result = await drive(
+      timers,
+      provider.trade.twapCancel(group, { coin: "BTC", twapId: 1 }),
+    );
 
     expect(result).toStrictEqual({ kind: "unknown" });
     expect(exchangeCount(posted)).toBe(1);
@@ -1307,31 +1313,6 @@ describe("hyperliquid trade — wire actions", () => {
     expect(first.cancels[0]).toStrictEqual({ a: 3, o: 1 });
   });
 
-  it("scheduleCancel carries the time and clears without one", async () => {
-    const posted: Posted[] = [];
-    const timers = manualTimer();
-    const { provider, wallet, walletId } = await rig(posted, timers);
-    const { group } = await enable(provider, wallet, walletId);
-
-    await provider.trade.scheduleCancel(group, NOW + 60_000);
-    expect(actionOf(posted)).toStrictEqual({ type: "scheduleCancel", time: NOW + 60_000 });
-    await provider.trade.scheduleCancel(group);
-    const posts = posted.filter((entry) => entry.endpoint === "exchange");
-    expect(posts[1]?.body["action"]).toStrictEqual({ type: "scheduleCancel" });
-  });
-
-  it("a schedule inside the 5 s window is invalid input and never posts", async () => {
-    const posted: Posted[] = [];
-    const timers = manualTimer();
-    const { provider, wallet, walletId } = await rig(posted, timers);
-    const { group } = await enable(provider, wallet, walletId);
-
-    await expect(category(provider.trade.scheduleCancel(group, NOW + 4000))).resolves.toBe(
-      "invalid-input",
-    );
-    expect(exchangeCount(posted)).toBe(0);
-  });
-
   it("twapCancel uses the twap wire shape", async () => {
     const posted: Posted[] = [];
     const timers = manualTimer();
@@ -1441,7 +1422,7 @@ describe("hyperliquid trade — agents and vectors", () => {
       validUntil: NOW + DAY,
       createdAt: NOW,
       limits: null,
-      spent: "0",
+      spent: null,
     };
     const registry = createHyperliquidAgentRegistry({
       agents: { list: async () => Promise.resolve([agent]) },
@@ -1469,7 +1450,7 @@ describe("hyperliquid trade — agents and vectors", () => {
       validUntil,
       createdAt: NOW,
       limits: null,
-      spent: "0",
+      spent: null,
     });
     const registry = createHyperliquidAgentRegistry({
       agents: {
@@ -1510,7 +1491,7 @@ describe("hyperliquid trade — agents and vectors", () => {
               validUntil: NOW + DAY,
               createdAt: NOW,
               limits: null,
-              spent: "0",
+              spent: null,
             },
           ]),
       },

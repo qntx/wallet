@@ -6,18 +6,25 @@
  */
 import { describe, expect, it } from "vite-plus/test";
 
+import { WalletError } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
 
+import { VERIFY } from "../apps-helpers.ts";
 import { keystoneIo, pairKeystone } from "../keystone-io.ts";
 import {
   BTC_NETWORK,
   BTC_TO,
   btcAddressFromXpub,
   caughtOne,
+  dappRefusal,
   e2eWorld,
   EVM_NETWORK,
   EVM_TO,
+  matrix,
+  matrixAccount,
+  qrRefusal,
   sendOnce,
+  SITE,
   SOL_NETWORK,
   SOL_TO,
   TRON_NETWORK,
@@ -124,5 +131,83 @@ describe("keystone engine sends", () => {
     expect(activity.steps.at(-1)).toBe("cleared");
 
     await w.destroy();
+  });
+});
+
+matrix("keystone", VERIFY, async () => {
+  const e2e = await e2eWorld({ deviceIo: () => keystoneIo() });
+  const hwId = await pairKeystone(e2e.w.wallet);
+  const account = await matrixAccount(e2e.w, hwId);
+  return { e2e, account };
+});
+
+describe("keystone typed refusals", () => {
+  /* The driver's display table marks tron.typed-data and a non-legacy/1559 evm transaction
+     `unsupported` — the refusal must reach the caller before any exchange touches the device,
+     whichever origin asked. */
+  it("an unsignable request kind is refused on the dApp and QR origins with zero exchanges", async () => {
+    const base = keystoneIo();
+    let exchanges = 0;
+    const e2e = await e2eWorld({
+      deviceIo: () => ({
+        exchange: async (request, context) => {
+          exchanges += 1;
+          return base.exchange(request, context);
+        },
+      }),
+    });
+    const hwId = await pairKeystone(e2e.w.wallet);
+    const account = await matrixAccount(e2e.w, hwId);
+
+    const dapp = await dappRefusal(e2e, account, "tron", VERIFY, async () =>
+      e2e.dapp.tronWallet.handle(SITE, {
+        method: "tron_signTypedData",
+        params: {
+          domain: { name: "D" },
+          types: { Mail: [{ name: "text", type: "string" }] },
+          message: { text: "hello" },
+        },
+      }),
+    );
+    expect(dapp.approve).toBeInstanceOf(WalletError);
+    expect((dapp.approve as WalletError).code).toBe("unsupported");
+    /* The page sees the wire refusal (EIP-1193 4001) carrying the kernel's typed reason — not a
+       generic -32603 internal error. */
+    expect(dapp.call).toMatchObject({ code: 4001 });
+    expect(dapp.call).toBeInstanceOf(Error);
+    expect((dapp.call as Error).message).toContain("unsupported");
+
+    /* The QR request keeps the wire's transaction type, which `eth_sendTransaction` does not —
+       eip2930 is the QR origin's unsignable kind. */
+    const qr = await qrRefusal(
+      e2e,
+      account,
+      "evm",
+      {
+        family: "evm",
+        kind: "transaction",
+        tx: {
+          type: "eip2930",
+          chainId: 42161,
+          nonce: 0,
+          gas: "0x5208",
+          to: EVM_TO,
+          value: "0x1",
+          data: "0x",
+          accessList: [],
+          gasPrice: "0x64",
+        },
+      },
+      VERIFY,
+    );
+    expect(qr.approve).toBeInstanceOf(WalletError);
+    expect((qr.approve as WalletError).code).toBe("unsupported");
+    expect(qr.call).toMatchObject({ stage: "rejected" });
+    expect(qr.call).toBeInstanceOf(Error);
+    expect((qr.call as Error).message).toContain("unsupported");
+
+    expect(exchanges).toBe(0);
+    expect(e2e.caught).toHaveLength(0);
+    await e2e.w.destroy();
   });
 });

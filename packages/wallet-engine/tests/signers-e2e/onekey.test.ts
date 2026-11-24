@@ -20,16 +20,21 @@ import {
   transcriptSession,
 } from "../../../wallet-kernel/tests/onekey-emulator/index.ts";
 import type { Transcript } from "../../../wallet-kernel/tests/onekey-emulator/index.ts";
-import { freshNodeWallet } from "../apps-helpers.ts";
+import { freshNodeWallet, VERIFY } from "../apps-helpers.ts";
 import {
   BTC_NETWORK,
   BTC_TO,
   btcAddressFromXpub,
   caughtOne,
+  dappRefusal,
   e2eWorld,
   EVM_NETWORK,
   EVM_TO,
+  matrix,
+  matrixAccount,
+  qrRefusal,
   sendOnce,
+  SITE,
   SOL_NETWORK,
   SOL_TO,
   TRON_NETWORK,
@@ -40,14 +45,13 @@ import {
   verifyTron,
   watchSignerActivity,
 } from "./harness.ts";
-import type { E2eWorld } from "./harness.ts";
+import type { E2eWorld, MatrixFamily, MatrixHooks } from "./harness.ts";
 
 type SessionName =
   | "engine-pair"
-  | "engine-send-evm"
-  | "engine-send-bitcoin"
-  | "engine-send-solana"
-  | "engine-send-tron";
+  | `engine-send-${MatrixFamily}`
+  | `engine-dapp-${MatrixFamily}`
+  | `engine-qr-${MatrixFamily}`;
 
 /**
  * A DeviceIo that replays one named session at a time: `phase` switches the active session, every
@@ -217,4 +221,113 @@ describe("onekey engine sends (emulator replay)", () => {
       await w.destroy();
     },
   );
+});
+
+/* The recorded session a matrix cell replays — the send cells keep their original names. */
+const cellSession = (origin: "internal" | "dapp" | "qr", family: MatrixFamily): SessionName =>
+  `engine-${origin === "internal" ? "send" : origin}-${family}`;
+
+describe("onekey origins (emulator replay)", () => {
+  let replay: ReturnType<typeof replayIo>;
+
+  const replayModel = (model: "classic1s" | "pro"): void => {
+    matrix(
+      `onekey-${model}`,
+      VERIFY,
+      async () => {
+        const transcript = loadTranscript(model, "engine");
+        replay = replayIo(transcript);
+        const wallet = await freshNodeWallet();
+        const e2e = await e2eWorld({ deviceIo: () => replay.io, wallet });
+        const hwId = await pairOneKey(e2e.w, replay.io);
+        const account = await matrixAccount(e2e.w, hwId);
+        return { e2e, account };
+      },
+      {
+        beforeCell: (origin, family) => {
+          replay.phase(cellSession(origin, family));
+        },
+      } satisfies MatrixHooks,
+    );
+  };
+  for (const model of ["classic1s", "pro"] as const) {
+    replayModel(model);
+  }
+
+  /* `phase` verifies a session was fully consumed only when the next one starts — the last
+     matrix cell's session is checked here. */
+  it("the last recorded session was consumed", () => {
+    expect(() => replay.done()).not.toThrow();
+  });
+
+  describe("onekey typed refusals", () => {
+    /* The family display refuses tron.typed-data outright and eip2930 has no OneKey message —
+       the refusal must reach the caller before any exchange touches the device, whichever
+       origin asked. No recording needed: zero exchanges means there is nothing to replay. */
+    it.each(["classic1s", "pro"] as const)(
+      "%s: an unsignable request kind is refused on the dApp and QR origins with zero exchanges",
+      async (model) => {
+        const transcript = loadTranscript(model, "engine");
+        const replay = replayIo(transcript);
+        let exchanges = 0;
+        const wallet = await freshNodeWallet();
+        const e2e = await e2eWorld({
+          deviceIo: () => ({
+            exchange: async (request, context) => {
+              exchanges += 1;
+              return replay.io.exchange(request, context);
+            },
+          }),
+          wallet,
+        });
+        const hwId = await pairOneKey(e2e.w, replay.io);
+        const account = await matrixAccount(e2e.w, hwId);
+
+        const dapp = await dappRefusal(e2e, account, "tron", VERIFY, async () =>
+          e2e.dapp.tronWallet.handle(SITE, {
+            method: "tron_signTypedData",
+            params: {
+              domain: { name: "D" },
+              types: { Mail: [{ name: "text", type: "string" }] },
+              message: { text: "hello" },
+            },
+          }),
+        );
+        expect(dapp.approve).toBeInstanceOf(WalletError);
+        expect((dapp.approve as WalletError).code).toBe("unsupported");
+        expect(dapp.call).toBeInstanceOf(Error);
+        expect((dapp.call as Error).message).toContain("unsupported");
+
+        /* The QR request keeps the wire's transaction type — eip2930 has no OneKey message. */
+        const qr = await qrRefusal(
+          e2e,
+          account,
+          "evm",
+          {
+            family: "evm",
+            kind: "transaction",
+            tx: {
+              type: "eip2930",
+              chainId: 42161,
+              nonce: 0,
+              gas: "0x5208",
+              to: EVM_TO,
+              value: "0x1",
+              data: "0x",
+              accessList: [],
+              gasPrice: "0x64",
+            },
+          },
+          VERIFY,
+        );
+        expect(qr.approve).toBeInstanceOf(WalletError);
+        expect((qr.approve as WalletError).code).toBe("unsupported");
+        expect(qr.call).toBeInstanceOf(Error);
+        expect((qr.call as Error).message).toContain("unsupported");
+
+        expect(exchanges).toBe(0);
+        await e2e.w.destroy();
+      },
+    );
+  });
 });

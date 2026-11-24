@@ -13,7 +13,7 @@
  * throws rather than emit a file that disagrees with them.
  *
  * `userSigned`: the ten described `HyperliquidTransaction:*` types plus two blind ones; `expected`
- * is the `hyperliquid` content the wallet decodes (null when it stays blind). `l1`: the ten
+ * is the `hyperliquid` content the wallet decodes (null when it stays blind). `l1`: the nine
  * allow-listed L1 action types — the kernel's agent signing consumes them.
  *
  * Run from the repo root: bun scripts/vectors/hyperliquid.ts
@@ -34,7 +34,6 @@ import {
   ConvertToMultiSigUserTypes,
   ModifyRequest,
   OrderRequest,
-  ScheduleCancelRequest,
   SendAssetTypes,
   SpotSendTypes,
   TokenDelegateTypes,
@@ -678,18 +677,6 @@ const l1Cases: ReadonlyArray<{
     nonce: 1677777606047,
   },
   {
-    name: "scheduleCancel",
-    schema: ScheduleCancelRequest.entries.action,
-    action: { type: "scheduleCancel" },
-    nonce: 1677777606048,
-  },
-  {
-    name: "scheduleCancel with time",
-    schema: ScheduleCancelRequest.entries.action,
-    action: { type: "scheduleCancel", time: 5000000000 },
-    nonce: 1677777606049,
-  },
-  {
     name: "updateLeverage",
     schema: UpdateLeverageRequest.entries.action,
     action: { type: "updateLeverage", asset: 5, isCross: true, leverage: 10 },
@@ -827,46 +814,6 @@ const l1Cases: ReadonlyArray<{
       testnet: {
         r: "0xe281d2fb5c6e25ca01601f878e4d69c965bb598b88fac58e475dd1f5e56c362b",
         s: "0x7ddad27e9a238d045c035bc606349d075d5c5cd00a6cd1da23ab5c39d4ef0f60",
-        v: 27,
-      },
-    },
-  },
-  {
-    name: "python scheduleCancel",
-    source: "refs/hyperliquid-python-sdk/tests/signing_test.py:265-277",
-    schema: ScheduleCancelRequest.entries.action,
-    action: { type: "scheduleCancel" },
-    nonce: 0,
-    key: PY_KEY,
-    published: {
-      mainnet: {
-        r: "0x6cdfb286702f5917e76cd9b3b8bf678fcc49aec194c02a73e6d4f16891195df9",
-        s: "0x6557ac307fa05d25b8d61f21fb8a938e703b3d9bf575f6717ba21ec61261b2a0",
-        v: 27,
-      },
-      testnet: {
-        r: "0xc75bb195c3f6a4e06b7d395acc20bbb224f6d23ccff7c6a26d327304e6efaeed",
-        s: "0x342f8ede109a29f2c0723bd5efb9e9100e3bbb493f8fb5164ee3d385908233df",
-        v: 28,
-      },
-    },
-  },
-  {
-    name: "python scheduleCancel with time",
-    source: "refs/hyperliquid-python-sdk/tests/signing_test.py:279-290",
-    schema: ScheduleCancelRequest.entries.action,
-    action: { type: "scheduleCancel", time: 123456789 },
-    nonce: 0,
-    key: PY_KEY,
-    published: {
-      mainnet: {
-        r: "0x609cb20c737945d070716dcc696ba030e9976fcf5edad87afa7d877493109d55",
-        s: "0x16c685d63b5c7a04512d73f183b3d7a00da5406ff1f8aad33f8ae2163bab758b",
-        v: 28,
-      },
-      testnet: {
-        r: "0x4e4f2dbd4107c69783e251b7e1057d9f2b9d11cee213441ccfa2be63516dc5bc",
-        s: "0x706c656b23428c8ba356d68db207e11139ede1670481a9e01ae2dfcdb0e1a678",
         v: 27,
       },
     },

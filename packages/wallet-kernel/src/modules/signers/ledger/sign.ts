@@ -39,6 +39,7 @@ import { apduExchange, requiredApp } from "./link.ts";
 import type { Exchange } from "./protocol/apdu.ts";
 import { btcSignMessage, btcSignPsbt } from "./protocol/bitcoin/index.ts";
 import { defaultPolicy } from "./protocol/bitcoin/policy.ts";
+import { stripUnhiddenDerivations } from "./protocol/bitcoin/psbt.ts";
 import {
   ethConfiguration,
   ethSignPersonalMessage,
@@ -222,7 +223,14 @@ const bitcoinPsbt = async (
     keys: context.pin,
   }).extendedPublicKey(account, net.bip32);
   const policy = defaultPolicy(template, context.pin.fingerprint, account, xpub);
-  const yielded = await call(async () => btcSignPsbt(exchange, stage.psbt, policy));
+  // app-bitcoin-new hides any output carrying the wallet's derivation on the change chain with no
+  // index bound; the prompt showed the unusual ones by address, so strip their pairs — the device
+  // then displays exactly what the prompt did.
+  const psbt =
+    stage.hiddenChange === undefined
+      ? stage.psbt
+      : stripUnhiddenDerivations(stage.psbt, stage.hiddenChange, context.pin.fingerprint);
+  const yielded = await call(async () => btcSignPsbt(exchange, psbt, policy));
   return stage.tasks.map((task, index) => {
     const planned = stage.inputs[index];
     if (planned === undefined) {

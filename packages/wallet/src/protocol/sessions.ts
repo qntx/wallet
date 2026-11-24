@@ -25,29 +25,39 @@ export type {
   HyperliquidNetwork,
 } from "@qntx/wallet-chains/evm";
 
-/**
- * The canonical grammar of a session record's `spent` — the decimal the kernel's meter produces.
- * The scheme's `positive` params grammar admits at most eight fractional digits, so an
- * order-notional charge (price × size) is exact at sixteen; the integer part is bounded by the
- * ~1e15 notional budget `spent` can never exceed. The kernel's record parser and the `SessionInfo`
- * validator share this one grammar so a value the kernel seals always parses.
- */
-// oxlint-disable-next-line typescript/no-inferrable-types -- isolatedDeclarations requires the annotation
-export const SESSION_SPENT: RegExp = /^(?:0|[1-9][0-9]{0,14})(?:\.[0-9]{0,15}[1-9])?$/;
+/** One asset's cumulative size cap inside `HyperliquidAgentLimits.assets`. */
+export type HyperliquidAssetLimit = {
+  readonly asset: number;
+  /** Canonical positive decimal — the size buys and sells on `asset` may charge in total. */
+  readonly size: string;
+};
 
 /**
- * The limits a `hyperliquid-l1-agent` session is approved under — the cumulative sum of order price
- * × size (`notional`; perp ids are quoted in USDC, spot ids in each pair's own quote token), the
- * leverage cap (`maxLeverage`) and the asset-id allow-list (`assets`, ascending, distinct, each
- * below 100000 — builder-deployed HIP-3 perps start there and stay out of scope). The kernel
- * strictly validates them at create and charges every signed order's notional against `spent`; past
- * the budget it answers `limit-exceeded`.
+ * The limits a `hyperliquid-l1-agent` session is approved under — `notional` is the quote budget
+ * BUY orders charge (Σ max(price, triggerPx) × size, in each market's quote currency: perp ids are
+ * quoted in USDC, spot ids in each pair's own quote token), `maxLeverage` caps `updateLeverage`,
+ * and `assets` lists 1..16 entries strictly ascending by asset id (0..99999 — builder-deployed
+ * HIP-3 perps start at 100000 and stay out of scope), each with the cumulative size cap buys and
+ * sells share. The kernel strictly validates them at create and charges every signed order into
+ * `spent`; past a budget it answers `limit-exceeded`. The kernel cannot know a market price, so a
+ * sell is bounded by its asset's `size`, never by a self-declared `p`.
  */
 export type HyperliquidAgentLimits = {
   /** Canonical positive decimal (the scheme's `positive` grammar), at most 1e15. */
   readonly notional: string;
   readonly maxLeverage: number;
-  readonly assets: ReadonlyArray<number>;
+  readonly assets: ReadonlyArray<HyperliquidAssetLimit>;
+};
+
+/**
+ * What a `hyperliquid-l1-agent` record has charged: `notional` is the buy-charged quote total and
+ * `size[i]` the cumulative size charged against `limits.assets[i]` — buys and sells, reduce-only or
+ * not.
+ */
+export type HyperliquidAgentSpent = {
+  /** Canonical decimal (≤ 16 fractional digits) — always ≤ `limits.notional`. */
+  readonly notional: string;
+  readonly size: ReadonlyArray<string>;
 };
 
 /**
@@ -59,6 +69,7 @@ export type SessionSchemes = {
     readonly scope: HyperliquidNetwork;
     readonly params: HyperliquidL1Params;
     readonly limits: HyperliquidAgentLimits;
+    readonly spent: HyperliquidAgentSpent;
   };
 };
 export type SessionSchemeId = keyof SessionSchemes;
@@ -86,8 +97,11 @@ export type SessionInfo = {
    * declares no metering).
    */
   readonly limits: ProtocolValue;
-  /** Cumulative notional charged against `limits`, in the `SESSION_SPENT` grammar. */
-  readonly spent: string;
+  /**
+   * The charged metering — the scheme's canonical JSON object, `null` when the record carries none
+   * (a scheme this build does not know, or one that declares no metering).
+   */
+  readonly spent: ProtocolValue;
 };
 
 const schemeId = str(32, /^[a-z][a-z0-9-]{1,31}$/);
@@ -117,7 +131,9 @@ const sessionInfo: Validator<SessionInfo> = obj({
   /* Opaque across schemes — the kernel revalidates it against the scheme's limits grammar before
      it is stored, so an arbitrary JSON value (or null) is safe to surface here. */
   limits: paramsValue,
-  spent: str(32, SESSION_SPENT),
+  /* Opaque like `limits` — a metered record's spent is the scheme's canonical JSON object, and an
+     unmetered record surfaces null. */
+  spent: paramsValue,
 });
 
 export const SESSIONS_METHODS: {

@@ -24,7 +24,7 @@ const OTHER_KEY = new Uint8Array(32).fill(23);
 const SESSION_ADDRESS = evmAddressFromPublicKey(secp256k1.getPublicKey(SESSION_KEY, true));
 
 const PARAMS: HyperliquidL1Params = {
-  action: { type: "scheduleCancel", time: T0 + 2 * DAY },
+  action: { type: "cancel", cancels: [{ a: 0, o: 1 }] },
   nonce: T0,
   expiresAfter: T0 + 15_000,
 };
@@ -40,8 +40,17 @@ const record = (scope: string, scheme = "hyperliquid-l1-agent"): SessionInfo => 
   name: "bot",
   validUntil: T0 + 180 * DAY,
   createdAt: T0,
-  limits: { notional: "10000", maxLeverage: 25, assets: [0, 1, 2, 3] },
-  spent: "0",
+  limits: {
+    notional: "10000",
+    maxLeverage: 25,
+    assets: [
+      { asset: 0, size: "10000" },
+      { asset: 1, size: "10000" },
+      { asset: 2, size: "10000" },
+      { asset: 3, size: "10000" },
+    ],
+  },
+  spent: { notional: "0", size: ["0", "0", "0", "0"] },
 });
 
 const connect = async (signature: Uint8Array, records: ReadonlyArray<SessionInfo>) => {

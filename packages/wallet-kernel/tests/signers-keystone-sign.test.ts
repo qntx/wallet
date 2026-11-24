@@ -1,3 +1,4 @@
+// oxlint-disable vitest/no-conditional-in-test -- recorded fixtures narrow via guard throws
 /**
  * Keystone signing end to end: the real driver sends its QR sign request, a fake device — decoding
  * through the independent `@keystonehq/bc-ur-registry-*` packages — answers it like firmware 3.2.2,
@@ -11,12 +12,12 @@ import { resolve } from "node:path";
 
 import {
   CborMap,
-  asBytes,
-  asMap,
-  asUnsigned,
+  cbor,
   decodeCbor,
   encodeCbor,
+  expectMap,
   isBytes,
+  isUnsigned,
 } from "@blockchaincommons/dcbor";
 import { CryptoPSBT } from "@keystonehq/bc-ur-registry-btc";
 import { ed25519 } from "@noble/curves/ed25519.js";
@@ -31,9 +32,17 @@ import * as fc from "fast-check";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { ethSignatureCodec, solSignatureCodec, tronSignatureCodec } from "@qntx/ur/interop";
-import type { UrCodec } from "@qntx/ur/interop";
+import {
+  ethSignRequestCodec,
+  ethSignatureCodec,
+  solSignRequestCodec,
+  solSignatureCodec,
+  tronSignRequestCodec,
+  tronSignatureCodec,
+} from "@qntx/ur/interop";
+import type { EthDataType, SolSignType, TronDataType } from "@qntx/ur/interop";
 import { cryptoPsbtCodec } from "@qntx/ur/registry";
+import type { UrCodec } from "@qntx/ur/typed";
 import {
   bitcoinNetwork,
   normalizeBitcoin,
@@ -46,17 +55,17 @@ import type { DeviceRequest, DeviceResponse, ProtocolValue } from "@qntx/wallet/
 import { KernelError } from "../src/errors.ts";
 import { derive } from "../src/modules/signers/keystone/derive.ts";
 import {
-  btcSignRequest,
+  btcSignRequestCodec,
   btcSignatureCodec,
-  cryptoPsbt,
-  decodeRegistry,
-  ethSignRequest,
-  hardwareCall,
-  solSignRequest,
-  tronSignRequest,
-} from "../src/modules/signers/keystone/registry.ts";
+  decodeUr,
+  encodeUr,
+  qrHardwareCallCodec,
+  requestKeypath,
+} from "../src/modules/signers/keystone/ur.ts";
+import { devicePromptLine } from "../src/modules/signers/prompt.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
+import { fakeKeystore } from "./keystore.ts";
 import { keystoneDevice } from "./signers-keystone-device.ts";
 import type { DeviceMutant } from "./signers-keystone-device.ts";
 
@@ -141,15 +150,15 @@ const BOGUS_V: DeviceMutant = {
 
 /** Re-encodes a signature answer's map with byte field `n` replaced by `value`. */
 const replaceByteField = (bytes: Uint8Array, n: number, value: Uint8Array): Uint8Array => {
-  const map = asMap(decodeCbor(bytes));
-  if (map === undefined) {
-    throw new Error("not a map");
-  }
+  const map = expectMap(decodeCbor(bytes));
   const out = new CborMap();
-  for (const { key, value: item } of map.entriesArray) {
-    out.set(key, asUnsigned(key) === n && isBytes(item) ? value : item);
+  for (const [key, item] of map) {
+    out.set(
+      key,
+      isUnsigned(key) && key.value === n && isBytes(item) ? new Uint8Array(value) : item,
+    );
   }
-  return encodeCbor(out);
+  return encodeCbor(cbor(out));
 };
 
 /** A signed PSBT answer whose trailing sighash byte is not the planned one. */
@@ -170,31 +179,26 @@ const tamperedPsbt = (request: DeviceRequest): DeviceResponse => {
 
 /** A signature answer whose field-2 byte string is cut to 64 bytes. */
 const shortenSignature = (bytes: Uint8Array): Uint8Array => {
-  const map = asMap(decodeCbor(bytes));
-  if (map === undefined) {
-    throw new Error("not a map");
-  }
-  const field = map.get(2);
-  const signature = field === undefined ? undefined : asBytes(field);
-  if (signature === undefined) {
+  const signature = expectMap(decodeCbor(bytes)).get(2);
+  if (signature === undefined || !isBytes(signature)) {
     throw new Error("no signature field");
   }
-  return replaceByteField(bytes, 2, signature.subarray(0, 64));
+  return replaceByteField(bytes, 2, signature.value.subarray(0, 64));
 };
 
-const RESPONSE_CODECS: ReadonlyArray<UrCodec<unknown>> = [
-  ethSignatureCodec,
-  solSignatureCodec,
-  tronSignatureCodec,
-  btcSignatureCodec,
-  cryptoPsbtCodec,
+const RESPONSE_PARSERS: ReadonlyArray<readonly [string, UrCodec<unknown>]> = [
+  ["eth-signature", ethSignatureCodec],
+  ["sol-signature", solSignatureCodec],
+  ["tron-signature", tronSignatureCodec],
+  ["btc-signature", btcSignatureCodec],
+  ["crypto-psbt", cryptoPsbtCodec],
 ];
 
 /** `safe` when the decoders only ever refuse with a KernelError (or accept the value). */
 const codeOf = (bytes: Uint8Array): string => {
   try {
-    for (const codec of RESPONSE_CODECS) {
-      decodeRegistry(bytes, codec);
+    for (const [type, codec] of RESPONSE_PARSERS) {
+      decodeUr(type, bytes, codec);
     }
     return "safe";
   } catch (error) {
@@ -286,14 +290,12 @@ const signOnDevice = async (
   request: unknown,
   mutant: DeviceMutant = {},
   respond?: (request: DeviceRequest, device: DeviceMutant) => DeviceResponse,
+  verify: unknown = PASSKEY(),
 ): Promise<KernelResponse> => {
   const device = keystoneDevice(SEED, MFP, mutant);
-  const begin = await h.call(
-    "hardware.begin",
-    { op: { kind: "sign", request }, verify: PASSKEY() },
-    session,
-  );
+  const begin = await h.call("hardware.begin", { op: { kind: "sign", request }, verify }, session);
   if ("err" in begin) {
+    console.error("BEGIN-ERR", JSON.stringify(begin.err));
     return begin;
   }
   const opId = strField(begin.ok, "opId");
@@ -310,6 +312,7 @@ const signOnDevice = async (
     // oxlint-disable-next-line no-await-in-loop -- the coroutine advances one turn per step
     const next = await h.call("hardware.step", { opId, response }, session);
     if ("err" in next) {
+      console.error("STEP-ERR", JSON.stringify(next.err));
       return next;
     }
     step = next.ok;
@@ -352,66 +355,100 @@ describe("keystone sign requests encode like the vendor SDK's", () => {
     "bitcoin-message": utf8ToBytes("hello bitcoin"),
   };
 
+  const ETH_DATA_TYPES: Readonly<Record<number, EthDataType>> = {
+    1: "transaction",
+    2: "typedData",
+    3: "personalMessage",
+    4: "typedTransaction",
+  };
+  const TRON_DATA_TYPES: Readonly<Record<number, TronDataType>> = {
+    1: "transaction",
+    2: "messageV2",
+  };
+  const SOL_SIGN_TYPES: Readonly<Record<number, SolSignType>> = {
+    1: "transaction",
+    2: "message",
+  };
+  const keypath = (rendered: string) => requestKeypath(path(rendered), fingerprint);
+  const signedPsbt = (): Uint8Array => psbt("btc.bip84");
+
   const encode = (c: (typeof signVectors.cases)[number]): Uint8Array => {
     const data = texts[c.name] ?? signData;
     switch (c.urType) {
       case "eth-sign-request":
-        return ethSignRequest({
-          requestId,
-          signData: data,
-          dataType: c.dataType as 1 | 2 | 3 | 4,
-          ...(c.chainId === undefined ? {} : { chainId: c.chainId }),
-          path: path(c.path ?? ""),
-          fingerprint,
-          origin: signVectors.origin,
-        });
+        return encodeUr(
+          {
+            requestId,
+            signData: data,
+            dataType: ETH_DATA_TYPES[c.dataType ?? 0] ?? "transaction",
+            ...(c.chainId === undefined ? {} : { chainId: c.chainId }),
+            derivationPath: keypath(c.path ?? ""),
+            origin: signVectors.origin,
+          },
+          ethSignRequestCodec,
+        );
       case "tron-sign-request":
-        return tronSignRequest({
-          requestId,
-          signData: data,
-          dataType: c.dataType as 1 | 2,
-          path: path(c.path ?? ""),
-          fingerprint,
-          origin: signVectors.origin,
-        });
+        return encodeUr(
+          {
+            requestId,
+            signData: data,
+            dataType: TRON_DATA_TYPES[c.dataType ?? 0] ?? "transaction",
+            derivationPath: keypath(c.path ?? ""),
+            origin: signVectors.origin,
+          },
+          tronSignRequestCodec,
+        );
       case "sol-sign-request":
-        return solSignRequest({
-          requestId,
-          signData: data,
-          signType: c.signType as 1 | 2,
-          path: path(c.path ?? ""),
-          fingerprint,
-          origin: signVectors.origin,
-        });
+        return encodeUr(
+          {
+            requestId,
+            signData: data,
+            signType: SOL_SIGN_TYPES[c.signType ?? 0] ?? "transaction",
+            derivationPath: keypath(c.path ?? ""),
+            origin: signVectors.origin,
+          },
+          solSignRequestCodec,
+        );
       case "btc-sign-request":
-        return btcSignRequest({
-          requestId,
-          signData: data,
-          paths: [path(c.path ?? "")],
-          fingerprint,
-          origin: signVectors.origin,
-        });
+        return encodeUr(
+          {
+            requestId,
+            signData: data,
+            derivationPaths: [keypath(c.path ?? "")],
+            origin: signVectors.origin,
+          },
+          btcSignRequestCodec,
+        );
       case "crypto-psbt":
-        // The payload is the PSBT inside the recorded answer — re-encoding it must
-        // reproduce the vendor bytes.
-        return cryptoPsbt(decodeRegistry(hexToBytes(c.cbor), cryptoPsbtCodec).bytes);
+        return encodeUr({ bytes: signedPsbt() }, cryptoPsbtCodec);
       case "qr-hardware-call": {
         const [secp, ed] = c.paths ?? [];
-        return hardwareCall({
-          secp256k1: [path(secp ?? "")],
-          ed25519: [path(ed ?? "")],
-          fingerprint,
-          origin: signVectors.origin,
-        });
+        return encodeUr(
+          {
+            schemas: [
+              { path: keypath(secp ?? ""), curve: "secp256k1" },
+              { path: keypath(ed ?? ""), curve: "ed25519" },
+            ],
+            origin: signVectors.origin,
+          },
+          qrHardwareCallCodec,
+        );
       }
       default:
         throw new Error(c.urType);
     }
   };
 
+  // The recorded crypto-psbt vector wraps a non-PSBT payload the typed codec now refuses;
+  // the vendor oracle on a real PSBT is the same assertion.
+  const expectedCbor = (c: (typeof signVectors.cases)[number]): Uint8Array =>
+    c.urType === "crypto-psbt"
+      ? new Uint8Array(new CryptoPSBT(Buffer.from(signedPsbt())).toCBOR())
+      : hexToBytes(c.cbor);
+
   it("is byte-identical for every request kind", () => {
     for (const c of signVectors.cases) {
-      expect(encode(c)).toStrictEqual(hexToBytes(c.cbor));
+      expect(encode(c)).toStrictEqual(expectedCbor(c));
     }
   });
 });
@@ -648,6 +685,107 @@ describe("keystone signing byte-identical to local signing", () => {
     const hw = ok(await signOnDevice(h, session, hardware));
     expect(hw).toStrictEqual(sw);
   });
+
+  it("sends an unusual own-key output's psbt unchanged and keeps the clear line", async () => {
+    /* keystone3-firmware renders every output — an own-key output at a far change index is shown
+       with a badge, never hidden — so the driver sends the PSBT as-is and the `clear` device line
+       stays true while the prompt shows the unusual-path row. */
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(res, "session");
+    ok(
+      await h.call(
+        "vault.setBlindSigning",
+        { enabled: true, verify: { kind: "hardware" } },
+        session,
+      ),
+    );
+    const paired = ok(
+      await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+    );
+    const done = ok(
+      await h.call(
+        "hardware.step",
+        {
+          opId: strField(paired, "opId"),
+          response: {
+            kind: "qr",
+            ur: { type: "crypto-multi-accounts", cbor: hexToBytes(vectors.sync.cbor) },
+          },
+        },
+        session,
+      ),
+    );
+    const hwId = strField(field(field(done, "result"), "wallet"), "walletId");
+
+    // The signed input sits at /0/0: a change index past the bound is shown, not hidden.
+    const tx = Transaction.fromPSBT(psbt("btc.bip84"), {
+      allowUnknownInputs: true,
+      allowUnknownOutputs: true,
+    });
+    const near = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'/1/0");
+    const far = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'/1/5000");
+    const nearPub = near.publicKey;
+    const farPub = far.publicKey;
+    if (nearPub === null || farPub === null) {
+      throw new Error("no change keys");
+    }
+    tx.addOutput({
+      script: p2wpkh(nearPub).script,
+      amount: 5000n,
+      bip32Derivation: [
+        [nearPub, { fingerprint: MFP_NUMBER, path: [HARDENED + 84, HARDENED, HARDENED, 1, 0] }],
+      ],
+    });
+    tx.addOutput({
+      script: p2wpkh(farPub).script,
+      amount: 4000n,
+      bip32Derivation: [
+        [farPub, { fingerprint: MFP_NUMBER, path: [HARDENED + 84, HARDENED, HARDENED, 1, 5000] }],
+      ],
+    });
+    const request = normalizeBitcoin({ ...bip84Request(hwId), psbt: tx.toPSBT(0) });
+    if (request.kind !== "bitcoin.psbt") {
+      throw new Error("normalizeBitcoin changed the request kind");
+    }
+
+    const seen: DeviceRequest[] = [];
+    ok(
+      await signOnDevice(
+        h,
+        session,
+        request,
+        {},
+        (req) => {
+          seen.push(req);
+          return keystoneDevice(SEED, MFP).respond(req);
+        },
+        { kind: "hardware" },
+      ),
+    );
+
+    const shown = seen
+      .flatMap((r) => (r.kind === "qr" && r.show !== undefined ? [r.show] : []))
+      .find((ur) => ur.type === "crypto-psbt");
+    if (shown === undefined) {
+      throw new Error("the driver never showed a crypto-psbt request");
+    }
+    const sentPsbt = new Uint8Array(CryptoPSBT.fromCBOR(Buffer.from(shown.cbor)).getPSBT());
+    expect(sentPsbt).toStrictEqual(request.psbt);
+
+    const prompt = fake.calls
+      .flatMap((c) => (c.op === "open" && c.prompt !== undefined ? [c.prompt] : []))
+      .at(-1);
+    expect(prompt?.description.startsWith(devicePromptLine("en", "clear", "keystone"))).toBe(true);
+    expect(prompt?.description).toContain("m/84'/0'/0'/1/5000");
+  });
 });
 
 describe("unsupported displays refuse before the prompt", () => {
@@ -779,7 +917,9 @@ describe("a hostile psbt answer is refused", () => {
     };
     expect(errCode(await signOnDevice(h, session, request, other))).toBe("integrity");
     // The original PSBT echoed back unsigned has no partialSig for the task key.
-    const unsigned: DeviceMutant = { cbor: () => cryptoPsbt(request.psbt) };
+    const unsigned: DeviceMutant = {
+      cbor: () => encodeUr({ bytes: request.psbt }, cryptoPsbtCodec),
+    };
     expect(errCode(await signOnDevice(h, session, request, unsigned))).toBe("integrity");
     // A real signature whose trailing sighash byte is not the planned one.
     expect(errCode(await signOnDevice(h, session, request, {}, (r) => tamperedPsbt(r)))).toBe(

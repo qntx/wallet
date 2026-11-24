@@ -4,6 +4,7 @@
  * design.md §公开类型 / §启用状态机.
  */
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
+import type { ChainsApi } from "@qntx/wallet/chains";
 
 import type { EngineLogger } from "../events.ts";
 import type { AppAvailability, EligibilityResponse } from "../gateway/contract/eligibility.ts";
@@ -197,6 +198,11 @@ export type AppNetworks = Pick<NetworkController, "client" | "independentClient"
  */
 export type AppContext<D extends AppDetail = Record<never, never>> = {
   readonly wallet: Wallet;
+  /**
+   * The one account seam — the engine's `signers.apis.account`: a vault group derives in the
+   * kernel, a card or hardware group reads its pinned material. An app never calls `chains`.
+   */
+  readonly account: ChainsApi["account"];
   /** The request pipeline stamped `{ kind: "app", id }` with the definition's own id. */
   readonly requests: AppRequests;
   /** The chain clients an app's deposit path reads allowance/burn limits through. */

@@ -53,12 +53,13 @@ export type HyperliquidEnableInput = {
 
 /**
  * The limits of a revoke throwaway: it lives ten minutes and never trades — the smallest legal
- * budget is the honest statement of that.
+ * budgets are the honest statement of that. The throwaway stays because Hyperliquid has no revoke
+ * action without a new agent — nonces-and-api-wallets §API wallet pruning.
  */
 const REVOKE_LIMITS: HyperliquidAgentLimits = {
   notional: "0.00000001",
   maxLeverage: 1,
-  assets: [0],
+  assets: [{ asset: 0, size: "0.00000001" }],
 };
 
 /* `sessions.create` treats `limits` as an opaque protocol value — the scheme's grammar runs
@@ -79,7 +80,10 @@ const isLimits = (value: unknown): value is HyperliquidAgentLimits =>
   typeof value["notional"] === "string" &&
   Number.isInteger(value["maxLeverage"]) &&
   Array.isArray(value["assets"]) &&
-  value["assets"].every(Number.isInteger);
+  value["assets"].every(
+    (entry) =>
+      record(entry) && Number.isInteger(entry["asset"]) && typeof entry["size"] === "string",
+  );
 
 const requireEnableInput = (input: unknown): HyperliquidEnableInput => {
   if (!record(input) || !isLimits(input["limits"]) || !isVerifyFactor(input["verify"])) {

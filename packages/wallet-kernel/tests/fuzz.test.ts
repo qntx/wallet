@@ -129,11 +129,14 @@ function randomJson(next: () => number, depth = 0): unknown {
 
 /** Valid action seeds the generator interleaves with random values. */
 const ACTION_SEEDS: ReadonlyArray<unknown> = [
-  { type: "scheduleCancel" },
-  { type: "scheduleCancel", time: 9 },
   { type: "updateLeverage", asset: 0, isCross: true, leverage: 1 },
+  { type: "updateIsolatedMargin", asset: 0, isBuy: true, ntli: -100 },
   { type: "twapCancel", a: 3, t: 42 },
   { type: "cancel", cancels: [{ a: 0, o: 1 }], f: true },
+  {
+    type: "cancelByCloid",
+    cancels: [{ asset: 0, cloid: "0x0000000000000000000000000000000f" }],
+  },
 ];
 
 /** A seed, a one-field mutation of one, or a fully random value. */
@@ -261,7 +264,14 @@ describe("sessions parser fuzz", () => {
           scope: "Mainnet",
           name: "fuzz",
           validUntil: h.wallNow() + 86_400_000,
-          limits: { notional: "1000000000", maxLeverage: 100, assets: [0, 1] },
+          limits: {
+            notional: "1000000000",
+            maxLeverage: 100,
+            assets: [
+              { asset: 0, size: "1000000000" },
+              { asset: 1, size: "1000000000" },
+            ],
+          },
           verify: {
             kind: "passkey",
             credentialId: new TextEncoder().encode("fuzz-credential"),

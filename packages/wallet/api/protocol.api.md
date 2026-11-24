@@ -315,9 +315,46 @@ export type ChainAccountsParams = {
 };
 
 // @public (undocumented)
+export type ChainExportedKey = {
+    readonly node: ChainExportNode;
+    readonly path: string;
+    readonly curve: "secp256k1" | "ed25519";
+    readonly publicKey: Uint8Array;
+    readonly chainCode?: Uint8Array;
+    readonly parentFingerprint?: string;
+};
+
+// @public
+export type ChainExportNode = {
+    readonly kind: "evm.account";
+} | {
+    readonly kind: "leaf";
+    readonly template: "evm.bip44" | "tron.bip44" | "solana.bip44-change";
+} | {
+    readonly kind: "btc.account";
+    readonly template: "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
+    readonly network: string;
+};
+
+// @public (undocumented)
+export type ChainExportParams = {
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly nodes: ReadonlyArray<ChainExportNode>;
+    readonly verify: VerifyFactor;
+};
+
+// @public (undocumented)
+export type ChainExportResult = {
+    readonly fingerprint: string;
+    readonly keys: ReadonlyArray<ChainExportedKey>;
+};
+
+// @public (undocumented)
 export const CHAINS_METHODS: {
     readonly "wallet.accounts": MethodSpec<ChainAccountsParams, ChainAccount>;
     readonly "chain.sign": MethodSpec<ChainSignParams, ChainSignResult>;
+    readonly "chain.exportAccount": MethodSpec<ChainExportParams, ChainExportResult>;
 };
 
 // @public (undocumented)
@@ -814,7 +851,19 @@ export type HtlcTimeoutSignRequest = {
 export type HyperliquidAgentLimits = {
     readonly notional: string;
     readonly maxLeverage: number;
-    readonly assets: ReadonlyArray<number>;
+    readonly assets: ReadonlyArray<HyperliquidAssetLimit>;
+};
+
+// @public
+export type HyperliquidAgentSpent = {
+    readonly notional: string;
+    readonly size: ReadonlyArray<string>;
+};
+
+// @public
+export type HyperliquidAssetLimit = {
+    readonly asset: number;
+    readonly size: string;
 };
 
 export { HyperliquidL1Action }
@@ -1182,9 +1231,6 @@ export type Rumor = {
 // @public
 export const SECRET_FIELDS: readonly ["password", "prf", "prfWallet", "prfBackup", "mnemonic", "passphrase", "secret", "answers"];
 
-// @public
-export const SESSION_SPENT: RegExp;
-
 // @public (undocumented)
 export type SessionInfo = {
     readonly address: string;
@@ -1198,7 +1244,7 @@ export type SessionInfo = {
     readonly validUntil: number;
     readonly createdAt: number;
     readonly limits: ProtocolValue;
-    readonly spent: string;
+    readonly spent: ProtocolValue;
 };
 
 // @public (undocumented)
@@ -1243,6 +1289,7 @@ export type SessionSchemes = {
         readonly scope: HyperliquidNetwork;
         readonly params: HyperliquidL1Params;
         readonly limits: HyperliquidAgentLimits;
+        readonly spent: HyperliquidAgentSpent;
     };
 };
 

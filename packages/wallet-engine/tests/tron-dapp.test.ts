@@ -28,7 +28,12 @@ import type {
   SendParams,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
-import { pollTron, prepareDappTron, submitDappTron } from "../src/transactions/tron.ts";
+import {
+  pollTron,
+  prepareDappTron,
+  submitDappTron,
+  TronBindingError,
+} from "../src/transactions/tron.ts";
 
 const NET = "tron:728126428";
 const PRIV = new Uint8Array(32).fill(0x11);
@@ -581,5 +586,47 @@ describe("submitDappTron", () => {
     now.t += 30_000;
     await expect(pollTron(c, tx2, ev)).resolves.toMatchObject({ kind: "ended", state: "dropped" });
     expect(w.broadcasts).toHaveLength(0);
+  });
+});
+
+describe("prepareDappTron with broadcast: false (the QR path)", () => {
+  const prepareQr = async (w: World & { api: TronApi }, raw: Uint8Array) =>
+    prepareDappTron(ctx(w).ctx, ACCOUNT, NET, raw, { broadcast: false });
+
+  it("signs the same bytes but broadcasts and tracks nothing", async () => {
+    const w = world();
+    const raw = dappRawData();
+    const prepared = await prepareQr(w, raw);
+    let committed = false;
+    const result = await prepared.submit(VERIFY, () => {
+      committed = true;
+    });
+    expect(result).toStrictEqual({
+      kind: "tron.signed-transaction",
+      signature: lastSignature(w),
+    });
+    expect(committed).toBe(true);
+    expect(w.broadcasts).toHaveLength(0);
+    expect("txId" in prepared).toBe(false);
+  });
+
+  it("the dApp path still tracks an observed entry — the option did not leak into it", async () => {
+    const w = world();
+    const prepared = await prepareDappTron(ctx(w).ctx, ACCOUNT, NET, dappRawData());
+    const tx = await prepared.submit(VERIFY, () => undefined);
+    /* The dApp broadcasts; the wallet tracks an observed row whose stored signature a later
+       submitDappTron call may broadcast — the QR path creates none of this. */
+    expect(tx.state).toBe("submitted");
+    expect("txId" in prepared).toBe(true);
+    expect(tx.tron?.dappSignature).toBe(bytesToHex(lastSignature(w)));
+  });
+
+  it("a foreign-chain reference block is a typed TronBindingError", async () => {
+    const w = world();
+    w.blockIds.set(100, "dd".repeat(32));
+    await expect(prepareQr(w, dappRawData())).rejects.toBeInstanceOf(TronBindingError);
+    await expect(prepareQr(w, dappRawData())).rejects.toMatchObject({
+      code: "invalid-request",
+    });
   });
 });

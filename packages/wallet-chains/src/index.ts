@@ -297,6 +297,12 @@ export type AssetFlow = {
    * id whose bank account Fiat24 picks off-chain.
    */
   readonly fiat24?: { readonly account: string } | { readonly payee: string };
+  /**
+   * The output is provably on one of the account's own keys but at a path the wallet does not
+   * discover (e.g. `m/84'/0'/0'/1/2147483646`): the funds are the user's, yet this wallet may never
+   * display them — `to` is the decoded address and `ownPath` the derivation path text.
+   */
+  readonly ownPath?: string;
   /** The ENS name the recipient was resolved from; attached by the engine, never decoded. */
   readonly name?: string;
 };
@@ -457,7 +463,8 @@ export type IntentWarningKind =
   | "fiat24-swap-quote"
   | "fiat24-account-link"
   | "fiat24-account-move"
-  | "fiat24-account-burn";
+  | "fiat24-account-burn"
+  | "unusual-own-output";
 
 export type IntentWarning = {
   readonly kind: IntentWarningKind;

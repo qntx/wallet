@@ -43,6 +43,42 @@ export const keystoneIo = (hang?: () => Promise<unknown>): DeviceIo => {
   };
 };
 
+/**
+ * A `DeviceIo` over a device with its own seed — `exchange` feeds the kernel's request to the
+ * oracle and counts each call (the "device asked only after approval" property is the count staying
+ * zero until `submit` runs); `fail` makes the exchanges reject until cleared (a lost device).
+ * Pairing through this io answers the scan with the device's own `crypto-multi-accounts`.
+ */
+export const keystoneSimIo = (
+  seed: Uint8Array,
+  fingerprint: Uint8Array,
+  mutant?: Parameters<typeof keystoneDevice>[2],
+): {
+  readonly io: DeviceIo;
+  readonly exchanges: () => number;
+  readonly fail: (error: Error | undefined) => void;
+} => {
+  const device = keystoneDevice(seed, fingerprint, mutant);
+  let count = 0;
+  let failure: Error | undefined;
+  return {
+    exchanges: () => count,
+    fail: (error) => {
+      failure = error;
+    },
+    io: {
+      exchange: async (request) => {
+        count += 1;
+        if (failure !== undefined) {
+          throw failure;
+        }
+        await Promise.resolve();
+        return device.respond(request);
+      },
+    },
+  };
+};
+
 const isSyncVector = (value: unknown): value is { sync: { cbor: string } } =>
   typeof value === "object" &&
   value !== null &&

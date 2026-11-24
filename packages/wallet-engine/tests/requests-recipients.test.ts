@@ -32,6 +32,7 @@ import type {
   TokenAuthorization,
   TronPermission,
 } from "@qntx/wallet-chains";
+import { EMPTY_BITCOIN_OWN } from "@qntx/wallet-chains/bitcoin";
 import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
@@ -311,7 +312,7 @@ const rig = (over: {
             psbt,
             sign: [{ index: 0, template: "btc.bip84" }],
           },
-          ownScripts: new Set(),
+          own: EMPTY_BITCOIN_OWN,
           inputs: [],
         })),
       ),
@@ -950,6 +951,7 @@ const FLOW_SLOTS = {
   tokenAccount: "none",
   fiat24: "recipient",
   name: "none",
+  ownPath: "none",
 } satisfies Record<keyof AssetFlow, Slot>;
 
 /**

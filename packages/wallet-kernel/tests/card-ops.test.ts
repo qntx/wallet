@@ -21,6 +21,7 @@ import {
   recoverEvmSigner,
 } from "@qntx/wallet-chains/evm";
 import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
+import type { ChainTemplate } from "@qntx/wallet/protocol";
 import type { WalletInfo } from "@qntx/wallet/types";
 
 import { walletIdOf } from "../src/derive/wallet-id.ts";
@@ -46,9 +47,10 @@ import { testSecureInput } from "./card/input.ts";
 import { testCardReader } from "./card/reader.ts";
 import { CA1_ANCHOR } from "./card/sim.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
-import { createHarness } from "./harness.ts";
+import { createHarness, detachTransferables } from "./harness.ts";
 import { quickArgon2id, subtlePbkdf2 } from "./helpers.ts";
 import { fakeKeystore } from "./keystore.ts";
+import { LOOKUP_RECIPIENT, lookupTransferRequest } from "./solana-lookup-fixture.ts";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -713,6 +715,70 @@ describe("card operations (fake card)", () => {
     }
     r.h.advance(15 * 60_000 + 1); // past the idle deadline → session locks
     await expect(errCode(held)).resolves.toBe("cancelled");
+  });
+
+  it("a held secure input answers cancelled and a queued vault.reset follows it", async () => {
+    const r = await rig();
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+    ) as { opId: string; step: Step };
+    expect(first.step.kind).toBe("input");
+    const held = r.h.call("card.step", { opId: first.opId }, r.session); // blocks on secure input
+    while (!r.input.pending()) {
+      await r.h.settle();
+    }
+    // Requests are serial — the reset runs once the held input is dismissed.
+    const reset = r.h.call("vault.reset", null, r.session);
+    r.input.secureInput.cancel();
+    await expect(errCode(held)).resolves.toBe("cancelled");
+    expect(ok(await reset)).toBeNull();
+    // The session died with the vault — the op id resolves nothing.
+    await expect(errCode(r.h.call("card.step", { opId: first.opId }, r.session))).resolves.toBe(
+      "locked",
+    );
+  });
+
+  it("vault.reset discards a suspended op — the code it holds is wiped", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const added = await drive(
+      r,
+      { kind: "add", groups: 1 },
+      { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+    );
+    const walletId = strField(added, "walletId");
+    const first = ok(
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "change-access", walletId }, verify: verifyPasskey() },
+        r.session,
+      ),
+    ) as { opId: string; step: Step };
+    expect(first.step.kind).toBe("input");
+    // Answer the old-code ask — the generator suspends at the new-code ask holding this buffer.
+    const code = utf8ToBytes("correct horse");
+    r.input.push(code);
+    const next = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(next.kind).toBe("input");
+    ok(await r.h.call("vault.reset", null, r.session));
+    await r.h.settle(); // let the discarded op's finally wipe the code it was holding
+    expect(code.every((b) => b === 0)).toBe(true);
+    await expect(errCode(r.h.call("card.step", { opId: first.opId }, r.session))).resolves.toBe(
+      "locked",
+    );
+    // A freshly established vault lists no card wallets.
+    const res = ok(
+      await r.h.call("wallet.createWithPasskey", {
+        ceremony: "host",
+        credentialId: CREDENTIAL_ID,
+        prfWallet: new Uint8Array(32).fill(2),
+        synced: true,
+        factor: verifyPasskey(),
+      }),
+    );
+    const session2 = strField(res, "session");
+    const status = ok(await r.h.call("status", null, session2)) as { wallets: WalletInfo[] };
+    expect(status.wallets.some((w) => w.custody === "card")).toBe(false);
   });
 
   it("cancel, timeout and lock between steps wipe the code the suspended op holds", async () => {
@@ -1409,10 +1475,10 @@ const DEVICE = { kind: "device" } as const;
 type KeystoreRig = Rig & { fake: ReturnType<typeof fakeKeystore> };
 
 /** A React-Native-style kernel: keystore factors plus the card platform. */
-const keystoreRig = async (): Promise<KeystoreRig> => {
+const keystoreRig = async (platform: "ios" | "android" = "ios"): Promise<KeystoreRig> => {
   const reader = testCardReader();
   const input = testSecureInput();
-  const fake = fakeKeystore();
+  const fake = fakeKeystore("en-US", platform);
   const h = createHarness({
     keystore: fake.keystore,
     card: { reader: reader.reader, anchors: [CA1_ANCHOR] },
@@ -2230,8 +2296,8 @@ describe("card sign (fake card)", () => {
   const MASTER_FP = 0x73c5da0a;
   const HARDENED = 0x80000000;
 
-  const signAccount = (walletId: string, template: string) => ({
-    kind: "hd",
+  const signAccount = (walletId: string, template: ChainTemplate) => ({
+    kind: "hd" as const,
     walletId,
     groupIndex: 0,
     template,
@@ -2349,7 +2415,9 @@ describe("card sign (fake card)", () => {
   };
 
   it("an over-long prompt refuses as blind before any input, tap or keystore call", async () => {
-    const r = await keystoreRig();
+    /* android shows the limits inside the presence dialog itself — no separate approval field,
+       so the refusal reaches findSeedWallet without a secure-input round-trip. */
+    const r = await keystoreRig("android");
     const card = await loadedCard(CODE, seed2);
     const walletId = await addWallet(r, card);
     /* A 12-call batch renders well over the platform bound — the same oversize→blind rule
@@ -2389,6 +2457,74 @@ describe("card sign (fake card)", () => {
     ).resolves.toBe("blind-signing-disabled");
     expect(r.fake.calls.slice(before)).toStrictEqual([]);
     expect(r.input.requests).toHaveLength(asks);
+  });
+
+  it("a lookup-table sign is refused before any input or tap while blind signing is off", async () => {
+    /* android shows the limits inside the presence dialog itself — no separate approval field,
+       so the refusal reaches findSeedWallet without a secure-input round-trip. */
+    const r = await keystoreRig("android");
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    const own = strField(
+      ok(
+        await r.h.call(
+          "wallet.accounts",
+          {
+            walletId,
+            groupIndex: 0,
+            template: "solana.bip44-change",
+            network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          },
+          r.session,
+        ),
+      ),
+      "address",
+    );
+    const request = lookupTransferRequest(
+      signAccount(walletId, "solana.bip44-change"),
+      own,
+      LOOKUP_RECIPIENT,
+    );
+    const before = r.fake.calls.length;
+    const asks = r.input.requests.length;
+    const opens = r.reader.prompts.length;
+    await expect(
+      errCode(
+        r.h.call("card.begin", { op: { kind: "sign", request }, verify: HARDWARE }, r.session),
+      ),
+    ).resolves.toBe("blind-signing-disabled");
+    // The refusal precedes the presence ceremony, the code ask and the first tap alike.
+    expect(r.fake.calls.slice(before)).toStrictEqual([]);
+    expect(r.input.requests).toHaveLength(asks);
+    expect(r.reader.prompts).toHaveLength(opens);
+
+    /* Policy on: the verify prompt is the blind prompt and the tap text says it cannot show
+       the request — the table-resolved recipient is never named. */
+    ok(await r.h.call("vault.setBlindSigning", { enabled: true, verify: HARDWARE }, r.session));
+    const opensAt = r.fake.calls.length;
+    const result = signResult(
+      await drive(
+        r,
+        { kind: "sign", request },
+        { codes: [freshCode()], cards: taps(card) },
+        HARDWARE,
+      ),
+    );
+    const verifyText = r.fake.calls
+      .slice(opensAt)
+      .flatMap((call) =>
+        call.op === "open" && call.prompt !== undefined
+          ? [`${call.prompt.title}\n${call.prompt.description}`]
+          : [],
+      )
+      .join("\n");
+    expect(verifyText).toContain("Confirm blind signing");
+    expect(verifyText).toContain("address lookup table");
+    const tapText = r.reader.prompts.join("\n");
+    expect(tapText).toContain("Confirm blind signing");
+    expect(tapText).toContain("address lookup table");
+    expect(tapText).not.toContain(LOOKUP_RECIPIENT);
+    expect(field(result, "signature")).toBeDefined();
   });
 
   it("sign requires a verify factor and a card wallet account", async () => {
@@ -2991,6 +3127,118 @@ describe("card sign (fake card)", () => {
     ok(await r.h.call("card.cancel", { opId: again.opId }, r.session));
   });
 
+  it("the app lock off suspends the remembered hash; relocking re-arms it", async () => {
+    const r = await keystoreRig();
+    ok(await r.h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, r.session));
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    signResult(
+      await drive(
+        r,
+        { kind: "sign", request: evmMsg(walletId), remember: true },
+        { codes: [freshCode()], cards: taps(card) },
+        HARDWARE,
+      ),
+    );
+    const accounts = {
+      kind: "accounts",
+      walletId,
+      groupIndex: 1, // uncached — the op must tap and VERIFY
+      templates: ["btc.bip84"],
+      network: BTC_NETWORK,
+    };
+    const remembered = ok(await r.h.call("card.begin", { op: accounts }, r.session)) as {
+      opId: string;
+      step: Step;
+    };
+    expect(remembered.step.kind).toBe("tap"); // no code ask while the hash is remembered
+    ok(await r.h.call("card.cancel", { opId: remembered.opId }, r.session));
+    /* The lock off restores the silent device factor — a saved hash would VERIFY with no
+       presence at all, so the op asks for the code instead. */
+    ok(await r.h.call("vault.setAppLock", { enabled: false, verify: HARDWARE }, r.session));
+    const unlocked = ok(await r.h.call("card.begin", { op: accounts }, r.session)) as {
+      opId: string;
+      step: Step;
+    };
+    expect(unlocked.step.kind).toBe("input");
+    ok(await r.h.call("card.cancel", { opId: unlocked.opId }, r.session));
+    // Turning the lock back on — itself a presence ceremony — re-arms the saved hash.
+    ok(await r.h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, r.session));
+    const relocked = ok(await r.h.call("card.begin", { op: accounts }, r.session)) as {
+      opId: string;
+      step: Step;
+    };
+    expect(relocked.step.kind).toBe("tap");
+    ok(await r.h.call("card.cancel", { opId: relocked.opId }, r.session));
+  });
+
+  it("the app lock off still gates sign on presence, and a session scheme refuses a card wallet", async () => {
+    /* keystoreRig's vault carries the silent device factor (app lock off) plus the hardware
+       verifying row: presence is still required for signing, but the device factor itself can
+       never stand in for it. */
+    const r = await keystoreRig();
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    // A device factor never verifies: the wire `verifier` validator rejects it, and the decode
+    // failure surfaces as `integrity` before the op even begins.
+    await expect(
+      errCode(
+        r.h.call(
+          "card.begin",
+          { op: { kind: "sign", request: evmMsg(walletId) }, verify: DEVICE },
+          r.session,
+        ),
+      ),
+    ).resolves.toBe("integrity");
+    const begun = ok(
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "sign", request: evmMsg(walletId) }, verify: HARDWARE },
+        r.session,
+      ),
+    ) as { opId: string; step: Step };
+    expect(begun.step.kind).toBe("input");
+    ok(await r.h.call("card.cancel", { opId: begun.opId }, r.session));
+
+    /* External custody is refused as `unsupported` at the top of sessions.create — on either
+       platform, with the app lock off and on, with no session-approval input and no keystore
+       prompt ever shown: enabling the lock cannot help a wallet the scheme cannot sign for. */
+    for (const platform of ["ios", "android"] as const) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one platform rig at a time
+      const pr = await keystoreRig(platform);
+      const pcard = await loadedCard(CODE, seed2);
+      const pwalletId = await addWallet(pr, pcard);
+      const create = async () =>
+        pr.h.call(
+          "sessions.create",
+          {
+            scheme: "hyperliquid-l1-agent",
+            owner: { walletId: pwalletId, groupIndex: 0 },
+            scope: "Mainnet",
+            name: "bot-1",
+            validUntil: pr.h.wallNow() + 86_400_000,
+            limits: {
+              notional: "1000000000",
+              maxLeverage: 100,
+              assets: [0, 1, 2, 3, 4, 5, 10107].map((asset) => ({ asset, size: "1000" })),
+            },
+            verify: HARDWARE,
+          },
+          pr.session,
+        );
+      const asks = pr.input.requests.length;
+      let calls = pr.fake.calls.length;
+      await expect(errCode(create())).resolves.toBe("unsupported");
+      expect(pr.fake.calls).toHaveLength(calls);
+      expect(pr.input.requests).toHaveLength(asks);
+      ok(await pr.h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, pr.session));
+      calls = pr.fake.calls.length;
+      await expect(errCode(create())).resolves.toBe("unsupported");
+      expect(pr.fake.calls).toHaveLength(calls);
+      expect(pr.input.requests).toHaveLength(asks);
+    }
+  });
+
   it("a sign prompt over the reader text cap is card-unsupported before any tap", async () => {
     const r = await rig();
     const card = await loadedCard();
@@ -3173,5 +3421,54 @@ describe("card sign (fake card)", () => {
         console[name] = fn;
       }
     }
+  });
+
+  it("serves repeated exports and account reads from an intact pin", async () => {
+    const r = await keystoreRig();
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    const nodes = [
+      { kind: "leaf", template: "evm.bip44" },
+      { kind: "leaf", template: "solana.bip44-change" },
+    ];
+    const exportOnce = async () =>
+      ok(
+        await r.h.call(
+          "chain.exportAccount",
+          { walletId, groupIndex: 0, nodes, verify: HARDWARE },
+          r.session,
+        ),
+      );
+    const pubHexes = (res: unknown): ReadonlyArray<string> =>
+      (field(res, "keys") as unknown[]).map((k) => bytesToHex(field(k, "publicKey") as Uint8Array));
+    const first = await exportOnce();
+    const firstHexes = pubHexes(first);
+    /* A real port detaches every exact-view buffer the reply carries — the pin must keep its
+       own arrays or the next read sees zeroed keys. */
+    detachTransferables(first);
+    const second = await exportOnce();
+    expect(pubHexes(second)).toStrictEqual(firstHexes);
+    const leafKey = new Uint8Array(
+      field((field(second, "keys") as unknown[])[0], "publicKey") as Uint8Array,
+    );
+    detachTransferables(second);
+    const accounts = ok(
+      await r.h.call(
+        "wallet.accounts",
+        { walletId, groupIndex: 0, template: "evm.bip44", network: "eip155:1" },
+        r.session,
+      ),
+    );
+    expect(strField(accounts, "address")).toBe(evmAddressFromPublicKey(leafKey));
+    const bitcoin = ok(
+      await r.h.call(
+        "wallet.accounts",
+        { walletId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+        r.session,
+      ),
+    );
+    expect(strField(bitcoin, "fingerprint")).toBe(
+      HDKey.fromMasterSeed(seed2).fingerprint.toString(16).padStart(8, "0"),
+    );
   });
 });

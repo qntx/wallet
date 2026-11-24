@@ -15,9 +15,18 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 
-import type { UrCodec } from "@qntx/ur/interop";
-import { ethSignatureCodec, solSignatureCodec, tronSignatureCodec } from "@qntx/ur/interop";
+import {
+  ethSignRequestCodec,
+  ethSignatureCodec,
+  solSignRequestCodec,
+  solSignatureCodec,
+  tronSignRequestCodec,
+  tronSignatureCodec,
+} from "@qntx/ur/interop";
+import type { EthDataType, TronDataType } from "@qntx/ur/interop";
 import { cryptoPsbtCodec } from "@qntx/ur/registry";
+import { codecUrTypes } from "@qntx/ur/typed";
+import type { UrCodec } from "@qntx/ur/typed";
 import { legacyMessageHash, samePsbtContent } from "@qntx/wallet-chains/bitcoin";
 import {
   evmSigningPreimage,
@@ -33,14 +42,12 @@ import type { ChainPlan } from "../../chains/run.ts";
 import { expectDigest, personalDigest } from "../digest.ts";
 import type { DeviceIdentity, DeviceLink, SignContext } from "../driver.ts";
 import {
-  btcSignRequest,
+  btcSignRequestCodec,
   btcSignatureCodec,
-  cryptoPsbt,
-  decodeRegistry,
-  ethSignRequest,
-  solSignRequest,
-  tronSignRequest,
-} from "./registry.ts";
+  decodeUr,
+  encodeUr,
+  requestKeypath,
+} from "./ur.ts";
 
 const ORIGIN = "qntx";
 
@@ -78,21 +85,28 @@ export const display = (
 };
 
 /**
- * Sends the prepared UR and reads the device's answer: a `qr` response of exactly `type` whose CBOR
- * decodes under `codec` — anything else, including a well-formed payload under the wrong type or a
- * library rejection, is `integrity`.
+ * Sends the prepared UR and reads the device's answer: a `qr` response of exactly the answer
+ * codec's type decoded by that codec — anything else, including a well-formed payload under the
+ * wrong type, is `integrity`.
  */
-const exchange = async <T>(
+const exchange = async <S, A>(
   link: DeviceLink,
-  show: { readonly type: string; readonly cbor: Uint8Array },
-  type: string,
-  codec: UrCodec<T>,
-): Promise<T> => {
-  const response = await link.exchange({ kind: "qr", show, scan: [type] });
+  request: { readonly value: S; readonly codec: UrCodec<S> },
+  codec: UrCodec<A>,
+): Promise<A> => {
+  const [type] = codecUrTypes(codec);
+  const response = await link.exchange({
+    kind: "qr",
+    show: {
+      type: codecUrTypes(request.codec)[0],
+      cbor: encodeUr(request.value, request.codec),
+    },
+    scan: [type],
+  });
   if (response.kind !== "qr" || response.ur.type !== type) {
     integrity();
   }
-  return decodeRegistry(response.ur.cbor, codec);
+  return decodeUr(type, response.ur.cbor, codec);
 };
 
 /** A signature answer must name the request id this exchange minted. */
@@ -123,7 +137,7 @@ const evm = async (
   const [task] = stage.tasks;
   const requestId = context.random(16);
   let signData: Uint8Array;
-  let dataType: 1 | 2 | 3 | 4;
+  let dataType: EthDataType;
   let chainId: number | undefined;
   if (stage.kind === "evm.transaction") {
     if (request.kind !== "evm.transaction") {
@@ -133,10 +147,10 @@ const evm = async (
     signData = evmSigningPreimage(tx);
     const { chainId: txChainId } = tx;
     if (tx.type === "legacy") {
-      dataType = 1;
+      dataType = "transaction";
       chainId = txChainId;
     } else if (tx.type === "eip1559") {
-      dataType = 4;
+      dataType = "typedTransaction";
       chainId = txChainId;
     } else {
       // `display` refused these before the prompt — reaching them is a kernel inconsistency.
@@ -148,7 +162,7 @@ const evm = async (
       integrity();
     }
     signData = utf8ToBytes(request.typedData);
-    dataType = 2;
+    dataType = "typedData";
     // The digest is an EIP-712 hash, not a hash of the JSON sent — re-plan the same request and
     // require the same task so the JSON the device signs is provably the one that was planned.
     const replanned = planEvm(request, { path: task.path, publicKey: task.publicKey });
@@ -167,22 +181,22 @@ const evm = async (
             ),
           )
         : request.message;
-    dataType = 3;
+    dataType = "personalMessage";
     expectDigest(personalDigest(signData), task);
   }
-  const cbor = ethSignRequest({
-    requestId,
-    signData,
-    dataType,
-    ...(chainId === undefined ? {} : { chainId }),
-    path: task.path,
-    fingerprint: context.pin.fingerprint,
-    origin: ORIGIN,
-  });
   const answer = await exchange(
     link,
-    { type: "eth-sign-request", cbor },
-    "eth-signature",
+    {
+      value: {
+        requestId,
+        signData,
+        dataType,
+        ...(chainId === undefined ? {} : { chainId }),
+        derivationPath: requestKeypath(task.path, context.pin.fingerprint),
+        origin: ORIGIN,
+      },
+      codec: ethSignRequestCodec,
+    },
     ethSignatureCodec,
   );
   return compactSecp256k1(answer, requestId, 65);
@@ -197,30 +211,30 @@ const tron = async (
   const [task] = stage.tasks;
   const requestId = context.random(16);
   let signData: Uint8Array;
-  let dataType: 1 | 2;
+  let dataType: TronDataType;
   if (request.kind === "tron.transaction" && stage.kind === "tron.transaction") {
     signData = request.rawData;
-    dataType = 1;
+    dataType = "transaction";
     expectDigest(sha256(signData), task);
   } else if (request.kind === "tron.message" && stage.kind === "tron.message") {
     signData = request.message;
-    dataType = 2;
+    dataType = "messageV2";
     expectDigest(tronMessageDigest(signData), task);
   } else {
     integrity();
   }
-  const cbor = tronSignRequest({
-    requestId,
-    signData,
-    dataType,
-    path: task.path,
-    fingerprint: context.pin.fingerprint,
-    origin: ORIGIN,
-  });
   const answer = await exchange(
     link,
-    { type: "tron-sign-request", cbor },
-    "tron-signature",
+    {
+      value: {
+        requestId,
+        signData,
+        dataType,
+        derivationPath: requestKeypath(task.path, context.pin.fingerprint),
+        origin: ORIGIN,
+      },
+      codec: tronSignRequestCodec,
+    },
     tronSignatureCodec,
   );
   return compactSecp256k1(answer, requestId, 65);
@@ -241,18 +255,18 @@ const solana = async (
     integrity();
   }
   const requestId = context.random(16);
-  const cbor = solSignRequest({
-    requestId,
-    signData,
-    signType: request.kind === "solana.transaction" ? 1 : 2,
-    path: task.path,
-    fingerprint: context.pin.fingerprint,
-    origin: ORIGIN,
-  });
   const answer = await exchange(
     link,
-    { type: "sol-sign-request", cbor },
-    "sol-signature",
+    {
+      value: {
+        requestId,
+        signData,
+        derivationPath: requestKeypath(task.path, context.pin.fingerprint),
+        origin: ORIGIN,
+        signType: request.kind === "solana.transaction" ? "transaction" : "message",
+      },
+      codec: solSignRequestCodec,
+    },
     solSignatureCodec,
   );
   checkRequestId(answer.requestId, requestId);
@@ -266,14 +280,12 @@ const bitcoinPsbt = async (
   link: DeviceLink,
   stage: Extract<ChainPlan, { kind: "bitcoin.psbt" }>,
 ): Promise<ReadonlyArray<Uint8Array>> => {
-  const cbor = cryptoPsbt(stage.psbt);
-  const response = await exchange(
+  const answer = await exchange(
     link,
-    { type: "crypto-psbt", cbor },
-    "crypto-psbt",
+    { value: { bytes: stage.psbt }, codec: cryptoPsbtCodec },
     cryptoPsbtCodec,
   );
-  const signed = response.bytes;
+  const signed = answer.bytes;
   if (!samePsbtContent(stage.psbt, signed)) {
     integrity();
   }
@@ -334,17 +346,17 @@ const bitcoinMessage = async (
   const signData = utf8ToBytes(request.message);
   expectDigest(legacyMessageHash(request.message), task);
   const requestId = context.random(16);
-  const cbor = btcSignRequest({
-    requestId,
-    signData,
-    paths: [task.path],
-    fingerprint: context.pin.fingerprint,
-    origin: ORIGIN,
-  });
   const answer = await exchange(
     link,
-    { type: "btc-sign-request", cbor },
-    "btc-signature",
+    {
+      value: {
+        requestId,
+        signData,
+        derivationPaths: [requestKeypath(task.path, context.pin.fingerprint)],
+        origin: ORIGIN,
+      },
+      codec: btcSignRequestCodec,
+    },
     btcSignatureCodec,
   );
   checkRequestId(answer.requestId, requestId);

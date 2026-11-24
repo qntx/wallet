@@ -16,6 +16,8 @@ import { beforeAll, describe, expect, it } from "vite-plus/test";
 import * as z from "zod/mini";
 
 import type { Wallet } from "@qntx/wallet";
+import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
 
 import { CLOB_HOST, DATA_HOST, RELAYER_HOST } from "../src/apps/polymarket/constants.ts";
 import { PolymarketError } from "../src/apps/polymarket/errors.ts";
@@ -226,6 +228,9 @@ const provider = (
     now,
     wallet,
     credentials,
+    /* The account seam resolves the group's Polygon address through the kernel — the same
+       evm.bip44 derivation the viem oracle accounts mirror. */
+    account: async (params: Parameters<ChainsApi["account"]>[0]) => chains(wallet).account(params),
     /* The chain read mirrors makeFetch's `/deployed` answer — beacon only unless overridden. */
     networks: networksStub(
       pmChainCode(

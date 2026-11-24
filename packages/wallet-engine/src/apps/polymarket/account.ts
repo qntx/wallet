@@ -395,7 +395,7 @@ export function createPolymarketAccount(options: {
   readonly http: PolymarketHttp;
   readonly l2: PolymarketL2;
   readonly wallets: PolymarketWallets;
-  /** The group's `evm.bip44` signer address — `chains(wallet).account` on Polygon. */
+  /** The group's `evm.bip44` signer address — the apps account seam on Polygon. */
   readonly signerOf: (group: AppGroup) => Promise<`0x${string}`>;
 }): PolymarketAccountReads {
   /** Group key → the locate call — one relayer probe per group per session. */

@@ -26,7 +26,7 @@ import { findSeedWallet, verifyFactor } from "../../vault/vault.ts";
  * loaded on first use only, so a nostr-only session never touches wasm; a WasmPoisonedError drops
  * the instance and every signer built on it, and the next call reloads.
  */
-import { boundPrompt } from "../chains/prompt.ts";
+import { boundPrompt, rowsOf } from "../chains/prompt.ts";
 import { sparkPrompt } from "./prompt.ts";
 import { loadSparkRuntime } from "./runtime.ts";
 import type { SparkRuntime } from "./runtime.ts";
@@ -564,7 +564,7 @@ const sparkApprove = async (
       ? undefined
       : boundPrompt(
           promptLocale(keystore.locale),
-          sparkPrompt(promptLocale(keystore.locale), summary),
+          rowsOf(sparkPrompt(promptLocale(keystore.locale), summary)),
           PROMPT_BOUNDS[keystore.platform],
         );
   if (shown?.oversize === true && !policyEnabled(ctx.image, dek, BLIND_SIGNING)) {

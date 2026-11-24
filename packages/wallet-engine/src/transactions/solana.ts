@@ -59,6 +59,7 @@ import {
   jupiterIx,
   readLookupTable,
 } from "../swaps/jupiter.ts";
+import { SolanaClusterBindingError } from "./binding.ts";
 import { submitSigned } from "./broadcast.ts";
 import type { BroadcastVerdict } from "./broadcast.ts";
 import { corroborated } from "./drop-evidence.ts";
@@ -98,29 +99,8 @@ const str = (v: unknown, fallback = "0"): string => {
 
 const solana = new SolanaChainAdapter();
 
-/** Why a message's lifetime could not be bound to the configured cluster. */
-export type SolanaBindingReason =
-  | "genesis-mismatch"
-  | "blockhash-unknown"
-  | "nonce-account-missing"
-  | "nonce-mismatch"
-  | "nonce-account-in-lookup-table"
-  | "unconfirmed"
-  | "testnet-gateway-only";
-
-/**
- * A `solana-sign` lifetime that cannot be proven to belong to the session's cluster. `code` is
- * `invalid-request` like every other binding refusal; `reason` names which check failed.
- */
-export class SolanaClusterBindingError extends ChainError {
-  readonly reason: SolanaBindingReason;
-
-  constructor(reason: SolanaBindingReason, message: string) {
-    super("invalid-request", message);
-    this.name = "SolanaClusterBindingError";
-    this.reason = reason;
-  }
-}
+export { SolanaClusterBindingError } from "./binding.ts";
+export type { SolanaBindingReason } from "./binding.ts";
 
 /* The recent blockhash is the chain binding of the signed bytes: when the primary is not trusted
    configuration it has to be confirmed by a second upstream, and both endpoints' genesis must be

@@ -13,13 +13,6 @@ import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
 import { WalletError } from "@qntx/wallet";
 import type { KeysApi, Wallet, HardwareDevice } from "@qntx/wallet";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
-import {
-  addSolanaSignature,
-  decodeSolana,
-  decodeSolanaTransaction,
-  normalizeSolana,
-} from "@qntx/wallet-chains/solana";
-import { chains } from "@qntx/wallet/chains";
 import type { DeviceIo } from "@qntx/wallet/hardware";
 import { nostr } from "@qntx/wallet/nostr";
 import { sessions } from "@qntx/wallet/sessions";
@@ -34,8 +27,8 @@ import { AssetsController } from "./assets/controller.ts";
 import type { AccountBalances } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
-import { prepareDappPsbts, signDappPsbts } from "./chains/bitcoin-dapp.ts";
-import { SOLANA_MAX_PROCESSING_AGE, SolanaChainAdapter } from "./chains/solana.ts";
+import { dappLanes } from "./chains/dapp-lanes.ts";
+import { SolanaChainAdapter } from "./chains/solana.ts";
 import { BITCOIN_CHAIN_IDS, BitcoinWalletHandler } from "./connect/bitcoin.ts";
 import { ConnectionController } from "./connect/controller.ts";
 import { Eip1193Handler } from "./connect/eip1193.ts";
@@ -89,10 +82,9 @@ import {
   fetchSwapQuote,
 } from "./swaps/quote.ts";
 import { ownBitcoinTxids } from "./transactions/bitcoin.ts";
-import { submitInOrder } from "./transactions/broadcast.ts";
 import { TransactionController } from "./transactions/controller.ts";
 import { accountAddress } from "./transactions/route.ts";
-import type { AccountRef, DelegationStatus, DisplayIntent } from "./transactions/route.ts";
+import type { AccountRef, DelegationStatus } from "./transactions/route.ts";
 
 export type EngineOptions = {
   readonly wallet: Wallet;
@@ -258,7 +250,10 @@ export type WalletEngine = {
    * Every engine signature runs through its `apis` — the request's wallet custody decides whether
    * the vault signs directly or the signer runs first.
    */
-  readonly signers: HostController<SignersController, "cancel" | "verifyAddress" | "fetchAccounts">;
+  readonly signers: HostController<
+    SignersController,
+    "apis" | "cancel" | "verifyAddress" | "fetchAccounts"
+  >;
   readonly addressBook: HostController<
     AddressBookController,
     "add" | "rename" | "setNote" | "remove"
@@ -356,6 +351,11 @@ export type WalletEngine = {
       readonly family: "evm" | "solana" | "bitcoin" | "tron";
       readonly address: string;
       readonly name?: string;
+      readonly qr?: {
+        readonly fingerprint: string;
+        readonly path: string;
+        readonly xpub?: string;
+      };
     }) => Promise<WatchAccount>;
     readonly rename: (id: string, name: string) => Promise<void>;
     readonly remove: (id: string) => Promise<void>;
@@ -510,10 +510,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
 
   const assets = new AssetsController({
     networks,
-    // Deferred like every other chains() call here — resolving the api at construction would
+    // Deferred like every other account seam here — resolving the api at construction would
     // validate the wallet before any balance read needs it.
     chains: {
-      account: async (params) => chains(options.wallet).account(params),
+      account: async (params) => signers.apis.account(params),
     },
     ownBitcoinTxids: () => ownBitcoinTxids(transactions.getState().txs),
     openStore: sessionStore,
@@ -578,10 +578,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
 
   const history = new HistoryController({
     networks,
-    // Deferred like every other chains() call here — resolving the api at construction would
+    // Deferred like every other account seam here — resolving the api at construction would
     // validate the wallet before any history read needs it.
     chains: {
-      account: async (params) => chains(options.wallet).account(params),
+      account: async (params) => signers.apis.account(params),
     },
     spark: controller,
     sparkNetwork: options.sparkNetwork,
@@ -671,10 +671,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     spark: controller,
     sparkNetwork: options.sparkNetwork,
     networks,
-    // Deferred like every other chains() call here — resolving the api at construction would
+    // Deferred like every other account seam here — resolving the api at construction would
     // validate the wallet before any discovery check needs it.
     chains: {
-      account: async (params) => chains(options.wallet).account(params),
+      account: async (params) => signers.apis.account(params),
     },
     logger: options.logger,
     now: options.now,
@@ -702,7 +702,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
           ).flatMap(([template, family]) =>
             networks.enabled(family).map(async (network) => {
               try {
-                const account = await chains(options.wallet).account({
+                const account = await signers.apis.account({
                   walletId,
                   groupIndex: group.index,
                   template,
@@ -742,153 +742,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     openStore: sessionStore,
     spark: controller,
     nostrSign: async (ref, event) => nostr(options.wallet).signer(ref).signEvent(event),
-    solanaSign: async (account, network, request, verify, commit) => {
-      const rpc = networks.solanaRpc(network);
-      const adapter = new SolanaChainAdapter();
-      const hdAccount = {
-        kind: "hd" as const,
-        walletId: account.walletId,
-        groupIndex: account.groupIndex,
-        template: "solana.bip44-change" as const,
-      };
-      if (request.kind === "transactions") {
-        const wires: Uint8Array[] = [];
-        const messages: Uint8Array[] = [];
-        for (const wire of request.transactions) {
-          const { message } = decodeSolanaTransaction(wire, account.address);
-          // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
-          const result = await signers.apis.sign({
-            request: {
-              kind: "solana.transaction",
-              network,
-              account: hdAccount,
-              message,
-            },
-            verify,
-          });
-          if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
-            throw new Error("unexpected solana sign result");
-          }
-          wires.push(addSolanaSignature(wire, account.address, result.signature));
-          messages.push(message);
-        }
-        if (!request.send) {
-          return { kind: "solana.transactions" as const, send: false, signedTransactions: wires };
-        }
-        const intents = messages.map((message): DisplayIntent =>
-          decodeSolana(
-            { kind: "solana.transaction", network, account: hdAccount, message },
-            account.address,
-          ),
-        );
-        /* The message carries only a blockhash: bound its expiry by the processed height at
-           request time plus Agave's processing age. The dApp fetched the blockhash earlier, at
-           any commitment, so the processed height is the bound that never comes in too low — a
-           low bound would let the poll prove a drop while the bytes can still land. Read once,
-           before commit: a failed read sends nothing. */
-        const lastValidBlockHeight =
-          (await adapter.blockHeight(rpc, "processed")) + SOLANA_MAX_PROCESSING_AGE;
-        commit();
-        const batch = await submitInOrder(wires.length, async (index) => {
-          const wire = wires[index];
-          const intent = intents[index];
-          if (wire === undefined || intent === undefined) {
-            throw new Error("signed transaction without its input");
-          }
-          return transactions.submitDappSolana(
-            network,
-            account.walletId,
-            wire,
-            lastValidBlockHeight,
-            intent,
-          );
-        });
-        return {
-          kind: "solana.transactions" as const,
-          send: true,
-          signatures: batch.ids,
-          ...(batch.stopped === undefined ? {} : { stopped: batch.stopped }),
-        };
-      }
-      normalizeSolana(
-        {
-          kind: "solana.message",
-          format: "raw",
-          network,
-          account: hdAccount,
-          message: request.message,
-        },
-        account.address,
-      );
-      const result = await signers.apis.sign({
-        request: {
-          kind: "solana.message",
-          format: "raw",
-          network,
-          account: hdAccount,
-          message: request.message,
-        },
-        verify,
-      });
-      if (result.kind !== "solana.message" || !(result.signature instanceof Uint8Array)) {
-        throw new Error("unexpected solana sign result");
-      }
-      return { kind: "solana.message" as const, signature: result.signature };
-    },
-    bitcoinPrepare: async (account, network, psbts) =>
-      prepareDappPsbts(
-        signers.apis,
-        networks.esplora(network),
-        account,
-        network,
-        psbts,
-        new Set(
-          transactions.frozenUtxos(
-            { walletId: account.walletId, groupIndex: account.groupIndex },
-            network,
-          ),
-        ),
-      ),
-    bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
-      const { signedPsbts, txids, stopped } = await signDappPsbts(
-        chains(options.wallet),
-        prepared,
-        send,
-        verify,
-        commit,
-        async (p, r) => transactions.submitDappBitcoin(network, account.walletId, p, r),
-      );
-      return {
-        kind: "bitcoin.psbts" as const,
-        signedPsbts,
-        txids,
-        ...(stopped === undefined ? {} : { stopped }),
-      };
-    },
-    bitcoinSign: async (account, network, request, verify) => {
-      const result = await signers.apis.sign({
-        request: {
-          kind: "bitcoin.message",
-          network,
-          account: {
-            kind: "hd",
-            walletId: account.walletId,
-            groupIndex: account.groupIndex,
-            template: account.template,
-          },
-          address: account.address,
-          message: request.message,
-          format: "bip322-simple",
-          change: 0,
-          index: 0,
-        },
-        verify,
-      });
-      if (result.kind !== "bitcoin.message") {
-        throw new Error("unexpected bitcoin sign result");
-      }
-      return { kind: "bitcoin.message" as const, signature: result.signature };
-    },
+    ...dappLanes({ signers, networks, transactions }),
     fetch: options.fetch,
     random: options.random,
     now: options.now,
@@ -921,7 +775,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     purpose: "payment" | "ordinals",
   ): Promise<{ address: string; publicKey: Uint8Array }> => {
     const template = purpose === "payment" ? "btc.bip84" : "btc.bip86";
-    const account = await chains(options.wallet).account({ ...group, template, network });
+    const account = await signers.apis.account({ ...group, template, network });
     if (!("xpub" in account) || account.xpub === undefined) {
       throw new Error("no Bitcoin account for the group");
     }
@@ -949,7 +803,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     if (account.kind === "imported") {
       return importedAddressOf(account, "evm");
     }
-    const resolved = await chains(options.wallet).account({
+    const resolved = await signers.apis.account({
       walletId: account.walletId,
       groupIndex: account.groupIndex,
       template: "evm.bip44",
@@ -961,7 +815,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     if (account.kind === "imported") {
       return importedAddressOf(account, "solana");
     }
-    const resolved = await chains(options.wallet).account({
+    const resolved = await signers.apis.account({
       walletId: account.walletId,
       groupIndex: account.groupIndex,
       template: "solana.bip44-change",
@@ -990,7 +844,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
           : ("tron.bip44" as const);
     try {
       // One derivation serves every network of the family: the address does not depend on it.
-      const account = await chains(options.wallet).account({
+      const account = await signers.apis.account({
         ...group,
         template,
         network: first,
@@ -1026,14 +880,27 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         return [];
       }
       const out: string[] = [];
+      let deviceNeeded = false;
       for (const group of accounts.getState().groups[walletId] ?? []) {
-        // oxlint-disable-next-line eslint/no-await-in-loop -- groups derive serially, like portfolio
-        for (const { address } of await groupAddresses(
-          { walletId, groupIndex: group.index },
-          family,
-        )) {
+        let derived: ReadonlyArray<{ readonly network: string; readonly address: string }>;
+        try {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- groups derive serially, like portfolio
+          derived = await groupAddresses({ walletId, groupIndex: group.index }, family);
+        } catch (error) {
+          /* One group waiting on its signer must not blind the family's readable groups —
+             the status stays `device-required` only when nothing can be watched. */
+          if (error instanceof WalletError && error.code === "device-required") {
+            deviceNeeded = true;
+            continue;
+          }
+          throw error;
+        }
+        for (const { address } of derived) {
           out.push(address);
         }
+      }
+      if (out.length === 0 && deviceNeeded) {
+        throw new WalletError("device-required", "every group's path lives on the device");
       }
       return out;
     },
@@ -1073,7 +940,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       requests.invalidateAll();
     },
     evmAddress: async (group, network) => {
-      const account = await chains(options.wallet).account({
+      const account = await signers.apis.account({
         ...group,
         template: "evm.bip44",
         network,
@@ -1084,7 +951,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       return account.address;
     },
     solanaAddress: async (group, network) => {
-      const account = await chains(options.wallet).account({
+      const account = await signers.apis.account({
         ...group,
         template: "solana.bip44-change",
         network,
@@ -1095,7 +962,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       return account.address;
     },
     tronAddress: async (group, network) => {
-      const account = await chains(options.wallet).account({
+      const account = await signers.apis.account({
         ...group,
         template: "tron.bip44",
         network,
@@ -1159,7 +1026,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     connections,
     requests,
     solanaAccount: async (group, network) => {
-      const account = await chains(options.wallet).account({
+      const account = await signers.apis.account({
         ...group,
         template: "solana.bip44-change",
         network,

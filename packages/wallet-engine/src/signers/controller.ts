@@ -78,6 +78,7 @@ export class SignersController extends Controller<SignersState> {
   /** The one signing path: vault material signs directly; card and hardware wallets run an op. */
   readonly apis: ChainApis = {
     account: async (params) => chains(this.options.wallet).account(params),
+    exportAccount: async (params) => chains(this.options.wallet).exportAccount(params),
     sign: async (params) => {
       const { account } = params.request;
       const info =

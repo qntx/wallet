@@ -294,8 +294,8 @@ const txPrompt = (
   enWarns: ReadonlyArray<string> = [],
   zhWarns: ReadonlyArray<string> = [],
 ): Prompt2 => ({
-  en: [titleEn, NET_EN, OUT_EN, ...enLines, FEE_EN, ...enWarns].join("\n"),
-  "zh-Hans": [titleZh, NET_ZH, OUT_ZH, ...zhLines, FEE_ZH, ...zhWarns].join("\n"),
+  en: [titleEn, OUT_EN, ...enWarns, NET_EN, ...enLines, FEE_EN].join("\n"),
+  "zh-Hans": [titleZh, OUT_ZH, ...zhWarns, NET_ZH, ...zhLines, FEE_ZH].join("\n"),
 });
 
 const blindPrompt = (to: string, selector: string, chain: "arb" | "eth" = "arb"): Prompt2 => ({

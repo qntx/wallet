@@ -1,4 +1,10 @@
-import type { SessionSchemeId, SessionSchemes, Validator } from "@qntx/wallet/protocol";
+import { isProtocolValue } from "@qntx/wallet/protocol";
+import type {
+  ProtocolValue,
+  SessionSchemeId,
+  SessionSchemes,
+  Validator,
+} from "@qntx/wallet/protocol";
 
 import { KernelError } from "../../errors.ts";
 /**
@@ -23,11 +29,23 @@ export type SessionMetering = {
   /** Strict-validates a limits value into the canonical object the record header stores. */
   readonly parseLimits: (value: unknown) => unknown;
   /**
-   * Charges `params` against `limits` and `spent` and returns the new spent as a canonical decimal
-   * — throws KernelError `invalid-input` on malformed params and `limit-exceeded` past the budget.
-   * `spent` is the header's current value (a canonical decimal, "0" when fresh).
+   * Strict-validates a spent value against the parsed limits — the record's stored metering. Throws
+   * on any failure: a spent the scheme's grammar does not accept is a tampered record.
    */
-  readonly meter: (params: unknown, limits: unknown, spent: string) => string;
+  readonly parseSpent: (value: unknown, limits: unknown) => unknown;
+  /** The all-zero metering a fresh record is sealed with — a canonical JSON object. */
+  readonly fresh: (limits: unknown) => ProtocolValue;
+  /**
+   * The spent value whose open-variant prompt renders the longest the limits admit — create checks
+   * the dialog bound against it so a later open can never overflow.
+   */
+  readonly worstSpent: (limits: unknown) => ProtocolValue;
+  /**
+   * Charges `params` against `limits` and `spent` and returns the new spent as the scheme's
+   * canonical JSON object — throws KernelError `invalid-input` on malformed params and
+   * `limit-exceeded` past a budget. `spent` is the header's current value, already parsed.
+   */
+  readonly meter: (params: unknown, limits: unknown, spent: unknown) => ProtocolValue;
   /** The verification prompt for create (`open` false) and reopen (`open` true). */
   readonly prompt: (
     session: SessionApproval,
@@ -42,8 +60,8 @@ export type SessionApproval = {
   readonly name: string;
   readonly validUntil: number;
   readonly limits: unknown;
-  /** Canonical decimal already charged — the open prompt reports the remaining budget. */
-  readonly spent: string;
+  /** The parsed metering — the open prompt reports what remains of it. */
+  readonly spent: unknown;
 };
 
 export type SessionScheme = {
@@ -62,6 +80,21 @@ export type SessionScheme = {
   readonly metering?: SessionMetering;
 };
 
+/* The record header only stores JSON — a scheme whose metering does not encode as a plain JSON
+   object is broken, not the caller. */
+const asJsonObject = (value: unknown): ProtocolValue => {
+  if (
+    !isProtocolValue(value) ||
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    value instanceof Uint8Array
+  ) {
+    throw new KernelError("integrity", "the scheme's spent is not a JSON object");
+  }
+  return value;
+};
+
 export function defineSessionScheme<K extends SessionSchemeId>(definition: {
   readonly id: K;
   readonly maxTtlMs: number;
@@ -76,13 +109,22 @@ export function defineSessionScheme<K extends SessionSchemeId>(definition: {
   ) => string;
   readonly metering?: {
     readonly limits: Validator<SessionSchemes[K]["limits"]>;
+    readonly spent: (
+      value: unknown,
+      limits: SessionSchemes[K]["limits"],
+    ) => SessionSchemes[K]["spent"];
+    readonly fresh: (limits: SessionSchemes[K]["limits"]) => SessionSchemes[K]["spent"];
+    readonly worstSpent: (limits: SessionSchemes[K]["limits"]) => SessionSchemes[K]["spent"];
     readonly meter: (
       params: SessionSchemes[K]["params"],
       limits: SessionSchemes[K]["limits"],
-      spent: string,
-    ) => string;
+      spent: SessionSchemes[K]["spent"],
+    ) => SessionSchemes[K]["spent"];
     readonly prompt: (
-      session: Omit<SessionApproval, "limits"> & { readonly limits: SessionSchemes[K]["limits"] },
+      session: Omit<SessionApproval, "limits" | "spent"> & {
+        readonly limits: SessionSchemes[K]["limits"];
+        readonly spent: SessionSchemes[K]["spent"];
+      },
       open: boolean,
       locale: PromptLocale,
     ) => KeystorePrompt;
@@ -94,16 +136,23 @@ export function defineSessionScheme<K extends SessionSchemeId>(definition: {
       ? undefined
       : {
           parseLimits: declared.limits,
-          meter: (params: unknown, limits: unknown, spent: string) => {
+          parseSpent: (value: unknown, limits: unknown) =>
+            declared.spent(value, declared.limits(limits)),
+          fresh: (limits: unknown) => asJsonObject(declared.fresh(declared.limits(limits))),
+          worstSpent: (limits: unknown) =>
+            asJsonObject(declared.worstSpent(declared.limits(limits))),
+          meter: (params: unknown, limits: unknown, spent: unknown) => {
             let checked: SessionSchemes[K]["params"];
             let checkedLimits: SessionSchemes[K]["limits"];
+            let checkedSpent: SessionSchemes[K]["spent"];
             try {
               checked = definition.params(params);
               checkedLimits = declared.limits(limits);
+              checkedSpent = declared.spent(spent, checkedLimits);
             } catch {
               throw new KernelError("invalid-input", "malformed params");
             }
-            return declared.meter(checked, checkedLimits, spent);
+            return asJsonObject(declared.meter(checked, checkedLimits, checkedSpent));
           },
           prompt: (
             session: SessionApproval,
@@ -111,12 +160,14 @@ export function defineSessionScheme<K extends SessionSchemeId>(definition: {
             locale: PromptLocale,
           ): KeystorePrompt => {
             let limits: SessionSchemes[K]["limits"];
+            let spent: SessionSchemes[K]["spent"];
             try {
               limits = declared.limits(session.limits);
+              spent = declared.spent(session.spent, limits);
             } catch {
-              throw new KernelError("integrity", "invalid session limits in the vault");
+              throw new KernelError("integrity", "invalid session metering in the vault");
             }
-            return declared.prompt({ ...session, limits }, open, locale);
+            return declared.prompt({ ...session, limits, spent }, open, locale);
           },
         };
   return {

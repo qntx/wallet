@@ -103,6 +103,42 @@ export type ChainAccountsParams = {
 };
 
 // @public (undocumented)
+export type ChainExportedKey = {
+    readonly node: ChainExportNode;
+    readonly path: string;
+    readonly curve: "secp256k1" | "ed25519";
+    readonly publicKey: Uint8Array;
+    readonly chainCode?: Uint8Array;
+    readonly parentFingerprint?: string;
+};
+
+// @public
+export type ChainExportNode = {
+    readonly kind: "evm.account";
+} | {
+    readonly kind: "leaf";
+    readonly template: "evm.bip44" | "tron.bip44" | "solana.bip44-change";
+} | {
+    readonly kind: "btc.account";
+    readonly template: "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
+    readonly network: string;
+};
+
+// @public (undocumented)
+export type ChainExportParams = {
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly nodes: ReadonlyArray<ChainExportNode>;
+    readonly verify: VerifyFactor_2;
+};
+
+// @public (undocumented)
+export type ChainExportResult = {
+    readonly fingerprint: string;
+    readonly keys: ReadonlyArray<ChainExportedKey>;
+};
+
+// @public (undocumented)
 export function chains(wallet: Wallet): ChainsApi;
 
 // @public (undocumented)
@@ -112,6 +148,12 @@ export type ChainsApi = {
         readonly request: ChainSignRequest;
         readonly verify: VerifyFactor;
     }) => Promise<ChainSignResult>;
+    readonly exportAccount: (params: {
+        readonly walletId: string;
+        readonly groupIndex: number;
+        readonly nodes: ReadonlyArray<ChainExportNode>;
+        readonly verify: VerifyFactor;
+    }) => Promise<ChainExportResult>;
 };
 
 // @public
@@ -271,6 +313,20 @@ type ExportedSecret = {
     readonly wipe: () => void;
 };
 
+// @public
+type Factor = {
+    readonly kind: "device";
+} | {
+    readonly kind: "hardware";
+} | {
+    readonly kind: "password";
+    readonly password: Uint8Array;
+} | {
+    readonly kind: "passkey";
+    readonly credentialId: Uint8Array;
+    readonly prf: Uint8Array;
+};
+
 // @public (undocumented)
 type FactorInfo = {
     readonly kind: "device";
@@ -395,6 +451,11 @@ type VaultWalletInfo = {
 
 // @public
 type VerifyFactor = Exclude<UnlockFactor, {
+    readonly kind: "device";
+}>;
+
+// @public
+type VerifyFactor_2 = Exclude<Factor, {
     readonly kind: "device";
 }>;
 

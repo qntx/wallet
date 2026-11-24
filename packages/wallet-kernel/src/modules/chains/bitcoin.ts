@@ -11,13 +11,16 @@ import {
   bitcoinNetwork,
   decodeBitcoinPsbt,
   decodeMessageTarget,
+  isDiscoverableChange,
   normalizeBitcoin,
   planBitcoinMessage,
   planBitcoinPsbt,
 } from "@qntx/wallet-chains/bitcoin";
+import type { BitcoinOwn, BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
 
 import type { PublicMaterial } from "../../derive/material.ts";
 import { KernelError } from "../../errors.ts";
+import { pathString } from "./keys.ts";
 import { messagePromptIntent } from "./prompt.ts";
 import type { BitcoinRequest, Prepared } from "./shared.ts";
 import { BTC_PURPOSE, deepEqual, mapChainError } from "./shared.ts";
@@ -131,7 +134,7 @@ const bitcoinInput = async (
   b: BitcoinDerive,
   tx: Transaction,
   entry: { readonly index: number; readonly template: string },
-): Promise<{ index: number; key: TaskKey }> => {
+): Promise<{ index: number; key: TaskKey; tail: BitcoinPathTail }> => {
   const purpose = BTC_PURPOSE[entry.template];
   if (purpose === undefined) {
     throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
@@ -176,17 +179,28 @@ const bitcoinInput = async (
       throw new KernelError("invalid-input", `input ${idx}: redeemScript is not this key's`);
     }
   }
-  return { index: idx, key: { path: der.path, publicKey: pub } };
+  return {
+    index: idx,
+    key: { path: der.path, publicKey: pub },
+    tail: { purpose, change: der.path[3] ?? 0, index: der.path[4] ?? 0 },
+  };
 };
 
 /**
  * Output binding, independent of which templates sign inputs: an output is this group's own when it
  * carries a derivation entry with our fingerprint — tap entries only for bip86, bip32 entries for
  * 44/49/84 — whose path is a valid `m/purpose'/coin'/group'/{0,1}/i` of this group and whose script
- * equals that key's script for the purpose. Failures just mean "not own".
+ * equals that key's script for the purpose. Failures just mean "not own". A verified own output is
+ * hidden as change only when `isDiscoverableChange` says the wallet can reach it — anything else is
+ * shown as a send to the user's own address at the unusual path it names.
  */
-const bitcoinOwnScripts = async (b: BitcoinDerive, tx: Transaction): Promise<Set<string>> => {
-  const ownScripts = new Set<string>();
+const bitcoinOwn = async (
+  b: BitcoinDerive,
+  tx: Transaction,
+  signed: ReadonlyArray<BitcoinPathTail>,
+): Promise<BitcoinOwn> => {
+  const change = new Set<string>();
+  const unusual = new Map<string, string>();
   for (let i = 0; i < tx.outputsLength; i++) {
     const output = tx.getOutput(i);
     if (output.script === undefined) {
@@ -200,9 +214,16 @@ const bitcoinOwnScripts = async (b: BitcoinDerive, tx: Transaction): Promise<Set
       try {
         // oxlint-disable-next-line no-await-in-loop -- ownership checks keep output order
         const pub = await childAt(b, purpose, entry.path);
-        if (deepEqual(output.script, expectedScript(purpose, pub))) {
-          ownScripts.add(hex(output.script));
+        if (!deepEqual(output.script, expectedScript(purpose, pub))) {
+          continue;
         }
+        const tail = { purpose, change: entry.path[3] ?? 0, index: entry.path[4] ?? 0 };
+        if (isDiscoverableChange(tail, signed)) {
+          change.add(hex(output.script));
+        } else {
+          unusual.set(hex(output.script), pathString(entry.path));
+        }
+        break;
       } catch (error) {
         // A miss on external material is a real answer, not "not ours" — the signer must serve.
         if (error instanceof KernelError && error.code === "device-required") {
@@ -212,7 +233,7 @@ const bitcoinOwnScripts = async (b: BitcoinDerive, tx: Transaction): Promise<Set
       }
     }
   }
-  return ownScripts;
+  return { change, unusual };
 };
 
 /** The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. */
@@ -222,11 +243,14 @@ const prepareBitcoinPsbt = async (
 ): Promise<Prepared> => {
   const tx = Transaction.fromPSBT(request.psbt);
   const inputs = [];
+  const signed: BitcoinPathTail[] = [];
   for (const entry of request.sign) {
     // oxlint-disable-next-line no-await-in-loop -- input checks keep request order
-    inputs.push(await bitcoinInput(b, tx, entry));
+    const input = await bitcoinInput(b, tx, entry);
+    inputs.push({ index: input.index, key: input.key });
+    signed.push(input.tail);
   }
-  const ownScripts = await bitcoinOwnScripts(b, tx);
+  const own = await bitcoinOwn(b, tx, signed);
   let normalized;
   try {
     normalized = normalizeBitcoin(request);
@@ -238,7 +262,7 @@ const prepareBitcoinPsbt = async (
   }
   let intent: DisplayIntent;
   try {
-    intent = decodeBitcoinPsbt(request, ownScripts);
+    intent = decodeBitcoinPsbt(request, own);
   } catch (error) {
     mapChainError(error);
   }
@@ -248,7 +272,7 @@ const prepareBitcoinPsbt = async (
   } catch (error) {
     mapChainError(error);
   }
-  return { prompt: intent, plan };
+  return { prompt: intent, plan: { ...plan, hiddenChange: own.change } };
 };
 
 /** The message plan: the declared change/index must derive this address, then normalize/plan. */

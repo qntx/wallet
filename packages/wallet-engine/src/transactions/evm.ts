@@ -13,7 +13,7 @@ import type { PublicClient } from "viem";
 import { readContract } from "viem/actions";
 
 import { ChainError } from "@qntx/wallet-chains";
-import type { IntentWarning, SignRequest } from "@qntx/wallet-chains";
+import type { EvmTransaction, IntentWarning, SignRequest } from "@qntx/wallet-chains";
 import {
   ALLOWANCE_HOLDER,
   EVM_DELEGATOR,
@@ -94,9 +94,11 @@ import type {
   DelegationStatus,
   DisplayIntent,
   PrepareParams,
+  PreparedQrSign,
   PreparedRequest,
   RouteContext,
   SendParams,
+  SignedTransactionResult,
   SignParams,
   SignResult,
   TrackedTransaction,
@@ -219,6 +221,18 @@ export type EvmRoute = {
     },
     expectedNonce?: number,
   ) => Promise<PreparedRequest>;
+  /**
+   * A scanned QR transaction: the request's own nonce and fees are signed unchanged and nothing is
+   * broadcast — the counterpart sends the signed envelope itself.
+   */
+  readonly prepareQr: (
+    ctx: RouteContext,
+    request: {
+      readonly account: PrepareParams["account"];
+      readonly network: string;
+      readonly tx: EvmTransaction;
+    },
+  ) => Promise<PreparedQrSign>;
   readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxPoll | undefined>;
   readonly prepareReplace: (
     ctx: RouteContext,
@@ -1314,6 +1328,161 @@ export const createEvmRoute = (): EvmRoute => {
            request before anything is signed. */
         return l1?.stale();
       },
+      submit,
+      release: () => undefined,
+    };
+  };
+
+  /**
+   * A QR counterpart's own transaction: the bytes are signed unchanged — its nonce and fees are
+   * never rebuilt — while the chain binding, nonce and fee cross-reads, L1 fee and simulation of a
+   * dApp call all still apply. Nothing is tracked or broadcast; the signed envelope goes back to
+   * the counterpart, which broadcasts it itself.
+   */
+  const prepareQr = async (
+    ctx: RouteContext,
+    request: {
+      readonly account: PrepareParams["account"];
+      readonly network: string;
+      readonly tx: EvmTransaction;
+    },
+  ): Promise<PreparedQrSign> => {
+    const { account, network, tx } = request;
+    if (tx.type === "eip7702") {
+      throw new ChainError("invalid-request", "an authorization transaction cannot be signed here");
+    }
+    if (tx.to === undefined) {
+      throw new Error("contract creation is not supported");
+    }
+    const from = await resolveFrom(ctx, account, network);
+    if (tx.data !== "0x" && tx.to.toLowerCase() === from.toLowerCase()) {
+      throw new ChainError(
+        "invalid-request",
+        "dApp transactions calling your own account are refused",
+      );
+    }
+    const { networks } = ctx.options;
+    const info = networks.info(network);
+    const client = networks.client(network);
+    const independent = networks.independentClient(network);
+    const apis = evmApis(ctx);
+    const flags: Array<RequestCheckCode | undefined> = [
+      independent.kind === "unavailable" ? "reads-unverified" : undefined,
+    ];
+
+    const primary = await evm.pendingCount(client, from);
+    let chain = primary;
+    if (independent.kind === "available") {
+      try {
+        const other = await evm.pendingCount(independent.client, from);
+        chain = Math.max(primary, other);
+        flags.push(primary === other ? undefined : "nonce-mismatch");
+      } catch {
+        flags.push("reads-unverified");
+      }
+    }
+    /* The request's own nonce is signed — a divergence from the next free one is a check, never
+       a rewrite. */
+    if (tx.nonce !== nonces.next(network, from, chain)) {
+      flags.push("nonce-mismatch");
+    }
+    const pricing = info.feeModel?.pricing ?? "eip1559";
+    const quotes = await evm.estimateFee(client, pricing);
+    const quote = quotes.find((q) => q.tier === "normal") ?? quotes[1];
+    if (quote === undefined) {
+      throw new Error("no fee quote");
+    }
+    if (independent.kind === "available") {
+      try {
+        const others = await evm.estimateFee(independent.client, pricing);
+        const other = others.find((q) => q.tier === quote.tier);
+        if (other === undefined) {
+          flags.push("reads-unverified");
+        } else {
+          const merged = mergeEvmQuote(quote, other);
+          /* The endpoints disagreeing tells how trustworthy the request's own fee can be judged;
+             the cap compares the request's fee against the independent quote. */
+          flags.push(
+            merged.mismatch ? "fee-mismatch" : undefined,
+            exceedsNetworkCap(
+              BigInt("maxFeePerGas" in tx ? tx.maxFeePerGas : tx.gasPrice),
+              other.maxFeePerGas,
+            )
+              ? "fee-above-network"
+              : undefined,
+          );
+        }
+      } catch {
+        flags.push("reads-unverified");
+      }
+    }
+    const unsigned: EvmUnsignedTransaction = {
+      family: "evm",
+      network,
+      from,
+      to: tx.to,
+      value: BigInt(tx.value),
+      data: tx.data,
+      nonce: tx.nonce,
+      gas: BigInt(tx.gas),
+      ...("maxFeePerGas" in tx
+        ? {
+            maxFeePerGas: BigInt(tx.maxFeePerGas),
+            maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
+          }
+        : { gasPrice: BigInt(tx.gasPrice) }),
+    };
+    const l1 = await beyondGasFee(ctx, network, unsigned, flags);
+    const { value } = unsigned;
+    if (
+      value > 0n &&
+      feeReachesAmount(
+        unsigned.gas * (unsigned.maxFeePerGas ?? unsigned.gasPrice ?? 0n) + (l1?.shown ?? 0n),
+        value,
+      )
+    ) {
+      flags.push("fee-exceeds-amount");
+    }
+    const signRequest: SignParams["request"] = {
+      kind: "evm.transaction",
+      network,
+      account,
+      tx,
+    };
+    const intent = withL1Fee(decodeEvm(signRequest, from), l1?.shown);
+    const simulated = { to: unsigned.to, value: unsigned.value, data: unsigned.data };
+    const simulation = await evm.simulate(
+      client,
+      info.chainId,
+      from,
+      simulated,
+      ctx.options.setTimer,
+    );
+
+    const submit = async (
+      verify: SendParams["verify"],
+      commit: () => void,
+    ): Promise<SignedTransactionResult> => {
+      const result = await apis.sign({ request: signRequest, verify });
+      if (result.kind !== "evm.transaction") {
+        throw new Error("unexpected sign result for an evm transaction");
+      }
+      commit();
+      return { kind: "evm.signed-transaction", signedTransaction: result.signedTransaction };
+    };
+
+    return {
+      account,
+      network,
+      intent,
+      signer: from,
+      checks: collectChecks(flags),
+      simulation,
+      resimulate: async () =>
+        evm.simulate(client, info.chainId, from, simulated, ctx.options.setTimer),
+      /* The L1 fee is re-read at approval: a rise the shown maximum cannot cover ends the
+         request before anything is signed. */
+      staleReason: async () => l1?.stale(),
       submit,
       release: () => undefined,
     };
@@ -2417,6 +2586,7 @@ export const createEvmRoute = (): EvmRoute => {
   return {
     prepare,
     prepareCall,
+    prepareQr,
     delegationState: readDelegationState,
     prepareEvmInternal,
     poll,

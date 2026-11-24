@@ -4,7 +4,8 @@
  * error classes live here too so the connect layer's provider-error mapping can test them without
  * importing the controller either.
  */
-import type { SignRequest } from "@qntx/wallet-chains";
+import type { BitcoinTemplate, SignRequest } from "@qntx/wallet-chains";
+import type { BitcoinOwn } from "@qntx/wallet-chains/bitcoin";
 
 import { APP_ID } from "../gateway/contract/eligibility.ts";
 
@@ -53,7 +54,13 @@ export type DappOrigin = BrowserOrigin | WalletConnectOrigin;
 /** A request an in-engine application (Hyperliquid, …) opened — core never enumerates app ids. */
 export type AppOrigin = { readonly kind: "app"; readonly id: string };
 
-export type RequestOrigin = { readonly kind: "internal" } | AppOrigin | DappOrigin;
+/**
+ * A scanned QR sign request. `declared` is the counterpart's self-declared origin text — display
+ * only, never verified; it is already sanitised and at most 64 characters.
+ */
+export type QrOrigin = { readonly kind: "qr"; readonly declared?: string };
+
+export type RequestOrigin = { readonly kind: "internal" } | AppOrigin | DappOrigin | QrOrigin;
 
 /** The URL a dApp origin's phishing and sign-in checks run against. */
 export const dappUrl = (origin: DappOrigin): string =>
@@ -99,12 +106,26 @@ export const isAppOrigin = (value: unknown): value is AppOrigin =>
   APP_ID.test(value["id"]) &&
   Object.keys(value).length === 2;
 
+/** The persisted shape of a QR origin; `declared` is already sanitised display text. */
+export const isQrOrigin = (value: unknown): value is QrOrigin => {
+  if (!isObject(value) || value["kind"] !== "qr") {
+    return false;
+  }
+  if (!Object.keys(value).every((key) => key === "kind" || key === "declared")) {
+    return false;
+  }
+  const { declared } = value;
+  return declared === undefined || (typeof declared === "string" && declared.length <= 64);
+};
+
 /** The persisted shape of a request origin. */
 export const isRequestOrigin = (value: unknown): value is RequestOrigin => {
   if (!isObject(value)) {
     return false;
   }
-  return value["kind"] === "internal" || isAppOrigin(value) || isDappOrigin(value);
+  return (
+    value["kind"] === "internal" || isAppOrigin(value) || isDappOrigin(value) || isQrOrigin(value)
+  );
 };
 
 export type RequestMethod =
@@ -151,29 +172,32 @@ export type BitcoinGroup = {
 /** The sighash a dApp asks for per input; anything else is refused before it reaches a request. */
 export type BitcoinSigHash = "ALL" | "SINGLE|ANYONECANPAY";
 
-/** One dApp PSBT and the inputs it asks the wallet to sign. */
+/**
+ * One PSBT and the inputs it asks the wallet to sign — a QR counterpart may request any of the
+ * group's four templates where a dApp only uses the two dApp-facing ones.
+ */
 export type BitcoinPsbtInput = {
   readonly psbt: Uint8Array;
   readonly sign: ReadonlyArray<{
     readonly index: number;
     readonly sigHash: BitcoinSigHash;
-    readonly template: BitcoinAccount["template"];
+    readonly template: BitcoinTemplate;
   }>;
 };
 
 /**
  * A dApp PSBT after the engine enriched the requested inputs with this account's derivation data:
- * `request` is what the kernel signs, `ownScripts` the scripts verified as the account's, `inputs`
- * the signed inputs' prevout values and sighash (for risk).
+ * `request` is what the kernel signs, `own` the verified own-key outputs split into discoverable
+ * change and unusual paths, `inputs` the signed inputs' prevout values and sighash (for risk).
  */
 export type PreparedBitcoinPsbt = {
   readonly request: Extract<SignRequest, { kind: "bitcoin.psbt" }>;
-  readonly ownScripts: ReadonlySet<string>;
+  readonly own: BitcoinOwn;
   readonly inputs: ReadonlyArray<{
     readonly index: number;
     readonly value: number;
     readonly sigHash: BitcoinSigHash;
-    readonly template: BitcoinAccount["template"];
+    readonly template: BitcoinTemplate;
     /** The user froze this outpoint — signing it is a danger finding. */
     readonly frozen: boolean;
   }>;

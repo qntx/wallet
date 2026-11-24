@@ -580,7 +580,8 @@ describe("enable failure and lifecycle gaps", () => {
 
   it("create failure leaves enabling + error, nothing posted, and retry succeeds", async () => {
     const w = await world(37);
-    // Exhaust the kernel's per-scheme session cap first so create fails.
+    /* Exhaust the kernel's per-scheme session cap first so create fails — each fill session
+       takes its own group so the per-owner cap stays out of the way. */
     const api = sessions(w.wallet);
     const existing = await api.list();
     for (let i = existing.length; i < 16; i++) {
@@ -589,7 +590,7 @@ describe("enable failure and lifecycle gaps", () => {
         scheme: "hyperliquid-l1-agent",
         limits: HL_LIMITS,
         verify: VERIFY,
-        owner: { walletId: w.walletId, groupIndex: 0 },
+        owner: { walletId: w.walletId, groupIndex: 1000 + i },
         scope: "Testnet",
         name: `cap-${i}`,
         validUntil: w.timers.time + DAY,
@@ -1010,6 +1011,7 @@ describe("app-sourced request origins", () => {
     } as unknown as Wallet;
     const created = createApps({
       wallet,
+      account: async (): Promise<never> => Promise.reject(new Error("unused")),
       requests,
       networks: {} as Pick<NetworkController, "client" | "independentClient">,
       fetch: async () => Promise.reject(new Error("unused")),
@@ -1076,6 +1078,7 @@ describe("app-sourced request origins", () => {
         getSnapshot: () => ({ vault: "locked", wallets: [] }),
         subscribe: () => () => undefined,
       } as unknown as Wallet,
+      account: async (): Promise<never> => Promise.reject(new Error("unused")),
       requests: {
         prepare: async (): Promise<PendingRequest> => Promise.reject(new Error("unused")),
         outcome: async (): Promise<never> => Promise.reject(new Error("unused")),
@@ -1152,6 +1155,7 @@ describe("app context accessors and guards", () => {
     });
     const created = createApps({
       wallet,
+      account: async (): Promise<never> => Promise.reject(new Error("unused")),
       requests: {
         prepare: async (): Promise<PendingRequest> => Promise.reject(new Error("unused")),
         outcome: async (): Promise<never> => Promise.reject(new Error("unused")),

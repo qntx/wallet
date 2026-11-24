@@ -127,8 +127,6 @@ export type HyperliquidActions = {
   readonly cancelBatches: (
     entries: ReadonlyArray<{ readonly a: number; readonly o: number }>,
   ) => ReadonlyArray<HyperliquidL1Action>;
-  /** The dead-man's switch: `time` must be ≥ now + 5 s; `undefined` clears it. */
-  readonly scheduleCancel: (time?: number) => HyperliquidL1Action;
   /* There is no `twap` order builder: a TWAP's slices carry no price the kernel could meter
      against the session's approved budget, so the scheme's validator refuses the action — the
      engine offers only the cancel. */
@@ -390,17 +388,6 @@ export function createHyperliquidActions(options: {
         batches.push(deepFreeze({ type: "cancel", cancels: entries.slice(i, i + BATCH_CAP) }));
       }
       return batches;
-    },
-    scheduleCancel: (time) => {
-      // Docs: a scheduled cancel must land ≥ 5 s in the future; omitting time clears it.
-      if (time !== undefined && time < options.now() + 5000) {
-        throw new HyperliquidError("invalid-input", "schedule time must be ≥ 5 s out");
-      }
-      return deepFreeze(
-        time === undefined
-          ? { type: "scheduleCancel" }
-          : { type: "scheduleCancel", time: Math.trunc(time) },
-      );
     },
     twapCancel: async (params) => {
       const asset = await resolve(params.coin);

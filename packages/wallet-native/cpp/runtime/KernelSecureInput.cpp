@@ -14,7 +14,10 @@ namespace jsi = facebook::jsi;
 
 namespace {
 
-constexpr size_t kLabelMax = 512;
+// The session-approval label carries the whole limits prompt: the iOS bound
+// admits a 400-code-point description plus the title and the code line, at 4
+// UTF-8 bytes a code point.
+constexpr size_t kLabelMax = 2048;
 
 const char* errorCode(SecureInputFailure failure) {
   switch (failure) {
@@ -61,6 +64,8 @@ void installKernelSecureInput(
           kind = SecureInputKind::shortId;
         } else if (kindText == "backup-password") {
           kind = SecureInputKind::backupPassword;
+        } else if (kindText == "session-approval") {
+          kind = SecureInputKind::sessionApproval;
         } else {
           throw jsi::JSError(rt, "__qntx.secureInput.request kind is unknown");
         }

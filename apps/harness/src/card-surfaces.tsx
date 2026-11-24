@@ -1,10 +1,10 @@
 /**
  * Card-surfaces page (EXPO_PUBLIC_CARD_SURFACES=1): mounts the trusted
  * SecureInput next to a plain TextInput decoy and drives the scripted
- * sequence the leak checker verifies — decoy, access code, short id, a
- * cancelled request, two fake-reader taps, then one real device tap. The
- * driver types only when a `CARD_STEP` line appears; everything else is
- * automatic. Ends with `CARD_SURFACES_RESULT <json>` and
+ * sequence the leak checker verifies — decoy, access code, short id,
+ * session approval, a cancelled request, two fake-reader taps, then one real
+ * device tap. The driver types only when a `CARD_STEP` line appears;
+ * everything else is automatic. Ends with `CARD_SURFACES_RESULT <json>` and
  * `CARD_SURFACES_DONE`.
  */
 import { useEffect, useRef, useState } from "react";
@@ -74,6 +74,10 @@ export const CardSurfacesPage = (): React.JSX.Element => {
       say("CARD_STEP type-short-id");
       setStatus("type the short ID into the secure field");
       result["shortId"] = await send({ cmd: "input", kind: "short-id" });
+
+      say("CARD_STEP type-approval");
+      setStatus("type the 4-digit approval code into the secure field");
+      result["approval"] = await send({ cmd: "input", kind: "session-approval" });
 
       setStatus("requesting then cancelling an input");
       const cancelledInput = send({ cmd: "input", kind: "access-code" });

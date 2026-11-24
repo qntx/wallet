@@ -2,7 +2,7 @@ import type { PublicClient } from "viem";
 
 import { WalletError } from "@qntx/wallet";
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
-import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
 import { sessions } from "@qntx/wallet/sessions";
 
 import { RequestEndedError } from "../spi.ts";
@@ -315,8 +315,13 @@ export type HyperliquidProviderOptions = Pick<
   HyperliquidTransportOptions,
   "network" | "fetch" | "setTimer" | "now" | "timeoutMs"
 > & {
-  /** The wallet the kernel signs L1 actions for — `sessions(wallet)` and `chains(wallet)`. */
+  /** The wallet the kernel signs L1 actions for — `sessions(wallet)`. */
   readonly wallet: Wallet;
+  /**
+   * The group's `evm.bip44` account on the signature chain — the apps context's account seam;
+   * absent on a reads-only provider, whose enable/sign paths throw `not-enabled` first.
+   */
+  readonly account?: ChainsApi["account"];
   /** Randomness for cloids — the engine's injected source. */
   readonly random: (length: number) => Uint8Array;
   /** Owner mismatches and other anomalies are reported here, never secrets. */
@@ -352,6 +357,13 @@ const preview = (price: string, size: string, szDecimals: number): HyperliquidQu
   };
 };
 
+const accountOf = (options: HyperliquidProviderOptions): ChainsApi["account"] => {
+  if (options.account === undefined) {
+    throw new HyperliquidError("not-enabled", "this provider has no account api");
+  }
+  return options.account;
+};
+
 export function createHyperliquidProvider(
   options: HyperliquidProviderOptions,
 ): Omit<HyperliquidProvider, "approveBuilder"> & HyperliquidProviderInternals {
@@ -368,7 +380,7 @@ export function createHyperliquidProvider(
     },
     evmAddress: async (group) => {
       // The signature chain names the group account: Arbitrum One / Sepolia (design §2).
-      const account = await chains(options.wallet).account({
+      const account = await accountOf(options)({
         walletId: group.walletId,
         groupIndex: group.groupIndex,
         template: "evm.bip44",

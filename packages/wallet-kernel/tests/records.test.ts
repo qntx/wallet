@@ -104,7 +104,29 @@ describe("record and factor header vectors", () => {
     expect(parsed).toStrictEqual(vector.input);
     expect(encodeHeader(parsed)).toBe(vector.text);
   });
+
+  it.each([
+    ["a string spent", { spent: "0" }],
+    ["a numeric spent", { spent: 0 }],
+    ["an array spent", { spent: [] }],
+    ["a string limits", { limits: "x" }],
+  ])("a session header with %s fails to parse", (_name, extra) => {
+    /* `limits`/`spent` are sealed objects, never scalars or arrays — the grammar check is what
+       stops a non-object field reaching the metering parser as an opaque value. */
+    const base = JSON.parse(sessionKeyVectorText()) as Record<string, unknown>;
+    expect(() => parseSessionHeader(JSON.stringify({ ...base, ...extra }))).toThrow(
+      "invalid vault header",
+    );
+  });
 });
+
+const sessionKeyVectorText = (): string => {
+  const [vector] = byKind("session-key");
+  if (vector === undefined) {
+    throw new Error("no session-key vector");
+  }
+  return vector.text;
+};
 
 const metaVector = vectors.find((v) => v.kind === "meta");
 const metaKeyId = metaVector?.input["keyId"];

@@ -416,11 +416,17 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
       ]);
       expect(request?.display).toMatchObject({
         kind: "bitcoin.sign",
-        psbts: [{ verifiability: "partial", warnings: [{ kind: "sighash-single-anyonecanpay" }] }],
+        psbts: [
+          {
+            verifiability: "partial",
+            warnings: [{ kind: "unusual-own-output" }, { kind: "sighash-single-anyonecanpay" }],
+          },
+        ],
       });
       expect(bitcoinRisk(request)).toStrictEqual([
         { code: "bitcoin-sighash-single", level: "danger" },
         { code: "bitcoin-inscription-input", level: "warning" },
+        { code: "bitcoin-unusual-output", level: "warning" },
       ]);
       expect(request?.checks).toContain("decode-partial");
       await approve();
@@ -692,19 +698,20 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
     }
   });
 
-  it("signs a mixed payment+ordinals request: the ordinals output is not an outflow", async () => {
+  it("signs a mixed payment+ordinals request: the ordinals delivery shows as an unusual own-address outflow", async () => {
     const r = await rig();
     try {
       await connect(r, ["payment", "ordinals"]);
       // An inscription-purchase-shaped PSBT: the payment input funds, the ordinals
-      // address receives — the wallet's own delivery, not an outflow.
+      // address receives — the wallet's own delivery on its receive chain, shown as an
+      // outflow to its own address at an unusual path.
       const psbt = dappPsbt({ from: BIP84_FIRST, to: BIP86_FIRST, value: 100_000n });
       const { request, settled, approve } = await signPsbt(r, [
         { psbt, inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] },
       ]);
       expect(request?.display).toMatchObject({
         kind: "bitcoin.sign",
-        psbts: [{ outflows: [] }],
+        psbts: [{ outflows: [{ ownPath: "m/86'/0'/0'/0/0", verified: true }] }],
       });
       await approve();
       const done = (await settled) as SignedPsbts;
@@ -786,6 +793,7 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
       ]);
       expect(bitcoinRisk(request)).toStrictEqual([
         { code: "bitcoin-inscription-input", level: "danger" },
+        { code: "bitcoin-unusual-output", level: "warning" },
       ]);
     } finally {
       r.engine.unsubscribe();

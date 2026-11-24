@@ -1,3 +1,4 @@
+// oxlint-disable eslint/no-await-in-loop -- pairing and sign stepping are sequential per driver
 import { ed25519 } from "@noble/curves/ed25519.js";
 /**
  * Hardware signing end to end: `hardware.begin`/`step` drive the fake device through the same
@@ -11,7 +12,7 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { Address, OutScript, p2pkh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
-import { Transaction } from "@scure/btc-signer/transaction.js";
+import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -19,8 +20,10 @@ import { bitcoinNetwork, verifyBitcoinPsbtSignatures } from "@qntx/wallet-chains
 import { EVM_DELEGATOR, normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import { CATALOGS } from "../src/modules/chains/prompt.ts";
 import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
 import { devicePromptLine } from "../src/modules/signers/prompt.ts";
+import { promptFits, PROMPT_BOUNDS } from "../src/prompts.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
@@ -181,6 +184,51 @@ const signOnDevice = async (
   }
   // The done step carries a HardwareResult — `{kind:"sign", result: SignResult}`.
   return { id: 0, ok: field(field(step, "result"), "result") };
+};
+
+const SIGHASH_WARNING =
+  "Signed inputs bind only their same-index outputs; the rest of the transaction can change";
+const UNUSUAL_WARNING =
+  "Funds sent to your own address at an unusual path may not appear in this wallet";
+
+/**
+ * A bip84 spend of `m/84'/0'/0'/0/0` marked SIGHASH_SINGLE|ANYONECANPAY, paying `outputs` foreign
+ * scripts plus `own` outputs on the group's receive chain at far indexes — two warning classes on
+ * top of a detail list long enough to overflow the iOS dialog bound.
+ */
+const warningPsbt = (outputs: number, own: number): Uint8Array => {
+  const master = HDKey.fromMasterSeed(SEED);
+  const { fingerprint } = master;
+  const inputKey = master.derive("m/84'/0'/0'/0/0");
+  const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+  prev.addInput({ txid: new Uint8Array(32).fill(0x11), index: 0, sequence: 0xffffffff });
+  prev.addOutput({ script: p2wpkh(inputKey.publicKey!).script, amount: 100_000n });
+  const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+  tx.addInput({
+    txid: prev.id,
+    index: 0,
+    sequence: 0xfffffffd,
+    sighashType: SigHash.SINGLE_ANYONECANPAY,
+    witnessUtxo: { script: p2wpkh(inputKey.publicKey!).script, amount: 100_000n },
+    nonWitnessUtxo: prev.toBytes(true, false),
+    bip32Derivation: [
+      [inputKey.publicKey!, { fingerprint, path: [84 + HARDENED, HARDENED, HARDENED, 0, 0] }],
+    ],
+  });
+  for (let i = 0; i < outputs; i++) {
+    const script = new Uint8Array([0x00, 0x14, ...new Uint8Array(20).fill(0xa0 + i)]);
+    tx.addOutput({ script, amount: 5000n });
+  }
+  for (let i = 0; i < own; i++) {
+    const key = master.derive(`m/84'/0'/0'/0/${5000 + i}`);
+    tx.addOutput({ script: p2wpkh(key.publicKey!).script, amount: 4000n });
+    tx.updateOutput(tx.outputsLength - 1, {
+      bip32Derivation: [
+        [key.publicKey!, { fingerprint, path: [84 + HARDENED, HARDENED, HARDENED, 0, 5000 + i] }],
+      ],
+    });
+  }
+  return tx.toPSBT(0);
 };
 
 describe("hardware sign byte-identical to local signing", () => {
@@ -575,6 +623,133 @@ describe("hardware sign refusals", () => {
     expect(descriptions.some((d) => d.includes(devicePromptLine("en", "clear", "keystone")))).toBe(
       true,
     );
+  });
+
+  it("an oversize prompt fits the bound once the device line is appended", async () => {
+    /* The phone dialog gets the chain bound shrunk by the device line's cost, so the verification
+       prompt — body plus device line — still fits where the unshrunk body alone would overflow. */
+    const fake = fakeKeystore();
+    const device = fakeDevice(SEED);
+    const h = createHarness({
+      keystore: fake.keystore,
+      drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER },
+    });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(res, "session");
+    ok(
+      await h.call(
+        "vault.setBlindSigning",
+        { enabled: true, verify: { kind: "hardware" } },
+        session,
+      ),
+    );
+    const begin = ok(
+      await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+    );
+    ok(
+      await h.call(
+        "hardware.step",
+        {
+          opId: strField(begin, "opId"),
+          response: { kind: "qr", ur: { type: "t", cbor: new Uint8Array([7]) } },
+        },
+        session,
+      ),
+    );
+    const status = ok(await h.call("status", undefined, session));
+    const wallets = field(status, "wallets") as ReadonlyArray<Record<string, ProtocolValue>>;
+    const hwWallet = wallets.find((w) => w["custody"] === "hardware")!;
+    const signRes = await signOnDevice(
+      h,
+      session,
+      {
+        kind: "evm.personal-message",
+        network: EVM_NETWORK,
+        account: hd(hwWallet["walletId"] as string, "evm.bip44"),
+        message: utf8ToBytes(Array.from({ length: 40 }, (_, i) => `message line ${i}`).join("\n")),
+      },
+      { kind: "hardware" },
+    );
+    expect("err" in signRes).toBe(false);
+    const prompt = opens(fake.calls).at(-1);
+    expect(prompt?.description.startsWith(devicePromptLine("en", "clear", "keystone"))).toBe(true);
+    expect(promptFits(prompt!, PROMPT_BOUNDS.ios)).toBe(true);
+  });
+
+  it("every driver's bound prompt leads with its device line", async () => {
+    /* The device line is the most important instruction — `blind` is itself a warning, `clear`
+       says where the real check happens — so it heads the description ahead of the chain
+       prompt's lead rows; the bound still drops detail rows first and keeps every warning. */
+    for (const device of ["keystone", "ledger", "onekey"] as const) {
+      const fake = fakeKeystore();
+      const deviceFake = fakeDevice(SEED);
+      const h = createHarness({
+        keystore: fake.keystore,
+        drivers: {
+          keystone: deviceFake.driver,
+          ledger: deviceFake.driver,
+          onekey: deviceFake.driver,
+        },
+      });
+      await h.settle();
+      const res = ok(
+        await h.call("wallet.importMnemonic", {
+          mnemonic: utf8ToBytes(MNEMONIC),
+          factor: { kind: "device" },
+        }),
+      );
+      const session = strField(res, "session");
+      ok(
+        await h.call(
+          "vault.setBlindSigning",
+          { enabled: true, verify: { kind: "hardware" } },
+          session,
+        ),
+      );
+      const begin = ok(await h.call("hardware.begin", { op: { kind: "pair", device } }, session));
+      ok(
+        await h.call(
+          "hardware.step",
+          {
+            opId: strField(begin, "opId"),
+            response: { kind: "qr", ur: { type: "fake-accounts", cbor: new Uint8Array([7]) } },
+          },
+          session,
+        ),
+      );
+      const status = ok(await h.call("status", undefined, session));
+      const wallets = field(status, "wallets") as ReadonlyArray<Record<string, ProtocolValue>>;
+      const hwId = wallets.find((w) => w["custody"] === "hardware")!["walletId"] as string;
+      const signRes = await signOnDevice(
+        h,
+        session,
+        {
+          kind: "bitcoin.psbt",
+          network: BTC_NETWORK,
+          account: { kind: "hd", walletId: hwId, groupIndex: 0 },
+          psbt: warningPsbt(10, 2),
+          sign: [{ index: 0, template: "btc.bip84" }],
+        },
+        { kind: "hardware" },
+      );
+      expect("err" in signRes).toBe(false);
+      const prompt = opens(fake.calls).at(-1)!;
+      const { description } = prompt;
+      expect(description.startsWith(devicePromptLine("en", "clear", device))).toBe(true);
+      // Lead rows survive the bound in order, right behind the device line.
+      expect(description).toContain(CATALOGS.en.otherOutflows);
+      expect(description).toContain(SIGHASH_WARNING);
+      expect(description).toContain(UNUSUAL_WARNING);
+      // …and detail rows were the ones dropped.
+      expect(description).toContain("more lines not shown");
+      expect(promptFits(prompt, PROMPT_BOUNDS.ios)).toBe(true);
+    }
   });
 });
 

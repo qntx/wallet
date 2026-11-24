@@ -16,6 +16,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { verifyEvent } from "@qntx/nostr";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
 
 import { createApps } from "../src/apps/index.ts";
 import { createPolymarketCredentials } from "../src/apps/polymarket/credentials.ts";
@@ -235,6 +236,8 @@ describe.runIf(RUN && MNEMONIC !== undefined)("polymarket e2e: enable + rest + c
     });
     const { controller, polymarket, destroy } = createApps({
       wallet,
+      account: async (params: Parameters<ChainsApi["account"]>[0]) =>
+        chains(wallet).account(params),
       requests,
       networks,
       fetch,

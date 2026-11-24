@@ -1,5 +1,8 @@
 // oxlint-disable vitest/no-conditional-in-test -- plan/recorded fixtures narrow via guard throws
 import { hexToBytes } from "@noble/hashes/utils.js";
+import { HDKey } from "@scure/bip32";
+import { mnemonicToSeedSync } from "@scure/bip39";
+import { p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction as ScureTransaction } from "@scure/btc-signer/transaction.js";
 import * as fc from "fast-check";
 /**
@@ -40,7 +43,12 @@ import {
   sighash,
   sighashTweakedKey,
 } from "./onekey-emulator/bitcoin-verify.ts";
-import { replayExchange, loadTranscript, transcriptSession } from "./onekey-emulator/index.ts";
+import {
+  replayExchange,
+  loadTranscript,
+  transcriptSession,
+  TEST_MNEMONIC,
+} from "./onekey-emulator/index.ts";
 import type { Transcript } from "./onekey-emulator/index.ts";
 
 const H = 0x80_00_00_00;
@@ -514,6 +522,44 @@ describe("bitcoinPrepare refusals", () => {
     ]);
     const error = await thrown(() => bitcoinPrepare(psbt, sign().slice(0, 1), "mainnet", []));
     expect(error.code).toBe("unsupported");
+  });
+
+  it("sends every output as address+amount — no address_n — even for a far-change derivation", () => {
+    /* PSBT output derivations never reach the wire: an own-key output at m/84'/0'/0'/1/5000 that
+       the kernel shows as "your address, unusual path" still goes to the device by address —
+       the display claim `clear` stays true on both models (research: firmware only hides an
+       output given address_n, which the driver never sends for it). */
+    const master = HDKey.fromMasterSeed(mnemonicToSeedSync(TEST_MNEMONIC));
+    const farPub = master.derive("m/84'/0'/0'/1/5000").publicKey;
+    if (farPub === null) {
+      throw new Error("no far-change key");
+    }
+    const changePub = master.derive("m/84'/0'/0'/1/0").publicKey;
+    if (changePub === null) {
+      throw new Error("no change key");
+    }
+    const psbt = psbtWithOutputs([
+      { script: p2wpkh(farPub).script, amount: 3000n },
+      { script: p2wpkh(changePub).script, amount: 2000n },
+    ]);
+    const tx = ScureTransaction.fromPSBT(psbt, { allowUnknownInputs: true });
+    tx.updateOutput(0, {
+      bip32Derivation: [
+        [farPub, { fingerprint: master.fingerprint, path: [H + 84, H, H, 1, 5000] }],
+      ],
+    });
+    tx.updateOutput(1, {
+      bip32Derivation: [
+        [changePub, { fingerprint: master.fingerprint, path: [H + 84, H, H, 1, 0] }],
+      ],
+    });
+    const prepared = bitcoinPrepare(tx.toPSBT(0), sign().slice(0, 1), "mainnet", []);
+    expect(prepared.outputs).toHaveLength(2);
+    for (const output of prepared.outputs) {
+      expect(output.addressN).toBeUndefined();
+      expect(output.address).toBeTypeOf("string");
+      expect(output.amount).toBeTypeOf("bigint");
+    }
   });
 });
 

@@ -498,12 +498,12 @@ describe("chain prompts", () => {
     };
     expect(chainPrompt("en", call)).toStrictEqual({
       title: "Confirm contract call",
-      description: `Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract ${TO}, function 0xdeadbeef\nSend 0.05 ETH to ${TO}\nMax fee 0.0004 ETH`,
+      description: `The wallet cannot verify what this call does\nNetwork: Ethereum\nCall contract ${TO}, function 0xdeadbeef\nSend 0.05 ETH to ${TO}\nMax fee 0.0004 ETH`,
     });
     expect(
       chainPrompt("zh-Hans", { ...call, contract: { address: TO, created: true } }).description,
     ).toBe(
-      `网络：Ethereum\n钱包无法核实此调用会做什么\n部署合约 ${TO}\n发送 0.05 ETH 到 ${TO}\n最高手续费 0.0004 ETH`,
+      `钱包无法核实此调用会做什么\n网络：Ethereum\n部署合约 ${TO}\n发送 0.05 ETH 到 ${TO}\n最高手续费 0.0004 ETH`,
     );
   });
 
@@ -736,7 +736,7 @@ describe("chain prompts via the real decoders", () => {
       TO,
     );
     expect(chainPrompt("en", intent).description).toBe(
-      `Network: Ethereum\nThere may be other outflows\nSend 1000000 base units of unverified token 0x2222222222222222222222222222222222222222 to ${TO}\nMax fee 0.000021 ETH`,
+      `There may be other outflows\nNetwork: Ethereum\nSend 1000000 base units of unverified token 0x2222222222222222222222222222222222222222 to ${TO}\nMax fee 0.000021 ETH`,
     );
   });
 
@@ -841,7 +841,7 @@ describe("chain prompts via the real decoders", () => {
     }) as never;
 
   it("a Bitcoin send shows BTC amounts and the max fee", () => {
-    const intent = decodeBitcoinPsbt(btcReq(btcPsbt(undefined)), new Set());
+    const intent = decodeBitcoinPsbt(btcReq(btcPsbt(undefined)));
     const text = chainPrompt("en", intent).description;
     expect(text).toContain("Network: Bitcoin");
     expect(text).toContain("Send 0.0009 BTC to bc1q");
@@ -872,7 +872,7 @@ describe("chain prompts via the real decoders", () => {
       script: new Uint8Array([0x6a, 0x04, 0xde, 0xad, 0xbe, 0xef]),
       amount: 98_000_000n,
     });
-    const intent = decodeBitcoinPsbt(btcReq(tx.toPSBT(0)), new Set());
+    const intent = decodeBitcoinPsbt(btcReq(tx.toPSBT(0)));
     expect(chainPrompt("en", intent).description).toBe(
       "Network: Bitcoin\nSend 0.01 BTC to bc1q4w46h2at4w46h2at4w46h2at4w46h2at25y74s\nBurn 0.98 BTC: it goes to an unspendable output and is lost\nMax fee 0.01 BTC",
     );
@@ -882,7 +882,7 @@ describe("chain prompts via the real decoders", () => {
   });
 
   it("a SIGHASH_SINGLE listing shows the fee-unknown line and the warning", () => {
-    const intent = decodeBitcoinPsbt(btcReq(btcPsbt(0x83)), new Set());
+    const intent = decodeBitcoinPsbt(btcReq(btcPsbt(0x83)));
     expect(intent.verifiability).toBe("partial");
     expect(chainPrompt("en", intent).description).toContain("Fee unknown");
     expect(chainPrompt("en", intent).description).toContain(
@@ -901,7 +901,7 @@ describe("chain prompts via the real decoders", () => {
       TO,
     );
     expect(chainPrompt("en", unlimited).description).toBe(
-      `Network: Ethereum\nThere may be other outflows\nAllow ${SPENDER} to spend unlimited USDC\nMax fee 0.000021 ETH`,
+      `There may be other outflows\nNetwork: Ethereum\nAllow ${SPENDER} to spend unlimited USDC\nMax fee 0.000021 ETH`,
     );
     const revoke = decodeEvm(
       evmReq("eip155:1", {
@@ -922,11 +922,11 @@ describe("chain prompts via the real decoders", () => {
     const intent = decodeEvm(evmReq("eip155:1", { to: OTHER, data: "0xdeadbeef" }), TO);
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm contract call",
-      description: `Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract ${OTHER}, function 0xdeadbeef\nMax fee 0.000021 ETH`,
+      description: `The wallet cannot verify what this call does\nNetwork: Ethereum\nCall contract ${OTHER}, function 0xdeadbeef\nMax fee 0.000021 ETH`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认合约调用",
-      description: `网络：Ethereum\n钱包无法核实此调用会做什么\n调用合约 ${OTHER}，函数 0xdeadbeef\n最高手续费 0.000021 ETH`,
+      description: `钱包无法核实此调用会做什么\n网络：Ethereum\n调用合约 ${OTHER}，函数 0xdeadbeef\n最高手续费 0.000021 ETH`,
     });
   });
 
@@ -938,11 +938,11 @@ describe("chain prompts via the real decoders", () => {
     expect(intent.contract?.created).toBe(true);
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm contract call",
-      description: `Network: Ethereum\nThe wallet cannot verify what this call does\nDeploy contract ${deployed}\nMax fee 0.000021 ETH`,
+      description: `The wallet cannot verify what this call does\nNetwork: Ethereum\nDeploy contract ${deployed}\nMax fee 0.000021 ETH`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认合约调用",
-      description: `网络：Ethereum\n钱包无法核实此调用会做什么\n部署合约 ${deployed}\n最高手续费 0.000021 ETH`,
+      description: `钱包无法核实此调用会做什么\n网络：Ethereum\n部署合约 ${deployed}\n最高手续费 0.000021 ETH`,
     });
   });
 
@@ -1055,11 +1055,11 @@ describe("chain prompts via the real decoders", () => {
     const program = base58.encode(unknown);
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm transfer",
-      description: `Network: Solana\nProgram ${program} receives this account's signature: it can move ALL SOL in this account\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
+      description: `Program ${program} receives this account's signature: it can move ALL SOL in this account\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nNetwork: Solana\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认转账",
-      description: `网络：Solana\n程序 ${program} 获得本账户的签名：可以转走本账户的全部 SOL\n钱包无法解码的程序调用：${program}\n这些程序可以转移本交易涉及账户中的资产\n发送 0.001 SOL 到 ${base58.encode(dest)}\n最高手续费 0.000005 SOL`,
+      description: `程序 ${program} 获得本账户的签名：可以转走本账户的全部 SOL\n钱包无法解码的程序调用：${program}\n这些程序可以转移本交易涉及账户中的资产\n网络：Solana\n发送 0.001 SOL 到 ${base58.encode(dest)}\n最高手续费 0.000005 SOL`,
     });
   });
 
@@ -1090,7 +1090,7 @@ describe("chain prompts via the real decoders", () => {
       script: new Uint8Array([0x00, 0x14, ...new Uint8Array(20).fill(0xab)]),
       amount: 140_000n,
     });
-    const intent = decodeBitcoinPsbt(btcReq(tx.toPSBT(0)), new Set());
+    const intent = decodeBitcoinPsbt(btcReq(tx.toPSBT(0)));
     expect(intent.blind).toBeUndefined();
     expect(chainPrompt("en", intent).description).toContain(
       "Includes inputs from other signers; the fee cannot be verified",
@@ -1661,7 +1661,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     );
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm contract call",
-      description: `Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract ${TO}, function 0xdeadbeef\nSend 10 ETH to ${TO}\nMax fee 0.0021 ETH`,
+      description: `The wallet cannot verify what this call does\nNetwork: Ethereum\nCall contract ${TO}, function 0xdeadbeef\nSend 10 ETH to ${TO}\nMax fee 0.0021 ETH`,
     });
   });
 
@@ -2741,17 +2741,17 @@ describe("near-miss blind prompts", () => {
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm blind signing",
       description:
-        "Network: Solana\n" +
         "Program calls the wallet cannot decode: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\n" +
         "These programs can move assets from the accounts in this transaction\n" +
+        "Network: Solana\n" +
         "Max fee 0.000005 SOL",
     });
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认盲签",
       description:
-        "网络：Solana\n" +
         "钱包无法解码的程序调用：TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\n" +
         "这些程序可以转移本交易涉及账户中的资产\n" +
+        "网络：Solana\n" +
         "最高手续费 0.000005 SOL",
     });
   });
@@ -3554,7 +3554,9 @@ describe("decoder warnings reach the prompt", () => {
       for (const locale of ["en", "zh-Hans"] as const) {
         const prompt = chainPrompt(locale, txIntent([{ kind, message: "50 bps" }]));
         const lines = prompt.description.split("\n");
-        expect(lines.at(-1), `${locale} ${kind}`).toBe(CATALOGS[locale].warnings[kind]("50 bps"));
+        /* The warning is a lead row: the verifiability caveat comes first, then the warning,
+           ahead of every detail line. */
+        expect(lines.at(1), `${locale} ${kind}`).toBe(CATALOGS[locale].warnings[kind]("50 bps"));
       }
     }
     /* Two warnings keep their order. */
@@ -3571,13 +3573,13 @@ describe("decoder warnings reach the prompt", () => {
     expect(ordered.indexOf(feeLine)).toBeLessThan(ordered.indexOf(sighashLine));
   });
 
-  it("every catalog warning renders after the content lines of a typed-data prompt", () => {
+  it("every catalog warning renders before the content lines of a typed-data prompt", () => {
     const kinds = Object.keys(CATALOGS.en.warnings) as IntentWarningKind[];
     for (const kind of kinds) {
       for (const locale of ["en", "zh-Hans"] as const) {
         const prompt = chainPrompt(locale, typedIntent([{ kind, message: "50 bps" }]));
         const lines = prompt.description.split("\n");
-        expect(lines.at(-1), `${locale} ${kind}`).toBe(CATALOGS[locale].warnings[kind]("50 bps"));
+        expect(lines.at(0), `${locale} ${kind}`).toBe(CATALOGS[locale].warnings[kind]("50 bps"));
       }
     }
   });
@@ -3826,6 +3828,7 @@ describe("requester text lines cannot imitate kernel lines", () => {
     safeDelegatecall: ["t"],
     safeRefund: ["r", "1", "1"],
     send: ["1", "to"],
+    sendOwnUnusual: ["1", "to", "m/84'/0'/0'/1/999"],
     sendTokenAccount: ["1", "ta", "to"],
     burn: ["1"],
     burnTokenAccount: ["1", "a"],
@@ -4036,11 +4039,11 @@ describe("Fiat24 prompts", () => {
     const intent = arbTx(USD24, data);
     expect(chainPrompt("en", intent)).toMatchObject({
       title: "Confirm transfer",
-      description: `Network: Arbitrum One\nThere may be other outflows\nSend 200 USD24 to Fiat24 account #10365 (whoever holds it when the transaction runs)\nMax fee 0.000021 ETH`,
+      description: `There may be other outflows\nNetwork: Arbitrum One\nSend 200 USD24 to Fiat24 account #10365 (whoever holds it when the transaction runs)\nMax fee 0.000021 ETH`,
     });
     expect(chainPrompt("zh-Hans", intent)).toMatchObject({
       title: "确认转账",
-      description: `网络：Arbitrum One\n可能还有其他转出\n发送 200 USD24 到 Fiat24 账户 #10365（收款人是交易执行时该账户的持有者）\n最高手续费 0.000021 ETH`,
+      description: `可能还有其他转出\n网络：Arbitrum One\n发送 200 USD24 到 Fiat24 账户 #10365（收款人是交易执行时该账户的持有者）\n最高手续费 0.000021 ETH`,
     });
   });
 
@@ -4052,10 +4055,10 @@ describe("Fiat24 prompts", () => {
     });
     const intent = arbTx(USD24, data);
     expect(chainPrompt("en", intent).description).toBe(
-      `Network: Arbitrum One\nThere may be other outflows\nSend 200 USD24 to Fiat24 account #9102 (whoever holds it when the transaction runs)\nMax fee 0.000021 ETH\nFiat24 account #9102 is an issuer-only account (first digit 9), not a client account — this is not a payment to a person`,
+      `There may be other outflows\nFiat24 account #9102 is an issuer-only account (first digit 9), not a client account — this is not a payment to a person\nNetwork: Arbitrum One\nSend 200 USD24 to Fiat24 account #9102 (whoever holds it when the transaction runs)\nMax fee 0.000021 ETH`,
     );
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n发送 200 USD24 到 Fiat24 账户 #9102（收款人是交易执行时该账户的持有者）\n最高手续费 0.000021 ETH\nFiat24 账户 #9102 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款`,
+      `可能还有其他转出\nFiat24 账户 #9102 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款\n网络：Arbitrum One\n发送 200 USD24 到 Fiat24 账户 #9102（收款人是交易执行时该账户的持有者）\n最高手续费 0.000021 ETH`,
     );
   });
 
@@ -4067,10 +4070,10 @@ describe("Fiat24 prompts", () => {
     });
     const intent = arbTx(EUR24, data);
     expect(chainPrompt("en", intent).description).toBe(
-      `Network: Arbitrum One\nThere may be other outflows\nAllow ${CARD} to spend 5000 EUR24 (Fiat24 card)\nMax fee 0.000021 ETH\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment`,
+      `There may be other outflows\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment\nNetwork: Arbitrum One\nAllow ${CARD} to spend 5000 EUR24 (Fiat24 card)\nMax fee 0.000021 ETH`,
     );
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n授权 ${CARD} 使用 5000 EUR24（Fiat24 卡）\n最高手续费 0.000021 ETH\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你`,
+      `可能还有其他转出\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你\n网络：Arbitrum One\n授权 ${CARD} 使用 5000 EUR24（Fiat24 卡）\n最高手续费 0.000021 ETH`,
     );
   });
 
@@ -4082,7 +4085,7 @@ describe("Fiat24 prompts", () => {
     });
     const intent = arbTx(USD24, data);
     expect(chainPrompt("en", intent).description).toBe(
-      `Network: Arbitrum One\nThere may be other outflows\nAllow ${DEPOSIT} to spend unlimited USD24 (Fiat24 top-up and exchange)\nMax fee 0.000021 ETH\nDanger: an unlimited allowance lets the Fiat24 top-up and exchange contract take your entire balance of this token`,
+      `There may be other outflows\nDanger: an unlimited allowance lets the Fiat24 top-up and exchange contract take your entire balance of this token\nNetwork: Arbitrum One\nAllow ${DEPOSIT} to spend unlimited USD24 (Fiat24 top-up and exchange)\nMax fee 0.000021 ETH`,
     );
   });
 
@@ -4107,10 +4110,10 @@ describe("Fiat24 prompts", () => {
     const intent = arbTx(DEPOSIT, data);
     expect(chainPrompt("en", intent)).toMatchObject({
       title: "Confirm swap",
-      description: `Network: Arbitrum One\nThere may be other outflows\nSend 200 USD24 to ${DEPOSIT}\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000021 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive`,
+      description: `There may be other outflows\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nNetwork: Arbitrum One\nSend 200 USD24 to ${DEPOSIT}\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000021 ETH`,
     });
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n发送 200 USD24 到 ${DEPOSIT}\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000021 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度`,
+      `可能还有其他转出\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n网络：Arbitrum One\n发送 200 USD24 到 ${DEPOSIT}\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000021 ETH`,
     );
   });
 
@@ -4122,10 +4125,10 @@ describe("Fiat24 prompts", () => {
     });
     const intent = arbTx(DEPOSIT, data);
     expect(chainPrompt("en", intent).description).toBe(
-      `Network: Arbitrum One\nThere may be other outflows\nReceive 300 EUR24; pay USD24 at the rate Fiat24 sets\nMax fee 0.000021 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nWhat you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract`,
+      `There may be other outflows\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nWhat you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract\nNetwork: Arbitrum One\nReceive 300 EUR24; pay USD24 at the rate Fiat24 sets\nMax fee 0.000021 ETH`,
     );
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n收到 300 EUR24；按 Fiat24 设定的汇率支付 USD24\n最高手续费 0.000021 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限`,
+      `可能还有其他转出\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限\n网络：Arbitrum One\n收到 300 EUR24；按 Fiat24 设定的汇率支付 USD24\n最高手续费 0.000021 ETH`,
     );
   });
 
@@ -4138,11 +4141,11 @@ describe("Fiat24 prompts", () => {
     const intent = arbTx(USD24, data);
     expect(chainPrompt("en", intent)).toMatchObject({
       title: "Confirm payout",
-      description: `Network: Arbitrum One\nThere may be other outflows\nPay out 200 USD24 by bank transfer to a Fiat24 payee\n· Fiat24 payee peggy\nMax fee 0.000021 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout`,
+      description: `There may be other outflows\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout\nNetwork: Arbitrum One\nPay out 200 USD24 by bank transfer to a Fiat24 payee\n· Fiat24 payee peggy\nMax fee 0.000021 ETH`,
     });
     expect(chainPrompt("zh-Hans", intent)).toMatchObject({
       title: "确认出金",
-      description: `网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 200 USD24 给 Fiat24 收款人\n· Fiat24 收款人 peggy\n最高手续费 0.000021 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金`,
+      description: `可能还有其他转出\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金\n网络：Arbitrum One\n以银行转账出金 200 USD24 给 Fiat24 收款人\n· Fiat24 收款人 peggy\n最高手续费 0.000021 ETH`,
     });
   });
 
@@ -4154,10 +4157,10 @@ describe("Fiat24 prompts", () => {
     });
     const intent = arbTx(EUR24, data);
     expect(chainPrompt("en", intent).description).toBe(
-      `Network: Arbitrum One\nThere may be other outflows\nPay out 300 EUR24 by bank transfer to a Fiat24 payee\n· Fiat24 payee peggy\n· Purpose 42\n· Fiat24 reference rent march\nMax fee 0.000021 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout`,
+      `There may be other outflows\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout\nNetwork: Arbitrum One\nPay out 300 EUR24 by bank transfer to a Fiat24 payee\n· Fiat24 payee peggy\n· Purpose 42\n· Fiat24 reference rent march\nMax fee 0.000021 ETH`,
     );
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 300 EUR24 给 Fiat24 收款人\n· Fiat24 收款人 peggy\n· 用途 42\n· Fiat24 参考 rent march\n最高手续费 0.000021 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金`,
+      `可能还有其他转出\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金\n网络：Arbitrum One\n以银行转账出金 300 EUR24 给 Fiat24 收款人\n· Fiat24 收款人 peggy\n· 用途 42\n· Fiat24 参考 rent march\n最高手续费 0.000021 ETH`,
     );
   });
 
@@ -4192,10 +4195,10 @@ describe("Fiat24 prompts", () => {
     const intent = arbTx(TO, data);
     expect(chainPrompt("en", intent)).toMatchObject({
       title: "Confirm batch",
-      description: `Network: Arbitrum One\nThere may be other outflows\nReceive 10 EUR24; pay USD24 at the rate Fiat24 sets\nAllow ${CARD} to spend 50 EUR24 (Fiat24 card)\nMax fee 0.000021 ETH\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nWhat you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract`,
+      description: `There may be other outflows\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nWhat you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract\nNetwork: Arbitrum One\nReceive 10 EUR24; pay USD24 at the rate Fiat24 sets\nAllow ${CARD} to spend 50 EUR24 (Fiat24 card)\nMax fee 0.000021 ETH`,
     });
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n收到 10 EUR24；按 Fiat24 设定的汇率支付 USD24\n授权 ${CARD} 使用 50 EUR24（Fiat24 卡）\n最高手续费 0.000021 ETH\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限`,
+      `可能还有其他转出\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限\n网络：Arbitrum One\n收到 10 EUR24；按 Fiat24 设定的汇率支付 USD24\n授权 ${CARD} 使用 50 EUR24（Fiat24 卡）\n最高手续费 0.000021 ETH`,
     );
   });
 
@@ -4213,10 +4216,10 @@ describe("Fiat24 prompts", () => {
     ]);
     const intent = arbTx(TO, data);
     expect(chainPrompt("en", intent).description).toBe(
-      `Network: Arbitrum One\nThere may be other outflows\nPay out 300 EUR24 by bank transfer to a Fiat24 payee\n· Fiat24 payee peggy\n· Purpose 42\n· Fiat24 reference rent march\nMax fee 0.000021 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout`,
+      `There may be other outflows\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout\nNetwork: Arbitrum One\nPay out 300 EUR24 by bank transfer to a Fiat24 payee\n· Fiat24 payee peggy\n· Purpose 42\n· Fiat24 reference rent march\nMax fee 0.000021 ETH`,
     );
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 300 EUR24 给 Fiat24 收款人\n· Fiat24 收款人 peggy\n· 用途 42\n· Fiat24 参考 rent march\n最高手续费 0.000021 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金`,
+      `可能还有其他转出\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金\n网络：Arbitrum One\n以银行转账出金 300 EUR24 给 Fiat24 收款人\n· Fiat24 收款人 peggy\n· 用途 42\n· Fiat24 参考 rent march\n最高手续费 0.000021 ETH`,
     );
   });
 
@@ -4229,10 +4232,10 @@ describe("Fiat24 prompts", () => {
     const intent = arbTx(DEPOSIT, data);
     expect(chainPrompt("en", intent)).toMatchObject({
       title: "Confirm swap",
-      description: `Network: Arbitrum One\nThere may be other outflows\nSend 5 USDC to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000021 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive`,
+      description: `There may be other outflows\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nNetwork: Arbitrum One\nSend 5 USDC to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000021 ETH`,
     });
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n发送 5 USDC 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000021 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度`,
+      `可能还有其他转出\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n网络：Arbitrum One\n发送 5 USDC 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000021 ETH`,
     );
   });
 
@@ -4244,10 +4247,10 @@ describe("Fiat24 prompts", () => {
     });
     const intent = arbTx(DEPOSIT, data, "0xde0b6b3a7640000");
     expect(chainPrompt("en", intent).description).toBe(
-      `Network: Arbitrum One\nThere may be other outflows\nSend 1 ETH to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive USD24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000021 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nThe swap to USDC is priced inside the transaction itself; you set no slippage limit`,
+      `There may be other outflows\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nThe swap to USDC is priced inside the transaction itself; you set no slippage limit\nNetwork: Arbitrum One\nSend 1 ETH to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive USD24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000021 ETH`,
     );
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n发送 1 ETH 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 USD24——没有最低到手额\n最高手续费 0.000021 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n到 USDC 的兑换在交易内部定价；你没有设置滑点上限`,
+      `可能还有其他转出\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n到 USDC 的兑换在交易内部定价；你没有设置滑点上限\n网络：Arbitrum One\n发送 1 ETH 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 USD24——没有最低到手额\n最高手续费 0.000021 ETH`,
     );
   });
 
@@ -4260,10 +4263,10 @@ describe("Fiat24 prompts", () => {
     const intent = arbTx(ACCOUNT, data);
     expect(chainPrompt("en", intent)).toMatchObject({
       title: "Confirm contract call",
-      description: `Network: Arbitrum One\nThere may be other outflows\nOpen Fiat24 account #123456 for this address\nMax fee 0.000021 ETH\nOpening the account permanently links this address to the identity you verify with Fiat24\nOpening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract`,
+      description: `There may be other outflows\nOpening the account permanently links this address to the identity you verify with Fiat24\nOpening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract\nNetwork: Arbitrum One\nOpen Fiat24 account #123456 for this address\nMax fee 0.000021 ETH`,
     });
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n为此地址开通 Fiat24 账户 #123456\n最高手续费 0.000021 ETH\n开通账户会将此地址与你向 Fiat24 验证的身份永久关联\n开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度`,
+      `可能还有其他转出\n开通账户会将此地址与你向 Fiat24 验证的身份永久关联\n开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度\n网络：Arbitrum One\n为此地址开通 Fiat24 账户 #123456\n最高手续费 0.000021 ETH`,
     );
   });
 
@@ -4277,10 +4280,10 @@ describe("Fiat24 prompts", () => {
     const other = "0x00000000000000000000000000000000C0FfeE00";
     expect(chainPrompt("en", intent)).toMatchObject({
       title: "Confirm transfer",
-      description: `Network: Arbitrum One\nThere may be other outflows\nSend 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 to ${other}\nMax fee 0.000021 ETH\nDanger: this moves control of Fiat24 account #123456 → ${other} — its money and the identity verified for it`,
+      description: `There may be other outflows\nDanger: this moves control of Fiat24 account #123456 → ${other} — its money and the identity verified for it\nNetwork: Arbitrum One\nSend 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 to ${other}\nMax fee 0.000021 ETH`,
     });
     expect(chainPrompt("zh-Hans", intent).description).toBe(
-      `网络：Arbitrum One\n可能还有其他转出\n发送 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 到 ${other}\n最高手续费 0.000021 ETH\n危险：这将转移 Fiat24 账户 #123456 → ${other} 的控制权——包括其中的资金与已验证身份`,
+      `可能还有其他转出\n危险：这将转移 Fiat24 账户 #123456 → ${other} 的控制权——包括其中的资金与已验证身份\n网络：Arbitrum One\n发送 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 到 ${other}\n最高手续费 0.000021 ETH`,
     );
   });
 

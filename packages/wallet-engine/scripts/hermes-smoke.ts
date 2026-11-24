@@ -1,7 +1,7 @@
 /// <reference types="node" />
 /**
- * Bundles tests/hermes/fiat24-entry.ts (the Fiat24 layer without a kernel) and runs it in bare
- * Hermes.
+ * Bundles the tests/hermes entries (the Fiat24 layer and the QR layer, both without a kernel) and
+ * runs each in bare Hermes.
  */
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,7 +27,15 @@ declare const Bun: {
 };
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const outfile = resolve(root, ".hermes-fiat24.iife.js");
+
+const ENTRIES: ReadonlyArray<{
+  readonly name: string;
+  readonly entry: string;
+  readonly ok: string;
+}> = [
+  { name: "fiat24", entry: "tests/hermes/fiat24-entry.ts", ok: "HERMES_FIAT24_OK" },
+  { name: "qr", entry: "tests/hermes/qr-entry.ts", ok: "HERMES_QR_OK" },
+];
 
 async function main(): Promise<number> {
   const hermes = process.env.HERMES;
@@ -35,31 +43,39 @@ async function main(): Promise<number> {
     console.error("set HERMES to the hermes binary");
     return 1;
   }
-  const result = await Bun.build({
-    entrypoints: [resolve(root, "tests/hermes/fiat24-entry.ts")],
-    target: "browser",
-    format: "iife",
-  });
-  if (!result.success) {
-    for (const log of result.logs) {
-      console.error(String(log));
+  const runEntry = async ({ name, entry, ok }: (typeof ENTRIES)[number]): Promise<boolean> => {
+    const result = await Bun.build({
+      entrypoints: [resolve(root, entry)],
+      target: "browser",
+      format: "iife",
+    });
+    if (!result.success) {
+      for (const log of result.logs) {
+        console.error(String(log));
+      }
+      return false;
     }
-    return 1;
-  }
-  const bundle = result.outputs.find((o) => o.kind === "entry-point");
-  if (!bundle) {
-    console.error("bun build produced no entry-point output");
-    return 1;
-  }
-  await Bun.write(outfile, bundle);
-  const run = Bun.spawnSync([hermes, ...HERMES_FLAGS, outfile], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const out = `${run.stdout.toString()}\n${run.stderr.toString()}`;
-  console.log(out);
-  if (!out.includes("HERMES_FIAT24_OK")) {
-    console.error("fiat24 hermes smoke failed");
+    const bundle = result.outputs.find((o) => o.kind === "entry-point");
+    if (!bundle) {
+      console.error(`bun build produced no entry-point output for ${entry}`);
+      return false;
+    }
+    const outfile = resolve(root, `.hermes-${name}.iife.js`);
+    await Bun.write(outfile, bundle);
+    const run = Bun.spawnSync([hermes, ...HERMES_FLAGS, outfile], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const out = `${run.stdout.toString()}\n${run.stderr.toString()}`;
+    console.log(out);
+    if (!out.includes(ok)) {
+      console.error(`${entry} hermes smoke failed`);
+      return false;
+    }
+    return true;
+  };
+  const results = await Promise.all(ENTRIES.map(runEntry));
+  if (results.some((ok) => !ok)) {
     return 1;
   }
   return 0;

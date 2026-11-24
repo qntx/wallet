@@ -71,11 +71,11 @@
       "prompt": {
         "en": {
           "title": "Confirm contract call",
-          "description": "Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2, function 0x617ba037\nMax fee 0.000196608 ETH"
+          "description": "The wallet cannot verify what this call does\nNetwork: Ethereum\nCall contract 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2, function 0x617ba037\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认合约调用",
-          "description": "网络：Ethereum\n钱包无法核实此调用会做什么\n调用合约 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2，函数 0x617ba037\n最高手续费 0.000196608 ETH"
+          "description": "钱包无法核实此调用会做什么\n网络：Ethereum\n调用合约 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2，函数 0x617ba037\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -108,11 +108,11 @@
       "prompt": {
         "en": {
           "title": "Confirm contract call",
-          "description": "Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af, function 0x3593564c\nSend 0.01 ETH to 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af\nMax fee 0.000196608 ETH"
+          "description": "The wallet cannot verify what this call does\nNetwork: Ethereum\nCall contract 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af, function 0x3593564c\nSend 0.01 ETH to 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认合约调用",
-          "description": "网络：Ethereum\n钱包无法核实此调用会做什么\n调用合约 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af，函数 0x3593564c\n发送 0.01 ETH 到 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af\n最高手续费 0.000196608 ETH"
+          "description": "钱包无法核实此调用会做什么\n网络：Ethereum\n调用合约 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af，函数 0x3593564c\n发送 0.01 ETH 到 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -263,11 +263,11 @@
       "prompt": {
         "en": {
           "title": "Confirm contract call",
-          "description": "Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2, function 0x69328dec\nMax fee 0.000196608 ETH"
+          "description": "The wallet cannot verify what this call does\nNetwork: Ethereum\nCall contract 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2, function 0x69328dec\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认合约调用",
-          "description": "网络：Ethereum\n钱包无法核实此调用会做什么\n调用合约 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2，函数 0x69328dec\n最高手续费 0.000196608 ETH"
+          "description": "钱包无法核实此调用会做什么\n网络：Ethereum\n调用合约 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2，函数 0x69328dec\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -374,11 +374,11 @@
       "prompt": {
         "en": {
           "title": "Confirm approval",
-          "description": "Network: Ethereum\nThere may be other outflows\nClear the approval on 0x06012c8cf97BEaD5deAe237070F9587f8E7A266d #42\nMax fee 0.000196608 ETH"
+          "description": "There may be other outflows\nNetwork: Ethereum\nClear the approval on 0x06012c8cf97BEaD5deAe237070F9587f8E7A266d #42\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认授权",
-          "description": "网络：Ethereum\n可能还有其他转出\n清除 0x06012c8cf97BEaD5deAe237070F9587f8E7A266d #42 的单个授权\n最高手续费 0.000196608 ETH"
+          "description": "可能还有其他转出\n网络：Ethereum\n清除 0x06012c8cf97BEaD5deAe237070F9587f8E7A266d #42 的单个授权\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -411,11 +411,11 @@
       "prompt": {
         "en": {
           "title": "Confirm approval",
-          "description": "Network: Ethereum\nThere may be other outflows\nRevoke 0x00000000000000000000000000000000DeaDBeef's allowance for USDC\nMax fee 0.000196608 ETH"
+          "description": "There may be other outflows\nNetwork: Ethereum\nRevoke 0x00000000000000000000000000000000DeaDBeef's allowance for USDC\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认授权",
-          "description": "网络：Ethereum\n可能还有其他转出\n撤销 0x00000000000000000000000000000000DeaDBeef 对 USDC 的授权\n最高手续费 0.000196608 ETH"
+          "description": "可能还有其他转出\n网络：Ethereum\n撤销 0x00000000000000000000000000000000DeaDBeef 对 USDC 的授权\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -448,11 +448,11 @@
       "prompt": {
         "en": {
           "title": "Confirm approval",
-          "description": "Network: Ethereum\nThere may be other outflows\nRevoke 0x00000000000000000000000000000000DeaDBeef's access to all tokens of 0x06012c8cf97BEaD5deAe237070F9587f8E7A266d\nMax fee 0.000196608 ETH"
+          "description": "There may be other outflows\nNetwork: Ethereum\nRevoke 0x00000000000000000000000000000000DeaDBeef's access to all tokens of 0x06012c8cf97BEaD5deAe237070F9587f8E7A266d\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认授权",
-          "description": "网络：Ethereum\n可能还有其他转出\n撤销 0x00000000000000000000000000000000DeaDBeef 对 0x06012c8cf97BEaD5deAe237070F9587f8E7A266d 全部代币的授权\n最高手续费 0.000196608 ETH"
+          "description": "可能还有其他转出\n网络：Ethereum\n撤销 0x00000000000000000000000000000000DeaDBeef 对 0x06012c8cf97BEaD5deAe237070F9587f8E7A266d 全部代币的授权\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -485,11 +485,11 @@
       "prompt": {
         "en": {
           "title": "Confirm approval",
-          "description": "Network: Ethereum\nThere may be other outflows\nRevoke 0x00000000000000000000000000000000DeaDBeef's allowance for USDC via Permit2\nMax fee 0.000196608 ETH"
+          "description": "There may be other outflows\nNetwork: Ethereum\nRevoke 0x00000000000000000000000000000000DeaDBeef's allowance for USDC via Permit2\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认授权",
-          "description": "网络：Ethereum\n可能还有其他转出\n撤销 0x00000000000000000000000000000000DeaDBeef 对 USDC 的授权 经 Permit2\n最高手续费 0.000196608 ETH"
+          "description": "可能还有其他转出\n网络：Ethereum\n撤销 0x00000000000000000000000000000000DeaDBeef 对 USDC 的授权 经 Permit2\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -522,11 +522,11 @@
       "prompt": {
         "en": {
           "title": "Confirm transfer",
-          "description": "Network: Ethereum\nThere may be other outflows\nSend 0x495f947276749Ce646f68AC8c248420045cb7b5e #42 to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
+          "description": "There may be other outflows\nNetwork: Ethereum\nSend 0x495f947276749Ce646f68AC8c248420045cb7b5e #42 to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认转账",
-          "description": "网络：Ethereum\n可能还有其他转出\n发送 0x495f947276749Ce646f68AC8c248420045cb7b5e #42 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
+          "description": "可能还有其他转出\n网络：Ethereum\n发送 0x495f947276749Ce646f68AC8c248420045cb7b5e #42 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -559,11 +559,11 @@
       "prompt": {
         "en": {
           "title": "Confirm transfer",
-          "description": "Network: Ethereum\nThere may be other outflows\nSend 0x495f947276749Ce646f68AC8c248420045cb7b5e #42 to 0x00000000000000000000000000000000DeaDBeef\nSend 0x495f947276749Ce646f68AC8c248420045cb7b5e #7 ×2 to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
+          "description": "There may be other outflows\nNetwork: Ethereum\nSend 0x495f947276749Ce646f68AC8c248420045cb7b5e #42 to 0x00000000000000000000000000000000DeaDBeef\nSend 0x495f947276749Ce646f68AC8c248420045cb7b5e #7 ×2 to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认转账",
-          "description": "网络：Ethereum\n可能还有其他转出\n发送 0x495f947276749Ce646f68AC8c248420045cb7b5e #42 到 0x00000000000000000000000000000000DeaDBeef\n发送 0x495f947276749Ce646f68AC8c248420045cb7b5e #7 ×2 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
+          "description": "可能还有其他转出\n网络：Ethereum\n发送 0x495f947276749Ce646f68AC8c248420045cb7b5e #42 到 0x00000000000000000000000000000000DeaDBeef\n发送 0x495f947276749Ce646f68AC8c248420045cb7b5e #7 ×2 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -632,11 +632,11 @@
       "prompt": {
         "en": {
           "title": "Confirm contract call",
-          "description": "Network: Ethereum\nThe wallet cannot verify what this call does\nDeploy contract 0x659B375D76a8E9a2c68Da8818022D6561aA60845\nMax fee 0.000196608 ETH"
+          "description": "The wallet cannot verify what this call does\nNetwork: Ethereum\nDeploy contract 0x659B375D76a8E9a2c68Da8818022D6561aA60845\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认合约调用",
-          "description": "网络：Ethereum\n钱包无法核实此调用会做什么\n部署合约 0x659B375D76a8E9a2c68Da8818022D6561aA60845\n最高手续费 0.000196608 ETH"
+          "description": "钱包无法核实此调用会做什么\n网络：Ethereum\n部署合约 0x659B375D76a8E9a2c68Da8818022D6561aA60845\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -4834,11 +4834,11 @@
       "prompt": {
         "en": {
           "title": "Confirm transfer",
-          "description": "Network: Solana\nThere may be other outflows\nSend 5 base units of the token in account So11111111111111111111111111111111111111112 to 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\nMax fee 0.000005 SOL"
+          "description": "There may be other outflows\nNetwork: Solana\nSend 5 base units of the token in account So11111111111111111111111111111111111111112 to 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\nMax fee 0.000005 SOL"
         },
         "zh-Hans": {
           "title": "确认转账",
-          "description": "网络：Solana\n可能还有其他转出\n从代币账户 So11111111111111111111111111111111111111112 发送 5 个最小单位到 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\n最高手续费 0.000005 SOL"
+          "description": "可能还有其他转出\n网络：Solana\n从代币账户 So11111111111111111111111111111111111111112 发送 5 个最小单位到 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\n最高手续费 0.000005 SOL"
         }
       }
     },
@@ -4862,11 +4862,11 @@
       "prompt": {
         "en": {
           "title": "Confirm transfer",
-          "description": "Network: Solana\nThere may be other outflows\nBurn 5 base units of unverified token GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq from token account So11111111111111111111111111111111111111112; it is destroyed\nMax fee 0.000005 SOL"
+          "description": "There may be other outflows\nNetwork: Solana\nBurn 5 base units of unverified token GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq from token account So11111111111111111111111111111111111111112; it is destroyed\nMax fee 0.000005 SOL"
         },
         "zh-Hans": {
           "title": "确认转账",
-          "description": "网络：Solana\n可能还有其他转出\n从代币账户 So11111111111111111111111111111111111111112 销毁 5 个最小单位（未验证代币 GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq），永久消失\n最高手续费 0.000005 SOL"
+          "description": "可能还有其他转出\n网络：Solana\n从代币账户 So11111111111111111111111111111111111111112 销毁 5 个最小单位（未验证代币 GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq），永久消失\n最高手续费 0.000005 SOL"
         }
       }
     },
@@ -4974,11 +4974,11 @@
       "prompt": {
         "en": {
           "title": "Confirm contract call",
-          "description": "Network: Solana\nProgram Dra1ner111111111111111111111111111111111111 receives this account's signature: it can move ALL SOL in this account\nProgram Dra1ner111111111111111111111111111111111111 can act with this account's authority on: So11111111111111111111111111111111111111112 (may be yours); 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR (may be yours)\nProgram calls the wallet cannot decode: Dra1ner111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL"
+          "description": "Program Dra1ner111111111111111111111111111111111111 receives this account's signature: it can move ALL SOL in this account\nProgram Dra1ner111111111111111111111111111111111111 can act with this account's authority on: So11111111111111111111111111111111111111112 (may be yours); 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR (may be yours)\nProgram calls the wallet cannot decode: Dra1ner111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nNetwork: Solana\nMax fee 0.000005 SOL"
         },
         "zh-Hans": {
           "title": "确认合约调用",
-          "description": "网络：Solana\n程序 Dra1ner111111111111111111111111111111111111 获得本账户的签名：可以转走本账户的全部 SOL\n程序 Dra1ner111111111111111111111111111111111111 可以以本账户的权限操作：So11111111111111111111111111111111111111112（可能属于你）；8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR（可能属于你）\n钱包无法解码的程序调用：Dra1ner111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL"
+          "description": "程序 Dra1ner111111111111111111111111111111111111 获得本账户的签名：可以转走本账户的全部 SOL\n程序 Dra1ner111111111111111111111111111111111111 可以以本账户的权限操作：So11111111111111111111111111111111111111112（可能属于你）；8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR（可能属于你）\n钱包无法解码的程序调用：Dra1ner111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n网络：Solana\n最高手续费 0.000005 SOL"
         }
       }
     },
@@ -5002,11 +5002,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "Network: Solana\nProgram Dra1ner111111111111111111111111111111111111 receives this account's signature and can reach accounts the wallet cannot list\nProgram calls the wallet cannot decode: Dra1ner111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL"
+          "description": "Program Dra1ner111111111111111111111111111111111111 receives this account's signature and can reach accounts the wallet cannot list\nProgram calls the wallet cannot decode: Dra1ner111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nNetwork: Solana\nMax fee 0.000005 SOL"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "网络：Solana\n程序 Dra1ner111111111111111111111111111111111111 获得本账户的签名，并可操作钱包无法列出的账户\n钱包无法解码的程序调用：Dra1ner111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL"
+          "description": "程序 Dra1ner111111111111111111111111111111111111 获得本账户的签名，并可操作钱包无法列出的账户\n钱包无法解码的程序调用：Dra1ner111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n网络：Solana\n最高手续费 0.000005 SOL"
         }
       }
     },
@@ -5126,11 +5126,11 @@
       "prompt": {
         "en": {
           "title": "Confirm transfer",
-          "description": "Network: Arbitrum One\nThere may be other outflows\nSend 5 USDC to 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d\nDeposit 5 USDC to your Hyperliquid perps account 0x2222222222222222222222222222222222222222\nCircle fee at most 0.2 USDC\nMax fee 0.000196608 ETH"
+          "description": "There may be other outflows\nNetwork: Arbitrum One\nSend 5 USDC to 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d\nDeposit 5 USDC to your Hyperliquid perps account 0x2222222222222222222222222222222222222222\nCircle fee at most 0.2 USDC\nMax fee 0.000196608 ETH"
         },
         "zh-Hans": {
           "title": "确认转账",
-          "description": "网络：Arbitrum One\n可能还有其他转出\n发送 5 USDC 到 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d\n向你的 Hyperliquid 合约账户 0x2222222222222222222222222222222222222222 存入 5 USDC\nCircle 手续费至多 0.2 USDC\n最高手续费 0.000196608 ETH"
+          "description": "可能还有其他转出\n网络：Arbitrum One\n发送 5 USDC 到 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d\n向你的 Hyperliquid 合约账户 0x2222222222222222222222222222222222222222 存入 5 USDC\nCircle 手续费至多 0.2 USDC\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -5331,11 +5331,11 @@
       "prompt": {
         "en": {
           "title": "Confirm approval",
-          "description": "Network: TRON\nThere may be other outflows\nAllow THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 to spend 5 USDT\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition"
+          "description": "There may be other outflows\nNetwork: TRON\nAllow THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 to spend 5 USDT\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition"
         },
         "zh-Hans": {
           "title": "确认授权",
-          "description": "网络：TRON\n可能还有其他转出\n授权 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 使用 5 USDT\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费"
+          "description": "可能还有其他转出\n网络：TRON\n授权 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 使用 5 USDT\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费"
         }
       }
     },
@@ -5359,11 +5359,11 @@
       "prompt": {
         "en": {
           "title": "Confirm approval",
-          "description": "Network: TRON\nThere may be other outflows\nAllow THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 to spend unlimited USDT\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition"
+          "description": "There may be other outflows\nNetwork: TRON\nAllow THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 to spend unlimited USDT\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition"
         },
         "zh-Hans": {
           "title": "确认授权",
-          "description": "网络：TRON\n可能还有其他转出\n授权 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 使用 全部 USDT\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费"
+          "description": "可能还有其他转出\n网络：TRON\n授权 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 使用 全部 USDT\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费"
         }
       }
     },
@@ -5387,11 +5387,11 @@
       "prompt": {
         "en": {
           "title": "Confirm approval",
-          "description": "Network: TRON\nThere may be other outflows\nClear the approval on TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 #42\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition"
+          "description": "There may be other outflows\nNetwork: TRON\nClear the approval on TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 #42\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition"
         },
         "zh-Hans": {
           "title": "确认授权",
-          "description": "网络：TRON\n可能还有其他转出\n清除 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 #42 的单个授权\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费"
+          "description": "可能还有其他转出\n网络：TRON\n清除 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 #42 的单个授权\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费"
         }
       }
     },
@@ -5415,11 +5415,11 @@
       "prompt": {
         "en": {
           "title": "Confirm transfer",
-          "description": "Network: TRON\nThere may be other outflows\nSend 500 base units of unverified token trc10:1002000 to TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged"
+          "description": "There may be other outflows\nNetwork: TRON\nSend 500 base units of unverified token trc10:1002000 to TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged"
         },
         "zh-Hans": {
           "title": "确认转账",
-          "description": "网络：TRON\n可能还有其他转出\n发送 500 个最小单位（未验证代币 trc10:1002000） 到 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费"
+          "description": "可能还有其他转出\n网络：TRON\n发送 500 个最小单位（未验证代币 trc10:1002000） 到 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费"
         }
       }
     },
@@ -5751,11 +5751,11 @@
       "prompt": {
         "en": {
           "title": "Confirm contract call",
-          "description": "Network: TRON\nThe wallet cannot verify what this call does\nCall contract TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6, function 0x2fbebd38\nSend 1 TRX to TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6\nExpires 2026-01-01 00:01 (UTC)\nMax fee 10 TRX for energy; bandwidth fees may be charged in addition"
+          "description": "The wallet cannot verify what this call does\nNetwork: TRON\nCall contract TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6, function 0x2fbebd38\nSend 1 TRX to TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6\nExpires 2026-01-01 00:01 (UTC)\nMax fee 10 TRX for energy; bandwidth fees may be charged in addition"
         },
         "zh-Hans": {
           "title": "确认合约调用",
-          "description": "网络：TRON\n钱包无法核实此调用会做什么\n调用合约 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6，函数 0x2fbebd38\n发送 1 TRX 到 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6\n2026-01-01 00:01（UTC）后失效\n能量费上限 10 TRX；另可能扣除带宽费"
+          "description": "钱包无法核实此调用会做什么\n网络：TRON\n调用合约 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6，函数 0x2fbebd38\n发送 1 TRX 到 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6\n2026-01-01 00:01（UTC）后失效\n能量费上限 10 TRX；另可能扣除带宽费"
         }
       }
     },
@@ -5807,11 +5807,11 @@
       "prompt": {
         "en": {
           "title": "Confirm blind signing",
-          "description": "Network: TRON\nThe wallet does not support the TRON contract AccountUpdateContract and cannot show what it does\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged"
+          "description": "The wallet does not support the TRON contract AccountUpdateContract and cannot show what it does\nNetwork: TRON\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged"
         },
         "zh-Hans": {
           "title": "确认盲签",
-          "description": "网络：TRON\n钱包不支持 TRON 合约类型 AccountUpdateContract，无法显示它的作用\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费"
+          "description": "钱包不支持 TRON 合约类型 AccountUpdateContract，无法显示它的作用\n网络：TRON\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费"
         }
       }
     },

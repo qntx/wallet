@@ -3,6 +3,10 @@
  * file so `index.ts` can import the family prepares without an import cycle.
  */
 import { ChainError } from "@qntx/wallet-chains";
+import type { KeyPath } from "@qntx/wallet-chains";
+import { BITCOIN_NETWORKS } from "@qntx/wallet-chains/bitcoin";
+import { SOLANA_NETWORKS } from "@qntx/wallet-chains/solana";
+import { TRON_NETWORKS } from "@qntx/wallet-chains/tron";
 import type { ParamsOf } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../../errors.ts";
@@ -42,6 +46,32 @@ export const BTC_PURPOSE: Readonly<Record<string, number>> = {
   "btc.bip49": 49,
   "btc.bip84": 84,
   "btc.bip86": 86,
+};
+
+export const HARDENED = 0x80000000;
+
+/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
+export const leafPath = (family: "evm" | "tron" | "solana", groupIndex: number): KeyPath => {
+  if (family === "solana") {
+    return [44 + HARDENED, 501 + HARDENED, groupIndex + HARDENED, HARDENED];
+  }
+  const coin = family === "tron" ? 195 : 60;
+  return [44 + HARDENED, coin + HARDENED, HARDENED, 0, groupIndex];
+};
+
+export const checkNetwork = (template: string, network: string): void => {
+  if (template.startsWith("evm.") && !/^eip155:[1-9]\d*$/.test(network)) {
+    throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
+  }
+  if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) {
+    throw new KernelError("invalid-input", `unknown solana network ${network}`);
+  }
+  if (template.startsWith("btc.") && !(network in BITCOIN_NETWORKS)) {
+    throw new KernelError("invalid-input", `unknown bitcoin network ${network}`);
+  }
+  if (template.startsWith("tron.") && !TRON_NETWORKS.includes(network)) {
+    throw new KernelError("invalid-input", `unknown tron network ${network}`);
+  }
 };
 
 const isObj = (v: unknown): v is Record<string, unknown> =>

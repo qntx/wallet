@@ -5,6 +5,7 @@
  * `wallet.subscribe`) drives every app's `unlock`/`lock`/`close` hooks.
  */
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
+import type { ChainsApi } from "@qntx/wallet/chains";
 
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
@@ -66,6 +67,11 @@ type StoredGroup = {
 
 export type CreateAppsOptions = {
   readonly wallet: Wallet;
+  /**
+   * The account derivation seam every app shares — the engine's `signers.apis.account` (or the
+   * `chains` account api for a host composing apps without the engine).
+   */
+  readonly account: ChainsApi["account"];
   readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;
   /** The chain clients an app's deposit path reads allowance/burn limits through. */
   readonly networks: AppNetworks;
@@ -584,6 +590,7 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
      a `create` that mutated `this.id`) could otherwise stamp another app's origin. */
   const context = (id: AppId): AppContext => ({
     wallet: options.wallet,
+    account: options.account,
     /* Requests the app opens are attributed to it — a provider cannot choose its origin. */
     requests: {
       prepare: async (input) => options.requests.prepare(input, { kind: "app", id }),

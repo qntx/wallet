@@ -183,6 +183,16 @@ export const walletOf = (
   return { header: parseCardWalletHeader(record.header), body, record };
 };
 
+/**
+ * The remembered access hashes, live only while the app lock guards them — a `device` factor means
+ * the lock is off and a saved hash would VERIFY with no presence at all, so the op asks for the
+ * code instead. The map itself stays: turning the lock back on re-arms it.
+ */
+export const savedAccess = (env: OpEnv, walletId: string): Readonly<Record<string, string>> =>
+  env.ctx.image.factors.some((f) => f.kind === "device")
+    ? {}
+    : (env.bodies.get(walletId)?.access ?? {});
+
 /** The pinned-cert short ID of a card entry, when this kernel has seen the card. */
 export const pinnedShortId = (header: CardWalletHeader, cardIdHex: string): string | undefined => {
   const cert = header.cards.find((c) => c.cardId === cardIdHex)?.cert;

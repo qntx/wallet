@@ -10,10 +10,10 @@
 
 import { isBlindIntent } from "@qntx/wallet-chains";
 import type { KeyPath } from "@qntx/wallet-chains";
-import { BITCOIN_NETWORKS, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
+import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
-import { solanaAddressFromPublicKey, SOLANA_NETWORKS } from "@qntx/wallet-chains/solana";
-import { TRON_NETWORKS, tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
+import { solanaAddressFromPublicKey } from "@qntx/wallet-chains/solana";
+import { tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
 import type {
   ChainAccount,
   ChainTemplate,
@@ -37,6 +37,7 @@ import { findWalletRecord, openRecord, verifyFactor } from "../../vault/vault.ts
 import { findSession, parseSessionHeader } from "../sessions/record.ts";
 import { prepareBitcoin } from "./bitcoin.ts";
 import { assertFiat24Deadline, prepareEvm } from "./evm.ts";
+import { exportAccount } from "./export.ts";
 import { importedKeys, pathString, seedKeys } from "./keys.ts";
 import type { KeySource } from "./keys.ts";
 import { boundChainPrompt, chainPrompt } from "./prompt.ts";
@@ -44,7 +45,7 @@ import type { PromptIntent } from "./prompt.ts";
 import { signPlan, taskSignerFor } from "./run.ts";
 import type { ChainPlan } from "./run.ts";
 import type { Prepared, SignRequest } from "./shared.ts";
-import { BTC_PURPOSE } from "./shared.ts";
+import { BTC_PURPOSE, checkNetwork, HARDENED, leafPath } from "./shared.ts";
 import { prepareSolana } from "./solana.ts";
 import { prepareTron } from "./tron.ts";
 
@@ -53,37 +54,13 @@ export type ChainsModule = {
   readonly handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> };
 };
 
-const HARDENED = 0x80000000;
-
-/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
-export const leafPath = (family: "evm" | "tron" | "solana", groupIndex: number): KeyPath => {
-  if (family === "solana") {
-    return [44 + HARDENED, 501 + HARDENED, groupIndex + HARDENED, HARDENED];
-  }
-  const coin = family === "tron" ? 195 : 60;
-  return [44 + HARDENED, coin + HARDENED, HARDENED, 0, groupIndex];
-};
-
 /** An imported account's only path is `[]`; an HD account's is its group's leaf. */
 export const requestPath = (
   family: "evm" | "tron" | "solana",
   account: SignRequest["account"],
 ): KeyPath => (account.kind === "imported" ? [] : leafPath(family, account.groupIndex));
 
-export const checkNetwork = (template: string, network: string): void => {
-  if (template.startsWith("evm.") && !/^eip155:[1-9]\d*$/.test(network)) {
-    throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
-  }
-  if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) {
-    throw new KernelError("invalid-input", `unknown solana network ${network}`);
-  }
-  if (template.startsWith("btc.") && !(network in BITCOIN_NETWORKS)) {
-    throw new KernelError("invalid-input", `unknown bitcoin network ${network}`);
-  }
-  if (template.startsWith("tron.") && !TRON_NETWORKS.includes(network)) {
-    throw new KernelError("invalid-input", `unknown tron network ${network}`);
-  }
-};
+export { checkNetwork, leafPath } from "./shared.ts";
 
 export const accountFor = async (
   material: KeySource["material"],
@@ -459,6 +436,7 @@ export function createChainsModule(): ChainsModule {
     "wallet.accounts": async (ctx, params, session) =>
       walletAccounts(ctx, params, session, accounts),
     "chain.sign": chainSign,
+    "chain.exportAccount": exportAccount(),
   };
 
   return { vault, handlers };

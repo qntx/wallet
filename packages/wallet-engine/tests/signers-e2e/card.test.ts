@@ -12,12 +12,13 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
+import { WalletError } from "@qntx/wallet";
 import { card } from "@qntx/wallet/card";
 import { chains } from "@qntx/wallet/chains";
 
 import { shortId } from "../../../wallet-kernel/src/modules/card/protocol/identity.ts";
 import { SIM_LAUNCHER, startSimulator } from "../../../wallet-kernel/tests/card/sim.ts";
-import type { SimCard } from "../../../wallet-kernel/tests/card/sim.ts";
+import type { SimCard, Simulator } from "../../../wallet-kernel/tests/card/sim.ts";
 import { AccountTreeController } from "../../src/accounts/controller.ts";
 import type { SparkController } from "../../src/spark/controller.ts";
 import type { SendParams, TrackedTransaction } from "../../src/transactions/route.ts";
@@ -30,9 +31,15 @@ import {
   BTC_TO,
   btcAddressFromXpub,
   caughtOne,
+  dappRefusal,
   e2eWorld,
   EVM_NETWORK,
   EVM_TO,
+  longPsbt,
+  matrix,
+  matrixAccount,
+  qrRefusal,
+  SITE,
   SOL_NETWORK,
   SOL_TO,
   TRON_NETWORK,
@@ -42,7 +49,7 @@ import {
   verifySol,
   verifyTron,
 } from "./harness.ts";
-import type { E2eWorld } from "./harness.ts";
+import type { E2eWorld, MatrixHooks } from "./harness.ts";
 
 /** The inner card step the activity currently shows, if any. */
 const activeCardStep = (w: E2eWorld["w"]): string | undefined => {
@@ -299,4 +306,112 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card engine sends (applet simulator
       await simulator.close();
     }
   }, 300_000);
+});
+
+/* The matrix cells share one simulator process; each cell's setup deals a fresh sim card and
+   runs the rig's create flow on it. */
+let shared: Simulator | undefined;
+const simulator = async (): Promise<Simulator> => {
+  shared ??= await startSimulator();
+  return shared;
+};
+
+/* The rig the current matrix cell drives — set by its setup for the hooks to reach. */
+let current: CardRig;
+
+const cardHooks: MatrixHooks = {
+  /* The access code must be queued before approve — a held input request never sees a push. */
+  beforeApprove: () => {
+    current.input.push(utf8ToBytes(CARD_CODE));
+  },
+  duringApprove: async (w) => {
+    await until(() => activeCardStep(w) === "tap", 1200);
+    current.reader.present(current.member);
+  },
+};
+
+describe.skipIf(SIM_LAUNCHER === undefined)("card origins (applet simulator)", () => {
+  matrix(
+    "card",
+    CARD_VERIFY,
+    async () => {
+      const sim = await simulator();
+      const member = await sim.newCard();
+      const rig = await cardRig({ member });
+      const e2e = await e2eWorld({
+        wallet: { wallet: rig.wallet, walletId: rig.cardWalletId },
+      });
+      current = rig;
+      const account = await matrixAccount(e2e.w, rig.cardWalletId);
+      return { e2e, account };
+    },
+    cardHooks,
+  );
+
+  describe("card typed refusals", () => {
+    /* `prepareSign` refuses a signing text over the card's 1024-byte reader cap with
+       `card-unsupported` before the tap step — a many-output PSBT renders a prompt longer than
+       the cap while still decoding `clear` (no blind-signing gate). Count reader opens to prove
+       no card was ever asked. */
+    it(
+      "a request over the reader text cap is refused on the dApp and QR origins with zero taps",
+      { timeout: 60_000 },
+      async () => {
+        const sim = await simulator();
+        const member = await sim.newCard();
+        const rig = await cardRig({ member });
+        const e2e = await e2eWorld({
+          wallet: { wallet: rig.wallet, walletId: rig.cardWalletId },
+        });
+        const account = await matrixAccount(e2e.w, rig.cardWalletId);
+
+        let opens = 0;
+        const kernelReader = rig.reader.reader;
+        const open = kernelReader.open.bind(kernelReader);
+        (kernelReader as { open: typeof kernelReader.open }).open = async (prompt) => {
+          opens += 1;
+          return open(prompt);
+        };
+
+        /* 40 payment rows: the unbounded chain prompt clears 1024 bytes with no blind intent. */
+        const funded = e2e.fund(btcAddressFromXpub(account.bitcoinXpub), 200_000);
+        const psbt = longPsbt(funded, account, 40);
+        rig.input.push(utf8ToBytes(CARD_CODE));
+        const dapp = await dappRefusal(e2e, account, "bitcoin", CARD_VERIFY, async () =>
+          e2e.dapp.bitcoinWallet.handle(SITE, {
+            method: "bitcoin:signAndSendTransaction",
+            params: {
+              inputs: [
+                {
+                  psbt,
+                  chain: "bitcoin:mainnet",
+                  inputsToSign: [{ address: funded.address, signingIndexes: [0] }],
+                },
+              ],
+            },
+          }),
+        );
+        expect(dapp.approve).toBeInstanceOf(WalletError);
+        expect((dapp.approve as WalletError).code).toBe("card-unsupported");
+        expect(dapp.call).toBeInstanceOf(Error);
+        expect((dapp.call as Error).message).toContain("card-unsupported");
+
+        rig.input.push(utf8ToBytes(CARD_CODE));
+        const qr = await qrRefusal(
+          e2e,
+          account,
+          "bitcoin",
+          { family: "bitcoin", kind: "psbt", psbt },
+          CARD_VERIFY,
+        );
+        expect(qr.approve).toBeInstanceOf(WalletError);
+        expect((qr.approve as WalletError).code).toBe("card-unsupported");
+        expect(qr.call).toBeInstanceOf(Error);
+        expect((qr.call as Error).message).toContain("card-unsupported");
+
+        expect(opens).toBe(0);
+        await e2e.w.destroy();
+      },
+    );
+  });
 });

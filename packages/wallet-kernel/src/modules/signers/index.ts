@@ -190,14 +190,17 @@ const mergePin = (pin: HardwarePin, fetched: PinnedKeys): HardwarePin => ({
   ],
 });
 
-/** The bound for a prompt that gains one appended line: the line's cost comes off the top. */
+/** The bound for a prompt that gains one prepended line: the line's cost comes off the top. */
 const shrinkBound = (bound: PromptBound, line: string): PromptBound => ({
   title: bound.title,
   lines: bound.lines - 1,
   characters: bound.characters - codePoints(line) - 1,
 });
 
-/** The verification prompt's device line, appended to the chain prompt's description (I2). */
+/**
+ * The verification prompt's device line, ahead of every chain-prompt row — it is the most important
+ * instruction (blind is itself a warning; clear says where the real check happens).
+ */
 const devicePrompt = (
   base: KeystorePrompt,
   locale: "zh-Hans" | "en",
@@ -205,7 +208,7 @@ const devicePrompt = (
   device: HardwareDevice,
 ): KeystorePrompt => ({
   title: base.title,
-  description: `${base.description}\n${devicePromptLine(locale, display, device)}`,
+  description: `${devicePromptLine(locale, display, device)}\n${base.description}`,
 });
 
 export function createSignersModule(

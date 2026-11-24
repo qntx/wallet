@@ -74,6 +74,11 @@ export type DeviceMutant = {
     /** Corrupt the public key bytes sent for this path. */
     readonly badKeyPath?: string;
   };
+  /** The accounts the pair sync publishes — a device exposing only some of its keys. */
+  readonly sync?: {
+    readonly secp256k1?: ReadonlyArray<string>;
+    readonly ed25519?: ReadonlyArray<string>;
+  };
 };
 
 const pathNumbers = (rendered: string): number[] =>
@@ -184,6 +189,19 @@ const sourceFingerprints = (cbor: Buffer, field: number): Uint8Array[] => {
  * The device: `fingerprint` is the master fingerprint the paired seed advertises; `mutant` turns
  * single knobs hostile. `respond` throws on anything the real device could not parse or refuses.
  */
+/** The BIP-32 account nodes the pair sync pins, in the order firmware lists them. */
+const SYNC_SECP256K1_PATHS = [
+  "m/44'/0'/0'",
+  "m/49'/0'/0'",
+  "m/84'/0'/0'",
+  "m/86'/0'/0'",
+  "m/44'/60'/0'",
+  "m/44'/195'/0'",
+] as const;
+
+/** The SLIP-10 ed25519 leaves the pair sync pins. */
+const SYNC_ED25519_PATHS = ["m/44'/501'/0'", "m/44'/501'/0'/0'"] as const;
+
 export const keystoneDevice = (
   seed: Uint8Array,
   fingerprint: Uint8Array,
@@ -337,6 +355,45 @@ export const keystoneDevice = (
     return answer(vendorBytes(new CryptoPSBT(Buffer.from(tx.toPSBT(0)))), "crypto-psbt");
   };
 
+  /** The hdkey firmware returns for `rendered` — ed25519 leaves carry no chain code. */
+  const keyFor = (
+    rendered: string,
+    edOnly: boolean,
+    knobs: NonNullable<DeviceMutant["accounts"]> = {},
+  ): CryptoHDKey => {
+    const components = pathNumbers(rendered).map(
+      (n) => new PathComponent({ index: n % HARDENED, hardened: n >= HARDENED }),
+    );
+    const origin = new CryptoKeypath(components);
+    if (edOnly) {
+      // micro-key-producer prefixes the ed25519 public key with 0x00 for its extended form;
+      // the wire format carries the bare 32 bytes.
+      const publicKey = slip.derive(rendered).publicKey.subarray(1);
+      return new CryptoHDKey({
+        isMaster: false,
+        key: Buffer.from(knobs.badKeyPath === rendered ? publicKey.subarray(0, -1) : publicKey),
+        origin,
+      });
+    }
+    const node = root.derive(rendered);
+    if (node.publicKey === null || node.chainCode === null) {
+      throw new Error(`device: no public key at ${rendered}`);
+    }
+    const parent = Buffer.alloc(4);
+    parent.writeUInt32BE(node.parentFingerprint);
+    const corrupt = knobs.badKeyPath === rendered;
+    const publicKey = corrupt
+      ? Buffer.concat([Buffer.from([0x00]), node.publicKey.subarray(1)])
+      : Buffer.from(node.publicKey);
+    return new CryptoHDKey({
+      isMaster: false,
+      key: publicKey,
+      chainCode: Buffer.from(node.chainCode),
+      origin,
+      parentFingerprint: parent,
+    });
+  };
+
   /**
    * The key-derivation call: firmware derives each requested path and answers a
    * `crypto-multi-accounts` whose hdkeys carry an origin keypath without a source fingerprint.
@@ -351,53 +408,19 @@ export const keystoneDevice = (
     const knobs = mutant.accounts ?? {};
     const mfp = knobs.fingerprint ?? fingerprint;
 
-    const keyFor = (rendered: string, edOnly: boolean): CryptoHDKey => {
-      const components = pathNumbers(rendered).map(
-        (n) => new PathComponent({ index: n % HARDENED, hardened: n >= HARDENED }),
-      );
-      const origin = new CryptoKeypath(components);
-      if (edOnly) {
-        // micro-key-producer prefixes the ed25519 public key with 0x00 for its extended form;
-        // the wire format carries the bare 32 bytes.
-        const publicKey = slip.derive(rendered).publicKey.subarray(1);
-        return new CryptoHDKey({
-          isMaster: false,
-          key: Buffer.from(knobs.badKeyPath === rendered ? publicKey.subarray(0, -1) : publicKey),
-          origin,
-        });
-      }
-      const node = root.derive(rendered);
-      if (node.publicKey === null || node.chainCode === null) {
-        throw new Error(`device: no public key at ${rendered}`);
-      }
-      const parent = Buffer.alloc(4);
-      parent.writeUInt32BE(node.parentFingerprint);
-      const corrupt = knobs.badKeyPath === rendered;
-      const publicKey = corrupt
-        ? Buffer.concat([Buffer.from([0x00]), node.publicKey.subarray(1)])
-        : Buffer.from(node.publicKey);
-      return new CryptoHDKey({
-        isMaster: false,
-        key: publicKey,
-        chainCode: Buffer.from(node.chainCode),
-        origin,
-        parentFingerprint: parent,
-      });
-    };
-
     const keys: CryptoHDKey[] = [];
     for (const schema of schemas) {
       const rendered = renderPath(pathNumbers(schema.getKeypath().getPath() ?? ""));
       if (knobs.dropPath === rendered) {
         continue;
       }
-      keys.push(keyFor(rendered, schema.getCurve() === Curve.ed25519));
+      keys.push(keyFor(rendered, schema.getCurve() === Curve.ed25519, knobs));
       if (knobs.duplicatePath === rendered) {
-        keys.push(keyFor(rendered, schema.getCurve() === Curve.ed25519));
+        keys.push(keyFor(rendered, schema.getCurve() === Curve.ed25519, knobs));
       }
     }
     if (knobs.extraPath !== undefined) {
-      keys.push(keyFor(knobs.extraPath, false));
+      keys.push(keyFor(knobs.extraPath, false, knobs));
     }
     return answer(
       vendorBytes(
@@ -407,10 +430,38 @@ export const keystoneDevice = (
     );
   };
 
+  /** The pair sync: the device publishes every account the driver pins. */
+  const sync = (): DeviceResponse =>
+    answer(
+      vendorBytes(
+        new CryptoMultiAccounts(
+          Buffer.from(fingerprint),
+          [
+            ...(mutant.sync?.secp256k1 ?? SYNC_SECP256K1_PATHS).map((rendered) =>
+              keyFor(rendered, false),
+            ),
+            ...(mutant.sync?.ed25519 ?? SYNC_ED25519_PATHS).map((rendered) =>
+              keyFor(rendered, true),
+            ),
+          ],
+          "Keystone 3 Pro",
+          undefined,
+          "3.2.2",
+        ),
+      ),
+      "crypto-multi-accounts",
+    );
+
   return {
     respond: (request: DeviceRequest): DeviceResponse => {
-      if (request.kind !== "qr" || request.show === undefined) {
+      if (request.kind !== "qr") {
         throw new Error(`device: unexpected request ${JSON.stringify(request.kind)}`);
+      }
+      if (request.show === undefined) {
+        if (request.scan.includes("crypto-multi-accounts")) {
+          return sync();
+        }
+        throw new Error("device: a scan-only request that is not a pair sync");
       }
       const cbor = Buffer.from(request.show.cbor);
       switch (request.show.type) {

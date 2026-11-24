@@ -76,8 +76,8 @@
         "verifiability": "partial",
         "warnings": [],
         "prompt": {
-          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 200 USD24 to Fiat24 account #10365 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH",
-          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 200 USD24 到 Fiat24 账户 #10365（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH"
+          "en": "Confirm transfer\nThere may be other outflows\nNetwork: Arbitrum One\nSend 200 USD24 to Fiat24 account #10365 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认转账\n可能还有其他转出\n网络：Arbitrum One\n发送 200 USD24 到 Fiat24 账户 #10365（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -111,8 +111,8 @@
         "verifiability": "partial",
         "warnings": [],
         "prompt": {
-          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 500.5 CHF24 to Fiat24 account #2050 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH",
-          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 500.5 CHF24 到 Fiat24 账户 #2050（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH"
+          "en": "Confirm transfer\nThere may be other outflows\nNetwork: Arbitrum One\nSend 500.5 CHF24 to Fiat24 account #2050 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认转账\n可能还有其他转出\n网络：Arbitrum One\n发送 500.5 CHF24 到 Fiat24 账户 #2050（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -148,8 +148,8 @@
           "fiat24-internal-account"
         ],
         "prompt": {
-          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 1 EUR24 to Fiat24 account #9102 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH\nFiat24 account #9102 is an issuer-only account (first digit 9), not a client account — this is not a payment to a person",
-          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 1 EUR24 到 Fiat24 账户 #9102（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH\nFiat24 账户 #9102 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款"
+          "en": "Confirm transfer\nThere may be other outflows\nFiat24 account #9102 is an issuer-only account (first digit 9), not a client account — this is not a payment to a person\nNetwork: Arbitrum One\nSend 1 EUR24 to Fiat24 account #9102 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认转账\n可能还有其他转出\nFiat24 账户 #9102 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款\n网络：Arbitrum One\n发送 1 EUR24 到 Fiat24 账户 #9102（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -185,8 +185,8 @@
           "fiat24-internal-account"
         ],
         "prompt": {
-          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 0.88 CNH24 to Fiat24 account #999999 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH\nFiat24 account #999999 is an issuer-only account (first digit 9), not a client account — this is not a payment to a person",
-          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 0.88 CNH24 到 Fiat24 账户 #999999（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH\nFiat24 账户 #999999 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款"
+          "en": "Confirm transfer\nThere may be other outflows\nFiat24 account #999999 is an issuer-only account (first digit 9), not a client account — this is not a payment to a person\nNetwork: Arbitrum One\nSend 0.88 CNH24 to Fiat24 account #999999 (whoever holds it when the transaction runs)\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认转账\n可能还有其他转出\nFiat24 账户 #999999 是只有发行方能开设的账户（首位为 9），不是客户账户——这不是向个人付款\n网络：Arbitrum One\n发送 0.88 CNH24 到 Fiat24 账户 #999999（收款人是交易执行时该账户的持有者）\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -222,8 +222,8 @@
           "fiat24-payee-offchain"
         ],
         "prompt": {
-          "en": "Confirm payout\nNetwork: Arbitrum One\nThere may be other outflows\nPay out 100.55 CHF24 by bank transfer to a Fiat24 payee\n· Fiat24 payee EA-0000001\nMax fee 0.000196608 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout",
-          "zh-Hans": "确认出金\n网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 100.55 CHF24 给 Fiat24 收款人\n· Fiat24 收款人 EA-0000001\n最高手续费 0.000196608 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金"
+          "en": "Confirm payout\nThere may be other outflows\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout\nNetwork: Arbitrum One\nPay out 100.55 CHF24 by bank transfer to a Fiat24 payee\n· Fiat24 payee EA-0000001\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认出金\n可能还有其他转出\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金\n网络：Arbitrum One\n以银行转账出金 100.55 CHF24 给 Fiat24 收款人\n· Fiat24 收款人 EA-0000001\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -259,8 +259,8 @@
           "fiat24-payee-offchain"
         ],
         "prompt": {
-          "en": "Confirm payout\nNetwork: Arbitrum One\nThere may be other outflows\nPay out 10 EUR24 by bank transfer to a Fiat24 payee\n· Fiat24 payee EA-0000002\n· Purpose 42\n· Fiat24 reference INV-0001\nMax fee 0.000196608 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout",
-          "zh-Hans": "确认出金\n网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 10 EUR24 给 Fiat24 收款人\n· Fiat24 收款人 EA-0000002\n· 用途 42\n· Fiat24 参考 INV-0001\n最高手续费 0.000196608 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金"
+          "en": "Confirm payout\nThere may be other outflows\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout\nNetwork: Arbitrum One\nPay out 10 EUR24 by bank transfer to a Fiat24 payee\n· Fiat24 payee EA-0000002\n· Purpose 42\n· Fiat24 reference INV-0001\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认出金\n可能还有其他转出\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金\n网络：Arbitrum One\n以银行转账出金 10 EUR24 给 Fiat24 收款人\n· Fiat24 收款人 EA-0000002\n· 用途 42\n· Fiat24 参考 INV-0001\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -296,8 +296,8 @@
           "fiat24-payee-offchain"
         ],
         "prompt": {
-          "en": "Confirm payout\nNetwork: Arbitrum One\nThere may be other outflows\nPay out 41.29 EUR24 by bank transfer to a Fiat24 payee\n· Fiat24 payee EA-00001156\n· Purpose 8\n· Fiat24 reference 690333-50fb0941-4f59-4a89-8735-dd78ba7d53a3��\nMax fee 0.000196608 ETH\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout",
-          "zh-Hans": "确认出金\n网络：Arbitrum One\n可能还有其他转出\n以银行转账出金 41.29 EUR24 给 Fiat24 收款人\n· Fiat24 收款人 EA-00001156\n· 用途 8\n· Fiat24 参考 690333-50fb0941-4f59-4a89-8735-dd78ba7d53a3��\n最高手续费 0.000196608 ETH\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金"
+          "en": "Confirm payout\nThere may be other outflows\nFiat24 picks the receiving bank account off-chain from this payee; the wallet cannot verify who receives the payout\nNetwork: Arbitrum One\nPay out 41.29 EUR24 by bank transfer to a Fiat24 payee\n· Fiat24 payee EA-00001156\n· Purpose 8\n· Fiat24 reference 690333-50fb0941-4f59-4a89-8735-dd78ba7d53a3��\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认出金\n可能还有其他转出\nFiat24 在链下为该收款人选择收款银行账户；钱包无法核实谁收到出金\n网络：Arbitrum One\n以银行转账出金 41.29 EUR24 给 Fiat24 收款人\n· Fiat24 收款人 EA-00001156\n· 用途 8\n· Fiat24 参考 690333-50fb0941-4f59-4a89-8735-dd78ba7d53a3��\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -333,8 +333,8 @@
           "fiat24-issuer-rate"
         ],
         "prompt": {
-          "en": "Confirm swap\nNetwork: Arbitrum One\nThere may be other outflows\nSend 10 USD24 to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000196608 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive",
-          "zh-Hans": "确认兑换\n网络：Arbitrum One\n可能还有其他转出\n发送 10 USD24 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000196608 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度"
+          "en": "Confirm swap\nThere may be other outflows\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nNetwork: Arbitrum One\nSend 10 USD24 to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认兑换\n可能还有其他转出\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n网络：Arbitrum One\n发送 10 USD24 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -371,8 +371,8 @@
           "fiat24-exact-out-unbounded"
         ],
         "prompt": {
-          "en": "Confirm swap\nNetwork: Arbitrum One\nThere may be other outflows\nReceive 10 EUR24; pay USD24 at the rate Fiat24 sets\nMax fee 0.000196608 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nWhat you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract",
-          "zh-Hans": "确认兑换\n网络：Arbitrum One\n可能还有其他转出\n收到 10 EUR24；按 Fiat24 设定的汇率支付 USD24\n最高手续费 0.000196608 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限"
+          "en": "Confirm swap\nThere may be other outflows\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nWhat you pay is bounded only by your allowance for the Fiat24 top-up and exchange contract\nNetwork: Arbitrum One\nReceive 10 EUR24; pay USD24 at the rate Fiat24 sets\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认兑换\n可能还有其他转出\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n你的支付仅以你对 Fiat24 充值与兑换合约的授权额度为上限\n网络：Arbitrum One\n收到 10 EUR24；按 Fiat24 设定的汇率支付 USD24\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -408,8 +408,8 @@
           "fiat24-issuer-rate"
         ],
         "prompt": {
-          "en": "Confirm swap\nNetwork: Arbitrum One\nThere may be other outflows\nSend 5 USDC to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000196608 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive",
-          "zh-Hans": "确认兑换\n网络：Arbitrum One\n可能还有其他转出\n发送 5 USDC 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000196608 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度"
+          "en": "Confirm swap\nThere may be other outflows\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nNetwork: Arbitrum One\nSend 5 USDC to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认兑换\n可能还有其他转出\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n网络：Arbitrum One\n发送 5 USDC 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -446,8 +446,8 @@
           "fiat24-swap-quote"
         ],
         "prompt": {
-          "en": "Confirm swap\nNetwork: Arbitrum One\nThere may be other outflows\nSend 0.003 ETH to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000196608 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nThe swap to USDC is priced inside the transaction itself; you set no slippage limit",
-          "zh-Hans": "确认兑换\n网络：Arbitrum One\n可能还有其他转出\n发送 0.003 ETH 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000196608 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n到 USDC 的兑换在交易内部定价；你没有设置滑点上限"
+          "en": "Confirm swap\nThere may be other outflows\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nThe swap to USDC is priced inside the transaction itself; you set no slippage limit\nNetwork: Arbitrum One\nSend 0.003 ETH to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认兑换\n可能还有其他转出\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n到 USDC 的兑换在交易内部定价；你没有设置滑点上限\n网络：Arbitrum One\n发送 0.003 ETH 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -484,8 +484,8 @@
           "fiat24-swap-quote"
         ],
         "prompt": {
-          "en": "Confirm swap\nNetwork: Arbitrum One\nThere may be other outflows\nSend 1000000000000000000 base units of unverified token 0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000196608 ETH\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nThe swap to USDC is priced inside the transaction itself; you set no slippage limit",
-          "zh-Hans": "确认兑换\n网络：Arbitrum One\n可能还有其他转出\n发送 1000000000000000000 个最小单位（未验证代币 0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a） 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000196608 ETH\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n到 USDC 的兑换在交易内部定价；你没有设置滑点上限"
+          "en": "Confirm swap\nThere may be other outflows\nFiat24 sets the rate when the transaction runs; there is no minimum you will receive\nThe swap to USDC is priced inside the transaction itself; you set no slippage limit\nNetwork: Arbitrum One\nSend 1000000000000000000 base units of unverified token 0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a to 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\nReceive EUR24 at the rate Fiat24 sets when the transaction runs — no minimum\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认兑换\n可能还有其他转出\n交易执行时由 Fiat24 设定汇率；没有保证你会收到的最低额度\n到 USDC 的兑换在交易内部定价；你没有设置滑点上限\n网络：Arbitrum One\n发送 1000000000000000000 个最小单位（未验证代币 0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a） 到 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F\n按交易执行时 Fiat24 设定的汇率收到 EUR24——没有最低到手额\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -522,8 +522,8 @@
           "fiat24-account-burn"
         ],
         "prompt": {
-          "en": "Confirm contract call\nNetwork: Arbitrum One\nThere may be other outflows\nOpen Fiat24 account #123456 for this address\nMax fee 0.000196608 ETH\nOpening the account permanently links this address to the identity you verify with Fiat24\nOpening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract",
-          "zh-Hans": "确认合约调用\n网络：Arbitrum One\n可能还有其他转出\n为此地址开通 Fiat24 账户 #123456\n最高手续费 0.000196608 ETH\n开通账户会将此地址与你向 Fiat24 验证的身份永久关联\n开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度"
+          "en": "Confirm contract call\nThere may be other outflows\nOpening the account permanently links this address to the identity you verify with Fiat24\nOpening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract\nNetwork: Arbitrum One\nOpen Fiat24 account #123456 for this address\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认合约调用\n可能还有其他转出\n开通账户会将此地址与你向 Fiat24 验证的身份永久关联\n开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度\n网络：Arbitrum One\n为此地址开通 Fiat24 账户 #123456\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -559,8 +559,8 @@
           "fiat24-account-link"
         ],
         "prompt": {
-          "en": "Confirm contract call\nNetwork: Arbitrum One\nThere may be other outflows\nSend 0.001 ETH to 0x133CAEecA096cA54889db71956c7f75862Ead7A0\nOpen Fiat24 account #123456 for this address\nMax fee 0.000196608 ETH\nOpening the account permanently links this address to the identity you verify with Fiat24",
-          "zh-Hans": "确认合约调用\n网络：Arbitrum One\n可能还有其他转出\n发送 0.001 ETH 到 0x133CAEecA096cA54889db71956c7f75862Ead7A0\n为此地址开通 Fiat24 账户 #123456\n最高手续费 0.000196608 ETH\n开通账户会将此地址与你向 Fiat24 验证的身份永久关联"
+          "en": "Confirm contract call\nThere may be other outflows\nOpening the account permanently links this address to the identity you verify with Fiat24\nNetwork: Arbitrum One\nSend 0.001 ETH to 0x133CAEecA096cA54889db71956c7f75862Ead7A0\nOpen Fiat24 account #123456 for this address\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认合约调用\n可能还有其他转出\n开通账户会将此地址与你向 Fiat24 验证的身份永久关联\n网络：Arbitrum One\n发送 0.001 ETH 到 0x133CAEecA096cA54889db71956c7f75862Ead7A0\n为此地址开通 Fiat24 账户 #123456\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -596,8 +596,8 @@
           "fiat24-account-move"
         ],
         "prompt": {
-          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 to 0x00000000000000000000000000000000C0FfeE00\nMax fee 0.000196608 ETH\nDanger: this moves control of Fiat24 account #123456 → 0x00000000000000000000000000000000C0FfeE00 — its money and the identity verified for it",
-          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 到 0x00000000000000000000000000000000C0FfeE00\n最高手续费 0.000196608 ETH\n危险：这将转移 Fiat24 账户 #123456 → 0x00000000000000000000000000000000C0FfeE00 的控制权——包括其中的资金与已验证身份"
+          "en": "Confirm transfer\nThere may be other outflows\nDanger: this moves control of Fiat24 account #123456 → 0x00000000000000000000000000000000C0FfeE00 — its money and the identity verified for it\nNetwork: Arbitrum One\nSend 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 to 0x00000000000000000000000000000000C0FfeE00\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认转账\n可能还有其他转出\n危险：这将转移 Fiat24 账户 #123456 → 0x00000000000000000000000000000000C0FfeE00 的控制权——包括其中的资金与已验证身份\n网络：Arbitrum One\n发送 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 到 0x00000000000000000000000000000000C0FfeE00\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -633,8 +633,8 @@
           "fiat24-account-move"
         ],
         "prompt": {
-          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 to 0x00000000000000000000000000000000C0FfeE00\nMax fee 0.000196608 ETH\nDanger: this moves control of Fiat24 account #123456 → 0x00000000000000000000000000000000C0FfeE00 — its money and the identity verified for it",
-          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 到 0x00000000000000000000000000000000C0FfeE00\n最高手续费 0.000196608 ETH\n危险：这将转移 Fiat24 账户 #123456 → 0x00000000000000000000000000000000C0FfeE00 的控制权——包括其中的资金与已验证身份"
+          "en": "Confirm transfer\nThere may be other outflows\nDanger: this moves control of Fiat24 account #123456 → 0x00000000000000000000000000000000C0FfeE00 — its money and the identity verified for it\nNetwork: Arbitrum One\nSend 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 to 0x00000000000000000000000000000000C0FfeE00\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认转账\n可能还有其他转出\n危险：这将转移 Fiat24 账户 #123456 → 0x00000000000000000000000000000000C0FfeE00 的控制权——包括其中的资金与已验证身份\n网络：Arbitrum One\n发送 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 到 0x00000000000000000000000000000000C0FfeE00\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -670,8 +670,8 @@
           "fiat24-account-move"
         ],
         "prompt": {
-          "en": "Confirm transfer\nNetwork: Arbitrum One\nThere may be other outflows\nSend 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 to 0x00000000000000000000000000000000C0FfeE00\nMax fee 0.000196608 ETH\nDanger: this moves control of Fiat24 account #123456 → 0x00000000000000000000000000000000C0FfeE00 — its money and the identity verified for it",
-          "zh-Hans": "确认转账\n网络：Arbitrum One\n可能还有其他转出\n发送 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 到 0x00000000000000000000000000000000C0FfeE00\n最高手续费 0.000196608 ETH\n危险：这将转移 Fiat24 账户 #123456 → 0x00000000000000000000000000000000C0FfeE00 的控制权——包括其中的资金与已验证身份"
+          "en": "Confirm transfer\nThere may be other outflows\nDanger: this moves control of Fiat24 account #123456 → 0x00000000000000000000000000000000C0FfeE00 — its money and the identity verified for it\nNetwork: Arbitrum One\nSend 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 to 0x00000000000000000000000000000000C0FfeE00\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认转账\n可能还有其他转出\n危险：这将转移 Fiat24 账户 #123456 → 0x00000000000000000000000000000000C0FfeE00 的控制权——包括其中的资金与已验证身份\n网络：Arbitrum One\n发送 0x133CAEecA096cA54889db71956c7f75862Ead7A0 #123456 到 0x00000000000000000000000000000000C0FfeE00\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -707,8 +707,8 @@
           "fiat24-card-pull"
         ],
         "prompt": {
-          "en": "Confirm approval\nNetwork: Arbitrum One\nThere may be other outflows\nAllow 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 to spend 5000 EUR24 (Fiat24 card)\nMax fee 0.000196608 ETH\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment",
-          "zh-Hans": "确认授权\n网络：Arbitrum One\n可能还有其他转出\n授权 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 使用 5000 EUR24（Fiat24 卡）\n最高手续费 0.000196608 ETH\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你"
+          "en": "Confirm approval\nThere may be other outflows\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment\nNetwork: Arbitrum One\nAllow 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 to spend 5000 EUR24 (Fiat24 card)\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认授权\n可能还有其他转出\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你\n网络：Arbitrum One\n授权 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 使用 5000 EUR24（Fiat24 卡）\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -745,8 +745,8 @@
           "fiat24-unlimited-approval"
         ],
         "prompt": {
-          "en": "Confirm approval\nNetwork: Arbitrum One\nThere may be other outflows\nAllow 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 to spend unlimited USD24 (Fiat24 card)\nMax fee 0.000196608 ETH\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment\nDanger: an unlimited allowance lets the Fiat24 card contract take your entire balance of this token",
-          "zh-Hans": "确认授权\n网络：Arbitrum One\n可能还有其他转出\n授权 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 使用 全部 USD24（Fiat24 卡）\n最高手续费 0.000196608 ETH\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你\n危险：无限额度授权允许 Fiat24 卡合约转走你此代币的全部余额"
+          "en": "Confirm approval\nThere may be other outflows\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment\nDanger: an unlimited allowance lets the Fiat24 card contract take your entire balance of this token\nNetwork: Arbitrum One\nAllow 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 to spend unlimited USD24 (Fiat24 card)\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认授权\n可能还有其他转出\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你\n危险：无限额度授权允许 Fiat24 卡合约转走你此代币的全部余额\n网络：Arbitrum One\n授权 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 使用 全部 USD24（Fiat24 卡）\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -780,8 +780,8 @@
         "verifiability": "partial",
         "warnings": [],
         "prompt": {
-          "en": "Confirm approval\nNetwork: Arbitrum One\nThere may be other outflows\nRevoke 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14's allowance for USD24 (Fiat24 card)\nMax fee 0.000196608 ETH",
-          "zh-Hans": "确认授权\n网络：Arbitrum One\n可能还有其他转出\n撤销 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 对 USD24 的授权（Fiat24 卡）\n最高手续费 0.000196608 ETH"
+          "en": "Confirm approval\nThere may be other outflows\nNetwork: Arbitrum One\nRevoke 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14's allowance for USD24 (Fiat24 card)\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认授权\n可能还有其他转出\n网络：Arbitrum One\n撤销 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 对 USD24 的授权（Fiat24 卡）\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -815,8 +815,8 @@
         "verifiability": "partial",
         "warnings": [],
         "prompt": {
-          "en": "Confirm approval\nNetwork: Arbitrum One\nThere may be other outflows\nAllow 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F to spend 1000 USD24 (Fiat24 top-up and exchange)\nMax fee 0.000196608 ETH",
-          "zh-Hans": "确认授权\n网络：Arbitrum One\n可能还有其他转出\n授权 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F 使用 1000 USD24（Fiat24 充值与兑换）\n最高手续费 0.000196608 ETH"
+          "en": "Confirm approval\nThere may be other outflows\nNetwork: Arbitrum One\nAllow 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F to spend 1000 USD24 (Fiat24 top-up and exchange)\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认授权\n可能还有其他转出\n网络：Arbitrum One\n授权 0x4582f67698843Dfb6A9F195C0dDee05B0A8C973F 使用 1000 USD24（Fiat24 充值与兑换）\n最高手续费 0.000196608 ETH"
         }
       }
     },
@@ -852,8 +852,8 @@
           "fiat24-card-pull"
         ],
         "prompt": {
-          "en": "Confirm approval\nNetwork: Arbitrum One\nThere may be other outflows\nAllow 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 to spend 1000 CHF24 more (Fiat24 card)\nMax fee 0.000196608 ETH\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment",
-          "zh-Hans": "确认授权\n网络：Arbitrum One\n可能还有其他转出\n授权 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 再使用 1000 CHF24（Fiat24 卡）\n最高手续费 0.000196608 ETH\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你"
+          "en": "Confirm approval\nThere may be other outflows\nThe Fiat24 card contract can take up to this allowance at any time, without asking you, whenever the issuer authorises a card payment\nNetwork: Arbitrum One\nAllow 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 to spend 1000 CHF24 more (Fiat24 card)\nMax fee 0.000196608 ETH",
+          "zh-Hans": "确认授权\n可能还有其他转出\nFiat24 卡合约可以在发行方授权卡支付时随时按此额度扣款，无需再询问你\n网络：Arbitrum One\n授权 0xe2e3B88B9893e18D0867c08f9cA93f8aB5935b14 再使用 1000 CHF24（Fiat24 卡）\n最高手续费 0.000196608 ETH"
         }
       }
     },

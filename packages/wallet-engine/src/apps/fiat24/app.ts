@@ -77,7 +77,7 @@ export function fiat24(config: Fiat24Config = {}): AppDefinition<"fiat24", Fiat2
     /* `close-only` enables too — a restricted jurisdiction still reads and winds down. */
     enableWhen: ["available", "close-only"],
     create: (context: AppContext) => {
-      const owner = createFiat24Owner(context.wallet);
+      const owner = createFiat24Owner(context.account);
       const client = createFiat24Client(context.networks);
       const account = createFiat24Account({ owner, client });
       const live = createFiat24Live({

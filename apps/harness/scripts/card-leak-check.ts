@@ -128,8 +128,8 @@ const stepIs = (
   return Object.entries(expect).every(([k, v]) => step[k] === v);
 };
 
-// Inputs: both kinds reported match:true from inside the kernel.
-for (const key of ["code", "shortId"] as const) {
+// Inputs: every kind reported match:true from inside the kernel.
+for (const key of ["code", "shortId", "approval"] as const) {
   const entry = asRecord(result[key]);
   check(
     `input ${key} match`,

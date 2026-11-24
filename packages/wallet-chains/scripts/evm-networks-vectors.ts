@@ -139,11 +139,11 @@ const cases = [
     prompt: {
       en: {
         title: "Confirm approval",
-        description: `Network: Arc\nThere may be other outflows\nAllow ${TO} to spend 5 USDC\nMax fee ${FEE} USDC`,
+        description: `There may be other outflows\nNetwork: Arc\nAllow ${TO} to spend 5 USDC\nMax fee ${FEE} USDC`,
       },
       "zh-Hans": {
         title: "确认授权",
-        description: `网络：Arc\n可能还有其他转出\n授权 ${TO} 使用 5 USDC\n最高手续费 ${FEE} USDC`,
+        description: `可能还有其他转出\n网络：Arc\n授权 ${TO} 使用 5 USDC\n最高手续费 ${FEE} USDC`,
       },
     },
   },

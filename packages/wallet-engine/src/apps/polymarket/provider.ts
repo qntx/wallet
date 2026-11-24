@@ -7,7 +7,7 @@
  */
 import type { Wallet } from "@qntx/wallet";
 import { WalletError } from "@qntx/wallet";
-import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
 
 import type {
   AppAvailability,
@@ -55,8 +55,13 @@ export type PolymarketProviderOptions = {
   readonly setTimer: SetTimer;
   readonly now: () => number;
   readonly timeoutMs?: number;
-  /** The wallet the kernel signs orders for — `chains(wallet)` derives each group's signer. */
+  /** The wallet the kernel signs orders for. */
   readonly wallet: Wallet;
+  /**
+   * The group's `evm.bip44` account on Polygon — the apps context's account seam; absent on a
+   * reads-only provider, whose order signing throws `not-enabled` first.
+   */
+  readonly account?: ChainsApi["account"];
   /** The group's stored CLOB credentials — built from `context.storage` by the app definition. */
   readonly credentials: PolymarketCredentialStore;
   /** The approval pipeline orders are signed through. */
@@ -95,10 +100,13 @@ export function createPolymarketProvider(options: PolymarketProviderOptions): Po
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
   });
   const signerOf = async (group: AppGroup): Promise<`0x${string}`> => {
+    if (options.account === undefined) {
+      throw new PolymarketError("not-enabled", "this provider has no account api");
+    }
     /* The signature chain names the group account: Polygon. */
     let resolved;
     try {
-      resolved = await chains(options.wallet).account({
+      resolved = await options.account({
         walletId: group.walletId,
         groupIndex: group.groupIndex,
         template: "evm.bip44",

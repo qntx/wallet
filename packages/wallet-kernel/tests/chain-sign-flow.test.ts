@@ -299,7 +299,7 @@ describe.each(sources)("chain.sign two-pass flow: %s", (_name, source) => {
     expect(errCode(response)).toBeUndefined();
     expect(opens(fake.calls).at(-1)).toStrictEqual({
       title: "Confirm contract call",
-      description: `Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract 0x00000000000000000000000000000000DeaDBeef, function 0xdeadbeef\nSend 0.000000000000000001 ETH to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.0000315 ETH`,
+      description: `The wallet cannot verify what this call does\nNetwork: Ethereum\nCall contract 0x00000000000000000000000000000000DeaDBeef, function 0xdeadbeef\nSend 0.000000000000000001 ETH to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.0000315 ETH`,
     });
   });
 });

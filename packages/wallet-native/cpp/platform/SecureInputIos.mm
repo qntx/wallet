@@ -128,12 +128,17 @@
 
 - (void)arm {
   _field.enabled = YES;
-  // Everything but the short id is masked; the short id must stay readable
-  // as it is proofread against the printed card.
-  _field.secureTextEntry = _kind != qntx::SecureInputKind::shortId;
+  // The secrets stay masked; the short id must stay readable as it is
+  // proofread against the printed card, and the approval code is not a
+  // secret at all — the label itself shows it.
+  const BOOL readable = _kind == qntx::SecureInputKind::shortId ||
+                        _kind == qntx::SecureInputKind::sessionApproval;
+  _field.secureTextEntry = !readable;
   _field.keyboardType = _kind == qntx::SecureInputKind::backupPassword
                             ? UIKeyboardTypeDefault
-                            : UIKeyboardTypeASCIICapable;
+                            : _kind == qntx::SecureInputKind::sessionApproval
+                                  ? UIKeyboardTypeNumbersAndPunctuation
+                                  : UIKeyboardTypeASCIICapable;
   _field.autocorrectionType = UITextAutocorrectionTypeNo;
   _field.spellCheckingType = UITextSpellCheckingTypeNo;
   _field.smartQuotesType = UITextSmartQuotesTypeNo;
@@ -142,7 +147,7 @@
   _field.autocapitalizationType = _kind == qntx::SecureInputKind::shortId
                                       ? UITextAutocapitalizationTypeAllCharacters
                                       : UITextAutocapitalizationTypeNone;
-  if (_kind == qntx::SecureInputKind::shortId) {
+  if (readable) {
     _field.font = [UIFont monospacedDigitSystemFontOfSize:17 weight:UIFontWeightRegular];
   } else {
     _field.font = nil;
@@ -201,6 +206,22 @@
     }
     return YES;
   }
+  // session-approval: decimal digits only, four at most.
+  if (_kind == qntx::SecureInputKind::sessionApproval) {
+    NSMutableString* filtered = [[NSMutableString alloc] init];
+    for (NSUInteger i = 0; i < next.length; i++) {
+      const unichar c = [next characterAtIndex:i];
+      if (c < '0' || c > '9' || filtered.length >= 4) {
+        return NO;
+      }
+      [filtered appendString:[NSString stringWithCharacters:&c length:1]];
+    }
+    // Returning NO suppresses UIControlEventEditingChanged, so the state
+    // transition has to be reported from here.
+    _field.text = filtered;
+    [self textChanged];
+    return NO;
+  }
   // short-id: keep hex digits only, fold to upper-case, drop typed dashes.
   NSMutableString* filtered = [[NSMutableString alloc] init];
   for (NSUInteger i = 0; i < next.length; i++) {
@@ -227,7 +248,10 @@
 - (BOOL)textFieldShouldReturn:(UITextField*)field {
   NSString* text = _field.text;
   const BOOL ready =
-      _kind == qntx::SecureInputKind::shortId ? text.length == 8 : text.length >= 1;
+      _kind == qntx::SecureInputKind::shortId
+          ? text.length == 8
+          : _kind == qntx::SecureInputKind::sessionApproval ? text.length == 4
+                                                          : text.length >= 1;
   if (!ready) {
     return YES;
   }

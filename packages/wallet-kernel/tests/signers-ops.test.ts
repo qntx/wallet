@@ -1,3 +1,4 @@
+// oxlint-disable eslint/no-await-in-loop -- device ops step one exchange per call, sequentially
 /**
  * The signers module through the real protocol against the fake device: pairing commits a
  * hardware-wallet record and status lists it, accounts fills exactly the missing hardened paths and
@@ -32,6 +33,7 @@ import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
 import { loadTranscript, replayExchange, transcriptSession } from "./onekey-emulator/index.ts";
+import { fakeSecureInput } from "./secure-input.ts";
 import { ACCOUNT_NODES, fakeDevice, masterFingerprint } from "./signers-fake.ts";
 import type { FakeDevice, FakeDeviceOptions } from "./signers-fake.ts";
 
@@ -537,6 +539,35 @@ describe("operation lifecycle", () => {
     );
   });
 
+  it("vault.reset aborts a parked exchange and the fresh vault has no hardware wallets", async () => {
+    const { h, device, session } = await boot();
+    const walletId = await pairDevice(h, session);
+    const { opId } = await beginOp(h, session, {
+      kind: "accounts",
+      walletId,
+      groupIndex: 1, // group-1 solana is unpinned — the op asks the device
+      templates: ["solana.bip44-change"],
+      network: SOLANA_NETWORK,
+    });
+    const rejection = rejectionOf(device.exchanges.at(-1)!);
+    ok(await h.call("vault.reset", null, session));
+    // The parked exchange rejects and the session died with the vault — the op resolves nothing.
+    await expect(rejection).resolves.toBe("cancelled");
+    expect(errCode(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session))).toBe(
+      "locked",
+    );
+    // A freshly established vault lists no hardware wallets.
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: FACTOR(),
+      }),
+    );
+    const session2 = strField(res, "session");
+    const status = ok(await h.call("status", undefined, session2));
+    expect(arrField(status, "wallets").some((w) => field(w, "custody") === "hardware")).toBe(false);
+  });
+
   it("a second begin discards the first operation", async () => {
     const { h, device, session } = await boot();
     const first = await beginOp(h, session, PAIR_OP);
@@ -649,7 +680,11 @@ describe("hardware wallet refusals", () => {
         scope: "Mainnet",
         name: "bot-1",
         validUntil: h.wallNow() + 86_400_000,
-        limits: { notional: "1000000000", maxLeverage: 100, assets: [0, 1] },
+        limits: {
+          notional: "1000000000",
+          maxLeverage: 100,
+          assets: [0, 1].map((asset) => ({ asset, size: "1000" })),
+        },
         /* Its own copy — the kernel wipes the verify bytes it consumes. */
         verify: PASSKEY(),
       },
@@ -735,6 +770,127 @@ describe("hardware wallet refusals", () => {
     );
     expect(errCode(begin)).toBe("blind-signing-disabled");
     expect(fake.calls).toHaveLength(keystoreCalls);
+  });
+
+  it("the app lock off still gates sign on presence, and a session scheme refuses a hardware wallet", async () => {
+    /* A keystore vault starts with the silent device factor (app lock off) plus the hardware
+       verifying row: signing still needs presence, and the device factor can never supply it. */
+    const fake = fakeKeystore();
+    const device = fakeDevice(SEED);
+    const h = createHarness({
+      keystore: fake.keystore,
+      drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER },
+    });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(res, "session");
+    const hwId = await pairDevice(h, session);
+    const request = normalizeEvm({
+      kind: "evm.personal-message",
+      network: EVM_NETWORK,
+      account: { kind: "hd", walletId: hwId, groupIndex: 0, template: "evm.bip44" },
+      message: utf8ToBytes("hello"),
+    });
+    // A device factor never verifies: the wire `verifier` validator rejects it, and the decode
+    // failure surfaces as `integrity` before the op even begins.
+    expect(
+      errCode(
+        await h.call(
+          "hardware.begin",
+          { op: { kind: "sign", request }, verify: { kind: "device" } },
+          session,
+        ),
+      ),
+    ).toBe("integrity");
+    const begun = ok(
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "sign", request }, verify: { kind: "hardware" } },
+        session,
+      ),
+    );
+    expect(strField(field(begun, "step"), "kind")).toBe("exchange");
+    ok(await h.call("hardware.cancel", { opId: strField(begun, "opId") }, session));
+    const create = async () =>
+      h.call(
+        "sessions.create",
+        {
+          scheme: "hyperliquid-l1-agent",
+          owner: { walletId: hwId, groupIndex: 0 },
+          scope: "Mainnet",
+          name: "bot-1",
+          validUntil: h.wallNow() + 86_400_000,
+          limits: {
+            notional: "1000000000",
+            maxLeverage: 100,
+            assets: [0, 1, 2, 3, 4, 5, 10107].map((asset) => ({ asset, size: "1000" })),
+          },
+          verify: { kind: "hardware" },
+        },
+        session,
+      );
+    expect(errCode(await create())).toBe("unsupported");
+    /* External custody is refused as `unsupported` at the top of sessions.create — on either
+       platform, with the app lock off and on, with no session-approval input and no keystore
+       prompt ever shown: enabling the lock cannot help a wallet the scheme cannot sign for. */
+    for (const platform of ["ios", "android"] as const) {
+      const pf = fakeKeystore("en-US", platform);
+      const input = fakeSecureInput();
+      const pd = fakeDevice(SEED);
+      const ph = createHarness({
+        keystore: pf.keystore,
+        secureInput: input.secureInput,
+        drivers: { keystone: pd.driver, ledger: pd.driver, onekey: ONEKEY_DRIVER },
+      });
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one platform rig at a time
+      await ph.settle();
+      const pres = ok(
+        await ph.call("wallet.importMnemonic", {
+          mnemonic: utf8ToBytes(MNEMONIC),
+          factor: { kind: "device" },
+        }),
+      );
+      const psession = strField(pres, "session");
+      const phwId = await pairDevice(ph, psession);
+      const pcreate = async () =>
+        ph.call(
+          "sessions.create",
+          {
+            scheme: "hyperliquid-l1-agent",
+            owner: { walletId: phwId, groupIndex: 0 },
+            scope: "Mainnet",
+            name: "bot-1",
+            validUntil: ph.wallNow() + 86_400_000,
+            limits: {
+              notional: "1000000000",
+              maxLeverage: 100,
+              assets: [0, 1, 2, 3, 4, 5, 10107].map((asset) => ({ asset, size: "1000" })),
+            },
+            verify: { kind: "hardware" },
+          },
+          psession,
+        );
+      const callsOff = pf.calls.length;
+      expect(errCode(await pcreate())).toBe("unsupported");
+      expect(pf.calls).toHaveLength(callsOff);
+      expect(input.requests).toHaveLength(0);
+      ok(
+        await ph.call(
+          "vault.setAppLock",
+          { enabled: true, verify: { kind: "hardware" } },
+          psession,
+        ),
+      );
+      const callsOn = pf.calls.length;
+      expect(errCode(await pcreate())).toBe("unsupported");
+      expect(pf.calls).toHaveLength(callsOn);
+      expect(input.requests).toHaveLength(0);
+    }
   });
 
   it("chain.sign refuses a hardware account with device-required", async () => {

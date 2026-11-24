@@ -537,42 +537,42 @@
 			_defineProperty(this, "name", "ValidationError");
 		}
 	};
-	function fail$6() {
+	function fail$5() {
 		throw new ValidationError();
 	}
 	function literal(expected) {
 		return (value) => {
-			if (value !== expected) fail$6();
+			if (value !== expected) fail$5();
 			return expected;
 		};
 	}
 	var nullValue = literal(null);
 	var bool = (value) => {
-		if (typeof value !== "boolean") fail$6();
+		if (typeof value !== "boolean") fail$5();
 		return value;
 	};
 	function int(min, max) {
 		return (value) => {
-			if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) fail$6();
+			if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) fail$5();
 			return value;
 		};
 	}
 	function str(max, pattern) {
 		return (value) => {
-			if (typeof value !== "string" || value.length > max || pattern !== void 0 && !pattern.test(value)) fail$6();
+			if (typeof value !== "string" || value.length > max || pattern !== void 0 && !pattern.test(value)) fail$5();
 			return value;
 		};
 	}
 	function bytes(min, max) {
 		const high = max !== null && max !== void 0 ? max : min;
 		return (value) => {
-			if (!(value instanceof Uint8Array) || value.length < min || value.length > high) fail$6();
+			if (!(value instanceof Uint8Array) || value.length < min || value.length > high) fail$5();
 			return value;
 		};
 	}
 	function arr(item, max, min = 0) {
 		return (value) => {
-			if (!Array.isArray(value) || value.length < min || value.length > max) fail$6();
+			if (!Array.isArray(value) || value.length < min || value.length > max) fail$5();
 			const out = [];
 			for (const element of value) out.push(item(element));
 			return out;
@@ -591,18 +591,18 @@
 	function obj(shape) {
 		const keys = Object.keys(shape);
 		return (value) => {
-			if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) fail$6();
+			if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) fail$5();
 			const record = value;
-			for (const key of Object.keys(record)) if (!Object.hasOwn(shape, key)) fail$6();
+			for (const key of Object.keys(record)) if (!Object.hasOwn(shape, key)) fail$5();
 			const out = {};
 			for (const key of keys) {
 				const field = shape[key];
-				if (field === void 0) fail$6();
+				if (field === void 0) fail$5();
 				const raw = record[key];
 				if (field instanceof Opt) {
 					if (raw !== void 0) out[key] = field.validator(raw);
 				} else {
-					if (!Object.hasOwn(record, key)) fail$6();
+					if (!Object.hasOwn(record, key)) fail$5();
 					out[key] = field(raw);
 				}
 			}
@@ -621,12 +621,12 @@
 	*/
 	function record(key, value, max) {
 		return (input) => {
-			if (typeof input !== "object" || input === null || Array.isArray(input) || input instanceof Uint8Array || Object.getPrototypeOf(input) !== Object.prototype) fail$6();
+			if (typeof input !== "object" || input === null || Array.isArray(input) || input instanceof Uint8Array || Object.getPrototypeOf(input) !== Object.prototype) fail$5();
 			const out = {};
 			const entries = Object.entries(input);
-			if (entries.length > max) fail$6();
+			if (entries.length > max) fail$5();
 			for (const [name, item] of entries) {
-				if (FORBIDDEN_RECORD_KEYS.has(name)) fail$6();
+				if (FORBIDDEN_RECORD_KEYS.has(name)) fail$5();
 				out[key(name)] = value(item);
 			}
 			return out;
@@ -640,7 +640,7 @@
 			} catch (error) {
 				if (!(error instanceof ValidationError)) throw error;
 			}
-			return fail$6();
+			return fail$5();
 		};
 	}
 	/** Validates a value and returns it, or undefined on a shape mismatch. */
@@ -673,7 +673,7 @@
 	var keyFamily = union(literal("evm"), literal("solana"), literal("bitcoin"), literal("tron"));
 	var publicKey$1 = str(64, /^[0-9a-f]{64}$/);
 	var credentialId = str(1364, /^[A-Za-z0-9_-]+$/);
-	var safeTime$1 = int(0, Number.MAX_SAFE_INTEGER);
+	var safeTime = int(0, Number.MAX_SAFE_INTEGER);
 	var groupIndex = int(0, 2147483647);
 	/** A card's `ID(A)`: 16 bytes as 32 lowercase hex. */
 	var cardId$1 = str(32, /^[0-9a-f]{32}$/);
@@ -681,7 +681,7 @@
 		keyId,
 		family: keyFamily,
 		address: str(90, /^.+$/),
-		createdAt: safeTime$1
+		createdAt: safeTime
 	});
 	/** Identity indices stop below 2^31 - 1 — the top segment derives the wallet sync key. */
 	var identityIndex = int(0, 2147483646);
@@ -704,20 +704,20 @@
 	var factorInfo$1 = union(obj({
 		kind: literal("device"),
 		id: sessionId,
-		createdAt: safeTime$1
+		createdAt: safeTime
 	}), obj({
 		kind: literal("hardware"),
 		id: sessionId,
-		createdAt: safeTime$1
+		createdAt: safeTime
 	}), obj({
 		kind: literal("passkey"),
 		id: sessionId,
 		credentialId,
-		createdAt: safeTime$1
+		createdAt: safeTime
 	}), obj({
 		kind: literal("password"),
 		id: sessionId,
-		createdAt: safeTime$1
+		createdAt: safeTime
 	}));
 	var RP_ID = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 	var label = (max) => str(max, new RegExp("^\\S(?:.*\\S)?$", "su"));
@@ -778,7 +778,7 @@
 		words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
 		backup: union(literal("none"), literal("passkey"), literal("mnemonic")),
 		passphrase: bool,
-		createdAt: safeTime$1
+		createdAt: safeTime
 	});
 	var walletInfo$2 = union(vaultWalletInfo, obj({
 		custody: literal("hardware"),
@@ -788,20 +788,20 @@
 		fingerprint: str(8, /^[0-9a-f]{8}$/),
 		model: opt(str(64, DEVICE_TEXT$2)),
 		firmware: opt(str(64, DEVICE_TEXT$2)),
-		createdAt: safeTime$1
+		createdAt: safeTime
 	}), obj({
 		custody: literal("card"),
 		walletId,
 		origin: union(literal("card-generated"), literal("card-imported")),
 		backup: literal("cards"),
-		createdAt: safeTime$1,
+		createdAt: safeTime,
 		members: int(1, 3),
 		cards: arr(obj({
 			cardId: cardId$1,
 			shortId: opt(str(9, /^[0-9A-F]{4}-[0-9A-F]{4}$/)),
 			state: union(literal("ready"), literal("unknown"), literal("pending")),
 			tries: opt(int(0, 10)),
-			verifiedAt: opt(safeTime$1)
+			verifiedAt: opt(safeTime)
 		}), 3, 1)
 	}));
 	/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
@@ -1048,7 +1048,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-DSTaNtgL.mjs
+	// packages/wallet/dist/protocol-CpdJb-MR.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1095,7 +1095,7 @@
 	var backupInfo = obj({
 		id: str(32, /^[0-9a-f]{32}$/),
 		factors: arr(union(literal("passkey"), literal("password")), 5, 1),
-		createdAt: safeTime$1
+		createdAt: safeTime
 	});
 	var template = union(literal("evm.bip44"), literal("solana.bip44-change"), literal("tron.bip44"), union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84")), literal("btc.bip86"));
 	var btcTemplate = union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84"), literal("btc.bip86"));
@@ -1120,14 +1120,14 @@
 	var evmAddress$1 = str(42, /^0x[0-9a-fA-F]{40}$/);
 	var solanaAddress$1 = str(44, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 	var bitcoinAddress = str(90, /^(bc1|tb1|bcrt1|[13mn2])[a-zA-Z0-9]{4,87}$/);
-	var safeInt = int(0, 9007199254740991);
+	var safeInt$1 = int(0, 9007199254740991);
 	var accessList$1 = arr(obj({
 		address: evmAddress$1,
 		storageKeys: arr(str(66, /^0x[0-9a-fA-F]{64}$/), 256)
 	}), 256);
 	var txBase = {
-		chainId: safeInt,
-		nonce: safeInt,
+		chainId: safeInt$1,
+		nonce: safeInt$1,
 		gas: hexQuantity,
 		value: hexQuantity,
 		data: hexData,
@@ -1253,6 +1253,23 @@
 		fingerprint: str(8, /^[0-9a-f]{8}$/),
 		path: str(11, /^m\/[0-9'/]+$/)
 	}));
+	var exportNode = union(obj({ kind: literal("evm.account") }), obj({
+		kind: literal("leaf"),
+		template: union(literal("evm.bip44"), literal("tron.bip44"), literal("solana.bip44-change"))
+	}), obj({
+		kind: literal("btc.account"),
+		template: btcTemplate,
+		network: caip2
+	}));
+	var fingerprint = str(8, /^[0-9a-f]{8}$/);
+	var exportedKey = obj({
+		node: exportNode,
+		path: str(32, /^m\/[0-9'/]+$/),
+		curve: union(literal("secp256k1"), literal("ed25519")),
+		publicKey: union(bytes(33), bytes(32)),
+		chainCode: opt(bytes(32)),
+		parentFingerprint: opt(fingerprint)
+	});
 	var CHAINS_METHODS = {
 		"wallet.accounts": {
 			session: true,
@@ -1273,6 +1290,20 @@
 				verify: verifier
 			}),
 			result: signResult
+		},
+		"chain.exportAccount": {
+			session: true,
+			presence: true,
+			params: obj({
+				walletId,
+				groupIndex,
+				nodes: arr(exportNode, 4, 1),
+				verify: verifier
+			}),
+			result: obj({
+				fingerprint,
+				keys: arr(exportedKey, 4, 1)
+			})
 		}
 	};
 	/** `XXXX-XXXX` — the short id printed on a card and shown in prompts. */
@@ -1518,7 +1549,7 @@
 			index: identityIndex
 		}),
 		publicKey: publicKey$1,
-		createdAt: safeTime$1
+		createdAt: safeTime
 	});
 	/** The nostr section of the status payload, composed by protocol/index.ts. */
 	var nostrStatus$1 = obj({ keys: arr(nostrKeyInfo$1, MAX_SNAPSHOT_ITEMS) });
@@ -1529,7 +1560,7 @@
 	var tags = arr(arr(str(MAX_TAG_ITEM), 64), MAX_TAGS);
 	var signEventInput = obj({
 		kind: int(0, 65535),
-		created_at: safeTime$1,
+		created_at: safeTime,
 		tags,
 		content: str(MAX_TEXT),
 		pubkey: opt(publicKey$1)
@@ -1539,7 +1570,7 @@
 		pubkey: publicKey$1,
 		sig: hex128,
 		kind: int(0, 65535),
-		created_at: safeTime$1,
+		created_at: safeTime,
 		tags,
 		content: str(MAX_TEXT)
 	});
@@ -1547,7 +1578,7 @@
 		id: publicKey$1,
 		pubkey: publicKey$1,
 		kind: int(0, 65535),
-		created_at: safeTime$1,
+		created_at: safeTime,
 		tags,
 		content: str(MAX_TEXT)
 	});
@@ -1673,14 +1704,6 @@
 			result: textResult
 		}
 	};
-	/**
-	* The canonical grammar of a session record's `spent` — the decimal the kernel's meter produces.
-	* The scheme's `positive` params grammar admits at most eight fractional digits, so an
-	* order-notional charge (price × size) is exact at sixteen; the integer part is bounded by the
-	* ~1e15 notional budget `spent` can never exceed. The kernel's record parser and the `SessionInfo`
-	* validator share this one grammar so a value the kernel seals always parses.
-	*/
-	var SESSION_SPENT = /^(?:0|[1-9][0-9]{0,14})(?:\.[0-9]{0,15}[1-9])?$/;
 	var schemeId = str(32, /^[a-z][a-z0-9-]{1,31}$/);
 	var scope = str(64, /^[A-Za-z0-9._:-]{1,64}$/);
 	var evmAddress = str(42, /^0x[0-9a-fA-F]{40}$/);
@@ -1694,10 +1717,10 @@
 		owner: evmAddress,
 		scope,
 		name: str(16, /^[A-Za-z0-9._-]{1,16}$/),
-		validUntil: safeTime$1,
-		createdAt: safeTime$1,
+		validUntil: safeTime,
+		createdAt: safeTime,
 		limits: paramsValue,
-		spent: str(32, SESSION_SPENT)
+		spent: paramsValue
 	});
 	var SESSIONS_METHODS = {
 		"sessions.create": {
@@ -1711,7 +1734,7 @@
 				}),
 				scope,
 				name: str(16, /^[A-Za-z0-9._-]{1,16}$/),
-				validUntil: safeTime$1,
+				validUntil: safeTime,
 				limits: paramsValue,
 				verify: verifier
 			}),
@@ -1887,13 +1910,13 @@
 		domain: str(253),
 		username: str(64, /^[a-z0-9\-_.+]{1,64}$/u),
 		description: str(512),
-		timestamp: safeTime$1
+		timestamp: safeTime
 	}), obj({
 		kind: literal("lightning-address"),
 		action: literal("unregister"),
 		domain: str(253),
 		username: str(64, /^[a-z0-9\-_.+]{1,64}$/u),
-		timestamp: safeTime$1
+		timestamp: safeTime
 	}));
 	var htlcTimeoutRequest = obj({
 		transaction: bytes(1, MAX_TX_BYTES),
@@ -2217,7 +2240,7 @@
 	var lockReason = union(literal("cold-start"), literal("user"), literal("idle"), literal("background"), literal("expired"), literal("crashed"), literal("invalidated"));
 	obj({
 		code: walletErrorCode,
-		retryAt: opt(safeTime$1),
+		retryAt: opt(safeTime),
 		detail: opt(str(80, /^[A-Za-z0-9_.:-]+$/))
 	});
 	obj({
@@ -4518,6 +4541,37 @@
 		var _keystore$locale;
 		return cardPrompt(promptLocale((_keystore$locale = keystore === null || keystore === void 0 ? void 0 : keystore.locale) !== null && _keystore$locale !== void 0 ? _keystore$locale : "en"), kind, cards());
 	};
+	var EXPORT_ACCOUNT = {
+		en: {
+			title: "Connect watch-only wallet",
+			share: (g) => `Share public keys of account ${g} — never a private key`,
+			evmAccount: (path) => `EVM: the addresses of every account of this wallet (${path})`,
+			leaf: (family, g, path) => `${family} address of account ${g} (${path})`,
+			btcAccount: (template, network, g, path) => `Bitcoin ${template} on ${network}: every address of account ${g} (${path})`,
+			btcTemplate: {
+				"btc.bip44": "Legacy (BIP-44)",
+				"btc.bip49": "Wrapped SegWit (BIP-49)",
+				"btc.bip84": "Native SegWit (BIP-84)",
+				"btc.bip86": "Taproot (BIP-86)"
+			}
+		},
+		"zh-Hans": {
+			title: "连接观察钱包",
+			share: (g) => `共享账户 ${g} 的公开密钥——绝不包含私钥`,
+			evmAccount: (path) => `EVM：本钱包所有账户的地址（${path}）`,
+			leaf: (family, g, path) => `${family} 账户 ${g} 的地址（${path}）`,
+			btcAccount: (template, network, g, path) => `${network} ${template}：账户 ${g} 的全部地址（${path}）`,
+			btcTemplate: {
+				"btc.bip44": "传统（BIP-44）",
+				"btc.bip49": "兼容隔离见证（BIP-49）",
+				"btc.bip84": "原生隔离见证（BIP-84）",
+				"btc.bip86": "Taproot（BIP-86）"
+			}
+		}
+	};
+	function exportAccountText(locale) {
+		return EXPORT_ACCOUNT[locale];
+	}
 	/**
 	* The secure-input labels for the kernel's backup-password ceremony: enable asks for the new
 	* password, then a repeat; a mismatch or a too-short entry is re-asked with the reason in the
@@ -4553,6 +4607,17 @@
 		"zh-Hans": "云备份密钥",
 		en: "Cloud backup key"
 	};
+	var SESSION_APPROVAL_CODE = {
+		"zh-Hans": (code) => `在下方输入 ${code} 以批准以上限额`,
+		en: (code) => `Type ${code} below to approve these limits`
+	};
+	/**
+	* The last line of a `session-approval` label — always last, so a clipped label drops the code line
+	* first and a submitted code proves the lines above it were on screen.
+	*/
+	function sessionApprovalCode(locale, code) {
+		return SESSION_APPROVAL_CODE[locale](code);
+	}
 	/** A prompt thunk for a core operation — the keystore locale is read only when it runs. */
 	var corePromptFor = (keystore, kind) => () => {
 		var _keystore$locale2;
@@ -11847,7 +11912,7 @@
 			}
 		});
 	}
-	var EMPTY$2, NULL, restrictedKeys, validateFieldName, findBytes, createView, _0n$5, _1n$4, _2n$3, _8n$1, _10n, _255n, hasOwn, utils, lengthCoder, Bitset, Path, _Reader, _Writer, swapEndianness, wrap$1, isBaseCoder, numberBigint, reverse, coders, bigint, U256LE, U64LE, I64LE, view, intView, U32LE, U32BE, I32LE, U16LE, U8, createBytes, string, flag;
+	var EMPTY$2, NULL, restrictedKeys, validateFieldName, findBytes, createView, _0n$5, _1n$4, _2n$3, _8n$1, _10n, _255n, hasOwn, utils, lengthCoder, Bitset, Path, _Reader, _Writer, swapEndianness, wrap$1, isBaseCoder, numberBigint, reverse, coders, bigint, U256LE, U64LE, I64LE, view, intView, U32LE, U32BE, I32LE, U16LE, U8, createBytes, string, flag$1;
 	var init_micro_packed = __esmMin((() => {
 		init_base();
 		init_defineProperty();
@@ -12501,7 +12566,7 @@
 			if (typeof value !== "string") throw new Error(`expected string, got ${typeof value}`);
 			return value;
 		});
-		flag = (flagValue, xor = false) => {
+		flag$1 = (flagValue, xor = false) => {
 			if (!isBytes$2(flagValue)) throw new TypeError(`flag/flagValue: expected Uint8Array, got ${typeof flagValue}`);
 			if (flagValue.length === 0) throw new Error("flag/flagValue: empty marker");
 			if (typeof xor !== "boolean") throw new TypeError(`flag/xor: expected boolean, got ${typeof xor}`);
@@ -15065,7 +15130,7 @@
 	* @param values - The {@link ox#Hex.Hex} values to concatenate.
 	* @returns The concatenated {@link ox#Hex.Hex} value.
 	*/
-	function concat$7(...values) {
+	function concat$8(...values) {
 		if (values.length === 0) return "0x";
 		if (values.length === 1) return values[0];
 		if (values.length === 2) return `0x${values[0].slice(2)}${values[1].slice(2)}`;
@@ -17300,7 +17365,7 @@
 			const value = values[i];
 			data.push(encodePacked.encode(type, value));
 		}
-		return concat$7(...data);
+		return concat$8(...data);
 	}
 	(function(encodePacked) {
 		function encode(type, value, isArray = false) {
@@ -17344,7 +17409,7 @@
 				const data = [];
 				for (let i = 0; i < value.length; i++) data.push(encode(childType, value[i], true));
 				if (data.length === 0) return "0x";
-				return concat$7(...data);
+				return concat$8(...data);
 			}
 			throw new InvalidTypeError$1(type);
 		}
@@ -18920,7 +18985,7 @@
 			types,
 			typeHashes
 		}));
-		return concat$7(...parts);
+		return concat$8(...parts);
 	}
 	/**
 	* Encodes [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) schema for the provided primaryType.
@@ -19363,16 +19428,16 @@
 		value: c.value,
 		callData: hex$2(c.data)
 	}))])]);
-	var list = (v) => Array.isArray(v) ? v : [];
+	var list$1 = (v) => Array.isArray(v) ? v : [];
 	var isExecution = (e) => typeof e === "object" && e !== null && "target" in e && "value" in e && "callData" in e && typeof e.target === "string" && isEvmAddress(e.target) && typeof e.value === "bigint" && typeof e.callData === "string";
 	/** Decodes an `execute` call; undefined unless the encoding is canonical batch-default mode. */
 	var decodeBatchExecute = (data) => {
 		try {
-			const [mode, executionData] = list(decodeData(EXECUTE, hex$2(data)));
+			const [mode, executionData] = list$1(decodeData(EXECUTE, hex$2(data)));
 			if (mode !== "0x0100000000000000000000000000000000000000000000000000000000000000" || typeof executionData !== "string") return;
-			const [inner] = list(decode$4(EXECUTIONS, hex$2(executionData)));
+			const [inner] = list$1(decode$4(EXECUTIONS, hex$2(executionData)));
 			const executions = [];
-			for (const e of list(inner)) {
+			for (const e of list$1(inner)) {
 				if (!isExecution(e)) return;
 				executions.push({
 					to: checksumEvmAddress(e.target),
@@ -19927,7 +19992,7 @@
 	var ZERO$3 = "0x0000000000000000000000000000000000000000";
 	var isWitnessType = (type) => Object.hasOwn(ORDER_TYPES, type);
 	var address$1$1 = (message, key) => typedDataAddress(message[key]);
-	var uint$1$1 = (message, key) => typedDataUint(message[key], MAX_UINT256);
+	var uint$1 = (message, key) => typedDataUint(message[key], MAX_UINT256);
 	/** The witness decoded per its order type, or `undefined` when any needed value is malformed. */
 	var parse = (type, witness) => {
 		const { info } = witness;
@@ -19955,19 +20020,19 @@
 			return outputs;
 		};
 		const dutch = (m) => {
-			const start = uint$1$1(m, "startAmount");
-			const end = uint$1$1(m, "endAmount");
+			const start = uint$1(m, "startAmount");
+			const end = uint$1(m, "endAmount");
 			return start === void 0 || end === void 0 ? void 0 : start < end ? start : end;
 		};
 		if (type === "ExclusiveDutchOrder" || type === "V2DutchOrder") {
 			const exclusive = type === "ExclusiveDutchOrder";
 			const prefix = exclusive ? "input" : "baseInput";
 			const inputToken = address$1$1(witness, `${prefix}Token`);
-			const start = uint$1$1(witness, `${prefix}StartAmount`);
-			const end = uint$1$1(witness, `${prefix}EndAmount`);
+			const start = uint$1(witness, `${prefix}StartAmount`);
+			const end = uint$1(witness, `${prefix}EndAmount`);
 			const outputs = outputsOf(exclusive ? "outputs" : "baseOutputs", (m) => dutch(m));
 			const filler = exclusive ? address$1$1(witness, "exclusiveFiller") : void 0;
-			const decayed = uint$1$1(witness, "decayStartTime") !== void 0 && uint$1$1(witness, "decayEndTime") !== void 0 && uint$1$1(witness, "exclusivityOverrideBps") !== void 0;
+			const decayed = uint$1(witness, "decayStartTime") !== void 0 && uint$1(witness, "decayEndTime") !== void 0 && uint$1(witness, "exclusivityOverrideBps") !== void 0;
 			const cosigned = exclusive || address$1$1(witness, "cosigner") !== void 0;
 			if (inputToken === void 0 || start === void 0 || end === void 0 || outputs === void 0 || exclusive && (!decayed || filler === void 0) || !cosigned) return;
 			return _objectSpread2({
@@ -19979,10 +20044,10 @@
 		}
 		if (type === "V3DutchOrder") {
 			const input = witness["baseInput"];
-			if (!isTypedDataMessage(input) || !isTypedDataMessage(input["curve"]) || address$1$1(witness, "cosigner") === void 0 || uint$1$1(witness, "startingBaseFee") === void 0) return;
+			if (!isTypedDataMessage(input) || !isTypedDataMessage(input["curve"]) || address$1$1(witness, "cosigner") === void 0 || uint$1(witness, "startingBaseFee") === void 0) return;
 			const inputToken = address$1$1(input, "token");
-			const maxAmount = uint$1$1(input, "maxAmount");
-			const outputs = outputsOf("baseOutputs", (m) => isTypedDataMessage(m["curve"]) ? uint$1$1(m, "minAmount") : void 0);
+			const maxAmount = uint$1(input, "maxAmount");
+			const outputs = outputsOf("baseOutputs", (m) => isTypedDataMessage(m["curve"]) ? uint$1(m, "minAmount") : void 0);
 			return inputToken === void 0 || maxAmount === void 0 || outputs === void 0 ? void 0 : {
 				info,
 				inputToken,
@@ -19991,10 +20056,10 @@
 			};
 		}
 		const { input } = witness;
-		if (!isTypedDataMessage(input) || address$1$1(witness, "cosigner") === void 0 || uint$1$1(witness, "auctionStartBlock") === void 0 || uint$1$1(witness, "baselinePriorityFeeWei") === void 0 || uint$1$1(input, "mpsPerPriorityFeeWei") === void 0) return;
+		if (!isTypedDataMessage(input) || address$1$1(witness, "cosigner") === void 0 || uint$1(witness, "auctionStartBlock") === void 0 || uint$1(witness, "baselinePriorityFeeWei") === void 0 || uint$1(input, "mpsPerPriorityFeeWei") === void 0) return;
 		const inputToken = address$1$1(input, "token");
-		const amount = uint$1$1(input, "amount");
-		const outputs = outputsOf("outputs", (m) => uint$1$1(m, "mpsPerPriorityFeeWei") === void 0 ? void 0 : uint$1$1(m, "amount"));
+		const amount = uint$1(input, "amount");
+		const outputs = outputsOf("outputs", (m) => uint$1(m, "mpsPerPriorityFeeWei") === void 0 ? void 0 : uint$1(m, "amount"));
 		return inputToken === void 0 || amount === void 0 || outputs === void 0 ? void 0 : {
 			info,
 			inputToken,
@@ -20025,14 +20090,14 @@
 		const { witness } = message;
 		const spender = address$1$1(message, "spender");
 		const permittedToken = isTypedDataMessage(permitted) ? address$1$1(permitted, "token") : void 0;
-		const permittedAmount = isTypedDataMessage(permitted) ? uint$1$1(permitted, "amount") : void 0;
+		const permittedAmount = isTypedDataMessage(permitted) ? uint$1(permitted, "amount") : void 0;
 		const parsed = isTypedDataMessage(witness) ? parse(witnessType, witness) : void 0;
 		if (spender === void 0 || permittedToken === void 0 || permittedAmount === void 0 || parsed === void 0 || parsed.inputToken.toLowerCase() !== permittedToken.toLowerCase()) return;
 		const { info } = parsed;
 		const reactor = address$1$1(info, "reactor");
 		const swapper = address$1$1(info, "swapper");
-		const nonce = uint$1$1(info, "nonce");
-		const deadline = uint$1$1(info, "deadline");
+		const nonce = uint$1(info, "nonce");
+		const deadline = uint$1(info, "deadline");
 		if (reactor === void 0 || reactor.toLowerCase() !== spender.toLowerCase() || reactor.toLowerCase() !== ((_REACTORS$chainId = REACTORS[chainId]) === null || _REACTORS$chainId === void 0 ? void 0 : _REACTORS$chainId[witnessType]) || swapper === void 0 || swapper.toLowerCase() !== signer.toLowerCase() || nonce === void 0 || deadline === void 0 || deadline > BigInt(Number.MAX_SAFE_INTEGER) || address$1$1(info, "additionalValidationContract") === void 0 || typedDataBytes(info["additionalValidationData"]) === void 0) return;
 		if (parsed.outputs.length > 8) return { kind: "oversize" };
 		const maker = checksumEvmAddress(signer);
@@ -21332,7 +21397,7 @@
 	*/
 	function toHex(signature) {
 		assert$5(signature);
-		return concat$7(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber$1(yParityToV(signature.yParity), { size: 1 }) : "0x");
+		return concat$8(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber$1(yParityToV(signature.yParity), { size: 1 }) : "0x");
 	}
 	/**
 	* Converts a {@link ox#Signature.Signature} to a serialized {@link ox#Signature.Tuple} to be used for signatures in Transaction Envelopes, EIP-7702 Authorization Lists, etc.
@@ -21517,7 +21582,7 @@
 	*/
 	function hash$4(authorization, options = {}) {
 		const { presign } = options;
-		return keccak256(concat$7("0x05", fromHex$1(toTuple(presign ? {
+		return keccak256(concat$8("0x05", fromHex$1(toTuple(presign ? {
 			address: authorization.address,
 			chainId: authorization.chainId,
 			nonce: authorization.nonce
@@ -21648,7 +21713,7 @@
 	*/
 	function encode$1(data) {
 		const message = from$6(data);
-		return concat$7(erc191PrefixHex, fromString$2(String(size$1(message))), message);
+		return concat$8(erc191PrefixHex, fromString$2(String(size$1(message))), message);
 	}
 	/**
 	* Gets the payload to use for signing an [ERC-191 formatted](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e) personal message.
@@ -21894,7 +21959,7 @@
 		assert$4(envelope);
 		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
-		return concat$7("0x01", fromHex$1([
+		return concat$8("0x01", fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(gasPrice),
@@ -22091,7 +22156,7 @@
 		const accessTupleList = toTupleList(accessList);
 		const authorizationTupleList = toTupleList$1(authorizationList);
 		const signature = extract(options.signature || envelope);
-		return concat$7(serializedType$1, fromHex$1([
+		return concat$8(serializedType$1, fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
@@ -22624,7 +22689,7 @@
 		assert$1(envelope);
 		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
-		return concat$7(serializedType, fromHex$1([
+		return concat$8(serializedType, fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
@@ -26667,20 +26732,20 @@ zoo`.split("\n"));
 	var BYTES32 = /^0x[0-9a-fA-F]{64}$/;
 	var bytes32 = (value) => typeof value === "string" && BYTES32.test(value) ? value.toLowerCase() : void 0;
 	var nonZero = (hex) => hex === ZERO_BYTES32 ? void 0 : hex;
-	var uint$1 = (value) => typedDataUint(value, MAX_UINT256$1);
+	var uint = (value) => typedDataUint(value, MAX_UINT256$1);
 	var sameAddress = (a, b) => a !== void 0 && b !== void 0 && a.toLowerCase() === b.toLowerCase();
 	/** The strict parse both `Order` and `TypedDataSign.contents` share. */
 	var orderValues = (message) => {
 		const maker = typedDataAddress(message["maker"]);
 		const signer = typedDataAddress(message["signer"]);
-		const tokenId = uint$1(message["tokenId"]);
-		const makerAmount = uint$1(message["makerAmount"]);
-		const takerAmount = uint$1(message["takerAmount"]);
-		const side = uint$1(message["side"]);
-		const signatureType = uint$1(message["signatureType"]);
+		const tokenId = uint(message["tokenId"]);
+		const makerAmount = uint(message["makerAmount"]);
+		const takerAmount = uint(message["takerAmount"]);
+		const side = uint(message["side"]);
+		const signatureType = uint(message["signatureType"]);
 		const metadata = bytes32(message["metadata"]);
 		const builder = bytes32(message["builder"]);
-		if (maker === void 0 || signer === void 0 || tokenId === void 0 || makerAmount === void 0 || makerAmount === 0n || takerAmount === void 0 || takerAmount === 0n || side === void 0 || side > 1n || signatureType === void 0 || signatureType > 3n || uint$1(message["salt"]) === void 0 || uint$1(message["timestamp"]) === void 0 || metadata === void 0 || builder === void 0) return;
+		if (maker === void 0 || signer === void 0 || tokenId === void 0 || makerAmount === void 0 || makerAmount === 0n || takerAmount === void 0 || takerAmount === 0n || side === void 0 || side > 1n || signatureType === void 0 || signatureType > 3n || uint(message["salt"]) === void 0 || uint(message["timestamp"]) === void 0 || metadata === void 0 || builder === void 0) return;
 		const meta = nonZero(metadata);
 		const code = nonZero(builder);
 		return _objectSpread2(_objectSpread2({
@@ -26765,7 +26830,7 @@ zoo`.split("\n"));
 		const { message } = json;
 		const wallet = typedDataAddress(message["verifyingContract"]);
 		const { contents } = message;
-		if (message["name"] !== "DepositWallet" || message["version"] !== "1" || wallet === void 0 || message["salt"] !== ZERO_BYTES32 || uint$1(message["chainId"]) !== BigInt(exchange.chainId) || !isTypedDataMessage(contents)) return;
+		if (message["name"] !== "DepositWallet" || message["version"] !== "1" || wallet === void 0 || message["salt"] !== ZERO_BYTES32 || uint(message["chainId"]) !== BigInt(exchange.chainId) || !isTypedDataMessage(contents)) return;
 		const order = orderValues(contents);
 		if (order === void 0 || order.signatureType !== 3n || !sameAddress(order.signer, wallet) || !sameAddress(order.maker, wallet)) return;
 		const content = orderContent(order, exchange, "deposit-wallet");
@@ -26787,7 +26852,7 @@ zoo`.split("\n"));
 		if (json.primaryType !== "ClobAuth" || domain["name"] !== "ClobAuthDomain" || domain["version"] !== "1" || chainId !== 137 && chainId !== 80002 || !sameFields(types, "EIP712Domain", EIP712_DOMAIN_AUTH) || !typeSet(types, ["EIP712Domain", "ClobAuth"]) || !sameFields(types, "ClobAuth", CLOB_AUTH_FIELDS)) return;
 		const address = typedDataAddress(message["address"]);
 		const { timestamp } = message;
-		const nonce = uint$1(message["nonce"]);
+		const nonce = uint(message["nonce"]);
 		if (address === void 0 || !sameAddress(address, context.signer) || message["message"] !== CLOB_AUTH_MESSAGE || typeof timestamp !== "string" || !/^[0-9]{1,12}$/.test(timestamp) || nonce === void 0) return;
 		return {
 			content: { polymarket: {
@@ -26812,7 +26877,7 @@ zoo`.split("\n"));
 			"Batch",
 			"Call"
 		]) || !sameFields(types, "Batch", BATCH_FIELDS) || !sameFields(types, "Call", CALL_FIELDS) || !sameAddress(typedDataAddress(message["wallet"]), wallet)) return;
-		const nonce = uint$1(message["nonce"]);
+		const nonce = uint(message["nonce"]);
 		const deadline = typedDataUint(message["deadline"], MAX_UINT48);
 		const calls = typedDataMessages(message["calls"]);
 		if (nonce === void 0 || deadline === void 0 || calls === void 0 || calls.length === 0) return;
@@ -26833,7 +26898,7 @@ zoo`.split("\n"));
 		const decoded = [];
 		for (const call of calls) {
 			const target = typedDataAddress(call["target"]);
-			const value = uint$1(call["value"]);
+			const value = uint(call["value"]);
 			const data = typedDataBytes(call["data"]);
 			if (target === void 0 || value === void 0 || data === void 0) return;
 			decoded.push(decodeCall({
@@ -27004,7 +27069,7 @@ zoo`.split("\n"));
 		"uint256 deadline"
 	];
 	var parseUint$1 = (value) => typedDataUint(value, MAX_UINT256);
-	var result$1 = (authority) => ({
+	var result$1$1 = (authority) => ({
 		content: { authority },
 		summary: "authorization",
 		outflows: [],
@@ -27027,7 +27092,7 @@ zoo`.split("\n"));
 			const nonce = parseUint$1(message["nonce"]);
 			const deadline = parseUint$1(message["deadline"]);
 			if (authorizer === void 0 || authorizer.toLowerCase() !== signer.toLowerCase() || authorized === void 0 || typeof isAuthorized !== "boolean" || nonce === void 0 || deadline === void 0) return;
-			return result$1(_objectSpread2({
+			return result$1$1(_objectSpread2({
 				kind: "morpho",
 				contract,
 				verified: isMorphoBlue(chainId, contract),
@@ -27055,7 +27120,7 @@ zoo`.split("\n"));
 				symbol: listed.symbol,
 				decimals: listed.decimals
 			});
-			return result$1(_objectSpread2({
+			return result$1$1(_objectSpread2({
 				kind: "aave-credit",
 				contract,
 				verified: underlying !== void 0,
@@ -28508,7 +28573,7 @@ zoo`.split("\n"));
 		}, blind === void 0 ? {} : { blind }), request.network, EVM_NATIVE_ASSET, 18);
 	};
 	var utf8$6 = new TextEncoder();
-	function concat$6(...chunks) {
+	function concat$7(...chunks) {
 		let length = 0;
 		for (const chunk of chunks) length += chunk.length;
 		const out = new Uint8Array(length);
@@ -28534,7 +28599,7 @@ zoo`.split("\n"));
 		new DataView(out.buffer).setBigInt64(0, value);
 		return out;
 	};
-	var u64be$1 = (value) => {
+	var u64be = (value) => {
 		const out = /* @__PURE__ */ new Uint8Array(8);
 		new DataView(out.buffer).setBigUint64(0, value);
 		return out;
@@ -28545,42 +28610,37 @@ zoo`.split("\n"));
 		if (value >= 0) {
 			if (value <= 127) return new Uint8Array([value]);
 			if (value <= 255) return new Uint8Array([204, value]);
-			if (value <= 65535) return concat$6(new Uint8Array([205]), u16be(value));
-			if (value <= 4294967295) return concat$6(new Uint8Array([206]), u32be$1(value));
-			return concat$6(new Uint8Array([207]), u64be$1(BigInt(value)));
+			if (value <= 65535) return concat$7(new Uint8Array([205]), u16be(value));
+			if (value <= 4294967295) return concat$7(new Uint8Array([206]), u32be$1(value));
+			return concat$7(new Uint8Array([207]), u64be(BigInt(value)));
 		}
 		if (value >= -32) return new Uint8Array([value + 256]);
 		if (value >= -128) return new Uint8Array([208, value + 256]);
-		if (value >= -32768) return concat$6(new Uint8Array([209]), u16be(value + 65536));
-		if (value >= -2147483648) return concat$6(new Uint8Array([210]), u32be$1(value + 4294967296));
-		return concat$6(new Uint8Array([211]), i64be(BigInt(value)));
+		if (value >= -32768) return concat$7(new Uint8Array([209]), u16be(value + 65536));
+		if (value >= -2147483648) return concat$7(new Uint8Array([210]), u32be$1(value + 4294967296));
+		return concat$7(new Uint8Array([211]), i64be(BigInt(value)));
 	}
 	function packStr(value) {
 		const bytes = utf8$6.encode(value);
 		const { length } = bytes;
-		if (length < 32) return concat$6(new Uint8Array([160 | length]), bytes);
-		if (length < 256) return concat$6(new Uint8Array([217, length]), bytes);
-		if (length < 65536) return concat$6(new Uint8Array([218]), u16be(length), bytes);
-		return concat$6(new Uint8Array([219]), u32be$1(length), bytes);
+		if (length < 32) return concat$7(new Uint8Array([160 | length]), bytes);
+		if (length < 256) return concat$7(new Uint8Array([217, length]), bytes);
+		if (length < 65536) return concat$7(new Uint8Array([218]), u16be(length), bytes);
+		return concat$7(new Uint8Array([219]), u32be$1(length), bytes);
 	}
 	function packBool(value) {
 		return new Uint8Array([value ? 195 : 194]);
 	}
 	function packArray(items) {
-		return concat$6(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$6(new Uint8Array([220]), u16be(items.length)) : (() => {
+		return concat$7(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$7(new Uint8Array([220]), u16be(items.length)) : (() => {
 			throw new ChainError("invalid-request", "unreachable: msgpack array over 65535 items");
 		})(), ...items);
 	}
 	function packMap(entries) {
-		return concat$6(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$6(new Uint8Array([222]), u16be(entries.length)) : (() => {
+		return concat$7(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$7(new Uint8Array([222]), u16be(entries.length)) : (() => {
 			throw new ChainError("invalid-request", "unreachable: msgpack map over 65535 entries");
 		})(), ...entries.flatMap(([key, value]) => [packStr(key), value]));
 	}
-	var u64be = (value) => {
-		const out = /* @__PURE__ */ new Uint8Array(8);
-		new DataView(out.buffer).setBigUint64(0, BigInt(value));
-		return out;
-	};
 	/** The order-wire map, H2-T order: a,b,p,s,r,t,c? — `c` only when present. */
 	var orderWire$1 = (order) => {
 		const t = "limit" in order.t ? packMap([["limit", packMap([["tif", packStr(order.t.limit.tif)]])]]) : packMap([["trigger", packMap([
@@ -28623,11 +28683,6 @@ zoo`.split("\n"));
 				["order", orderWire$1(action.order)]
 			], "a", action.a);
 			case "batchModify": return optFlag([["type", packStr("batchModify")], ["modifies", packArray(action.modifies.map((modify) => packMap([["oid", packOid(modify.oid)], ["order", orderWire$1(modify.order)]])))]], "a", action.a);
-			case "scheduleCancel": {
-				const entries = [["type", packStr("scheduleCancel")]];
-				if (action.time !== void 0) entries.push(["time", packInt(action.time)]);
-				return packMap(entries);
-			}
 			case "updateLeverage": return packMap([
 				["type", packStr("updateLeverage")],
 				["asset", packInt(action.asset)],
@@ -28649,9 +28704,9 @@ zoo`.split("\n"));
 	}
 	function l1ConnectionId(args) {
 		const packed = encodeL1Action(args.action);
-		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$6(new Uint8Array([1]), hexToBytes$4(args.vaultAddress.slice(2)));
-		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$6(new Uint8Array([0]), u64be(args.expiresAfter));
-		return keccak_256(concat$6(packed, u64be(args.nonce), vault, expiry));
+		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$7(new Uint8Array([1]), hexToBytes$4(args.vaultAddress.slice(2)));
+		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$7(new Uint8Array([0]), u64be(BigInt(args.expiresAfter)));
+		return keccak_256(concat$7(packed, u64be(BigInt(args.nonce)), vault, expiry));
 	}
 	function phantomAgentTypedData(connectionId, network) {
 		return JSON.stringify({
@@ -28697,10 +28752,7 @@ zoo`.split("\n"));
 	}
 	/** The phantom-agent typed-data JSON an L1 `params` signs, shared by kernel and host. */
 	function hyperliquidL1Document(params, network) {
-		return phantomAgentTypedData(l1ConnectionId(_objectSpread2(_objectSpread2({
-			action: params.action,
-			nonce: params.nonce
-		}, params.vaultAddress === void 0 ? {} : { vaultAddress: params.vaultAddress }), {}, { expiresAfter: params.expiresAfter })), network);
+		return phantomAgentTypedData(l1ConnectionId(params), network);
 	}
 	/**
 	* Normalizes a SignRequest for the EVM family: exact key sets, chainId vs the CAIP-2 `network`,
@@ -31936,7 +31988,7 @@ zoo`.split("\n"));
 		}
 		return fields;
 	};
-	var concat$5 = (parts) => {
+	var concat$6 = (parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let at = 0;
 		for (const p of parts) {
@@ -31950,11 +32002,11 @@ zoo`.split("\n"));
 	* One encoded field, or undefined when its value is a proto3 default (0, false, empty bytes or
 	* string) and canonical encoding omits it entirely.
 	*/
-	var varintField = (field, value) => BigInt(value) === 0n ? void 0 : concat$5([tag(field, 0), writeVarint(BigInt(value))]);
+	var varintField = (field, value) => BigInt(value) === 0n ? void 0 : concat$6([tag(field, 0), writeVarint(BigInt(value))]);
 	/** A varint field that is emitted even when 0 — required presence, e.g. `lock = false`. */
-	var requiredVarintField = (field, value) => concat$5([tag(field, 0), writeVarint(BigInt(value))]);
+	var requiredVarintField = (field, value) => concat$6([tag(field, 0), writeVarint(BigInt(value))]);
 	var bytesField = (field, data) => data.length === 0 ? void 0 : requiredBytesField(field, data);
-	var requiredBytesField = (field, data) => concat$5([
+	var requiredBytesField = (field, data) => concat$6([
 		tag(field, 2),
 		writeVarint(BigInt(data.length)),
 		data
@@ -31968,7 +32020,7 @@ zoo`.split("\n"));
 	var encodeMessage$1 = (fields) => {
 		const present = fields.filter((f) => f.bytes !== void 0);
 		present.sort((a, b) => a.field - b.field);
-		return concat$5(present.map((f) => f.bytes));
+		return concat$6(present.map((f) => f.bytes));
 	};
 	/**
 	* Split a read field list into the decoder's own consumption plus captured unknowns: fields not in
@@ -32614,7 +32666,7 @@ zoo`.split("\n"));
 	* bare-width `uint`), the difference can only change what it hashes to, never whether it signs — so
 	* strictness is a validation concern, not a compatibility one.
 	*/
-	var fail$5 = (what) => {
+	var fail$4 = (what) => {
 		throw new ChainError("invalid-typed-data", what);
 	};
 	var INT_TYPE$1 = /^(u?)int(\d*)$/;
@@ -32667,21 +32719,21 @@ zoo`.split("\n"));
 		if (int !== null) {
 			const signed = int[1] === "";
 			const w = int[2] === "" ? NaN : Number(int[2]);
-			if (w % 8 !== 0 || w < 8 || w > 256 || int[2] !== String(w)) fail$5(`invalid numeric width in type ${type}`);
+			if (w % 8 !== 0 || w < 8 || w > 256 || int[2] !== String(w)) fail$4(`invalid numeric width in type ${type}`);
 			const [min, max] = intBounds(signed, w);
 			return (value) => {
 				const parsed = args ? looseInt(value) : strictInt(value, signed);
-				if (parsed === void 0 || parsed < min || parsed > max) return fail$5(`value is out of bounds for ${type}`);
+				if (parsed === void 0 || parsed < min || parsed > max) return fail$4(`value is out of bounds for ${type}`);
 				return word(parsed);
 			};
 		}
 		const fixed = FIXED_BYTES.exec(type);
 		if (fixed !== null) {
 			const w = Number(fixed[1]);
-			if (w < 1 || w > 32 || String(w) !== fixed[1]) fail$5(`invalid bytes width in type ${type}`);
+			if (w < 1 || w > 32 || String(w) !== fixed[1]) fail$4(`invalid bytes width in type ${type}`);
 			return (value) => {
 				const bytes = hexLeaf(value, args);
-				if (bytes === void 0 || bytes.length !== w) return fail$5(`invalid length for ${type}`);
+				if (bytes === void 0 || bytes.length !== w) return fail$4(`invalid length for ${type}`);
 				const out = /* @__PURE__ */ new Uint8Array(32);
 				out.set(bytes);
 				return out;
@@ -32691,21 +32743,21 @@ zoo`.split("\n"));
 			case "trcToken": return baseEncoder("uint256", args);
 			case "address": return (value) => {
 				const body = addressBody(value);
-				if (body === void 0) return fail$5("address is not a base58, 41-hex or 0x-hex TRON address");
+				if (body === void 0) return fail$4("address is not a base58, 41-hex or 0x-hex TRON address");
 				return concatBytes$3(/* @__PURE__ */ new Uint8Array(12), body);
 			};
 			case "bool": return (value) => {
 				if (args) return word(Boolean(value) ? 1n : 0n);
-				if (typeof value !== "boolean") return fail$5("bool is not a JSON boolean");
+				if (typeof value !== "boolean") return fail$4("bool is not a JSON boolean");
 				return word(value ? 1n : 0n);
 			};
 			case "bytes": return (value) => {
 				const bytes = hexLeaf(value, args);
-				if (bytes === void 0) return fail$5("bytes is not 0x-prefixed even-length hex");
+				if (bytes === void 0) return fail$4("bytes is not 0x-prefixed even-length hex");
 				return keccak_256(bytes);
 			};
 			case "string": return (value) => {
-				if (typeof value !== "string") return fail$5("string value is not a string");
+				if (typeof value !== "string") return fail$4("string value is not a string");
 				return keccak_256(utf8ToBytes$1(value));
 			};
 			default: return;
@@ -32747,23 +32799,23 @@ zoo`.split("\n"));
 		}
 		for (const name of names) {
 			var _types$name2;
-			if (isBaseName(name)) fail$5(`struct type name ${JSON.stringify(name)} collides with a base type`);
+			if (isBaseName(name)) fail$4(`struct type name ${JSON.stringify(name)} collides with a base type`);
 			const seen = /* @__PURE__ */ new Set();
 			for (const field of (_types$name2 = types[name]) !== null && _types$name2 !== void 0 ? _types$name2 : []) {
 				var _parents$get, _links$get;
-				if (seen.has(field.name)) fail$5(`duplicate variable name ${JSON.stringify(field.name)} in ${JSON.stringify(name)}`);
+				if (seen.has(field.name)) fail$4(`duplicate variable name ${JSON.stringify(field.name)} in ${JSON.stringify(name)}`);
 				seen.add(field.name);
 				const base = baseName(field.type);
-				if (base === name) fail$5(`circular type reference to ${JSON.stringify(base)}`);
+				if (base === name) fail$4(`circular type reference to ${JSON.stringify(base)}`);
 				let baseIsAtomic;
 				try {
 					baseIsAtomic = baseEncoder(base, false) !== void 0;
 				} catch (error) {
-					if (error instanceof ChainError) fail$5(`invalid field type ${JSON.stringify(field.type)}`);
+					if (error instanceof ChainError) fail$4(`invalid field type ${JSON.stringify(field.type)}`);
 					throw error;
 				}
 				if (baseIsAtomic) continue;
-				if (!parents.has(base)) fail$5(`unknown type ${JSON.stringify(base)}`);
+				if (!parents.has(base)) fail$4(`unknown type ${JSON.stringify(base)}`);
 				((_parents$get = parents.get(base)) !== null && _parents$get !== void 0 ? _parents$get : []).push(name);
 				((_links$get = links.get(name)) !== null && _links$get !== void 0 ? _links$get : /* @__PURE__ */ new Set()).add(base);
 			}
@@ -32772,13 +32824,13 @@ zoo`.split("\n"));
 			var _parents$get2;
 			return ((_parents$get2 = parents.get(n)) !== null && _parents$get2 !== void 0 ? _parents$get2 : []).length === 0;
 		});
-		if (roots.length === 0) fail$5("missing primary type");
-		if (roots.length !== 1) fail$5(`ambiguous primary types or unused types: ${roots.map((r) => JSON.stringify(r)).join(", ")}`);
+		if (roots.length === 0) fail$4("missing primary type");
+		if (roots.length !== 1) fail$4(`ambiguous primary types or unused types: ${roots.map((r) => JSON.stringify(r)).join(", ")}`);
 		const primary = (_roots$ = roots[0]) !== null && _roots$ !== void 0 ? _roots$ : "";
 		const visited = /* @__PURE__ */ new Set();
 		const checkCircular = (type, found) => {
 			var _links$get2;
-			if (found.has(type)) fail$5(`circular type reference to ${JSON.stringify(type)}`);
+			if (found.has(type)) fail$4(`circular type reference to ${JSON.stringify(type)}`);
 			found.add(type);
 			visited.add(type);
 			for (const child of (_links$get2 = links.get(type)) !== null && _links$get2 !== void 0 ? _links$get2 : /* @__PURE__ */ new Set()) {
@@ -32789,7 +32841,7 @@ zoo`.split("\n"));
 			found.delete(type);
 		};
 		checkCircular(primary, /* @__PURE__ */ new Set());
-		if (visited.size !== names.length) fail$5("types contains types the primary type does not reach");
+		if (visited.size !== names.length) fail$4("types contains types the primary type does not reach");
 		const fullTypes = /* @__PURE__ */ new Map();
 		for (const [name, set] of subtypes) {
 			const st = [...set].sort();
@@ -32810,15 +32862,15 @@ zoo`.split("\n"));
 	var makeEncoder = (types, args) => {
 		const { primary, fullTypes } = checkTypes(types);
 		const encode = (type, value, depth) => {
-			if (depth > 32) fail$5("typedData nests too deeply");
+			if (depth > 32) fail$4("typedData nests too deeply");
 			const atomic = baseEncoder(type, args);
 			if (atomic !== void 0) return atomic(value);
 			const tail = ARRAY_TAIL.exec(type);
 			if (tail !== null) {
 				var _tail$2;
-				if (!Array.isArray(value)) return fail$5(`${type} value is not an array`);
+				if (!Array.isArray(value)) return fail$4(`${type} value is not an array`);
 				const len = tail[2] === "" ? void 0 : Number(tail[2]);
-				if (len !== void 0 && len !== value.length) return fail$5(`array length mismatch; expected length ${len}`);
+				if (len !== void 0 && len !== value.length) return fail$4(`array length mismatch; expected length ${len}`);
 				const elementType = (_tail$2 = tail[1]) !== null && _tail$2 !== void 0 ? _tail$2 : "";
 				const structElements = fullTypes.has(elementType);
 				return keccak_256(concatBytes$3(...value.map((v) => encode(elementType, v, depth + 1)).map((e) => structElements ? keccak_256(e) : e)));
@@ -32826,46 +32878,46 @@ zoo`.split("\n"));
 			const fields = types[type];
 			if (fields !== void 0) {
 				var _fullTypes$get;
-				if (!isRecord$4(value)) return fail$5(`${type} value is not an object`);
+				if (!isRecord$4(value)) return fail$4(`${type} value is not an object`);
 				return concatBytes$3(keccak_256(utf8ToBytes$1((_fullTypes$get = fullTypes.get(type)) !== null && _fullTypes$get !== void 0 ? _fullTypes$get : "")), ...fields.map((f) => {
 					const e = encode(f.type, value[f.name], depth + 1);
 					return fullTypes.has(f.type) ? keccak_256(e) : e;
 				}));
 			}
-			return fail$5(`unknown type ${type}`);
+			return fail$4(`unknown type ${type}`);
 		};
 		const visitLeaf = (type, value) => {
 			if (/^bytes(\d*)/.test(type)) {
 				const bytes = hexLeaf(value, args);
-				if (bytes === void 0) return fail$5(`invalid bytes value for ${type}`);
+				if (bytes === void 0) return fail$4(`invalid bytes value for ${type}`);
 				return `0x${bytesToHex$5(bytes)}`;
 			}
 			if (/^u?int/.test(type) || type === "trcToken") {
 				const v = looseInt(value);
-				if (v === void 0) return fail$5(`invalid numeric value for ${type}`);
+				if (v === void 0) return fail$4(`invalid numeric value for ${type}`);
 				return v.toString(10);
 			}
 			switch (type) {
 				case "address": {
 					const body = addressBody(value);
-					if (body === void 0) return fail$5("address is not a base58, 41-hex or 0x-hex TRON address");
+					if (body === void 0) return fail$4("address is not a base58, 41-hex or 0x-hex TRON address");
 					return `41${bytesToHex$5(body)}`;
 				}
 				case "bool": return Boolean(value);
 				case "string":
-					if (typeof value !== "string") return fail$5("string value is not a string");
+					if (typeof value !== "string") return fail$4("string value is not a string");
 					return value;
-				default: return fail$5(`unsupported type ${type}`);
+				default: return fail$4(`unsupported type ${type}`);
 			}
 		};
 		const visit = (type, value, depth) => {
-			if (depth > 32) fail$5("typedData nests too deeply");
+			if (depth > 32) fail$4("typedData nests too deeply");
 			if (baseEncoder(type, true) !== void 0) return visitLeaf(type, value);
 			const tail = ARRAY_TAIL.exec(type);
 			if (tail !== null) {
-				if (!Array.isArray(value)) return fail$5(`${type} value is not an array`);
+				if (!Array.isArray(value)) return fail$4(`${type} value is not an array`);
 				const len = tail[2] === "" ? void 0 : Number(tail[2]);
-				if (len !== void 0 && len !== value.length) return fail$5(`array length mismatch; expected length ${len}`);
+				if (len !== void 0 && len !== value.length) return fail$4(`array length mismatch; expected length ${len}`);
 				return value.map((v) => {
 					var _tail$3;
 					return visit((_tail$3 = tail[1]) !== null && _tail$3 !== void 0 ? _tail$3 : "", v, depth + 1);
@@ -32873,10 +32925,10 @@ zoo`.split("\n"));
 			}
 			const fields = types[type];
 			if (fields !== void 0) {
-				if (!isRecord$4(value)) return fail$5(`${type} value is not an object`);
+				if (!isRecord$4(value)) return fail$4(`${type} value is not an object`);
 				return Object.fromEntries(fields.map((f) => [f.name, visit(f.type, value[f.name], depth + 1)]));
 			}
-			return fail$5(`unknown type ${type}`);
+			return fail$4(`unknown type ${type}`);
 		};
 		return {
 			primary,
@@ -32915,7 +32967,7 @@ zoo`.split("\n"));
 			const value = domain[f.name];
 			if (value !== void 0 && value !== null) fields.push(f);
 		}
-		for (const key of Object.keys(domain)) if (domain[key] !== void 0 && domain[key] !== null && !DOMAIN_NAMES.has(key)) fail$5(`invalid typed-data domain key ${JSON.stringify(key)}`);
+		for (const key of Object.keys(domain)) if (domain[key] !== void 0 && domain[key] !== null && !DOMAIN_NAMES.has(key)) fail$4(`invalid typed-data domain key ${JSON.stringify(key)}`);
 		return fields;
 	};
 	var sameFieldList = (declared, expected) => declared.length === expected.length && declared.every((f, i) => {
@@ -32936,10 +32988,10 @@ zoo`.split("\n"));
 	*/
 	var parseTronTypedData = (typedData) => {
 		var _json$types$EIP712Dom;
-		const json = strictJson(typedData, (reason) => fail$5(`typedData ${reason}`));
-		if (!isTypedDataInput(json)) return fail$5("typedData must be a JSON object with types, primaryType, domain and message");
+		const json = strictJson(typedData, (reason) => fail$4(`typedData ${reason}`));
+		if (!isTypedDataInput(json)) return fail$4("typedData must be a JSON object with types, primaryType, domain and message");
 		const domainFields = domainFieldsOf(json.domain);
-		if (!sameFieldList((_json$types$EIP712Dom = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom !== void 0 ? _json$types$EIP712Dom : fail$5("typedData must declare types.EIP712Domain"), domainFields)) fail$5("types.EIP712Domain is not the canonical field list of the domain keys present");
+		if (!sameFieldList((_json$types$EIP712Dom = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom !== void 0 ? _json$types$EIP712Dom : fail$4("typedData must declare types.EIP712Domain"), domainFields)) fail$4("types.EIP712Domain is not the canonical field list of the domain keys present");
 		tronTypedDataDigest(json);
 		return { json: _objectSpread2(_objectSpread2({}, json), {}, { domain: domainValues(json.domain) }) };
 	};
@@ -32954,7 +33006,7 @@ zoo`.split("\n"));
 		const messageTypes = {};
 		for (const [name, fields] of Object.entries(json.types)) if (name !== "EIP712Domain") messageTypes[name] = fields;
 		const encoder = makeEncoder(messageTypes, false);
-		if (encoder.primary !== json.primaryType) fail$5(`primaryType ${JSON.stringify(json.primaryType)} is not the unique root type`);
+		if (encoder.primary !== json.primaryType) fail$4(`primaryType ${JSON.stringify(json.primaryType)} is not the unique root type`);
 		return {
 			domain: makeEncoder({ EIP712Domain: domainFields }, false).hashStruct("EIP712Domain", json.domain),
 			message: encoder.hashStruct(json.primaryType, json.message)
@@ -33123,7 +33175,7 @@ zoo`.split("\n"));
 	* else — an explicitly-encoded default, a non-minimal form the reader itself missed — is
 	* non-canonical.
 	*/
-	var canonical = (f, encoded) => {
+	var canonical$1 = (f, encoded) => {
 		if (f !== void 0 && !equalBytes$6(f.bytes, encoded !== null && encoded !== void 0 ? encoded : EMPTY$1)) malformed$1("non-canonical encoding");
 	};
 	var encAddress = (n, address) => requiredBytesField(n, tronAddressToBytes(address));
@@ -33134,8 +33186,8 @@ zoo`.split("\n"));
 		const fs = readFields(f.wire === 2 && f.data !== void 0 ? f.data : malformed$1("vote has the wrong wire type"));
 		const witness = addressOf(required(fs, 1, "vote_address"), "vote_address");
 		const count = int64Of(field$1(fs, 2), "vote_count");
-		canonical(required(fs, 1, "vote_address"), encAddress(1, witness));
-		canonical(field$1(fs, 2), encInt(2, count));
+		canonical$1(required(fs, 1, "vote_address"), encAddress(1, witness));
+		canonical$1(field$1(fs, 2), encInt(2, count));
 		return {
 			vote: {
 				witness,
@@ -33148,8 +33200,8 @@ zoo`.split("\n"));
 		const fs = readFields(f.wire === 2 && f.data !== void 0 ? f.data : malformed$1("key has the wrong wire type"));
 		const address = addressOf(required(fs, 1, "key.address"), "key.address");
 		const weight = int64Of(field$1(fs, 2), "key.weight");
-		canonical(required(fs, 1, "key.address"), encAddress(1, address));
-		canonical(field$1(fs, 2), encInt(2, weight));
+		canonical$1(required(fs, 1, "key.address"), encAddress(1, address));
+		canonical$1(field$1(fs, 2), encInt(2, weight));
 		return {
 			key: {
 				address,
@@ -33181,12 +33233,12 @@ zoo`.split("\n"));
 			keys.push(key);
 			extras.push(...extra);
 		}
-		canonical(field$1(fs, 1), encInt(1, type));
-		canonical(field$1(fs, 2), encInt(2, id));
-		canonical(field$1(fs, 3), stringField(3, name));
-		canonical(field$1(fs, 4), encInt(4, threshold));
-		canonical(field$1(fs, 5), encInt(5, parentId));
-		canonical(field$1(fs, 6), encBytes(6, operations));
+		canonical$1(field$1(fs, 1), encInt(1, type));
+		canonical$1(field$1(fs, 2), encInt(2, id));
+		canonical$1(field$1(fs, 3), stringField(3, name));
+		canonical$1(field$1(fs, 4), encInt(4, threshold));
+		canonical$1(field$1(fs, 5), encInt(5, parentId));
+		canonical$1(field$1(fs, 6), encBytes(6, operations));
 		return {
 			permission: {
 				type,
@@ -33206,9 +33258,9 @@ zoo`.split("\n"));
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
 			const to = addressOf(required(fs, 2, "to_address"), "to_address");
 			const amount = int64Of(field$1(fs, 3), "amount");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 2), encAddress(2, to));
-			canonical(field$1(fs, 3), encInt(3, amount));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 2), encAddress(2, to));
+			canonical$1(field$1(fs, 3), encInt(3, amount));
 			return {
 				contract: {
 					type: "TransferContract",
@@ -33229,10 +33281,10 @@ zoo`.split("\n"));
 			const owner = addressOf(required(fs, 2, "owner_address"), "owner_address");
 			const to = addressOf(required(fs, 3, "to_address"), "to_address");
 			const amount = int64Of(field$1(fs, 4), "amount");
-			canonical(field$1(fs, 1), stringField(1, assetId));
-			canonical(field$1(fs, 2), encAddress(2, owner));
-			canonical(field$1(fs, 3), encAddress(3, to));
-			canonical(field$1(fs, 4), encInt(4, amount));
+			canonical$1(field$1(fs, 1), stringField(1, assetId));
+			canonical$1(field$1(fs, 2), encAddress(2, owner));
+			canonical$1(field$1(fs, 3), encAddress(3, to));
+			canonical$1(field$1(fs, 4), encInt(4, amount));
 			return {
 				contract: {
 					type: "TransferAssetContract",
@@ -33264,8 +33316,8 @@ zoo`.split("\n"));
 				extras.push(...extra);
 			}
 			const support = boolOf(field$1(fs, 3), "support");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 3), encBool(3, support));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 3), encBool(3, support));
 			return {
 				contract: {
 					type: "VoteWitnessContract",
@@ -33279,7 +33331,7 @@ zoo`.split("\n"));
 		13(value) {
 			const fs = readFields(value);
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
-			canonical(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
 			return {
 				contract: {
 					type: "WithdrawBalanceContract",
@@ -33296,12 +33348,12 @@ zoo`.split("\n"));
 			const data = bytesOf$3(field$1(fs, 4));
 			const callTokenValue = int64Of(field$1(fs, 5), "call_token_value");
 			const tokenId = int64Of(field$1(fs, 6), "token_id");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 2), encAddress(2, contract));
-			canonical(field$1(fs, 3), encInt(3, callValue));
-			canonical(field$1(fs, 4), encBytes(4, data));
-			canonical(field$1(fs, 5), encInt(5, callTokenValue));
-			canonical(field$1(fs, 6), encInt(6, tokenId));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 2), encAddress(2, contract));
+			canonical$1(field$1(fs, 3), encInt(3, callValue));
+			canonical$1(field$1(fs, 4), encBytes(4, data));
+			canonical$1(field$1(fs, 5), encInt(5, callTokenValue));
+			canonical$1(field$1(fs, 6), encInt(6, tokenId));
 			return {
 				contract: {
 					type: "TriggerSmartContract",
@@ -33327,9 +33379,9 @@ zoo`.split("\n"));
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
 			const amount = int64Of(field$1(fs, 2), "frozen_balance");
 			const resource = int32Of(field$1(fs, 3), "resource");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 2), encInt(2, amount));
-			canonical(field$1(fs, 3), encInt(3, resource));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 2), encInt(2, amount));
+			canonical$1(field$1(fs, 3), encInt(3, resource));
 			return {
 				contract: {
 					type: "FreezeBalanceV2Contract",
@@ -33349,9 +33401,9 @@ zoo`.split("\n"));
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
 			const amount = int64Of(field$1(fs, 2), "unfreeze_balance");
 			const resource = int32Of(field$1(fs, 3), "resource");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 2), encInt(2, amount));
-			canonical(field$1(fs, 3), encInt(3, resource));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 2), encInt(2, amount));
+			canonical$1(field$1(fs, 3), encInt(3, resource));
 			return {
 				contract: {
 					type: "UnfreezeBalanceV2Contract",
@@ -33369,7 +33421,7 @@ zoo`.split("\n"));
 		56(value) {
 			const fs = readFields(value);
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
-			canonical(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
 			return {
 				contract: {
 					type: "WithdrawExpireUnfreezeContract",
@@ -33386,12 +33438,12 @@ zoo`.split("\n"));
 			const receiver = addressOf(required(fs, 4, "receiver_address"), "receiver_address");
 			const lock = boolOf(field$1(fs, 5), "lock");
 			const lockPeriod = int64Of(field$1(fs, 6), "lock_period");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 2), encInt(2, resource));
-			canonical(field$1(fs, 3), encInt(3, balance));
-			canonical(field$1(fs, 4), encAddress(4, receiver));
-			canonical(field$1(fs, 5), encBool(5, lock));
-			canonical(field$1(fs, 6), encInt(6, lockPeriod));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 2), encInt(2, resource));
+			canonical$1(field$1(fs, 3), encInt(3, balance));
+			canonical$1(field$1(fs, 4), encAddress(4, receiver));
+			canonical$1(field$1(fs, 5), encBool(5, lock));
+			canonical$1(field$1(fs, 6), encInt(6, lockPeriod));
 			return {
 				contract: {
 					type: "DelegateResourceContract",
@@ -33418,10 +33470,10 @@ zoo`.split("\n"));
 			const resource = int32Of(field$1(fs, 2), "resource");
 			const balance = int64Of(field$1(fs, 3), "balance");
 			const receiver = addressOf(required(fs, 4, "receiver_address"), "receiver_address");
-			canonical(field$1(fs, 1), encAddress(1, owner));
-			canonical(field$1(fs, 2), encInt(2, resource));
-			canonical(field$1(fs, 3), encInt(3, balance));
-			canonical(field$1(fs, 4), encAddress(4, receiver));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 2), encInt(2, resource));
+			canonical$1(field$1(fs, 3), encInt(3, balance));
+			canonical$1(field$1(fs, 4), encAddress(4, receiver));
 			return {
 				contract: {
 					type: "UnDelegateResourceContract",
@@ -33441,7 +33493,7 @@ zoo`.split("\n"));
 		59(value) {
 			const fs = readFields(value);
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
-			canonical(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
 			return {
 				contract: {
 					type: "CancelAllUnfreezeV2Contract",
@@ -33474,7 +33526,7 @@ zoo`.split("\n"));
 				actives.push(permission);
 				extras.push(...extra);
 			}
-			canonical(field$1(fs, 1), encAddress(1, owner));
+			canonical$1(field$1(fs, 1), encAddress(1, owner));
 			return {
 				contract: _objectSpread2(_objectSpread2({
 					type: "AccountPermissionUpdateContract",
@@ -34603,7 +34655,7 @@ zoo`.split("\n"));
 	* bare hex for TRON — as wipeable ASCII bytes. The encoders live in `src/secret/encode.ts` because
 	* the library encoders return strings, and a private key held in a JS string can never be zeroed.
 	*/
-	async function exportKey$1(ctx, params, requestSession) {
+	async function exportKey$2(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
 		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "export-private-key"));
 		const record = findRecord(ctx.image, "key", params.keyId);
@@ -35908,7 +35960,7 @@ zoo`.split("\n"));
 			return listKeys(ctx);
 		},
 		"keys.remove": async (ctx, params, session) => removeKey$1(ctx, params, session),
-		"keys.export": async (ctx, params, session) => exportKey$1(ctx, params, session)
+		"keys.export": async (ctx, params, session) => exportKey$2(ctx, params, session)
 	};
 	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/utils.js
 	/**
@@ -36197,7 +36249,7 @@ zoo`.split("\n"));
 	init_bip32();
 	init_utils();
 	init_objectSpread2();
-	var HARDENED$13 = 2147483648;
+	var HARDENED$14 = 2147483648;
 	var MAX_NODES = 512;
 	var MAX_ED25519 = 256;
 	var HEX$1 = /^[0-9a-f]+$/;
@@ -36216,12 +36268,12 @@ zoo`.split("\n"));
 			if (digits.length > 1 && digits.startsWith("0")) throw failure$2();
 			const index = Number(digits);
 			if (!Number.isSafeInteger(index) || index > 2147483647) throw failure$2();
-			return hardened ? index + HARDENED$13 : index;
+			return hardened ? index + HARDENED$14 : index;
 		});
 	}
 	/** `KeyPath` → `m/…` — the inverse of {@link pathFromString}; the empty path is `m`. */
 	function pathToString(path) {
-		return `m${path.map((i) => i >= HARDENED$13 ? `/${i - HARDENED$13}'` : `/${i}`).join("")}`;
+		return `m${path.map((i) => i >= HARDENED$14 ? `/${i - HARDENED$14}'` : `/${i}`).join("")}`;
 	}
 	var asSecpPoint$1 = (value) => {
 		const bytes = asHexBytes(value, 33);
@@ -36283,7 +36335,7 @@ zoo`.split("\n"));
 	* master and hardened gaps never derive publicly.
 	*/
 	var nodeAt$1 = (pin, path) => {
-		const [ancestor] = pin.keys.nodes.filter((node) => node.path.length <= path.length && samePath(node.path, path.slice(0, node.path.length)) && path.slice(node.path.length).every((index) => index < HARDENED$13)).sort((a, b) => b.path.length - a.path.length);
+		const [ancestor] = pin.keys.nodes.filter((node) => node.path.length <= path.length && samePath(node.path, path.slice(0, node.path.length)) && path.slice(node.path.length).every((index) => index < HARDENED$14)).sort((a, b) => b.path.length - a.path.length);
 		if (ancestor === void 0) return;
 		let node = new HDKey$1({
 			publicKey: ancestor.publicKey,
@@ -36293,7 +36345,7 @@ zoo`.split("\n"));
 		return node;
 	};
 	/** The BIP-32 master/parent fingerprint's first four bytes as the u32 device answers carry. */
-	var fingerprintNumber$1 = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0);
+	var fingerprintNumber$2 = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0);
 	/** The inverse of `fingerprintNumber`: a u32 fingerprint as its four big-endian bytes. */
 	var fingerprintBytes = (n) => {
 		const out = /* @__PURE__ */ new Uint8Array(4);
@@ -36306,16 +36358,16 @@ zoo`.split("\n"));
 			var _nodeAt;
 			if (path.length === 0) {
 				if (pin.master === void 0) throw deviceRequired();
-				return pin.master;
+				return new Uint8Array(pin.master);
 			}
 			const key = (_nodeAt = nodeAt$1(pin, path)) === null || _nodeAt === void 0 ? void 0 : _nodeAt.publicKey;
 			if (key === void 0 || key === null) throw deviceRequired();
-			return key;
+			return new Uint8Array(key);
 		},
 		ed25519: async (path) => {
 			const key = pin.keys.ed25519.find((k) => samePath(k.path, path));
 			if (key === void 0) throw deviceRequired();
-			return key.publicKey;
+			return new Uint8Array(key.publicKey);
 		},
 		extendedPublicKey: async (path, versions) => {
 			var _path$at;
@@ -36327,8 +36379,8 @@ zoo`.split("\n"));
 				var _nodeAt$publicKey, _nodeAt2;
 				const parentPublic = path.length === 1 ? pin.master : (_nodeAt$publicKey = (_nodeAt2 = nodeAt$1(pin, path.slice(0, -1))) === null || _nodeAt2 === void 0 ? void 0 : _nodeAt2.publicKey) !== null && _nodeAt$publicKey !== void 0 ? _nodeAt$publicKey : void 0;
 				if (parentPublic === void 0 || parentPublic === null) throw deviceRequired();
-				parentFingerprint = fingerprintNumber$1(hash160(parentPublic));
-			} else parentFingerprint = fingerprintNumber$1(pinned.parent);
+				parentFingerprint = fingerprintNumber$2(hash160(parentPublic));
+			} else parentFingerprint = fingerprintNumber$2(pinned.parent);
 			return new HDKey$1({
 				versions,
 				depth: path.length,
@@ -36345,7 +36397,7 @@ zoo`.split("\n"));
 				return derived;
 			}
 			if (pin.fingerprint === void 0) throw new KernelError("integrity", "the pin carries neither master key nor fingerprint");
-			return pin.fingerprint;
+			return new Uint8Array(pin.fingerprint);
 		}
 	});
 	// packages/wallet-kernel/src/modules/card/budget.ts
@@ -36999,7 +37051,7 @@ zoo`.split("\n"));
 		})))();
 		_RawTx = /* @__PURE__ */ (() => struct({
 			version: I32LE,
-			segwitFlag: flag(new Uint8Array([0, 1])),
+			segwitFlag: flag$1(new Uint8Array([0, 1])),
 			inputs: BTCArray(RawInput),
 			outputs: BTCArray(RawOutput),
 			witnesses: flagged("segwitFlag", array("inputs/length", _RawWitness)),
@@ -39638,7 +39690,7 @@ zoo`.split("\n"));
 	var utf8$2 = (s) => new TextEncoder().encode(s);
 	var BIP322_TAG = "BIP0322-signed-message";
 	var LEGACY_MAGIC = utf8$2("Bitcoin Signed Message:\n");
-	var concat$4 = (...parts) => {
+	var concat$5 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let o = 0;
 		for (const p of parts) {
@@ -39653,7 +39705,7 @@ zoo`.split("\n"));
 	/** A length-prefixed push; longer data would need a multi-byte CompactSize this code never emits. */
 	var pushData = (data) => {
 		if (data.length > COMPACT_SIZE_ONE_BYTE_MAX) throw new ChainError("invalid-request", "BIP-322 script data exceeds 252 bytes");
-		return concat$4(varint$1(data.length), data);
+		return concat$5(varint$1(data.length), data);
 	};
 	var u32le = (n) => Uint8Array.of(n % 256, Math.floor(n / 256) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 16777216) % 256);
 	var u64le = (n) => {
@@ -39668,7 +39720,7 @@ zoo`.split("\n"));
 	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
 	var bip322MessageHash = (message) => {
 		const tag = sha256$1(utf8$2(BIP322_TAG));
-		return sha256$1(concat$4(tag, tag, utf8$2(message)));
+		return sha256$1(concat$5(tag, tag, utf8$2(message)));
 	};
 	/**
 	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
@@ -39676,8 +39728,8 @@ zoo`.split("\n"));
 	* digest — internal byte order, the reverse of the displayed hex.
 	*/
 	var toSpend = (scriptPubKey, messageHash) => {
-		const scriptSig = concat$4(Uint8Array.of(0), pushData(messageHash));
-		const raw = concat$4(u32le(0), varint$1(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint$1(1), u64le(0n), pushData(scriptPubKey), u32le(0));
+		const scriptSig = concat$5(Uint8Array.of(0), pushData(messageHash));
+		const raw = concat$5(u32le(0), varint$1(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint$1(1), u64le(0n), pushData(scriptPubKey), u32le(0));
 		return {
 			txid: sha256$1(sha256$1(raw)),
 			raw
@@ -39738,15 +39790,15 @@ zoo`.split("\n"));
 	* each stack item as a pushData — the finalized P2WPKH `[DER‖sighash, pubkey]` or P2TR `[sig]`.
 	*/
 	var encodeBip322Simple = (witness) => {
-		return `smp${base64(concat$4(varint$1(witness.length), ...witness.map(pushData)))}`;
+		return `smp${base64(concat$5(varint$1(witness.length), ...witness.map(pushData)))}`;
 	};
 	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
-	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$4(pushData(LEGACY_MAGIC), pushData(utf8$2(message)))));
+	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$5(pushData(LEGACY_MAGIC), pushData(utf8$2(message)))));
 	/**
 	* The legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
 	* 64-byte compact ECDSA sig), header = 27 + yParity + 4 (compressed pubkey).
 	*/
-	var encodeLegacySignature = (yParity, compact) => base64(concat$4(Uint8Array.of(27 + yParity + 4), compact));
+	var encodeLegacySignature = (yParity, compact) => base64(concat$5(Uint8Array.of(27 + yParity + 4), compact));
 	/**
 	* /bitcoin/plan — the serialisable signing plan of a normalized request. A PSBT plans one task per
 	* listed input (key-path P2TR → BIP-340 over the tweaked output key; P2WPKH/P2SH-P2WPKH/P2PKH →
@@ -39978,6 +40030,7 @@ zoo`.split("\n"));
 	init_transaction();
 	init_bip32();
 	init_script();
+	init_objectSpread2();
 	/**
 	* BIP-32 derivation paths carry a coin type: 0 for mainnet, 1 for every test network. This is what
 	* binds PSBT metadata to the requested network — the raw output scripts themselves carry no network
@@ -40096,6 +40149,26 @@ zoo`.split("\n"));
 		const pub = xpubChild(xpub, network, change, index);
 		return template === "btc.bip86" ? pub.subarray(1) : pub;
 	}
+	var EMPTY_BITCOIN_OWN = {
+		change: /* @__PURE__ */ new Set(),
+		unusual: /* @__PURE__ */ new Map()
+	};
+	/**
+	* An output is discoverable change only on the change chain (`/1/i`), under a purpose at least one
+	* signed input shares, at an index inside what the gap-limited scan reaches: the highest proven
+	* change index among the same-purpose signed inputs plus the gap limit.
+	*/
+	var isDiscoverableChange = (output, signed) => {
+		if (output.change !== 1) return false;
+		let samePurpose = false;
+		let highest = -1;
+		for (const input of signed) {
+			if (input.purpose !== output.purpose) continue;
+			samePurpose = true;
+			if (input.change === 1 && input.index > highest) highest = input.index;
+		}
+		return samePurpose && output.index <= Math.max(0, highest) + 20;
+	};
 	var SATS = "sats";
 	var SIGHASH_SINGLE_ANYONECANPAY = 131;
 	var OP_RETURN = 106;
@@ -40116,15 +40189,17 @@ zoo`.split("\n"));
 		return out;
 	};
 	/**
-	* Decodes a normalized bitcoin.psbt request for display. `ownScripts` is the set of output script
-	* hexes the caller has independently verified as this account's (e.g. the kernel re-deriving
-	* change) — not a display hint.
+	* Decodes a normalized bitcoin.psbt request for display. `own` is the caller's independently
+	* verified classification of the account's own-key outputs — `change` script hexes are hidden,
+	* `unusual` script hexes become outflows to the caller's own address carrying the path text and one
+	* warning each — not a display hint.
 	*/
-	var decodeBitcoinPsbt = (request, ownScripts = /* @__PURE__ */ new Set()) => {
+	var decodeBitcoinPsbt = (request, own = EMPTY_BITCOIN_OWN) => {
 		const tx = parsePsbt(request.psbt);
 		const coder = Address$1(bitcoinNetwork(request.network).params);
 		const signed = new Set(request.sign.map((s) => s.index));
 		const outflows = [];
+		const ownWarnings = [];
 		let canFee = true;
 		let outSum = 0n;
 		for (let i = 0; i < tx.outputsLength; i++) {
@@ -40133,7 +40208,7 @@ zoo`.split("\n"));
 			if (script === void 0 || amount === void 0) throw new ChainError("invalid-request", "PSBT output without script or amount");
 			const scriptHex = bytesToHex$2(script);
 			outSum += amount;
-			if (ownScripts.has(scriptHex)) continue;
+			if (own.change.has(scriptHex)) continue;
 			if (unspendable(script)) {
 				if (amount > 0n) outflows.push({
 					to: scriptHex,
@@ -40153,14 +40228,19 @@ zoo`.split("\n"));
 			} catch (_unused2) {
 				addr = void 0;
 			}
-			outflows.push({
+			const ownPath = own.unusual.get(scriptHex);
+			if (ownPath !== void 0) ownWarnings.push({
+				kind: "unusual-own-output",
+				message: ownPath
+			});
+			outflows.push(_objectSpread2({
 				to: (_addr = addr) !== null && _addr !== void 0 ? _addr : scriptHex,
 				amount: {
 					asset: SATS,
 					amount: amount.toString(10)
 				},
-				verified: addr !== void 0
-			});
+				verified: ownPath !== void 0 || addr !== void 0
+			}, ownPath === void 0 ? {} : { ownPath }));
 		}
 		const amountsCommitted = request.sign.some((s) => isTaprootInput(tx.getInput(s.index)) && tx.getInput(s.index).sighashType !== SIGHASH_SINGLE_ANYONECANPAY);
 		let inSum = 0n;
@@ -40190,10 +40270,10 @@ zoo`.split("\n"));
 			outflows,
 			approvals: [],
 			fee,
-			warnings: listing ? [{
+			warnings: [...ownWarnings, ...listing ? [{
 				kind: "sighash-single-anyonecanpay",
 				message: "signed inputs bind only their same-index outputs; the rest of the transaction can change"
-			}] : [],
+			}] : []],
 			verifiability
 		}, request.network, SATS, 8);
 	};
@@ -40323,6 +40403,7 @@ zoo`.split("\n"));
 		"createdAt"
 	];
 	var HEADER_OPTIONAL = ["limits", "spent"];
+	var plainObject$1 = (value) => isProtocolValue(value) && typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Uint8Array);
 	var asField = (pattern) => (value) => {
 		if (typeof value !== "string" || !pattern.test(value)) throw headerFailure();
 		return value;
@@ -40359,10 +40440,13 @@ zoo`.split("\n"));
 		};
 		const { limits, spent } = object;
 		if (limits !== void 0) {
-			if (!isProtocolValue(limits) || typeof limits !== "object" || limits === null || Array.isArray(limits) || limits instanceof Uint8Array) throw headerFailure();
+			if (!plainObject$1(limits)) throw headerFailure();
 			header.limits = limits;
 		}
-		if (spent !== void 0) header.spent = asField(SESSION_SPENT)(spent);
+		if (spent !== void 0) {
+			if (!plainObject$1(spent)) throw headerFailure();
+			header.spent = spent;
+		}
 		return header;
 	}
 	/** The stored session-key record for an address (any case), or undefined — never throws. */
@@ -40370,6 +40454,138 @@ zoo`.split("\n"));
 		const id = address.toLowerCase();
 		return image.records.find((record) => record.kind === "session-key" && record.id === id);
 	}
+	// packages/wallet-kernel/src/modules/chains/keys.ts
+	/**
+	* Key sources — the kernel's bridge between a signing secret and a plan's tasks. `material` is the
+	* only way public keys leave the secret (addresses, BTC ownership, fingerprints, xpubs are all
+	* derived through it); `backend` answers one 64-byte signature per task through a family task
+	* signer. BIP-32 and SLIP-10 nodes are cached by path and each child derives from its cached
+	* parent, so a many-input PSBT derives the account node once; `wipe` zeroes every cached node.
+	*/
+	init_secp256k1();
+	init_bip32();
+	init_utils();
+	var HARDENED$13 = 2147483648;
+	/** `m/…` notation of a task path — hardened indices print with `'`. */
+	var pathString = (path) => `m${path.map((i) => i >= HARDENED$13 ? `/${i - HARDENED$13}'` : `/${i}`).join("")}`;
+	var accountKey = async (material, path, versions) => {
+		const parsed = HDKey$1.fromExtendedKey(await material.extendedPublicKey(path, versions), versions);
+		if (parsed.publicKey === null || parsed.chainCode === null) throw new KernelError("integrity", "extended public key carries no node");
+		return {
+			publicKey: parsed.publicKey,
+			chainCode: parsed.chainCode,
+			parentFingerprint: parsed.parentFingerprint
+		};
+	};
+	/** The HD source: BIP-32 for secp256k1 schemes, SLIP-10 for ed25519, both lazy and path-cached. */
+	var seedKeys = (seed, random) => {
+		const secpNodes = /* @__PURE__ */ new Map();
+		const edNodes = /* @__PURE__ */ new Map();
+		let wiped = false;
+		const alive = () => {
+			if (wiped) throw new KernelError("integrity", "key source is wiped");
+		};
+		const secpNode = (path) => {
+			var _path$at;
+			alive();
+			const key = path.join("/");
+			const hit = secpNodes.get(key);
+			if (hit !== void 0) return hit;
+			const node = path.length === 0 ? HDKey$1.fromMasterSeed(seed) : secpNode(path.slice(0, -1)).deriveChild((_path$at = path.at(-1)) !== null && _path$at !== void 0 ? _path$at : 0);
+			secpNodes.set(key, node);
+			return node;
+		};
+		const edNode = (path) => {
+			var _path$at2;
+			alive();
+			const key = path.join("/");
+			const hit = edNodes.get(key);
+			if (hit !== void 0) return hit;
+			const node = path.length === 0 ? HDKey.fromMasterSeed(seed) : edNode(path.slice(0, -1)).deriveChild((_path$at2 = path.at(-1)) !== null && _path$at2 !== void 0 ? _path$at2 : 0);
+			edNodes.set(key, node);
+			return node;
+		};
+		const privateAt = (task) => {
+			if (task.scheme === "ed25519") return edNode(task.path).privateKey;
+			const priv = secpNode(task.path).privateKey;
+			if (priv === null) throw new KernelError("integrity", "no private key at path");
+			return priv;
+		};
+		return {
+			material: {
+				secp256k1: async (path) => {
+					const pub = secpNode(path).publicKey;
+					if (pub === null) throw new KernelError("integrity", "no public key at path");
+					return pub;
+				},
+				ed25519: async (path) => ed25519.getPublicKey(edNode(path).privateKey),
+				fingerprint: async () => {
+					const pub = secpNode([]).publicKey;
+					if (pub === null) throw new KernelError("integrity", "no public key at path");
+					return hash160(pub).subarray(0, 4);
+				},
+				extendedPublicKey: async (path, versions) => {
+					alive();
+					const master = HDKey$1.fromMasterSeed(seed, versions);
+					try {
+						const node = master.derive(pathString(path));
+						try {
+							return node.publicExtendedKey;
+						} finally {
+							node.wipePrivateData();
+						}
+					} finally {
+						master.wipePrivateData();
+					}
+				}
+			},
+			backend: (sign) => ({ sign: async (task) => sign(task, privateAt(task), task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array()) }),
+			wipe: () => {
+				wiped = true;
+				for (const node of secpNodes.values()) node.wipePrivateData();
+				for (const node of edNodes.values()) wipe$1(node.privateKey);
+				secpNodes.clear();
+				edNodes.clear();
+			}
+		};
+	};
+	/** The imported-key source: one raw key serves only path `[]` and only its own curve's tasks. */
+	var importedKeys = (secret, curve, random) => {
+		let wiped = false;
+		const alive = () => {
+			if (wiped) throw new KernelError("integrity", "key source is wiped");
+		};
+		return {
+			material: {
+				secp256k1: async (path) => {
+					alive();
+					if (curve !== "secp256k1" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
+					return secp256k1.getPublicKey(secret, true);
+				},
+				ed25519: async (path) => {
+					alive();
+					if (curve !== "ed25519" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
+					return ed25519.getPublicKey(secret);
+				},
+				extendedPublicKey: async () => {
+					throw new KernelError("integrity", "imported keys have no extended public key");
+				},
+				fingerprint: async () => {
+					throw new KernelError("integrity", "imported keys have no fingerprint");
+				}
+			},
+			backend: (sign) => ({ sign: async (task) => {
+				alive();
+				const ownCurve = curve === "secp256k1" ? task.scheme !== "ed25519" : task.scheme === "ed25519";
+				if (task.path.length > 0 || !ownCurve) throw new KernelError("integrity", "an imported key signs only its own tasks at []");
+				return sign(task, secret, task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array());
+			} }),
+			wipe: () => {
+				wiped = true;
+				wipe$1(secret);
+			}
+		};
+	};
 	// packages/wallet-kernel/src/modules/chains/prompt.ts
 	/**
 	* The system verification prompt for `chain.sign`, rendered from the kernel's own decode of the
@@ -40470,6 +40686,7 @@ zoo`.split("\n"));
 		safeRefund: (receiver, amount, price) => `向 ${receiver !== null && receiver !== void 0 ? receiver : "执行者"} 支付 gas 退款：最多 ${amount}，另按每单位 gas ${price} 支付调用开销`,
 		send: (amount, to) => `发送 ${amount} 到 ${to}`,
 		sendTokenAccount: (amount, tokenAccount, to) => `从代币账户 ${tokenAccount} 发送 ${amount} 个最小单位到 ${to}`,
+		sendOwnUnusual: (amount, to, path) => `发送 ${amount} 到非常规路径 ${path} 上你自己的地址 ${to}`,
 		burn: (amount) => `销毁 ${amount}：转入无法花费的输出，永久丢失`,
 		burnTokenAccount: (amount, account) => `从代币账户 ${account} 销毁 ${amount}，永久消失`,
 		allow: (spender, amount) => `授权 ${spender} 使用 ${amount}`,
@@ -40509,7 +40726,8 @@ zoo`.split("\n"));
 			"fiat24-swap-quote": () => "到 USDC 的兑换在交易内部定价；你没有设置滑点上限",
 			"fiat24-account-link": () => "开通账户会将此地址与你向 Fiat24 验证的身份永久关联",
 			"fiat24-account-move": (message) => `危险：这将转移 Fiat24 账户 ${message} 的控制权——包括其中的资金与已验证身份`,
-			"fiat24-account-burn": () => "开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度"
+			"fiat24-account-burn": () => "开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度",
+			"unusual-own-output": () => "转入非常规路径上你自己的地址的资金可能不会显示在此钱包中"
 		},
 		bridgeLine: (network, amount, to, deadline, refundTo) => `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
 		delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
@@ -40709,6 +40927,7 @@ zoo`.split("\n"));
 		safeRefund: (receiver, amount, price) => `Pays ${receiver !== null && receiver !== void 0 ? receiver : "whoever executes it"} a gas refund of up to ${amount}, plus ${price} per gas of call overhead`,
 		send: (amount, to) => `Send ${amount} to ${to}`,
 		sendTokenAccount: (amount, tokenAccount, to) => `Send ${amount} base units of the token in account ${tokenAccount} to ${to}`,
+		sendOwnUnusual: (amount, to, path) => `Send ${amount} to your own address ${to} at unusual path ${path}`,
 		burn: (amount) => `Burn ${amount}: it goes to an unspendable output and is lost`,
 		burnTokenAccount: (amount, account) => `Burn ${amount} from token account ${account}; it is destroyed`,
 		allow: (spender, amount) => `Allow ${spender} to spend ${amount}`,
@@ -40748,7 +40967,8 @@ zoo`.split("\n"));
 			"fiat24-swap-quote": () => "The swap to USDC is priced inside the transaction itself; you set no slippage limit",
 			"fiat24-account-link": () => "Opening the account permanently links this address to the identity you verify with Fiat24",
 			"fiat24-account-move": (message) => `Danger: this moves control of Fiat24 account ${message} — its money and the identity verified for it`,
-			"fiat24-account-burn": () => "Opening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract"
+			"fiat24-account-burn": () => "Opening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract",
+			"unusual-own-output": () => "Funds sent to your own address at an unusual path may not appear in this wallet"
 		},
 		bridgeLine: (network, amount, to, deadline, refundTo) => `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
 		delegateTo: (name, version) => `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
@@ -41007,7 +41227,7 @@ zoo`.split("\n"));
 		return [
 			...delegation,
 			...contractLines(catalog, intent),
-			...intent.outflows.map((flow) => flow.fiat24 === void 0 ? flow.tokenAccount === void 0 ? flow.burn === true && intent.family === "solana" ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to) : flow.burn === true ? catalog.burn(formatAmount(catalog, flow.amount)) : catalog.send(formatAmount(catalog, flow.amount), flow.to) : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to) : "account" in flow.fiat24 ? catalog.fiat24SendToAccount(formatAmount(catalog, flow.amount), flow.fiat24.account) : catalog.fiat24Payout(formatAmount(catalog, flow.amount))),
+			...intent.outflows.map((flow) => flow.ownPath === void 0 ? flow.fiat24 === void 0 ? flow.tokenAccount === void 0 ? flow.burn === true && intent.family === "solana" ? catalog.burnTokenAccount(formatAmount(catalog, flow.amount), flow.to) : flow.burn === true ? catalog.burn(formatAmount(catalog, flow.amount)) : catalog.send(formatAmount(catalog, flow.amount), flow.to) : catalog.sendTokenAccount(flow.amount.amount, flow.tokenAccount, flow.to) : "account" in flow.fiat24 ? catalog.fiat24SendToAccount(formatAmount(catalog, flow.amount), flow.fiat24.account) : catalog.fiat24Payout(formatAmount(catalog, flow.amount)) : catalog.sendOwnUnusual(formatAmount(catalog, flow.amount), flow.to, flow.ownPath)),
 			...((_intent$calls2 = intent.calls) !== null && _intent$calls2 !== void 0 ? _intent$calls2 : [intent]).flatMap((call) => call.fiat24 === void 0 ? [] : fiat24Lines(catalog, call.fiat24)),
 			...((_intent$staking = intent.staking) !== null && _intent$staking !== void 0 ? _intent$staking : []).flatMap((action) => catalog.stakeLines(action, sol)),
 			...received,
@@ -41015,6 +41235,16 @@ zoo`.split("\n"));
 			...intent.approvals.map((change) => approvalLine(catalog, change))
 		];
 	}
+	/** A prompt with no warning rows — its whole description truncates as detail. */
+	var rowsOf = (prompt) => ({
+		title: prompt.title,
+		lead: [],
+		detail: prompt.description.split("\n")
+	});
+	var flatten = (rendered) => ({
+		title: rendered.title,
+		description: joinLines([...rendered.lead, ...rendered.detail])
+	});
 	function transactionPrompt(catalog, intent) {
 		var _intent$programs, _intent$warnings;
 		const { tron } = intent;
@@ -41029,19 +41259,21 @@ zoo`.split("\n"));
 		const memo = (tron === null || tron === void 0 ? void 0 : tron.memo) === void 0 ? [] : tron.memo.kind === "text" ? [catalog.tronMemoHeading, ...requesterText(catalog, tron.memo.text)] : tron.memo.hex.length - 2 <= 128 ? [catalog.tronMemoData(tron.memo.hex)] : [catalog.tronMemoLength((tron.memo.hex.length - 2) / 2)];
 		return {
 			title: intent.blind === void 0 ? catalog.titles[intent.summary] : catalog.blindTitle,
-			description: joinLines([
+			lead: [
 				...(tron === null || tron === void 0 ? void 0 : tron.permissionUpdate) === void 0 ? [] : [catalog.tronTakeover(tronNewKeyAddresses(tron.permissionUpdate))],
-				...network,
 				...programAuthorityLines(catalog, intent),
 				...caveat,
+				...warningLines(catalog, warnings)
+			],
+			detail: [
+				...network,
 				...effectLines(catalog, intent),
 				...permissions,
 				...(tron === null || tron === void 0 ? void 0 : tron.permissionId) === void 0 ? [] : [catalog.tronPermissionId(tron.permissionId)],
 				...memo,
 				...tron === void 0 ? [] : [catalog.tronExpires(utcDateTime(Math.floor(tron.expiration / 1e3)))],
-				intent.family === "tron" ? intent.fee === void 0 ? catalog.tronBandwidthFee : catalog.tronFeeLimit(formatAmount(catalog, intent.fee.max)) : intent.fee === void 0 ? catalog.feeUnknown : catalog.maxFee(formatAmount(catalog, intent.fee.max)),
-				...warningLines(catalog, warnings)
-			])
+				intent.family === "tron" ? intent.fee === void 0 ? catalog.tronBandwidthFee : catalog.tronFeeLimit(formatAmount(catalog, intent.fee.max)) : intent.fee === void 0 ? catalog.feeUnknown : catalog.maxFee(formatAmount(catalog, intent.fee.max))
+			]
 		};
 	}
 	/** The lines a recognized Fiat24 action adds to a call's effects. */
@@ -41255,25 +41487,28 @@ zoo`.split("\n"));
 			case "batch": return polymarketBatchLines(catalog, intent, content);
 		}
 	}
-	function typedDataLines(catalog, intent, message) {
+	function typedDataRows(catalog, intent, message) {
 		const { name, chainId, verifyingContract } = message.domain;
-		const hazard = intent.blind === "message-bytes" ? [catalog.textHazard["hidden-characters"]] : [];
-		if (message.hyperliquid !== void 0) return [
-			...hazard,
-			catalog.hlChain[message.hyperliquid.chain],
-			...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld)
-		];
-		if (message.polymarket !== void 0) return [...hazard, ...polymarketLines(catalog, intent, message.polymarket)];
+		const lead = [...intent.blind === "message-bytes" ? [catalog.textHazard["hidden-characters"]] : [], ...warningLines(catalog, intent.warnings)];
+		if (message.hyperliquid !== void 0) return {
+			lead,
+			detail: [catalog.hlChain[message.hyperliquid.chain], ...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld)]
+		};
+		if (message.polymarket !== void 0) return {
+			lead,
+			detail: polymarketLines(catalog, intent, message.polymarket)
+		};
 		const network = intent.family === "tron" ? intent.network : chainId === void 0 ? intent.network : `eip155:${chainId}`;
-		return [
-			...hazard,
-			...name === void 0 ? [] : [catalog.typedApp(field(name))],
-			...network === void 0 ? [] : [catalog.networkLine(networkLabel(catalog, network))],
-			...verifyingContract === void 0 ? [] : [catalog.typedContract(verifyingContract)],
-			catalog.typedType(field(message.primaryType)),
-			...typedContentLines(catalog, intent, message),
-			...warningLines(catalog, intent.warnings)
-		];
+		return {
+			lead,
+			detail: [
+				...name === void 0 ? [] : [catalog.typedApp(field(name))],
+				...network === void 0 ? [] : [catalog.networkLine(networkLabel(catalog, network))],
+				...verifyingContract === void 0 ? [] : [catalog.typedContract(verifyingContract)],
+				catalog.typedType(field(message.primaryType)),
+				...typedContentLines(catalog, intent, message)
+			]
+		};
 	}
 	function messagePrompt(catalog, intent, message) {
 		var _intent$fiat, _message$signIn;
@@ -41281,54 +41516,59 @@ zoo`.split("\n"));
 			const bytes = (message.hex.length - 2) / 2;
 			return {
 				title: catalog.blindTitle,
-				description: joinLines([catalog.blindBytes, bytes <= 64 ? catalog.bytesData(message.hex) : catalog.bytesLength(bytes)])
+				lead: [],
+				detail: [catalog.blindBytes, bytes <= 64 ? catalog.bytesData(message.hex) : catalog.bytesLength(bytes)]
 			};
 		}
 		if (message.kind === "typed-data") {
 			var _message$polymarket, _message$polymarket2;
-			return {
-				title: intent.blind === void 0 ? ((_message$polymarket = message.polymarket) === null || _message$polymarket === void 0 ? void 0 : _message$polymarket.kind) === "order" ? catalog.pmOrderTitle : ((_message$polymarket2 = message.polymarket) === null || _message$polymarket2 === void 0 ? void 0 : _message$polymarket2.kind) === "auth" ? catalog.signInTitle : catalog.titles[intent.summary] : catalog.blindTitle,
-				description: joinLines(typedDataLines(catalog, intent, message))
-			};
+			return _objectSpread2({ title: intent.blind === void 0 ? ((_message$polymarket = message.polymarket) === null || _message$polymarket === void 0 ? void 0 : _message$polymarket.kind) === "order" ? catalog.pmOrderTitle : ((_message$polymarket2 = message.polymarket) === null || _message$polymarket2 === void 0 ? void 0 : _message$polymarket2.kind) === "auth" ? catalog.signInTitle : catalog.titles[intent.summary] : catalog.blindTitle }, typedDataRows(catalog, intent, message));
 		}
 		if (message.kind === "text" && ((_intent$fiat = intent.fiat24) === null || _intent$fiat === void 0 ? void 0 : _intent$fiat.kind) === "session-grant") {
 			const grant = intent.fiat24;
 			return {
 				title: catalog.fiat24SessionTitle,
-				description: joinLines([
+				lead: [],
+				detail: [
 					catalog.fiat24SessionBearer(utcDateTime(grant.deadline)),
 					catalog.fiat24SessionPower,
 					catalog.fiat24SessionSigns(message.text)
-				])
+				]
 			};
 		}
 		if (intent.blind === void 0 && ((_message$signIn = message.signIn) === null || _message$signIn === void 0 ? void 0 : _message$signIn.status) === "valid") return {
 			title: catalog.signInTitle,
-			description: joinLines(signInLines(catalog, message.signIn))
+			lead: [],
+			detail: signInLines(catalog, message.signIn)
 		};
 		const hazard = intent.blind === void 0 ? void 0 : messageTextHazard(message.text);
 		const digest = hazard === "digest-length" ? `0x${bytesToHex$5(utf8ToBytes$1(message.text))}` : void 0;
 		return {
 			title: intent.blind === void 0 ? catalog.titles.message : catalog.blindTitle,
-			description: joinLines([
-				...intent.blind === void 0 ? message.signIn === void 0 ? [] : signInLines(catalog, message.signIn) : intent.blind === "fiat24-session-grant" ? [catalog.fiat24Grant, ...hazard === void 0 ? [] : [catalog.textHazard[hazard]]] : hazard === void 0 ? [] : [catalog.textHazard[hazard]],
+			lead: intent.blind === void 0 ? [] : intent.blind === "fiat24-session-grant" ? [catalog.fiat24Grant, ...hazard === void 0 ? [] : [catalog.textHazard[hazard]]] : hazard === void 0 ? [] : [catalog.textHazard[hazard]],
+			detail: [
+				...intent.blind === void 0 && message.signIn !== void 0 ? signInLines(catalog, message.signIn) : [],
 				...digest === void 0 ? [] : [catalog.bytesData(digest)],
 				...digest !== void 0 && !isPlainText(message.text) ? [] : textLines(catalog, message.text)
-			])
+			]
 		};
 	}
-	function chainPrompt(locale, intent) {
+	var renderPrompt = (locale, intent) => {
 		const catalog = CATALOGS$1[locale];
 		return intent.message === void 0 ? transactionPrompt(catalog, intent) : messagePrompt(catalog, intent, intent.message);
+	};
+	function chainPrompt(locale, intent) {
+		return flatten(renderPrompt(locale, intent));
 	}
 	/**
 	* The rendered prompt bounded to what the platform's verification dialog can show. An over-long
 	* prompt counts as blind — the caller gates `oversize` like a decoder blind reason — and the
-	* returned prompt shows the blind title with the longest whole-line prefix that leaves room for one
-	* closing "more lines not shown" line: the kernel truncates, never the OS.
+	* returned prompt shows the blind title with every lead row whole, the longest detail prefix that
+	* leaves room for one closing "more lines not shown" line: the kernel truncates, never the OS. A
+	* prompt whose warnings alone cannot fit is refused, whatever the blind policy.
 	*/
 	function boundChainPrompt(locale, intent, bound) {
-		return boundPrompt(locale, chainPrompt(locale, intent), bound);
+		return boundPrompt(locale, renderPrompt(locale, intent), bound);
 	}
 	/**
 	* The same bound applied to a rendered prompt from outside the chains module (Spark approvals share
@@ -41336,15 +41576,21 @@ zoo`.split("\n"));
 	*/
 	function boundPrompt(locale, rendered, bound) {
 		const catalog = CATALOGS$1[locale];
-		if (promptFits(rendered, bound)) return {
-			prompt: rendered,
+		const flat = flatten(rendered);
+		if (promptFits(flat, bound)) return {
+			prompt: flat,
 			oversize: false
 		};
-		const lines = rendered.description.split("\n");
-		let keep = Math.min(lines.length - 1, bound.lines - 1);
+		if (bound.title !== void 0 && codePoints(catalog.blindTitle) > bound.title) throw new KernelError("unsupported", "the prompt's warnings do not fit the dialog");
+		let keep = Math.min(rendered.detail.length - 1, bound.lines - rendered.lead.length - 1);
 		for (;;) {
-			const candidate = joinLines([...lines.slice(0, keep), catalog.moreLines(lines.length - keep)]);
-			if (keep === 0 || codePoints(candidate) <= bound.characters) return {
+			if (keep < 0) throw new KernelError("unsupported", "the prompt's warnings do not fit the dialog");
+			const candidate = joinLines([
+				...rendered.lead,
+				...rendered.detail.slice(0, keep),
+				catalog.moreLines(rendered.detail.length - keep)
+			]);
+			if (codePoints(candidate) <= bound.characters) return {
 				prompt: {
 					title: catalog.blindTitle,
 					description: candidate
@@ -41364,6 +41610,29 @@ zoo`.split("\n"));
 		"btc.bip49": 49,
 		"btc.bip84": 84,
 		"btc.bip86": 86
+	};
+	var HARDENED$12 = 2147483648;
+	/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
+	var leafPath = (family, groupIndex) => {
+		if (family === "solana") return [
+			2147483692,
+			2147484149,
+			groupIndex + HARDENED$12,
+			HARDENED$12
+		];
+		return [
+			2147483692,
+			(family === "tron" ? 195 : 60) + HARDENED$12,
+			HARDENED$12,
+			0,
+			groupIndex
+		];
+	};
+	var checkNetwork = (template, network) => {
+		if (template.startsWith("evm.") && !/^eip155:[1-9]\d*$/.test(network)) throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
+		if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown solana network ${network}`);
+		if (template.startsWith("btc.") && !(network in BITCOIN_NETWORKS)) throw new KernelError("invalid-input", `unknown bitcoin network ${network}`);
+		if (template.startsWith("tron.") && !TRON_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown tron network ${network}`);
 	};
 	var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array);
 	/** Order-insensitive deep equality over wire values (Uint8Array, arrays, plain objects, scalars). */
@@ -41387,7 +41656,7 @@ zoo`.split("\n"));
 	var isPath = (path) => Array.isArray(path) && path.every((p) => typeof p === "number");
 	var hex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 	/** The BIP-32 master fingerprint as the uint32 PSBT derivation entries carry. */
-	var fingerprintNumber = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
+	var fingerprintNumber$1 = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
 	var PURPOSES = [
 		44,
 		49,
@@ -41431,6 +41700,7 @@ zoo`.split("\n"));
 	* key. A template that disagrees with the input's script type fails the path or script check.
 	*/
 	var bitcoinInput = async (b, tx, entry) => {
+		var _der$path$, _der$path$2;
 		const purpose = BTC_PURPOSE[entry.template];
 		if (purpose === void 0) throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
 		const { index: idx } = entry;
@@ -41456,6 +41726,11 @@ zoo`.split("\n"));
 			key: {
 				path: der.path,
 				publicKey: pub
+			},
+			tail: {
+				purpose,
+				change: (_der$path$ = der.path[3]) !== null && _der$path$ !== void 0 ? _der$path$ : 0,
+				index: (_der$path$2 = der.path[4]) !== null && _der$path$2 !== void 0 ? _der$path$2 : 0
 			}
 		};
 	};
@@ -41463,10 +41738,13 @@ zoo`.split("\n"));
 	* Output binding, independent of which templates sign inputs: an output is this group's own when it
 	* carries a derivation entry with our fingerprint — tap entries only for bip86, bip32 entries for
 	* 44/49/84 — whose path is a valid `m/purpose'/coin'/group'/{0,1}/i` of this group and whose script
-	* equals that key's script for the purpose. Failures just mean "not own".
+	* equals that key's script for the purpose. Failures just mean "not own". A verified own output is
+	* hidden as change only when `isDiscoverableChange` says the wallet can reach it — anything else is
+	* shown as a send to the user's own address at the unusual path it names.
 	*/
-	var bitcoinOwnScripts = async (b, tx) => {
-		const ownScripts = /* @__PURE__ */ new Set();
+	var bitcoinOwn = async (b, tx, signed) => {
+		const change = /* @__PURE__ */ new Set();
+		const unusual = /* @__PURE__ */ new Map();
 		for (let i = 0; i < tx.outputsLength; i++) {
 			const output = tx.getOutput(i);
 			if (output.script === void 0) continue;
@@ -41474,22 +41752,41 @@ zoo`.split("\n"));
 				const entry = derivationOf$1(output, b.fingerprint, purpose);
 				if (entry === void 0) continue;
 				try {
+					var _entry$path$, _entry$path$2;
 					const pub = await childAt(b, purpose, entry.path);
-					if (deepEqual(output.script, expectedScript(purpose, pub))) ownScripts.add(hex(output.script));
+					if (!deepEqual(output.script, expectedScript(purpose, pub))) continue;
+					if (isDiscoverableChange({
+						purpose,
+						change: (_entry$path$ = entry.path[3]) !== null && _entry$path$ !== void 0 ? _entry$path$ : 0,
+						index: (_entry$path$2 = entry.path[4]) !== null && _entry$path$2 !== void 0 ? _entry$path$2 : 0
+					}, signed)) change.add(hex(output.script));
+					else unusual.set(hex(output.script), pathString(entry.path));
+					break;
 				} catch (error) {
 					if (error instanceof KernelError && error.code === "device-required") throw error;
 					continue;
 				}
 			}
 		}
-		return ownScripts;
+		return {
+			change,
+			unusual
+		};
 	};
 	/** The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. */
 	var prepareBitcoinPsbt = async (b, request) => {
 		const tx = Transaction.fromPSBT(request.psbt);
 		const inputs = [];
-		for (const entry of request.sign) inputs.push(await bitcoinInput(b, tx, entry));
-		const ownScripts = await bitcoinOwnScripts(b, tx);
+		const signed = [];
+		for (const entry of request.sign) {
+			const input = await bitcoinInput(b, tx, entry);
+			inputs.push({
+				index: input.index,
+				key: input.key
+			});
+			signed.push(input.tail);
+		}
+		const own = await bitcoinOwn(b, tx, signed);
 		let normalized;
 		try {
 			normalized = normalizeBitcoin(request);
@@ -41499,7 +41796,7 @@ zoo`.split("\n"));
 		if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
 		let intent;
 		try {
-			intent = decodeBitcoinPsbt(request, ownScripts);
+			intent = decodeBitcoinPsbt(request, own);
 		} catch (error) {
 			mapChainError(error);
 		}
@@ -41511,7 +41808,7 @@ zoo`.split("\n"));
 		}
 		return {
 			prompt: intent,
-			plan
+			plan: _objectSpread2(_objectSpread2({}, plan), {}, { hiddenChange: own.change })
 		};
 	};
 	/** The message plan: the declared change/index must derive this address, then normalize/plan. */
@@ -41563,7 +41860,7 @@ zoo`.split("\n"));
 		const net = bitcoinNetwork(request.network);
 		const b = {
 			material,
-			fingerprint: fingerprintNumber(await material.fingerprint()),
+			fingerprint: fingerprintNumber$1(await material.fingerprint()),
 			coinType: net.coinType,
 			hardened: 2147483648,
 			groupIndex: account.groupIndex,
@@ -41617,128 +41914,111 @@ zoo`.split("\n"));
 			plan
 		};
 	};
-	// packages/wallet-kernel/src/modules/chains/keys.ts
+	// packages/wallet-kernel/src/modules/chains/export.ts
+	var EVM_ACCOUNT$1 = [
+		44 + HARDENED$12,
+		60 + HARDENED$12,
+		HARDENED$12
+	];
+	var MAINNET_VERSIONS = {
+		public: 76067358,
+		private: 76066276
+	};
+	var nodeId = (node) => node.kind === "evm.account" ? "evm.account" : node.kind === "leaf" ? `leaf/${node.template}` : `btc.account/${node.template}/${node.network}`;
+	var nodePath = (node, groupIndex) => {
+		if (node.kind === "evm.account") return EVM_ACCOUNT$1;
+		if (node.kind === "leaf") return leafPath(node.template === "evm.bip44" ? "evm" : node.template === "tron.bip44" ? "tron" : "solana", groupIndex);
+		const purpose = BTC_PURPOSE[node.template];
+		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${node.template}`);
+		const { coinType } = bitcoinNetwork(node.network);
+		return [
+			purpose + HARDENED$12,
+			coinType + HARDENED$12,
+			groupIndex + HARDENED$12
+		];
+	};
+	var fp8 = (value) => value.toString(16).padStart(8, "0");
+	var fpHex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 	/**
-	* Key sources — the kernel's bridge between a signing secret and a plan's tasks. `material` is the
-	* only way public keys leave the secret (addresses, BTC ownership, fingerprints, xpubs are all
-	* derived through it); `backend` answers one 64-byte signature per task through a family task
-	* signer. BIP-32 and SLIP-10 nodes are cached by path and each child derives from its cached
-	* parent, so a many-input PSBT derives the account node once; `wipe` zeroes every cached node.
+	* The node's exported key. Account nodes go through the extended public key — the same node the
+	* `wallet.accounts` xpub serializes — so the chain code and parent fingerprint travel with it;
+	* leaves carry the bare public key only.
 	*/
-	init_secp256k1();
-	init_bip32();
-	init_utils();
-	var HARDENED$12 = 2147483648;
-	/** `m/…` notation of a task path — hardened indices print with `'`. */
-	var pathString = (path) => `m${path.map((i) => i >= HARDENED$12 ? `/${i - HARDENED$12}'` : `/${i}`).join("")}`;
-	/** The HD source: BIP-32 for secp256k1 schemes, SLIP-10 for ed25519, both lazy and path-cached. */
-	var seedKeys = (seed, random) => {
-		const secpNodes = /* @__PURE__ */ new Map();
-		const edNodes = /* @__PURE__ */ new Map();
-		let wiped = false;
-		const alive = () => {
-			if (wiped) throw new KernelError("integrity", "key source is wiped");
+	var exportKey$1 = async (material, node, groupIndex) => {
+		const path = nodePath(node, groupIndex);
+		if (node.kind === "leaf") return {
+			node,
+			path: pathString(path),
+			curve: node.template === "solana.bip44-change" ? "ed25519" : "secp256k1",
+			publicKey: node.template === "solana.bip44-change" ? await material.ed25519(path) : await material.secp256k1(path)
 		};
-		const secpNode = (path) => {
-			var _path$at;
-			alive();
-			const key = path.join("/");
-			const hit = secpNodes.get(key);
-			if (hit !== void 0) return hit;
-			const node = path.length === 0 ? HDKey$1.fromMasterSeed(seed) : secpNode(path.slice(0, -1)).deriveChild((_path$at = path.at(-1)) !== null && _path$at !== void 0 ? _path$at : 0);
-			secpNodes.set(key, node);
-			return node;
-		};
-		const edNode = (path) => {
-			var _path$at2;
-			alive();
-			const key = path.join("/");
-			const hit = edNodes.get(key);
-			if (hit !== void 0) return hit;
-			const node = path.length === 0 ? HDKey.fromMasterSeed(seed) : edNode(path.slice(0, -1)).deriveChild((_path$at2 = path.at(-1)) !== null && _path$at2 !== void 0 ? _path$at2 : 0);
-			edNodes.set(key, node);
-			return node;
-		};
-		const privateAt = (task) => {
-			if (task.scheme === "ed25519") return edNode(task.path).privateKey;
-			const priv = secpNode(task.path).privateKey;
-			if (priv === null) throw new KernelError("integrity", "no private key at path");
-			return priv;
-		};
+		const account = await accountKey(material, path, node.kind === "evm.account" ? MAINNET_VERSIONS : bitcoinNetwork(node.network).bip32);
 		return {
-			material: {
-				secp256k1: async (path) => {
-					const pub = secpNode(path).publicKey;
-					if (pub === null) throw new KernelError("integrity", "no public key at path");
-					return pub;
-				},
-				ed25519: async (path) => ed25519.getPublicKey(edNode(path).privateKey),
-				fingerprint: async () => {
-					const pub = secpNode([]).publicKey;
-					if (pub === null) throw new KernelError("integrity", "no public key at path");
-					return hash160(pub).subarray(0, 4);
-				},
-				extendedPublicKey: async (path, versions) => {
-					alive();
-					const master = HDKey$1.fromMasterSeed(seed, versions);
-					try {
-						const node = master.derive(pathString(path));
-						try {
-							return node.publicExtendedKey;
-						} finally {
-							node.wipePrivateData();
-						}
-					} finally {
-						master.wipePrivateData();
-					}
-				}
-			},
-			backend: (sign) => ({ sign: async (task) => sign(task, privateAt(task), task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array()) }),
-			wipe: () => {
-				wiped = true;
-				for (const node of secpNodes.values()) node.wipePrivateData();
-				for (const node of edNodes.values()) wipe$1(node.privateKey);
-				secpNodes.clear();
-				edNodes.clear();
-			}
+			node,
+			path: pathString(path),
+			curve: "secp256k1",
+			publicKey: account.publicKey,
+			chainCode: account.chainCode,
+			parentFingerprint: fp8(account.parentFingerprint)
 		};
 	};
-	/** The imported-key source: one raw key serves only path `[]` and only its own curve's tasks. */
-	var importedKeys = (secret, curve, random) => {
-		let wiped = false;
-		const alive = () => {
-			if (wiped) throw new KernelError("integrity", "key source is wiped");
+	var result$1 = async (material, params) => ({
+		fingerprint: fpHex(await material.fingerprint()),
+		keys: await Promise.all(params.nodes.map(async (node) => exportKey$1(material, node, params.groupIndex)))
+	});
+	var LEAF_FAMILY = {
+		"evm.bip44": "EVM",
+		"tron.bip44": "TRON",
+		"solana.bip44-change": "Solana"
+	};
+	/**
+	* The verification prompt rendered from the requested nodes — one row each, so the approved scope
+	* is the shown scope: `evm.account` names the wallet-wide disclosure its fixed `m/44'/60'/0'` path
+	* understates.
+	*/
+	var exportPrompt = (locale, params) => {
+		const text = exportAccountText(locale);
+		const row = (node) => {
+			var _networkMeta$name, _networkMeta;
+			const path = pathString(nodePath(node, params.groupIndex));
+			if (node.kind === "evm.account") return text.evmAccount(path);
+			if (node.kind === "leaf") return text.leaf(LEAF_FAMILY[node.template], params.groupIndex, path);
+			const network = (_networkMeta$name = (_networkMeta = networkMeta(node.network)) === null || _networkMeta === void 0 ? void 0 : _networkMeta.name) !== null && _networkMeta$name !== void 0 ? _networkMeta$name : node.network;
+			return text.btcAccount(text.btcTemplate[node.template], network, params.groupIndex, path);
 		};
 		return {
-			material: {
-				secp256k1: async (path) => {
-					alive();
-					if (curve !== "secp256k1" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
-					return secp256k1.getPublicKey(secret, true);
-				},
-				ed25519: async (path) => {
-					alive();
-					if (curve !== "ed25519" || path.length > 0) throw new KernelError("integrity", "an imported key serves only its own curve at []");
-					return ed25519.getPublicKey(secret);
-				},
-				extendedPublicKey: async () => {
-					throw new KernelError("integrity", "imported keys have no extended public key");
-				},
-				fingerprint: async () => {
-					throw new KernelError("integrity", "imported keys have no fingerprint");
-				}
-			},
-			backend: (sign) => ({ sign: async (task) => {
-				alive();
-				const ownCurve = curve === "secp256k1" ? task.scheme !== "ed25519" : task.scheme === "ed25519";
-				if (task.path.length > 0 || !ownCurve) throw new KernelError("integrity", "an imported key signs only its own tasks at []");
-				return sign(task, secret, task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array());
-			} }),
-			wipe: () => {
-				wiped = true;
-				wipe$1(secret);
-			}
+			title: text.title,
+			description: joinLines([text.share(params.groupIndex), ...params.nodes.map(row)])
 		};
+	};
+	var exportAccount = () => async (ctx, params, session) => {
+		var _ctx$platform$keystor, _ctx$platform$keystor2, _ctx$platform$keystor3;
+		const { dek } = ctx.session.require(session);
+		const record = findWalletRecord(ctx.image, params.walletId);
+		if (record === void 0) {
+			if (ctx.image.records.some((r) => r.kind === "key" && r.id === params.walletId)) throw new KernelError("invalid-input", "an imported key has no account material");
+			throw new KernelError("not-found", "no such wallet");
+		}
+		const seen = /* @__PURE__ */ new Set();
+		for (const node of params.nodes) {
+			if (node.kind === "btc.account") checkNetwork(node.template, node.network);
+			if (seen.has(nodeId(node))) throw new KernelError("invalid-input", "duplicate export node");
+			seen.add(nodeId(node));
+		}
+		const prompt = exportPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), params);
+		const host = (_ctx$platform$keystor3 = ctx.platform.keystore) === null || _ctx$platform$keystor3 === void 0 ? void 0 : _ctx$platform$keystor3.platform;
+		if ((host === "ios" || host === "android") && !promptFits(prompt, PROMPT_BOUNDS[host])) throw new KernelError("invalid-input", "the export prompt does not fit the verification dialog");
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => prompt);
+		ctx.session.require(session);
+		if (record.kind !== "entropy") return result$1(ctx.externalMaterial(record), params);
+		return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+			const keys = seedKeys(seed, ctx.platform.random);
+			try {
+				return await result$1(keys.material, params);
+			} finally {
+				keys.wipe();
+			}
+		});
 	};
 	// packages/wallet-chains/dist/bitcoin-sign.mjs
 	init_secp256k1();
@@ -41985,31 +42265,8 @@ zoo`.split("\n"));
 	* source — the plan itself is reused, never recomputed.
 	*/
 	init_objectSpread2();
-	var HARDENED$11 = 2147483648;
-	/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
-	var leafPath = (family, groupIndex) => {
-		if (family === "solana") return [
-			2147483692,
-			2147484149,
-			groupIndex + HARDENED$11,
-			HARDENED$11
-		];
-		return [
-			2147483692,
-			(family === "tron" ? 195 : 60) + HARDENED$11,
-			HARDENED$11,
-			0,
-			groupIndex
-		];
-	};
 	/** An imported account's only path is `[]`; an HD account's is its group's leaf. */
 	var requestPath = (family, account) => account.kind === "imported" ? [] : leafPath(family, account.groupIndex);
-	var checkNetwork = (template, network) => {
-		if (template.startsWith("evm.") && !/^eip155:[1-9]\d*$/.test(network)) throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
-		if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown solana network ${network}`);
-		if (template.startsWith("btc.") && !(network in BITCOIN_NETWORKS)) throw new KernelError("invalid-input", `unknown bitcoin network ${network}`);
-		if (template.startsWith("tron.") && !TRON_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown tron network ${network}`);
-	};
 	var accountFor = async (material, template, network, groupIndex) => {
 		if (template === "evm.bip44") return {
 			template,
@@ -42030,9 +42287,9 @@ zoo`.split("\n"));
 		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
 		const net = bitcoinNetwork(network);
 		const path = [
-			purpose + HARDENED$11,
-			net.coinType + HARDENED$11,
-			groupIndex + HARDENED$11
+			purpose + HARDENED$12,
+			net.coinType + HARDENED$12,
+			groupIndex + HARDENED$12
 		];
 		const fingerprint = await material.fingerprint();
 		return {
@@ -42214,7 +42471,8 @@ zoo`.split("\n"));
 			},
 			handlers: {
 				"wallet.accounts": async (ctx, params, session) => walletAccounts(ctx, params, session, accounts),
-				"chain.sign": chainSign
+				"chain.sign": chainSign,
+				"chain.exportAccount": exportAccount()
 			}
 		};
 	}
@@ -42977,7 +43235,7 @@ zoo`.split("\n"));
 	*/
 	init_utils$2();
 	init_objectSpread2();
-	var HARDENED$10 = 2147483648;
+	var HARDENED$11 = 2147483648;
 	/** Headroom kept inside the plan so the tap can still finish its commit and close. */
 	var PLAN_MARGIN_MS = 1e3;
 	/** The input contract: 6–64 printable ASCII bytes (§7.1, enforced again in accessHash). */
@@ -43075,6 +43333,15 @@ zoo`.split("\n"));
 			record
 		};
 	};
+	/**
+	* The remembered access hashes, live only while the app lock guards them — a `device` factor means
+	* the lock is off and a saved hash would VERIFY with no presence at all, so the op asks for the
+	* code instead. The map itself stays: turning the lock back on re-arms it.
+	*/
+	var savedAccess = (env, walletId) => {
+		var _env$bodies$get$acces, _env$bodies$get;
+		return env.ctx.image.factors.some((f) => f.kind === "device") ? {} : (_env$bodies$get$acces = (_env$bodies$get = env.bodies.get(walletId)) === null || _env$bodies$get === void 0 ? void 0 : _env$bodies$get.access) !== null && _env$bodies$get$acces !== void 0 ? _env$bodies$get$acces : {};
+	};
 	/** The pinned-cert short ID of a card entry, when this kernel has seen the card. */
 	var pinnedShortId = (header, cardIdHex) => {
 		var _header$cards$find;
@@ -43104,14 +43371,14 @@ zoo`.split("\n"));
 			path: [
 				2147483692,
 				2147483708,
-				HARDENED$10
+				HARDENED$11
 			]
 		}, {
 			curve: "secp256k1",
 			path: [
 				2147483692,
 				2147483843,
-				HARDENED$10
+				HARDENED$11
 			]
 		}];
 		for (const purpose of [
@@ -43122,14 +43389,14 @@ zoo`.split("\n"));
 		]) {
 			paths.push({
 				curve: "secp256k1",
-				path: [purpose + HARDENED$10, HARDENED$10]
+				path: [purpose + HARDENED$11, HARDENED$11]
 			});
 			for (let g = 0; g < groups; g += 1) paths.push({
 				curve: "secp256k1",
 				path: [
-					purpose + HARDENED$10,
-					HARDENED$10,
-					g + HARDENED$10
+					purpose + HARDENED$11,
+					HARDENED$11,
+					g + HARDENED$11
 				]
 			});
 		}
@@ -43138,8 +43405,8 @@ zoo`.split("\n"));
 			path: [
 				2147483692,
 				2147484149,
-				g + HARDENED$10,
-				HARDENED$10
+				g + HARDENED$11,
+				HARDENED$11
 			]
 		});
 		return paths;
@@ -43162,7 +43429,7 @@ zoo`.split("\n"));
 					path: [
 						2147483692,
 						2147483708,
-						HARDENED$10
+						HARDENED$11
 					]
 				});
 				continue;
@@ -43173,7 +43440,7 @@ zoo`.split("\n"));
 					path: [
 						2147483692,
 						2147483843,
-						HARDENED$10
+						HARDENED$11
 					]
 				});
 				continue;
@@ -43184,8 +43451,8 @@ zoo`.split("\n"));
 					path: [
 						2147483692,
 						2147484149,
-						groupIndex + HARDENED$10,
-						HARDENED$10
+						groupIndex + HARDENED$11,
+						HARDENED$11
 					]
 				});
 				continue;
@@ -43195,14 +43462,14 @@ zoo`.split("\n"));
 			const coin = bitcoinNetwork(network).coinType;
 			push({
 				curve: "secp256k1",
-				path: [purpose + HARDENED$10, coin + HARDENED$10]
+				path: [purpose + HARDENED$11, coin + HARDENED$11]
 			});
 			push({
 				curve: "secp256k1",
 				path: [
-					purpose + HARDENED$10,
-					coin + HARDENED$10,
-					groupIndex + HARDENED$10
+					purpose + HARDENED$11,
+					coin + HARDENED$11,
+					groupIndex + HARDENED$11
 				]
 			});
 		}
@@ -43289,9 +43556,8 @@ zoo`.split("\n"));
 			const hashes = /* @__PURE__ */ new Map();
 			let code;
 			try {
-				var _wallet$body$access;
 				const wallet = walletOf(env, walletId);
-				const saved = (_wallet$body$access = wallet.body.access) !== null && _wallet$body$access !== void 0 ? _wallet$body$access : {};
+				const saved = savedAccess(env, walletId);
 				if (!wallet.header.members.every((m) => saved[m] !== void 0)) {
 					const remaining = lowestTries(wallet.header, wallet.header.members);
 					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
@@ -43318,8 +43584,7 @@ zoo`.split("\n"));
 								const id = bytesToHex$5(tap.cardId);
 								let hash = hashes.get(id);
 								if (hash === void 0) {
-									var _env$bodies$get$acces, _env$bodies$get;
-									const remembered = ((_env$bodies$get$acces = (_env$bodies$get = env.bodies.get(walletId)) === null || _env$bodies$get === void 0 ? void 0 : _env$bodies$get.access) !== null && _env$bodies$get$acces !== void 0 ? _env$bodies$get$acces : {})[id];
+									const remembered = savedAccess(env, walletId)[id];
 									if (remembered !== void 0) {
 										hash = hexToBytes$4(remembered);
 										hashes.set(id, hash);
@@ -45931,10 +46196,7 @@ zoo`.split("\n"));
 		let code;
 		try {
 			const material = env.ctx.externalMaterial(walletOf(env, walletId).record);
-			const saved = () => {
-				var _env$bodies$get$acces, _env$bodies$get;
-				return (_env$bodies$get$acces = (_env$bodies$get = env.bodies.get(walletId)) === null || _env$bodies$get === void 0 ? void 0 : _env$bodies$get.access) !== null && _env$bodies$get$acces !== void 0 ? _env$bodies$get$acces : {};
-			};
+			const saved = () => savedAccess(env, walletId);
 			{
 				const { header } = walletOf(env, walletId);
 				if (!header.members.every((id) => saved()[id] !== void 0)) code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
@@ -48021,29 +48283,43 @@ zoo`.split("\n"));
 	}
 	// packages/wallet-kernel/src/modules/sessions/scheme.ts
 	init_objectSpread2();
+	var asJsonObject = (value) => {
+		if (!isProtocolValue(value) || typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) throw new KernelError("integrity", "the scheme's spent is not a JSON object");
+		return value;
+	};
 	function defineSessionScheme(definition) {
 		const declared = definition.metering;
 		const metering = declared === void 0 ? void 0 : {
 			parseLimits: declared.limits,
+			parseSpent: (value, limits) => declared.spent(value, declared.limits(limits)),
+			fresh: (limits) => asJsonObject(declared.fresh(declared.limits(limits))),
+			worstSpent: (limits) => asJsonObject(declared.worstSpent(declared.limits(limits))),
 			meter: (params, limits, spent) => {
 				let checked;
 				let checkedLimits;
+				let checkedSpent;
 				try {
 					checked = definition.params(params);
 					checkedLimits = declared.limits(limits);
+					checkedSpent = declared.spent(spent, checkedLimits);
 				} catch (_unused) {
 					throw new KernelError("invalid-input", "malformed params");
 				}
-				return declared.meter(checked, checkedLimits, spent);
+				return asJsonObject(declared.meter(checked, checkedLimits, checkedSpent));
 			},
 			prompt: (session, open, locale) => {
 				let limits;
+				let spent;
 				try {
 					limits = declared.limits(session.limits);
+					spent = declared.spent(session.spent, limits);
 				} catch (_unused2) {
-					throw new KernelError("integrity", "invalid session limits in the vault");
+					throw new KernelError("integrity", "invalid session metering in the vault");
 				}
-				return declared.prompt(_objectSpread2(_objectSpread2({}, session), {}, { limits }), open, locale);
+				return declared.prompt(_objectSpread2(_objectSpread2({}, session), {}, {
+					limits,
+					spent
+				}), open, locale);
 			}
 		};
 		return _objectSpread2({
@@ -48068,9 +48344,10 @@ zoo`.split("\n"));
 	/**
 	* Canonical-decimal ↔ fixed-point codec shared by every metered session scheme: a scheme's meter
 	* charges in units of `DECIMAL_SCALE` and the record header stores the canonical decimal string
-	* (`SESSION_SPENT`). Arithmetic is exact on bigints — no float is ever involved. 1e-16 admits the
-	* sixteen fractional digits an 8-decimal price times an 8-decimal size produces exactly; a meter
-	* whose grammar admits finer decimals picks a coarser scale and rounds a charge up, never down.
+	* (the scheme's spent grammar). Arithmetic is exact on bigints — no float is ever involved. 1e-16
+	* admits the sixteen fractional digits an 8-decimal price times an 8-decimal size produces exactly;
+	* a meter whose grammar admits finer decimals picks a coarser scale and rounds a charge up, never
+	* down.
 	*/
 	var DECIMAL_SCALE = 10n ** 16n;
 	/** A canonical decimal to units of `DECIMAL_SCALE` — throws `integrity` past its precision. */
@@ -48088,62 +48365,74 @@ zoo`.split("\n"));
 		return frac === "" ? whole.toString() : `${whole}.${frac}`;
 	};
 	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/meter.ts
-	/** The notional of one order in 1e-16 units — a trigger order is charged at its worse price. */
+	/** One order's buy charge in 1e-16 units — a trigger order is charged at its worse price. */
 	var orderNotional = (order) => {
-		let price = decimalToUnits(order.p);
-		if ("trigger" in order.t) {
-			const trigger = decimalToUnits(order.t.trigger.triggerPx);
-			if (trigger > price) price = trigger;
-		}
-		return price * decimalToUnits(order.s) / DECIMAL_SCALE;
+		const trigger = "trigger" in order.t ? decimalToUnits(order.t.trigger.triggerPx) : 0n;
+		const price = decimalToUnits(order.p);
+		return (trigger > price ? trigger : price) * decimalToUnits(order.s) / DECIMAL_SCALE;
 	};
-	var inAllowList = (limits, asset) => {
-		if (!limits.assets.includes(asset)) throw new KernelError("limit-exceeded", "the asset is outside the session's allow-list");
+	/** The limits slot of an asset, or KernelError `limit-exceeded` when it is not allow-listed. */
+	var slotOf = (limits, asset) => {
+		const index = limits.assets.findIndex((entry) => entry.asset === asset);
+		if (index === -1) throw new KernelError("limit-exceeded", "the asset is outside the session's allow-list");
+		return index;
 	};
 	/**
 	* The session's new `spent` after this action — or KernelError `limit-exceeded` when the signature
-	* would exceed the approved budget. `spent` is the record's current value; the exact boundary
-	* `spent + notional == notional limit` still signs.
+	* would exceed an approved budget. `spent` is the record's current parsed value; the exact boundary
+	* `spent + charge == cap` still signs.
 	*/
 	function meterHyperliquid(params, limits, spent) {
 		const { action } = params;
-		let charge = 0n;
+		const sizes = spent.size.map(decimalToUnits);
+		const caps = limits.assets.map((entry) => decimalToUnits(entry.size));
+		let notional = decimalToUnits(spent.notional);
+		const charge = (order) => {
+			var _sizes$index, _caps$index;
+			const index = slotOf(limits, order.a);
+			const size = ((_sizes$index = sizes[index]) !== null && _sizes$index !== void 0 ? _sizes$index : 0n) + decimalToUnits(order.s);
+			if (size > ((_caps$index = caps[index]) !== null && _caps$index !== void 0 ? _caps$index : 0n)) throw new KernelError("limit-exceeded", "the asset's size budget is exhausted");
+			sizes[index] = size;
+			if (order.b) notional += orderNotional(order);
+		};
 		switch (action.type) {
 			case "order":
-				for (const order of action.orders) {
-					inAllowList(limits, order.a);
-					charge += orderNotional(order);
-				}
+				for (const order of action.orders) charge(order);
 				break;
 			case "modify":
-				inAllowList(limits, action.order.a);
-				charge = orderNotional(action.order);
+				charge(action.order);
 				break;
 			case "batchModify":
-				for (const entry of action.modifies) {
-					inAllowList(limits, entry.order.a);
-					charge += orderNotional(entry.order);
-				}
+				for (const entry of action.modifies) charge(entry.order);
 				break;
 			case "updateLeverage":
-				inAllowList(limits, action.asset);
+				slotOf(limits, action.asset);
 				if (action.leverage > limits.maxLeverage) throw new KernelError("limit-exceeded", "leverage is above the session's cap");
 				break;
-			case "updateIsolatedMargin": inAllowList(limits, action.asset);
+			case "cancel":
+			case "cancelByCloid":
+				for (const cancel of action.cancels) slotOf(limits, "a" in cancel ? cancel.a : cancel.asset);
+				break;
+			case "updateIsolatedMargin":
+			case "twapCancel": slotOf(limits, "asset" in action ? action.asset : action.a);
 		}
-		const next = decimalToUnits(spent) + charge;
-		if (next > decimalToUnits(limits.notional)) throw new KernelError("limit-exceeded", "the session's notional budget is exhausted");
-		return unitsToDecimal(next);
+		if (notional > decimalToUnits(limits.notional)) throw new KernelError("limit-exceeded", "the session's notional budget is exhausted");
+		return {
+			notional: unitsToDecimal(notional),
+			size: sizes.map(unitsToDecimal)
+		};
 	}
 	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/params.ts
+	init_objectSpread2();
 	var hyperliquidNetwork = union(literal("Mainnet"), literal("Testnet"));
 	var lowerAddress = str(42, /^0x[0-9a-f]{40}$/);
-	var safeTime = int(0, Number.MAX_SAFE_INTEGER);
+	var safeInt = int(0, Number.MAX_SAFE_INTEGER);
 	/** A positive canonical decimal (nktkas's normalised output) — prices, sizes, trigger prices. */
 	var positive = str(24, /^(?:[1-9][0-9]{0,14}(?:\.[0-9]{0,7}[1-9])?|0\.[0-9]{0,7}[1-9])$/);
 	var cloid = str(34, /^0x[0-9a-f]{32}$/);
 	var asset = int(0, 4294967295);
-	var id = int(0, 9007199254740991);
+	var flag = opt(literal(true));
+	var list = (item) => arr(item, 64, 1);
 	var orderWire = obj({
 		a: asset,
 		b: bool,
@@ -48157,12 +48446,12 @@ zoo`.split("\n"));
 		}) })),
 		c: opt(cloid)
 	});
-	var oid = union(id, cloid);
+	var oid = union(safeInt, cloid);
 	/** The params `sessions.sign` takes for this scheme — `expiresAfter` is required. */
 	var hyperliquidL1Params = obj({
 		action: union(obj({
 			type: literal("order"),
-			orders: arr(orderWire, 64, 1),
+			orders: list(orderWire),
 			grouping: union(literal("na"), literal("normalTpsl"), literal("positionTpsl")),
 			builder: opt(obj({
 				b: lowerAddress,
@@ -48170,33 +48459,30 @@ zoo`.split("\n"));
 			}))
 		}), obj({
 			type: literal("cancel"),
-			cancels: arr(obj({
+			cancels: list(obj({
 				a: asset,
-				o: id
-			}), 64, 1),
-			f: opt(literal(true))
+				o: safeInt
+			})),
+			f: flag
 		}), obj({
 			type: literal("cancelByCloid"),
-			cancels: arr(obj({
+			cancels: list(obj({
 				asset,
 				cloid
-			}), 64, 1),
-			f: opt(literal(true))
+			})),
+			f: flag
 		}), obj({
 			type: literal("modify"),
 			oid,
 			order: orderWire,
-			a: opt(literal(true))
+			a: flag
 		}), obj({
 			type: literal("batchModify"),
-			modifies: arr(obj({
+			modifies: list(obj({
 				oid,
 				order: orderWire
-			}), 64, 1),
-			a: opt(literal(true))
-		}), obj({
-			type: literal("scheduleCancel"),
-			time: opt(id)
+			})),
+			a: flag
 		}), obj({
 			type: literal("updateLeverage"),
 			asset,
@@ -48210,18 +48496,21 @@ zoo`.split("\n"));
 		}), obj({
 			type: literal("twapCancel"),
 			a: asset,
-			t: id
+			t: safeInt
 		})),
-		nonce: safeTime,
+		nonce: safeInt,
 		vaultAddress: opt(lowerAddress),
-		expiresAfter: safeTime
+		expiresAfter: safeInt
 	});
 	var assetList = (value) => {
-		const list = arr(int(0, 99999), 16, 1)(value);
+		const list = arr(obj({
+			asset: int(0, 99999),
+			size: positive
+		}), 16, 1)(value);
 		let prev = -1;
 		for (const entry of list) {
-			if (entry <= prev) throw new Error("assets must be sorted and distinct");
-			prev = entry;
+			if (entry.asset <= prev) throw new Error("assets must be sorted and distinct");
+			prev = entry.asset;
 		}
 		return list;
 	};
@@ -48230,15 +48519,38 @@ zoo`.split("\n"));
 		maxLeverage: int(1, 100),
 		assets: assetList
 	});
+	var canonical = str(32, /^(?:0|[1-9][0-9]{0,14})(?:\.[0-9]{0,15}[1-9])?$/);
+	var hyperliquidL1Spent = (value, limits) => {
+		const spent = obj({
+			notional: canonical,
+			size: arr(canonical, limits.assets.length, limits.assets.length)
+		})(value);
+		if (decimalToUnits(spent.notional) > decimalToUnits(limits.notional)) throw new Error("spent exceeds the buy budget");
+		for (const [i, cap] of limits.assets.entries()) {
+			var _spent$size$i;
+			if (decimalToUnits((_spent$size$i = spent.size[i]) !== null && _spent$size$i !== void 0 ? _spent$size$i : "0") > decimalToUnits(cap.size)) throw new Error("spent exceeds an asset's cap");
+		}
+		return spent;
+	};
+	/** The all-zero metering a fresh record is sealed with — one size slot per limits entry. */
+	var hyperliquidFreshSpent = (limits) => ({
+		notional: "0",
+		size: limits.assets.map(() => "0")
+	});
+	var hyperliquidWorstSpent = (limits) => _objectSpread2(_objectSpread2({}, hyperliquidFreshSpent(limits)), {}, { notional: "0.0000000000000001" });
 	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/prompt.ts
 	var SPOT_ASSET_BASE = 1e4;
-	var kindLines = (limits, perp, spot) => {
-		const perps = [];
-		const spots = [];
-		for (const asset of limits.assets) (asset < SPOT_ASSET_BASE ? perps : spots).push(asset);
+	var capLines = (limits, perp, spot) => {
+		let perps = "";
+		let spots = "";
+		for (const entry of limits.assets) {
+			const item = `${entry.asset} ≤ ${entry.size}`;
+			if (entry.asset < SPOT_ASSET_BASE) perps += perps === "" ? item : `, ${item}`;
+			else spots += spots === "" ? item : `, ${item}`;
+		}
 		const lines = [];
-		if (perps.length > 0) lines.push(`${perp}${perps.join(",")}`);
-		if (spots.length > 0) lines.push(`${spot}${spots.join(",")}`);
+		if (perps !== "") lines.push(`${perp}${perps}`);
+		if (spots !== "") lines.push(`${spot}${spots}`);
 		return lines;
 	};
 	function hyperliquidApproval(session, open, locale) {
@@ -48247,19 +48559,21 @@ zoo`.split("\n"));
 		const lines = locale === "zh-Hans" ? [
 			`Hyperliquid 交易代理 "${session.name}"（${session.scope}）`,
 			`有效期至 ${day}`,
-			`预算：${limits.notional}（价格 × 数量之和，按各市场报价币计）`,
+			`买入预算：${limits.notional}（买单价格 × 数量之和，按各市场报价币计）`,
 			`最大杠杆：${limits.maxLeverage}x`,
-			...kindLines(limits, "永续资产：", "现货资产：")
+			...capLines(limits, "最大数量，买与卖——永续：", "最大数量，买与卖——现货："),
+			"卖单可按交易所接受的任意价格成交"
 		] : [
 			`Hyperliquid trading agent "${session.name}" on ${session.scope}`,
 			`Valid until ${day}`,
-			`Budget: ${limits.notional} (sum of price × size, in each market's quote currency)`,
+			`Buy budget: ${limits.notional} (sum of price × size of buys, quote currency)`,
 			`Max leverage: ${limits.maxLeverage}x`,
-			...kindLines(limits, "Perp assets: ", "Spot assets: ")
+			...capLines(limits, "Max size, buys and sells — perp: ", "Max size, buys and sells — spot: "),
+			"Sells may fill at any price the exchange accepts"
 		];
 		if (open) {
-			const left = unitsToDecimal(decimalToUnits(limits.notional) - decimalToUnits(session.spent));
-			lines.push(locale === "zh-Hans" ? `剩余预算：${left}` : `Remaining: ${left}`);
+			const left = unitsToDecimal(decimalToUnits(limits.notional) - decimalToUnits(session.spent.notional));
+			lines.push(locale === "zh-Hans" ? `剩余买入预算：${left}` : `Remaining buy budget: ${left}`);
 		}
 		return {
 			title: locale === "zh-Hans" ? "批准 Hyperliquid 代理" : "Approve Hyperliquid agent",
@@ -48267,26 +48581,24 @@ zoo`.split("\n"));
 		};
 	}
 	// packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/index.ts
-	var AGENT_MAX_TTL_MS = 15552e6;
-	var MAX_AGENTS = 16;
-	var EXPIRES_AFTER_MS = 6e4;
-	var NONCE_WINDOW_MS = 6e4;
-	var SCHEDULE_CANCEL_MIN_MS = 5e3;
+	var WINDOW_MS = 6e4;
 	// packages/wallet-kernel/src/modules/sessions/schemes/index.ts
 	var SESSION_SCHEMES = { "hyperliquid-l1-agent": defineSessionScheme({
 		id: "hyperliquid-l1-agent",
-		maxTtlMs: AGENT_MAX_TTL_MS,
-		maxPerVault: MAX_AGENTS,
+		maxTtlMs: 15552e6,
+		maxPerVault: 16,
 		parseScope: hyperliquidNetwork,
 		params: hyperliquidL1Params,
-		document: (params, header, scope, now) => {
-			if (!(now < params.expiresAfter && params.expiresAfter <= now + EXPIRES_AFTER_MS)) throw new KernelError("invalid-input", "expiresAfter outside the signing window");
-			if (Math.abs(params.nonce - now) > NONCE_WINDOW_MS) throw new KernelError("invalid-input", "nonce outside the signing window");
-			if (params.action.type === "scheduleCancel" && params.action.time !== void 0 && !(params.action.time >= now + SCHEDULE_CANCEL_MIN_MS && params.action.time <= header.validUntil)) throw new KernelError("invalid-input", "schedule time outside the session");
+		document: (params, _header, scope, now) => {
+			if (!(now < params.expiresAfter && params.expiresAfter <= now + WINDOW_MS)) throw new KernelError("invalid-input", "expiresAfter outside the signing window");
+			if (Math.abs(params.nonce - now) > WINDOW_MS) throw new KernelError("invalid-input", "nonce outside the signing window");
 			return hyperliquidL1Document(params, scope);
 		},
 		metering: {
 			limits: hyperliquidL1Limits,
+			spent: hyperliquidL1Spent,
+			fresh: hyperliquidFreshSpent,
+			worstSpent: hyperliquidWorstSpent,
 			meter: meterHyperliquid,
 			prompt: hyperliquidApproval
 		}
@@ -48303,6 +48615,7 @@ zoo`.split("\n"));
 	init_objectSpread2();
 	/** At most 64 live session keys across schemes — also the protocol's sessions.list array cap. */
 	var MAX_SESSIONS = 64;
+	var MAX_METERED_PER_OWNER = 2;
 	/** Random draws retried before giving up on a valid secp256k1 scalar. */
 	var MAX_KEY_DRAWS = 8;
 	/** `platform.random(32)` until the bytes are a valid secret key; rejects are wiped. */
@@ -48313,6 +48626,10 @@ zoo`.split("\n"));
 			wipe$1(draw);
 		}
 		throw new KernelError("integrity", "could not draw a valid session key");
+	};
+	var assertSeedCustody = (image, walletId) => {
+		const record = findWalletRecord(image, walletId);
+		if (record !== void 0 && EXTERNAL_CUSTODY_KINDS.has(record.kind)) throw new KernelError("unsupported", "this wallet is signed outside the vault");
 	};
 	/**
 	* On a keystore host a `device` factor means the app lock is off: the vault — and any session in it
@@ -48325,18 +48642,43 @@ zoo`.split("\n"));
 	var meteredHeader = (metering, header) => {
 		if (header.limits === void 0 || header.spent === void 0) throw new KernelError("integrity", "the session record carries no metering", void 0, true);
 		try {
+			const limits = metering.parseLimits(header.limits);
 			return {
-				limits: metering.parseLimits(header.limits),
-				spent: header.spent
+				limits,
+				spent: metering.parseSpent(header.spent, limits)
 			};
 		} catch (_unused) {
-			throw new KernelError("integrity", "invalid session limits in the vault", void 0, true);
+			throw new KernelError("integrity", "invalid session metering in the vault", void 0, true);
 		}
 	};
 	/** The approval prompt a scheme renders — shared by create and open. */
 	var approvalPrompt = (platform, metering, session, open) => () => {
 		var _platform$keystore$lo, _platform$keystore;
 		return metering.prompt(session, open, promptLocale((_platform$keystore$lo = (_platform$keystore = platform.keystore) === null || _platform$keystore === void 0 ? void 0 : _platform$keystore.locale) !== null && _platform$keystore$lo !== void 0 ? _platform$keystore$lo : "en"));
+	};
+	var confirmLimits = async (platform, prompt) => {
+		const { keystore } = platform;
+		if ((keystore === null || keystore === void 0 ? void 0 : keystore.platform) !== "ios") return;
+		const { secureInput } = platform;
+		if (secureInput === void 0) throw new KernelError("unsupported", "this host cannot display the session limits");
+		let code = "";
+		while (code === "") {
+			var _draw$, _draw$2;
+			const draw = platform.random(2);
+			const value = ((_draw$ = draw[0]) !== null && _draw$ !== void 0 ? _draw$ : 0) * 256 + ((_draw$2 = draw[1]) !== null && _draw$2 !== void 0 ? _draw$2 : 0);
+			wipe$1(draw);
+			if (value < 6e4) code = String(value % 1e4).padStart(4, "0");
+		}
+		const { title, description } = prompt();
+		const label = `${title}\n${description}\n${sessionApprovalCode(promptLocale(keystore.locale), code)}`;
+		const result = await secureInput.request("session-approval", label);
+		if (!result.ok) throw new KernelError(result.failure, `session approval input: ${result.failure}`);
+		const entered = result.value;
+		try {
+			if (entered.length !== 4 || !entered.every((byte, index) => byte === code.codePointAt(index))) throw new KernelError("cancelled", "the confirmation code did not match");
+		} finally {
+			wipe$1(entered);
+		}
 	};
 	/** The public snapshot of one stored session — the record id is the lowercase address. */
 	function sessionInfo(record) {
@@ -48354,11 +48696,12 @@ zoo`.split("\n"));
 			validUntil: header.validUntil,
 			createdAt: header.createdAt,
 			limits: (_header$limits = header.limits) !== null && _header$limits !== void 0 ? _header$limits : null,
-			spent: (_header$spent = header.spent) !== null && _header$spent !== void 0 ? _header$spent : "0"
+			spent: (_header$spent = header.spent) !== null && _header$spent !== void 0 ? _header$spent : null
 		};
 	}
 	var createSession = (opened) => async (ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
+		assertSeedCustody(ctx.image, params.owner.walletId);
 		const scheme = schemeOf(params.scheme);
 		if (scheme === void 0) throw new KernelError("unsupported", "unsupported session scheme");
 		const now = ctx.platform.now();
@@ -48382,15 +48725,33 @@ zoo`.split("\n"));
 			limits = parsed;
 		} else if (params.limits !== null) throw new KernelError("invalid-input", "the scheme takes no limits");
 		const records = ctx.image.records.filter((record) => record.kind === SESSION_KIND);
-		if (records.length >= MAX_SESSIONS || records.filter((record) => parseSessionHeader(record.header).scheme === scheme.id).length >= scheme.maxPerVault) throw new KernelError("conflict", "session limit reached");
+		let perOwner = 0;
+		let perScheme = 0;
+		for (const record of records) {
+			const header = parseSessionHeader(record.header);
+			if (header.scheme !== scheme.id) continue;
+			perScheme++;
+			if (header.walletId === params.owner.walletId && header.groupIndex === params.owner.groupIndex && header.scope === scope && now < header.validUntil) perOwner++;
+		}
+		if (records.length >= MAX_SESSIONS || perScheme >= scheme.maxPerVault || metering !== void 0 && perOwner >= MAX_METERED_PER_OWNER) throw new KernelError("conflict", "session limit reached");
 		assertAppLock(ctx.platform, ctx.image, metering);
-		if (metering !== void 0) await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, approvalPrompt(ctx.platform, metering, {
-			scope,
-			name: params.name,
-			validUntil: params.validUntil,
-			limits,
-			spent: "0"
-		}, false));
+		if (metering !== void 0 && limits !== void 0) {
+			const approval = {
+				scope,
+				name: params.name,
+				validUntil: params.validUntil,
+				limits
+			};
+			const { keystore } = ctx.platform;
+			if (keystore !== void 0) {
+				const locale = promptLocale(keystore.locale);
+				const bound = PROMPT_BOUNDS[keystore.platform];
+				if (!promptFits(metering.prompt(_objectSpread2(_objectSpread2({}, approval), {}, { spent: metering.fresh(limits) }), false, locale), bound) || !promptFits(metering.prompt(_objectSpread2(_objectSpread2({}, approval), {}, { spent: metering.worstSpent(limits) }), true, locale), bound)) throw new KernelError("invalid-input", "the session limits do not fit the approval dialog");
+			}
+			const prompt = approvalPrompt(ctx.platform, metering, _objectSpread2(_objectSpread2({}, approval), {}, { spent: metering.fresh(limits) }), false);
+			await confirmLimits(ctx.platform, prompt);
+			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, prompt);
+		}
 		const entropy = findSeedWallet(ctx.image, params.owner.walletId);
 		const owner = await withWalletSeed(ctx.platform.pbkdf2, dek, entropy, (seed) => {
 			const master = HDKey$1.fromMasterSeed(seed);
@@ -48418,9 +48779,9 @@ zoo`.split("\n"));
 				name: params.name,
 				validUntil: params.validUntil,
 				createdAt: now
-			}, limits === void 0 ? {} : {
+			}, metering === void 0 || limits === void 0 ? {} : {
 				limits,
-				spent: "0"
+				spent: metering.fresh(limits)
 			}));
 			const record = sealRecord(ctx.platform, dek, SESSION_KIND, address.toLowerCase(), header, priv);
 			await ctx.commit([{
@@ -48451,6 +48812,7 @@ zoo`.split("\n"));
 	var openSession = (opened) => async (ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
 		const { record, header } = sessionOf(ctx.image, params.address);
+		assertSeedCustody(ctx.image, header.walletId);
 		const scheme = schemeOf(header.scheme);
 		if (scheme === void 0) throw new KernelError("unsupported", "this kernel does not support the session's scheme");
 		const { metering } = scheme;
@@ -48458,13 +48820,23 @@ zoo`.split("\n"));
 		if (ctx.platform.now() >= header.validUntil) throw new KernelError("invalid-input", "the session has expired");
 		const { limits, spent } = meteredHeader(metering, header);
 		assertAppLock(ctx.platform, ctx.image, metering);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, approvalPrompt(ctx.platform, metering, {
+		const { keystore } = ctx.platform;
+		if (keystore !== void 0 && !promptFits(metering.prompt({
 			scope: header.scope,
 			name: header.name,
 			validUntil: header.validUntil,
 			limits,
 			spent
-		}, true));
+		}, true, promptLocale(keystore.locale)), PROMPT_BOUNDS[keystore.platform])) throw new KernelError("invalid-input", "the session limits do not fit the approval dialog");
+		const prompt = approvalPrompt(ctx.platform, metering, {
+			scope: header.scope,
+			name: header.name,
+			validUntil: header.validUntil,
+			limits,
+			spent
+		}, true);
+		await confirmLimits(ctx.platform, prompt);
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, prompt);
 		opened.add(record.id);
 		return null;
 	};
@@ -48563,6 +48935,23 @@ zoo`.split("\n"));
 	init_sha2();
 	init_defineProperty();
 	init_objectSpread2();
+	var _aliases;
+	var _probs;
+	var _degrees;
+	var _parts;
+	var _chooser;
+	var _fragLen;
+	var _msgLen;
+	var _seqCount;
+	var _messageChecksum;
+	var _seq;
+	var _lastIndexes2;
+	var _type;
+	var _fountain;
+	var _single;
+	var _emitted;
+	var _Symbol$iterator$2;
+	var _Symbol$iterator2$1;
 	var MESSAGES$1 = {
 		NonAscii: "bytewords string is not ASCII",
 		InvalidWord: "invalid bytewords word",
@@ -48616,10 +49005,11 @@ zoo`.split("\n"));
 		}
 	};
 	/** Throws a {@link UrError}; a bare code builds `{ code }` info. */
-	function fail$4(arg, options) {
+	function fail$3(arg, options) {
 		throw new UrError(typeof arg === "string" ? { code: arg } : arg, options);
 	}
-	(() => {
+	/** CRC-32 ISO-HDLC (polynomial 0xedb88320). */
+	var TABLE = (() => {
 		const table = /* @__PURE__ */ new Uint32Array(256);
 		for (let i = 0; i < 256; i++) {
 			let c = i;
@@ -48628,6 +49018,37 @@ zoo`.split("\n"));
 		}
 		return table;
 	})();
+	/** CRC-32 ISO-HDLC checksum of `data`. */
+	function checksum(data) {
+		var _TABLE;
+		let crc = 4294967295;
+		for (const b of data) crc = ((_TABLE = TABLE[(crc ^ b) & 255]) !== null && _TABLE !== void 0 ? _TABLE : fail$3("Internal")) ^ crc >>> 8;
+		return (crc ^ 4294967295) >>> 0;
+	}
+	/**
+	* ASCII-only character helpers. `String.prototype.toLowerCase`/`toUpperCase` are Unicode-aware
+	* (e.g. `"\u212A"` folds to `"k"`); the UR wire format folds ASCII letters only.
+	*/
+	/** True iff every code point of `text` is `<= 0x7F`. */
+	function isAscii$1(text) {
+		var _ch$codePointAt;
+		for (const ch of text) if (((_ch$codePointAt = ch.codePointAt(0)) !== null && _ch$codePointAt !== void 0 ? _ch$codePointAt : 0) > 127) return false;
+		return true;
+	}
+	/** Lowercase ASCII `A-Z` only; every other code unit is left untouched. */
+	function asciiLower(text) {
+		return text.replaceAll(/[A-Z]/g, (ch) => {
+			var _ch$codePointAt2;
+			return String.fromCodePoint(((_ch$codePointAt2 = ch.codePointAt(0)) !== null && _ch$codePointAt2 !== void 0 ? _ch$codePointAt2 : 0) + 32);
+		});
+	}
+	/** Uppercase ASCII `a-z` only; every other code unit is left untouched. */
+	function asciiUpper(text) {
+		return text.replaceAll(/[a-z]/g, (ch) => {
+			var _ch$codePointAt3;
+			return String.fromCodePoint(((_ch$codePointAt3 = ch.codePointAt(0)) !== null && _ch$codePointAt3 !== void 0 ? _ch$codePointAt3 : 0) - 32);
+		});
+	}
 	/** BCR-2020-012 bytewords tables. */
 	/** Four-letter bytewords (index = byte value). */
 	var WORDS = [
@@ -49150,11 +49571,633 @@ zoo`.split("\n"));
 	var wordByToken = /* @__PURE__ */ new Map();
 	for (const [i, word] of WORDS.entries()) wordByToken.set(word, i);
 	for (const [i, minimal] of MINIMALS.entries()) wordByToken.set(minimal, i);
-	Object.freeze({
+	function wordAt(table, byte) {
+		const word = table[byte];
+		if (word === void 0) throw new Error("byteword index out of range");
+		return word;
+	}
+	function checksumBytes(data) {
+		const crc = checksum(data);
+		return new Uint8Array([
+			crc >>> 24 & 255,
+			crc >>> 16 & 255,
+			crc >>> 8 & 255,
+			crc & 255
+		]);
+	}
+	function encodeWords(data, style) {
+		const parts = [];
+		const table = style === "minimal" ? MINIMALS : WORDS;
+		for (const b of data) parts.push(wordAt(table, b));
+		return parts.join({
+			standard: " ",
+			uri: "-",
+			minimal: ""
+		}[style]);
+	}
+	/** Encode `data` with trailing CRC-32 as bytewords. Empty data is allowed. */
+	function encodeBytewords(data, style) {
+		const withCrc = new Uint8Array(data.length + 4);
+		withCrc.set(data);
+		withCrc.set(checksumBytes(data), data.length);
+		return encodeWords(withCrc, style);
+	}
+	/** Decode bytewords and verify CRC-32. Case-insensitive. */
+	function decodeBytewords(text, style) {
+		var _ch$codePointAt4;
+		for (const ch of text) if (((_ch$codePointAt4 = ch.codePointAt(0)) !== null && _ch$codePointAt4 !== void 0 ? _ch$codePointAt4 : 0) > 127) fail$3("NonAscii");
+		const lowered = asciiLower(text);
+		if (style === "minimal") return decodeMinimal(lowered);
+		const sep = style === "standard" ? " " : "-";
+		return decodeParts(lowered.length === 0 ? [] : lowered.split(sep), false);
+	}
+	function decodeMinimal(encoded) {
+		if (encoded.length % 2 !== 0) fail$3("InvalidBytewordsLength");
+		const parts = [];
+		for (let i = 0; i < encoded.length; i += 2) parts.push(encoded.slice(i, i + 2));
+		return decodeParts(parts, true);
+	}
+	function decodeParts(parts, minimal) {
+		const data = new Uint8Array(parts.length);
+		for (const [i, part] of parts.entries()) {
+			const expectedLen = minimal ? 2 : 4;
+			if (part.length !== expectedLen) fail$3("InvalidWord");
+			const byte = wordByToken.get(part);
+			if (byte === void 0) fail$3("InvalidWord");
+			if (part !== wordAt(minimal ? MINIMALS : WORDS, byte)) fail$3("InvalidWord");
+			data[i] = byte;
+		}
+		return stripChecksum(data);
+	}
+	function stripChecksum(data) {
+		if (data.length < 4) fail$3("InvalidBytewordsChecksum");
+		const split = data.length - 4;
+		const payload = data.subarray(0, split);
+		const expected = checksum(payload);
+		if (new DataView(data.buffer, data.byteOffset + split, 4).getUint32(0) !== expected) fail$3("InvalidBytewordsChecksum");
+		return new Uint8Array(payload);
+	}
+	function at(list, i) {
+		const v = list[i];
+		if (v === void 0) throw new Error("unreachable: index out of range");
+		return v;
+	}
+	/** Walker's alias method with reverse-index ordered partition. */
+	var Sampler = (_aliases = /* @__PURE__ */ new WeakMap(), _probs = /* @__PURE__ */ new WeakMap(), class {
+		constructor(weightsIn) {
+			_classPrivateFieldInitSpec(this, _aliases, void 0);
+			_classPrivateFieldInitSpec(this, _probs, void 0);
+			const weights = [...weightsIn];
+			for (const w of weights) if (w < 0) throw new Error("negative probability encountered");
+			const summed = weights.reduce((a, b) => a + b, 0);
+			if (!(summed > 0)) throw new Error("probabilities don't sum to a positive value");
+			const count = weights.length;
+			for (const [i, w] of weights.entries()) weights[i] = w * (count / summed);
+			const s = [];
+			const l = [];
+			for (let j = count - 1; j >= 0; j--) if (at(weights, j) < 1) s.push(j);
+			else l.push(j);
+			const probs = Array.from({ length: count }, () => 0);
+			const aliases = Array.from({ length: count }, () => 0);
+			while (s.length > 0 && l.length > 0) {
+				const a = s.pop();
+				const g = l.pop();
+				if (a === void 0 || g === void 0) break;
+				probs[a] = at(weights, a);
+				aliases[a] = g;
+				weights[g] = at(weights, g) + (at(weights, a) - 1);
+				if (at(weights, g) < 1) s.push(g);
+				else l.push(g);
+			}
+			for (const i of l) probs[i] = 1;
+			for (const i of s) probs[i] = 1;
+			_classPrivateFieldSet2(_aliases, this, aliases);
+			_classPrivateFieldSet2(_probs, this, probs);
+		}
+		next(xoshiro) {
+			const n = _classPrivateFieldGet2(_probs, this).length;
+			const i = xoshiro.nextInt(0, n - 1);
+			if (xoshiro.nextDouble() < at(_classPrivateFieldGet2(_probs, this), i)) return i;
+			return at(_classPrivateFieldGet2(_aliases, this), i);
+		}
+	});
+	var MASK64 = (1n << 64n) - 1n;
+	var U32_MASK = 4294967295n;
+	function rotl(x, k) {
+		const v = x & MASK64;
+		return (v << BigInt(k) | v >> BigInt(64 - k)) & MASK64;
+	}
+	/**
+	* `Double(value) / 2^64` with a single round-to-nearest-even conversion: `hi * 2^32` is exact and
+	* adding `lo` performs the one IEEE-754 rounding; division by `2^64` is exact.
+	*/
+	function unitInterval(value) {
+		const hi = Number(value >> 32n);
+		const lo = Number(value & U32_MASK);
+		return (hi * 2 ** 32 + lo) / 2 ** 64;
+	}
+	/**
+	* `floor(d * (high - low + 1)) + low`, clamped to `high` when `d` is 1.0 — the deliberate deviation
+	* documented on `Xoshiro256.nextInt`.
+	*/
+	function scaledInt(d, low, high) {
+		const span = high - low + 1;
+		return Math.min(Math.floor(d * span), span - 1) + low;
+	}
+	/** Xoshiro256** with SHA-256 seeding. */
+	var Xoshiro256 = class Xoshiro256 {
+		constructor(s0, s1, s2, s3) {
+			_defineProperty(this, "s0", void 0);
+			_defineProperty(this, "s1", void 0);
+			_defineProperty(this, "s2", void 0);
+			_defineProperty(this, "s3", void 0);
+			this.s0 = s0;
+			this.s1 = s1;
+			this.s2 = s2;
+			this.s3 = s3;
+		}
+		/** Seed from arbitrary bytes via SHA-256 + BE-limb→LE packing. */
+		static fromBytes(bytes) {
+			return Xoshiro256.fromDigest(sha256$1(bytes));
+		}
+		static fromString(value) {
+			return Xoshiro256.fromBytes(new TextEncoder().encode(value));
+		}
+		/** Seed from CRC-32 BE bytes of `bytes` (test helper path). */
+		static fromCrc(bytes) {
+			const c = checksum(bytes);
+			const seed = /* @__PURE__ */ new Uint8Array(4);
+			seed[0] = c >>> 24 & 255;
+			seed[1] = c >>> 16 & 255;
+			seed[2] = c >>> 8 & 255;
+			seed[3] = c & 255;
+			return Xoshiro256.fromBytes(seed);
+		}
+		static fromDigest(seed32) {
+			const view = new DataView(seed32.buffer, seed32.byteOffset, seed32.byteLength);
+			return new Xoshiro256(view.getBigUint64(0), view.getBigUint64(8), view.getBigUint64(16), view.getBigUint64(24));
+		}
+		nextU64() {
+			const result = rotl(this.s1 * 5n & MASK64, 7) * 9n & MASK64;
+			const t = this.s1 << 17n & MASK64;
+			this.s2 = (this.s2 ^ this.s0) & MASK64;
+			this.s3 = (this.s3 ^ this.s1) & MASK64;
+			this.s1 = (this.s1 ^ this.s2) & MASK64;
+			this.s0 = (this.s0 ^ this.s3) & MASK64;
+			this.s2 = (this.s2 ^ t) & MASK64;
+			this.s3 = rotl(this.s3, 45);
+			return result;
+		}
+		nextDouble() {
+			return unitInterval(this.nextU64());
+		}
+		/**
+		* Inclusive `[low, high]` via double scaling (normative float path). Deliberate deviation: clamp
+		* to `high` when `nextDouble()` rounds to 1.0 (raw >= 2^64 - 2^10); the reference implementations
+		* index out of bounds there.
+		*/
+		nextInt(low, high) {
+			return scaledInt(this.nextDouble(), low, high);
+		}
+		/** Remove-order shuffle (not Fisher–Yates); stops after `count` picks. */
+		shuffled(items, count = items.length) {
+			const pool = [...items];
+			const out = [];
+			while (pool.length > 0 && out.length < count) {
+				const index = this.nextInt(0, pool.length - 1);
+				const [item] = pool.splice(index, 1);
+				if (item === void 0) throw new Error("unreachable: splice returned empty");
+				out.push(item);
+			}
+			return out;
+		}
+		chooseDegree(length) {
+			const weights = [];
+			for (let x = 1; x <= length; x++) weights.push(1 / x);
+			return new Sampler(weights).next(this) + 1;
+		}
+		nextByte() {
+			return this.nextInt(0, 255);
+		}
+		nextBytes(n) {
+			const out = new Uint8Array(n);
+			for (let i = 0; i < n; i++) out[i] = this.nextByte();
+			return out;
+		}
+	};
+	/**
+	* Per-stream index generator (BCR-2024-001 §4 FragmentChooser): harmonic degree sampler built once,
+	* partial remove-shuffle per sequence.
+	*/
+	var FragmentChooser = (_degrees = /* @__PURE__ */ new WeakMap(), class {
+		constructor(fragmentCount, checksum) {
+			_defineProperty(this, "fragmentCount", void 0);
+			_defineProperty(this, "checksum", void 0);
+			_classPrivateFieldInitSpec(this, _degrees, void 0);
+			this.fragmentCount = fragmentCount;
+			this.checksum = checksum;
+			const weights = [];
+			for (let x = 1; x <= fragmentCount; x++) weights.push(1 / x);
+			_classPrivateFieldSet2(_degrees, this, new Sampler(weights));
+		}
+		/**
+		* Fragment indexes mixed into sequence `sequence` (1-based), sorted ascending. Normative: simple
+		* if sequence <= K; else degree + remove-shuffle.
+		*/
+		choose(sequence) {
+			if (sequence <= this.fragmentCount) return [sequence - 1];
+			const seed = /* @__PURE__ */ new Uint8Array(8);
+			seed[0] = sequence >>> 24 & 255;
+			seed[1] = sequence >>> 16 & 255;
+			seed[2] = sequence >>> 8 & 255;
+			seed[3] = sequence & 255;
+			seed[4] = this.checksum >>> 24 & 255;
+			seed[5] = this.checksum >>> 16 & 255;
+			seed[6] = this.checksum >>> 8 & 255;
+			seed[7] = this.checksum & 255;
+			const xoshiro = Xoshiro256.fromBytes(seed);
+			const degree = _classPrivateFieldGet2(_degrees, this).next(xoshiro) + 1;
+			const indexes = Array.from({ length: this.fragmentCount }, (_, i) => i);
+			return xoshiro.shuffled(indexes, degree).sort((a, b) => a - b);
+		}
+	});
+	/**
+	* Production default (1 MiB message, 2000 fragments, 8192-byte fragments and URIs), frozen.
+	*
+	* Hosts that need another budget pass `new UrDecoder({ limits })`.
+	*/
+	var DEFAULT_LIMITS = Object.freeze({
 		maxMessageLength: 1048576,
 		maxFragmentCount: 2e3,
 		maxFragmentLength: 8192,
 		maxUriLength: 8192
+	});
+	function mergeLimits(partial) {
+		return _objectSpread2(_objectSpread2({}, DEFAULT_LIMITS), partial);
+	}
+	var MAX_U32$2 = 4294967295;
+	function isU32(v) {
+		return Number.isSafeInteger(v) && v >= 0 && v <= MAX_U32$2;
+	}
+	/**
+	* Semantic part validation shared by `decodePart`, the encoder, and the decoder ingest path:
+	* `sequence`, `sequenceCount`, and `messageLength` are nonzero u32; `checksum` is a u32; `data` is
+	* nonempty; and `data.length` is a consistent fragment length, i.e. `K · fragLen ≥ messageLength`
+	* with padding under one fragment.
+	*/
+	function validatePart(part) {
+		const fragLen = part.data.length;
+		if (!isU32(part.sequence) || part.sequence === 0 || !isU32(part.sequenceCount) || part.sequenceCount === 0 || !isU32(part.messageLength) || part.messageLength === 0 || !isU32(part.checksum) || fragLen === 0) fail$3("InvalidPart");
+		const product = BigInt(part.sequenceCount) * BigInt(fragLen);
+		const length = BigInt(part.messageLength);
+		if (product < length || product - length >= BigInt(fragLen)) fail$3("InvalidPart");
+	}
+	/** XOR `src` into `target`; buffers are equal-length by construction. */
+	function xorInto(target, src) {
+		var _src$i;
+		for (const [i, a] of target.entries()) target[i] = a ^ ((_src$i = src[i]) !== null && _src$i !== void 0 ? _src$i : 0);
+	}
+	function divCeil(a, b) {
+		return Math.trunc((a + b - 1) / b);
+	}
+	var MAX_U32$1 = 4294967295;
+	var DEFAULT_MIN_FRAGMENT_LENGTH = 10;
+	/**
+	* URKit `findNominalFragmentLength` in closed form: the smallest fragment count that fits `max` is
+	* `ceil(len / max)`, bounded above by `floor(len / min)` (and at least 1). When `min` binds,
+	* fragments may exceed `maxFragmentLength` — that is the reference behavior.
+	*/
+	function fragmentLength(dataLength, maxFragmentLength, minFragmentLength = DEFAULT_MIN_FRAGMENT_LENGTH) {
+		return divCeil(dataLength, Math.min(divCeil(dataLength, maxFragmentLength), Math.max(1, Math.floor(dataLength / minFragmentLength))));
+	}
+	/** Pad and split a message into `fragmentLength`-sized fragments. */
+	function partition(data, fragLen) {
+		const pad = (fragLen - data.length % fragLen) % fragLen;
+		const padded = new Uint8Array(data.length + pad);
+		padded.set(data);
+		const out = [];
+		for (let i = 0; i < padded.length; i += fragLen) out.push(padded.subarray(i, i + fragLen));
+		return out;
+	}
+	/**
+	* Fountain encoder. An infinite iterator: produces parts with sequence `firstSequence + 1`, `+2`, …
+	* and ends after `0xFFFFFFFF` (UR-ADR-028). For `K == 1` it keeps producing identical parts with
+	* rising sequences. Message problems throw `UrError`; invalid options throw `RangeError`.
+	*/
+	var FountainEncoder = (_parts = /* @__PURE__ */ new WeakMap(), _chooser = /* @__PURE__ */ new WeakMap(), _fragLen = /* @__PURE__ */ new WeakMap(), _msgLen = /* @__PURE__ */ new WeakMap(), _seqCount = /* @__PURE__ */ new WeakMap(), _messageChecksum = /* @__PURE__ */ new WeakMap(), _seq = /* @__PURE__ */ new WeakMap(), _lastIndexes2 = /* @__PURE__ */ new WeakMap(), _Symbol$iterator$2 = Symbol.iterator, class {
+		constructor(message, options) {
+			_classPrivateFieldInitSpec(this, _parts, void 0);
+			_classPrivateFieldInitSpec(this, _chooser, void 0);
+			_classPrivateFieldInitSpec(this, _fragLen, void 0);
+			_classPrivateFieldInitSpec(this, _msgLen, void 0);
+			_classPrivateFieldInitSpec(this, _seqCount, void 0);
+			_classPrivateFieldInitSpec(this, _messageChecksum, void 0);
+			_classPrivateFieldInitSpec(this, _seq, void 0);
+			_classPrivateFieldInitSpec(this, _lastIndexes2, []);
+			const { maxFragmentLength, minFragmentLength = DEFAULT_MIN_FRAGMENT_LENGTH, firstSequence = 0 } = options;
+			if (message.length === 0) fail$3("EmptyMessage");
+			if (message.length > MAX_U32$1) fail$3("MessageTooLong");
+			if (!Number.isSafeInteger(maxFragmentLength) || maxFragmentLength < 1) throw new RangeError("maxFragmentLength must be a positive integer");
+			if (!Number.isSafeInteger(minFragmentLength) || minFragmentLength < 1 || minFragmentLength > maxFragmentLength) throw new RangeError("minFragmentLength must be a positive integer at most maxFragmentLength");
+			if (!Number.isSafeInteger(firstSequence) || firstSequence < 0 || firstSequence > MAX_U32$1) throw new RangeError("firstSequence must be an integer in 0..=0xFFFFFFFF");
+			const fragLen = fragmentLength(message.length, maxFragmentLength, minFragmentLength);
+			const fragments = partition(message, fragLen);
+			const messageChecksum = checksum(message);
+			_classPrivateFieldSet2(_parts, this, fragments);
+			_classPrivateFieldSet2(_chooser, this, new FragmentChooser(fragments.length, messageChecksum));
+			_classPrivateFieldSet2(_fragLen, this, fragLen);
+			_classPrivateFieldSet2(_msgLen, this, message.length);
+			_classPrivateFieldSet2(_seqCount, this, fragments.length);
+			_classPrivateFieldSet2(_messageChecksum, this, messageChecksum);
+			_classPrivateFieldSet2(_seq, this, firstSequence);
+		}
+		get fragmentCount() {
+			return _classPrivateFieldGet2(_seqCount, this);
+		}
+		get fragmentLength() {
+			return _classPrivateFieldGet2(_fragLen, this);
+		}
+		get messageLength() {
+			return _classPrivateFieldGet2(_msgLen, this);
+		}
+		/** Last emitted sequence number, or `firstSequence` before any part. */
+		get sequence() {
+			return _classPrivateFieldGet2(_seq, this);
+		}
+		get isComplete() {
+			return _classPrivateFieldGet2(_seq, this) >= _classPrivateFieldGet2(_seqCount, this);
+		}
+		/** Fragment indexes mixed into the most recently produced part. */
+		get lastFragmentIndexes() {
+			return _classPrivateFieldGet2(_lastIndexes2, this);
+		}
+		next() {
+			if (_classPrivateFieldGet2(_seq, this) === MAX_U32$1) return {
+				value: void 0,
+				done: true
+			};
+			_classPrivateFieldSet2(_seq, this, _classPrivateFieldGet2(_seq, this) + 1);
+			const indexes = _classPrivateFieldGet2(_chooser, this).choose(_classPrivateFieldGet2(_seq, this));
+			const mixed = new Uint8Array(_classPrivateFieldGet2(_fragLen, this));
+			for (const i of indexes) {
+				const fragment = _classPrivateFieldGet2(_parts, this)[i];
+				if (fragment !== void 0) xorInto(mixed, fragment);
+			}
+			const part = {
+				sequence: _classPrivateFieldGet2(_seq, this),
+				sequenceCount: _classPrivateFieldGet2(_seqCount, this),
+				messageLength: _classPrivateFieldGet2(_msgLen, this),
+				checksum: _classPrivateFieldGet2(_messageChecksum, this),
+				data: mixed
+			};
+			_classPrivateFieldSet2(_lastIndexes2, this, indexes);
+			return {
+				value: part,
+				done: false
+			};
+		}
+		[_Symbol$iterator$2]() {
+			return this;
+		}
+	});
+	var MAX_U32 = 4294967295;
+	/**
+	* Encode a part as fixed-schema deterministic CBOR: `array(5) [sequence, sequenceCount,
+	* messageLength, checksum, data]` with shortest-form integers.
+	*/
+	function encodePart(part) {
+		validatePart(part);
+		const out = [133];
+		encodeU32(out, part.sequence);
+		encodeU32(out, part.sequenceCount);
+		encodeU32(out, part.messageLength);
+		encodeU32(out, part.checksum);
+		encodeBstr(out, part.data);
+		return new Uint8Array(out);
+	}
+	/**
+	* Decode a part from CBOR. Lenient on integer width (UR-ADR-017): any well-formed definite-length
+	* encoding is accepted; re-encode with {@link encodePart} for the shortest form. `limits` apply
+	* `maxFragmentLength` to the bstr and `maxFragmentCount` to `sequenceCount`.
+	*/
+	function decodePart(bytes, limits) {
+		return decodePartInner(bytes, mergeLimits(limits));
+	}
+	function decodePartInner(bytes, limits) {
+		const cur = { i: 0 };
+		if (decodeLen(bytes, cur, 4) !== 5) fail$3("InvalidPartCbor");
+		const sequence = decodeU32(bytes, cur);
+		const sequenceCount = decodeU32(bytes, cur);
+		const messageLength = decodeU32(bytes, cur);
+		const checksum = decodeU32(bytes, cur);
+		const data = decodeBstr(bytes, cur, limits === null || limits === void 0 ? void 0 : limits.maxFragmentLength);
+		if (cur.i !== bytes.length) fail$3("InvalidPartCbor");
+		const part = {
+			sequence,
+			sequenceCount,
+			messageLength,
+			checksum,
+			data
+		};
+		validatePart(part);
+		if (limits !== void 0 && sequenceCount > limits.maxFragmentCount) fail$3({
+			code: "ResourceLimit",
+			limit: "fragmentCount"
+		});
+		return part;
+	}
+	function encodeU32(out, v) {
+		if (v <= 23) out.push(v);
+		else if (v <= 255) out.push(24, v);
+		else if (v <= 65535) out.push(25, v >>> 8 & 255, v & 255);
+		else out.push(26, v >>> 24 & 255, v >>> 16 & 255, v >>> 8 & 255, v & 255);
+	}
+	function encodeBstr(out, data) {
+		const len = data.length;
+		if (len <= 23) out.push(64 | len);
+		else if (len <= 255) out.push(88, len);
+		else if (len <= 65535) out.push(89, len >>> 8 & 255, len & 255);
+		else out.push(90, len >>> 24 & 255, len >>> 16 & 255, len >>> 8 & 255, len & 255);
+		for (const b of data) out.push(b);
+	}
+	/**
+	* Reads a definite-length argument for the given major type in any width (including 8-byte u64).
+	* Values above 2^53 lose low bits — callers only order or bound-check such values; equality is only
+	* demanded of values <= u32::MAX.
+	*/
+	function decodeLen(bytes, cur, major) {
+		const head = read(bytes, cur);
+		if (head >> 5 !== major) fail$3("InvalidPartCbor");
+		const ai = head & 31;
+		if (ai <= 23) return ai;
+		if (ai === 24) return read(bytes, cur);
+		if (ai === 25) return read(bytes, cur) << 8 | read(bytes, cur);
+		if (ai === 26) return (read(bytes, cur) << 24 | read(bytes, cur) << 16 | read(bytes, cur) << 8 | read(bytes, cur)) >>> 0;
+		if (ai === 27) {
+			const hi = (read(bytes, cur) << 24 | read(bytes, cur) << 16 | read(bytes, cur) << 8 | read(bytes, cur)) >>> 0;
+			const lo = (read(bytes, cur) << 24 | read(bytes, cur) << 16 | read(bytes, cur) << 8 | read(bytes, cur)) >>> 0;
+			return hi * 4294967296 + lo;
+		}
+		return fail$3("InvalidPartCbor");
+	}
+	function decodeU32(bytes, cur) {
+		const v = decodeLen(bytes, cur, 0);
+		if (v > MAX_U32) fail$3("InvalidPartCbor");
+		return v;
+	}
+	function decodeBstr(bytes, cur, maxDataLen) {
+		const len = decodeLen(bytes, cur, 2);
+		if (maxDataLen !== void 0 && len > maxDataLen) fail$3({
+			code: "ResourceLimit",
+			limit: "fragmentLength"
+		});
+		if (cur.i + len > bytes.length) fail$3("InvalidPartCbor");
+		const data = bytes.slice(cur.i, cur.i + len);
+		cur.i += len;
+		return data;
+	}
+	function read(bytes, cur) {
+		const b = bytes[cur.i];
+		if (b === void 0) fail$3("InvalidPartCbor");
+		cur.i += 1;
+		return b;
+	}
+	/** Validate and lowercase a UR type token. Throws `UrError(InvalidType)`. */
+	function parseUrType(text) {
+		const lower = asciiLower(text);
+		if (lower.length === 0 || !/^[a-z0-9-]+$/.test(lower)) fail$3("InvalidType");
+		return lower;
+	}
+	/**
+	* Scheme and type: an ASCII case-insensitive `ur:` prefix (`InvalidScheme`), then the token up to
+	* the first `/` (`TypeUnspecified` if none, `InvalidType` if illegal). Only the type token is
+	* lowercased — the body keeps its original case (bytewords decode is itself case-insensitive).
+	*/
+	function parseUrHead(text) {
+		if (text.length < 3 || asciiLower(text.slice(0, 3)) !== "ur:") fail$3("InvalidScheme");
+		const rest0 = text.slice(3);
+		const slash = rest0.indexOf("/");
+		if (slash === -1) fail$3("TypeUnspecified");
+		return {
+			type: parseUrType(rest0.slice(0, slash)),
+			rest: rest0.slice(slash + 1)
+		};
+	}
+	/**
+	* Text admission after type admission: the whole URI must be ASCII (`NonAscii`, so `.length` is the
+	* byte count), then the URI-length budget (`ResourceLimit: uriLength`).
+	*/
+	function checkUriText(text, limits) {
+		if (!isAscii$1(text)) fail$3("NonAscii");
+		if (text.length > limits.maxUriLength) fail$3({
+			code: "ResourceLimit",
+			limit: "uriLength"
+		});
+	}
+	/** Indices grammar, bytewords, and part CBOR for the text after `ur:<type>/`. */
+	function parseUrBody(type, rest, decode) {
+		const lastSlash = rest.lastIndexOf("/");
+		if (lastSlash === -1) return {
+			kind: "single",
+			type,
+			message: decodeBytewords(rest, "minimal")
+		};
+		const { seq, count } = decodeIndices(rest.slice(0, lastSlash));
+		const part = decode(decodeBytewords(rest.slice(lastSlash + 1), "minimal"));
+		if (part.sequence !== seq || part.sequenceCount !== count) fail$3("InvalidIndices");
+		return {
+			kind: "multi",
+			type,
+			part
+		};
+	}
+	/**
+	* Parse and decode a UR string. Case-insensitive for the URI and bytewords content. `limits` bounds
+	* the URI length and the multi-part CBOR fields. Throws `UrError`.
+	*/
+	function parseUr(text, limits) {
+		const merged = mergeLimits(limits);
+		const { type, rest } = parseUrHead(text);
+		checkUriText(text, merged);
+		return parseUrBody(type, rest, (bytes) => decodePart(bytes, merged));
+	}
+	/** UR-ADR-029: `seq = 1*DIGIT "-" 1*DIGIT`, both in `1..=0xFFFFFFFF`. */
+	function decodeIndices(indices) {
+		const dash = indices.indexOf("-");
+		if (dash === -1) fail$3("InvalidIndices");
+		const a = indices.slice(0, dash);
+		const b = indices.slice(dash + 1);
+		if (!/^\d+$/.test(a) || !/^\d+$/.test(b)) fail$3("InvalidIndices");
+		const seq = Number(a);
+		const count = Number(b);
+		if (!Number.isSafeInteger(seq) || !Number.isSafeInteger(count) || seq === 0 || count === 0 || seq > 4294967295 || count > 4294967295) fail$3("InvalidIndices");
+		return {
+			seq,
+			count
+		};
+	}
+	/** Encode a single-part UR. Empty `message` is allowed. */
+	function encodeUr$1(type, message) {
+		return `ur:${type}/${encodeBytewords(message, "minimal")}`;
+	}
+	/** Uppercase UR string for denser QR alphanumeric mode. */
+	function toQrString(ur) {
+		return asciiUpper(ur);
+	}
+	/**
+	* UR string encoder. `K == 1` emits the same single-part UR on every step; larger messages emit
+	* `ur:<type>/<seq>-<count>/<bytewords>` fountain parts until sequence `0xFFFFFFFF`, where iteration
+	* ends.
+	*/
+	var UrEncoder = (_type = /* @__PURE__ */ new WeakMap(), _fountain = /* @__PURE__ */ new WeakMap(), _single = /* @__PURE__ */ new WeakMap(), _emitted = /* @__PURE__ */ new WeakMap(), _Symbol$iterator2$1 = Symbol.iterator, class {
+		constructor(type, message, options) {
+			_classPrivateFieldInitSpec(this, _type, void 0);
+			_classPrivateFieldInitSpec(this, _fountain, void 0);
+			_classPrivateFieldInitSpec(this, _single, void 0);
+			_classPrivateFieldInitSpec(this, _emitted, false);
+			_classPrivateFieldSet2(_type, this, type);
+			_classPrivateFieldSet2(_fountain, this, new FountainEncoder(message, options));
+			_classPrivateFieldSet2(_single, this, _classPrivateFieldGet2(_fountain, this).fragmentCount === 1 ? encodeUr$1(type, new Uint8Array(message)) : void 0);
+		}
+		get type() {
+			return _classPrivateFieldGet2(_type, this);
+		}
+		get fragmentCount() {
+			return _classPrivateFieldGet2(_fountain, this).fragmentCount;
+		}
+		get isSinglePart() {
+			return _classPrivateFieldGet2(_fountain, this).fragmentCount === 1;
+		}
+		get isComplete() {
+			return _classPrivateFieldGet2(_single, this) === void 0 ? _classPrivateFieldGet2(_fountain, this).isComplete : _classPrivateFieldGet2(_emitted, this);
+		}
+		/** Fragment indexes mixed into the most recently produced part. */
+		get lastFragmentIndexes() {
+			return _classPrivateFieldGet2(_fountain, this).lastFragmentIndexes;
+		}
+		next() {
+			const single = _classPrivateFieldGet2(_single, this);
+			if (single !== void 0) {
+				_classPrivateFieldSet2(_emitted, this, true);
+				return {
+					value: single,
+					done: false
+				};
+			}
+			const { value: part, done } = _classPrivateFieldGet2(_fountain, this).next();
+			if (done === true || part === void 0) return {
+				value: void 0,
+				done: true
+			};
+			const body = encodeBytewords(encodePart(part), "minimal");
+			return {
+				value: `ur:${_classPrivateFieldGet2(_type, this)}/${part.sequence}-${part.sequenceCount}/${body}`,
+				done: false
+			};
+		}
+		[_Symbol$iterator2$1]() {
+			return this;
+		}
 	});
 	// node_modules/.bun/@blockchaincommons+dcbor@1.0.0-beta.5/node_modules/@blockchaincommons/dcbor/dist/error-BM_wVk_h.mjs
 	init_defineProperty();
@@ -52047,34 +53090,91 @@ zoo`.split("\n"));
 		if (value === void 0) throw CborError$1.wrongType();
 		return value;
 	};
-	/**
-	* Extract content if has specific tag, throwing if not (the reference's
-	* `try_into_expected_tagged_value`).
-	*
-	* The `WrongTag` error names the expected tag as it was given (a `Tag` keeps
-	* its name; a number or bigint stays unnamed) and the actual tag as the node
-	* carries it.
-	*
-	* @param cbor - CBOR value
-	* @param tag - Expected tag value, or a `Tag`
-	* @returns Tagged content
-	* @throws {CborError} `WrongType` if `cbor` is not tagged; `WrongTag` (with
-	*   `details.expectedTag` and `details.actualTag`) if the tag doesn't match
-	*/
-	var expectTaggedContent = (cbor, tag) => {
-		if (cbor.type !== MajorType.Tagged) throw CborError$1.wrongType();
-		const expected = typeof tag === "object" ? tag : Tag.from(tag);
-		if (!tagValuesEqual(cbor.tag, expected.value)) throw CborError$1.wrongTag(expected, Tag.from(cbor.tag, cbor.tagName));
-		return cbor.value;
-	};
 	// node_modules/.bun/@qntx+ur@4.0.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/typed-C8j8iVYT.mjs
+	init_defineProperty();
+	function mapCborDecode(run) {
+		try {
+			return run();
+		} catch (error) {
+			if (CborError$1.isCborError(error)) fail$3("CborDecode", { cause: error });
+			throw error;
+		}
+	}
 	function mapCborType(run) {
 		try {
 			return run();
 		} catch (error) {
-			if (CborError$1.isCborError(error)) fail$4("CborType", { cause: error });
+			if (CborError$1.isCborError(error)) fail$3("CborType", { cause: error });
 			throw error;
 		}
+	}
+	/** Uniform Resource whose payload is deterministic CBOR. */
+	var Ur = class Ur {
+		constructor(type, cborValue) {
+			_defineProperty(this, "type", void 0);
+			_defineProperty(this, "cbor", void 0);
+			this.type = type;
+			this.cbor = cborValue;
+		}
+		static fromCbor(type, input) {
+			const prepared = input instanceof Uint8Array ? new Uint8Array(input) : input;
+			return new Ur(parseUrType(type), mapCborType(() => cbor(prepared)));
+		}
+		/** Wrap already-encoded dCBOR bytes. */
+		static fromCborData(type, data) {
+			const bytes = new Uint8Array(data);
+			const value = mapCborDecode(() => decodeCbor(bytes));
+			return new Ur(parseUrType(type), value);
+		}
+		/** Parse a **single-part** UR string; the message must be dCBOR. */
+		static parse(text) {
+			const parsed = parseUr(text);
+			if (parsed.kind !== "single") fail$3("NotSinglePart");
+			return Ur.fromCborData(parsed.type, parsed.message);
+		}
+		/** Wrap a completed {@link UrDecoder} result; the message must be dCBOR. */
+		static fromDecoded(decoded) {
+			return Ur.fromCborData(decoded.type, decoded.message);
+		}
+		toCborData() {
+			return new Uint8Array(mapCborType(() => encodeCbor(this.cbor)));
+		}
+		toString() {
+			return encodeUr$1(this.type, this.toCborData());
+		}
+		toQrString() {
+			return toQrString(this.toString());
+		}
+		/** L3 encoder over this UR's dCBOR bytes. */
+		encoder(options) {
+			return new UrEncoder(this.type, this.toCborData(), options);
+		}
+	};
+	/** UR types a codec accepts on read: every tag name, write-preferred first. */
+	function codecUrTypes(codec) {
+		const [first, ...rest] = codec.tags;
+		return [toUrType(first), ...rest.map(toUrType)];
+	}
+	function toUrType(tag) {
+		const { name } = tag;
+		if (name === void 0 || name === "") fail$3("InvalidType");
+		return parseUrType(name);
+	}
+	/** Typed UR for `value`: first tag name as the type, untagged body. */
+	function toUr(value, codec) {
+		const [type] = codecUrTypes(codec);
+		const body = mapCborType(() => codec.encode(value));
+		return Ur.fromCbor(type, body);
+	}
+	/** Decode `ur`'s body when its type is one of the codec's tag names. */
+	function fromUr(ur, codec) {
+		const expected = codecUrTypes(codec);
+		if (!expected.some((t) => ur.type === t)) fail$3({
+			code: "UnexpectedType",
+			expected,
+			found: ur.type
+		});
+		return mapCborType(() => codec.decode(ur.cbor));
 	}
 	/** `tags[0]`-wrapped dCBOR for `value`. */
 	function toTagged(value, codec) {
@@ -52589,7 +53689,7 @@ zoo`.split("\n"));
 	var TAG_TRON_SIGN_REQUEST = 5101;
 	var TAG_TRON_SIGNATURE = 5102;
 	var TAG_CRYPTO_MULTI_ACCOUNTS = 1103;
-	var TAG_UUID$1 = 37;
+	var TAG_UUID = 37;
 	var TAG_ONEKEY_TRON_SIGN_REQUEST = 5201;
 	/**
 	* Interop (vendor-extension) tags — Keystone / OneKey / ERC-4527. `401`/`402` collide with the
@@ -52604,39 +53704,39 @@ zoo`.split("\n"));
 		"sol-signature": Tag.from(TAG_SOL_SIGNATURE, "sol-signature"),
 		"tron-sign-request": Tag.from(TAG_TRON_SIGN_REQUEST, "tron-sign-request"),
 		"tron-signature": Tag.from(TAG_TRON_SIGNATURE, "tron-signature"),
-		uuid: Tag.from(TAG_UUID$1, "uuid")
+		uuid: Tag.from(TAG_UUID, "uuid")
 	};
 	Tag.from(TAG_ONEKEY_TRON_SIGN_REQUEST, "tron-sign-request");
-	var UUID_LEN = 16;
+	var UUID_LEN$1 = 16;
 	/** `#6.37(bstr .size 16)` for a 16-byte request id (out-of-range otherwise). */
 	function requestIdTagged$1(requestId) {
-		if (requestId.length !== UUID_LEN) throw CborError$1.outOfRange();
+		if (requestId.length !== UUID_LEN$1) throw CborError$1.outOfRange();
 		return taggedValue(INTEROP_TAGS.uuid, cbor(copyBuf(requestId)));
 	}
 	/** Reads a `#6.37` tagged 16-byte request id (untagged ⇒ WrongType, foreign tag ⇒ WrongTag). */
-	function readRequestId(cbor) {
+	function readRequestId$1(cbor) {
 		validateTag(cbor, [INTEROP_TAGS.uuid]);
 		const bytes = copyBytes(extractTaggedContent(cbor));
-		if (bytes.length !== UUID_LEN) throw CborError$1.outOfRange();
+		if (bytes.length !== UUID_LEN$1) throw CborError$1.outOfRange();
 		return bytes;
 	}
 	/** A signing path is concrete: at least one component, every one an index step. */
-	function assertConcretePath(path) {
+	function assertConcretePath$1(path) {
 		if (path.components.length === 0 || path.components.some((component) => component.kind !== "index")) throw CborError$1.outOfRange();
 		return path;
 	}
 	/** `derivationPath` written `#6.304`; the path must be concrete. */
-	function derivationPathTagged(path) {
-		assertConcretePath(path);
+	function derivationPathTagged$1(path) {
+		assertConcretePath$1(path);
 		return taggedValue(cryptoKeypathCodec.tags[0], cryptoKeypathCodec.encode(path));
 	}
 	/** Reads `#6.304`/`#6.40304` and requires a concrete path. */
-	function readDerivationPath(cbor) {
+	function readDerivationPath$1(cbor) {
 		validateTag(cbor, [...cryptoKeypathCodec.tags]);
-		return assertConcretePath(cryptoKeypathCodec.decode(extractTaggedContent(cbor)));
+		return assertConcretePath$1(cryptoKeypathCodec.decode(extractTaggedContent(cbor)));
 	}
 	/** Non-empty byte string (`signData`/`address`), copied. */
-	function readNonEmptyBytes(cbor) {
+	function readNonEmptyBytes$1(cbor) {
 		const bytes = copyBytes(cbor);
 		if (bytes.length === 0) throw CborError$1.outOfRange();
 		return bytes;
@@ -52648,7 +53748,7 @@ zoo`.split("\n"));
 		return bytes;
 	}
 	/** Writes `key: text` unless `text` is undefined or `""` (which encode as absent). */
-	function setOptionalText(map, key, text) {
+	function setOptionalText$1(map, key, text) {
 		if (text !== void 0 && text !== "") map.set(key, assertText(text));
 	}
 	/** Reads `key` as text when present; `""` on the wire reads as absent. */
@@ -52719,9 +53819,9 @@ zoo`.split("\n"));
 			map.set(2, cbor(signData));
 			map.set(3, dataTypeWire(request.dataType));
 			if (request.chainId !== void 0) map.set(4, assertChainId(request.chainId));
-			map.set(5, derivationPathTagged(request.derivationPath));
+			map.set(5, derivationPathTagged$1(request.derivationPath));
 			if (request.address !== void 0) map.set(6, cbor(assertAddress(request.address)));
-			setOptionalText(map, 7, request.origin);
+			setOptionalText$1(map, 7, request.origin);
 			return cbor(map);
 		},
 		decode(value) {
@@ -52730,10 +53830,10 @@ zoo`.split("\n"));
 			const chainId = map.get(4);
 			const address = map.get(6);
 			const origin = optionalText$1(map, 7);
-			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
-				signData: readNonEmptyBytes(map.getOrThrow(2)),
+			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, {
+				signData: readNonEmptyBytes$1(map.getOrThrow(2)),
 				dataType: decodeDataType(map.getOrThrow(3))
-			}, chainId === void 0 ? {} : { chainId: readChainId(chainId) }), {}, { derivationPath: readDerivationPath(map.getOrThrow(5)) }, address === void 0 ? {} : { address: readBytesLen(address, ADDRESS_LEN) }), origin === void 0 ? {} : { origin }));
+			}, chainId === void 0 ? {} : { chainId: readChainId(chainId) }), {}, { derivationPath: readDerivationPath$1(map.getOrThrow(5)) }, address === void 0 ? {} : { address: readBytesLen(address, ADDRESS_LEN) }), origin === void 0 ? {} : { origin }));
 		}
 	};
 	var ethSignatureCodec = {
@@ -52744,7 +53844,7 @@ zoo`.split("\n"));
 			const bytes = copyBuf(signature.signature);
 			if (bytes.length < SIGNATURE_MIN || bytes.length > SIGNATURE_MAX) throw CborError$1.outOfRange();
 			map.set(2, cbor(bytes));
-			setOptionalText(map, 3, signature.origin);
+			setOptionalText$1(map, 3, signature.origin);
 			return cbor(map);
 		},
 		decode(value) {
@@ -52753,7 +53853,7 @@ zoo`.split("\n"));
 			const signature = copyBytes(map.getOrThrow(2));
 			if (signature.length < SIGNATURE_MIN || signature.length > SIGNATURE_MAX) throw CborError$1.outOfRange();
 			const origin = optionalText$1(map, 3);
-			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, { signature }, origin === void 0 ? {} : { origin }));
+			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, { signature }, origin === void 0 ? {} : { origin }));
 		}
 	};
 	var SIGN_REQUEST_KEYS$1 = /* @__PURE__ */ new Set([
@@ -52794,12 +53894,12 @@ zoo`.split("\n"));
 			const signData = copyBuf(request.signData);
 			if (signData.length === 0) throw CborError$1.outOfRange();
 			map.set(2, cbor(signData));
-			map.set(3, derivationPathTagged(request.derivationPath));
+			map.set(3, derivationPathTagged$1(request.derivationPath));
 			if (request.address !== void 0) {
 				if (request.address.length === 0) throw CborError$1.outOfRange();
 				map.set(4, cbor(copyBuf(request.address)));
 			}
-			setOptionalText(map, 5, request.origin);
+			setOptionalText$1(map, 5, request.origin);
 			map.set(6, signTypeWire(request.signType));
 			return cbor(map);
 		},
@@ -52808,10 +53908,10 @@ zoo`.split("\n"));
 			const requestId = map.get(1);
 			const address = map.get(4);
 			const origin = optionalText$1(map, 5);
-			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
-				signData: readNonEmptyBytes(map.getOrThrow(2)),
-				derivationPath: readDerivationPath(map.getOrThrow(3))
-			}, address === void 0 ? {} : { address: readNonEmptyBytes(address) }), origin === void 0 ? {} : { origin }), {}, { signType: decodeSignType(map.getOrThrow(6)) }));
+			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, {
+				signData: readNonEmptyBytes$1(map.getOrThrow(2)),
+				derivationPath: readDerivationPath$1(map.getOrThrow(3))
+			}, address === void 0 ? {} : { address: readNonEmptyBytes$1(address) }), origin === void 0 ? {} : { origin }), {}, { signType: decodeSignType(map.getOrThrow(6)) }));
 		}
 	};
 	var solSignatureCodec = {
@@ -52827,7 +53927,7 @@ zoo`.split("\n"));
 		decode(value) {
 			const map = expectClosedIntMap(value, SIGNATURE_KEYS$1);
 			const requestId = map.get(1);
-			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, { signature: readBytesLen(map.getOrThrow(2), SIGNATURE_LEN$1) }));
+			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, { signature: readBytesLen(map.getOrThrow(2), SIGNATURE_LEN$1) }));
 		}
 	};
 	var SIGN_REQUEST_KEYS = /* @__PURE__ */ new Set([
@@ -52847,15 +53947,15 @@ zoo`.split("\n"));
 		let request;
 		if (discriminator.type === MajorType.Unsigned) {
 			const dataType = keystoneDataType(expectUnsigned(discriminator));
-			request = _objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
-				signData: readNonEmptyBytes(map.getOrThrow(2)),
+			request = _objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, {
+				signData: readNonEmptyBytes$1(map.getOrThrow(2)),
 				dataType,
-				derivationPath: readDerivationPath(map.getOrThrow(4))
+				derivationPath: readDerivationPath$1(map.getOrThrow(4))
 			}, optionalAddressOrigin(map, 5, 6));
-		} else if (discriminator.type === MajorType.Tagged) request = _objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
-			signData: readNonEmptyBytes(map.getOrThrow(2)),
+		} else if (discriminator.type === MajorType.Tagged) request = _objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, {
+			signData: readNonEmptyBytes$1(map.getOrThrow(2)),
 			dataType: oneKeyRequestType(map.getOrThrow(6)),
-			derivationPath: readDerivationPath(discriminator)
+			derivationPath: readDerivationPath$1(discriminator)
 		}, optionalAddressOrigin(map, 4, 5));
 		else throw CborError$1.wrongType();
 		return Object.freeze(request);
@@ -52878,7 +53978,7 @@ zoo`.split("\n"));
 	function optionalAddressOrigin(map, addressKey, originKey) {
 		const address = map.get(addressKey);
 		const origin = optionalText$1(map, originKey);
-		return _objectSpread2(_objectSpread2({}, address === void 0 ? {} : { address: readNonEmptyBytes(address) }), origin === void 0 ? {} : { origin });
+		return _objectSpread2(_objectSpread2({}, address === void 0 ? {} : { address: readNonEmptyBytes$1(address) }), origin === void 0 ? {} : { origin });
 	}
 	function keystoneDataTypeWire(dataType) {
 		switch (dataType) {
@@ -52898,7 +53998,7 @@ zoo`.split("\n"));
 			if (request.address.length === 0) throw CborError$1.outOfRange();
 			map.set(addressKey, cbor(copyBuf(request.address)));
 		}
-		setOptionalText(map, originKey, request.origin);
+		setOptionalText$1(map, originKey, request.origin);
 	}
 	/**
 	* Keystone's `tron-sign-request` writer (tag 5101): `{1 uuid?, 2 signData, 3 dataType, 4 path, 5
@@ -52914,7 +54014,7 @@ zoo`.split("\n"));
 			const map = new CborMap();
 			sharedFields(map, request);
 			map.set(3, keystoneDataTypeWire(request.dataType));
-			map.set(4, derivationPathTagged(request.derivationPath));
+			map.set(4, derivationPathTagged$1(request.derivationPath));
 			optionalTail(map, request, 5, 6);
 			return cbor(map);
 		},
@@ -52937,7 +54037,7 @@ zoo`.split("\n"));
 		decode(value) {
 			const map = expectClosedIntMap(value, SIGNATURE_KEYS);
 			const requestId = map.get(1);
-			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, { signature: readBytesLen(map.getOrThrow(2), SIGNATURE_LEN) }));
+			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, { signature: readBytesLen(map.getOrThrow(2), SIGNATURE_LEN) }));
 		}
 	};
 	var ACCOUNT_KEYS = /* @__PURE__ */ new Set([
@@ -53014,9 +54114,9 @@ zoo`.split("\n"));
 			map.set(1, accounts.masterFingerprint);
 			const keys = accounts.keys.map(encodeKey);
 			map.set(2, keys);
-			setOptionalText(map, 3, accounts.device);
-			setOptionalText(map, 4, accounts.deviceId);
-			setOptionalText(map, 5, accounts.version);
+			setOptionalText$1(map, 3, accounts.device);
+			setOptionalText$1(map, 4, accounts.deviceId);
+			setOptionalText$1(map, 5, accounts.version);
 			return cbor(map);
 		},
 		decode(value) {
@@ -53032,138 +54132,108 @@ zoo`.split("\n"));
 			}, device === void 0 ? {} : { device }), deviceId === void 0 ? {} : { deviceId }), version === void 0 ? {} : { version }));
 		}
 	};
-	// packages/wallet-kernel/src/modules/signers/keystone/registry.ts
+	// packages/wallet-kernel/src/modules/signers/keystone/ur.ts
 	/**
-	* The Keystone UR registry bodies. The `@qntx/ur` codecs own every type they cover — the eth / sol
-	* / tron sign requests and signatures, `crypto-multi-accounts` and `crypto-psbt` — and this module
-	* adapts them to the driver's field shape: BIP-32 paths carrying hardened bits, byte-array
-	* fingerprints and the numeric data-type enums the call sites use. The three types the library
-	* lacks — `btc-sign-request`, `btc-signature` and the `qr-hardware-call` key-derivation request —
-	* are local `UrCodec`s over the same dcbor runtime, so the kernel keeps exactly one CBOR
-	* implementation. Field numbers and tags mirror the Rust encoders exactly
-	* (ethereum/eth_sign_request.rs, solana/sol_sign_request.rs, tron/tron_sign_request.rs,
-	* bitcoin/btc_sign_request.rs, crypto_psbt.rs): the keypath `depth` field and the address fields
-	* are omitted, and `origin` is always written.
+	* The Keystone driver's UR codecs on `@qntx/ur`'s typed layer. The pairing sync, the signatures and
+	* `crypto-psbt` decode through the library's registry and interop codecs; the two wire formats it
+	* does not carry are the local `UrCodec`s here — `btc-sign-request`/`btc-signature` (tags
+	* 8101/8102, ur-registry 1.0.9 bitcoin/btc_sign_request.rs) and the `qr-hardware-call`
+	* key-derivation request (1201, `@keystonehq/bc-ur-registry` extended/QRHardwareCall). Like the
+	* library's interop codecs the local maps are closed, tagged items are validated, and every field
+	* length is exact.
 	*
-	* One error boundary: anything a codec or dcbor raises while decoding or encoding — `CborError`,
-	* `UrError`, the host `RangeError` of a stack-exhausting nest — maps to `KernelError("integrity")`;
-	* nothing untyped escapes.
+	* `decodeUr` is the only entry device bytes reach: it re-asserts the payload bound the protocol
+	* already applies, then folds every decode failure — a dcbor `CborError`, a library `UrError`, the
+	* host `RangeError` hostile nesting can raise — into `KernelError("integrity")`. An encode failure
+	* means the request the kernel built was malformed and closes the same way; no untyped error ever
+	* escapes this module.
 	*/
 	init_objectSpread2();
-	var TAG_UUID = Tag.from(37, "uuid");
-	var TAG_BTC_SIGN_REQUEST = Tag.from(8101, "btc-sign-request");
-	var TAG_BTC_SIGNATURE = Tag.from(8102, "btc-signature");
-	var TAG_QR_HARDWARE_CALL = Tag.from(1201, "qr-hardware-call");
-	var TAG_KEY_DERIVATION_CALL = Tag.from(1301, "key-derivation-call");
-	var TAG_KEY_DERIVATION_SCHEMA = Tag.from(1302, "key-derivation-schema");
-	function fail$3() {
-		throw new KernelError("integrity", "malformed registry item");
+	/** Device answers are QR payloads — the protocol already bounds them; the decode re-asserts. */
+	var MAX_BYTES = 262144;
+	var UUID_TAG = Tag.from(37, "uuid");
+	var UUID_LEN = 16;
+	var [KEYPATH_TAG] = cryptoKeypathCodec.tags;
+	var HARDENED$10 = 2147483648;
+	function integrity$5() {
+		throw new KernelError("integrity", "malformed device UR exchange");
 	}
-	/** Untrusted device bytes through one codec; every library failure is `integrity`. */
-	var decodeRegistry = (bytes, codec) => {
+	/** DCBOR `bytes` carried by UR `type`, decoded by `codec`; every failure is `integrity`. */
+	var decodeUr = (type, bytes, codec) => {
 		try {
-			if (bytes.length === 0 || bytes.length > 262144) fail$3();
-			return codec.decode(decodeCbor(bytes));
+			if (bytes.length === 0 || bytes.length > MAX_BYTES) throw CborError$1.outOfRange();
+			return fromUr(Ur.fromCborData(type, bytes), codec);
 		} catch (error) {
 			if (error instanceof KernelError) throw error;
-			return fail$3();
+			throw new KernelError("integrity", "malformed device UR exchange");
 		}
 	};
-	var encodeRegistry = (value, codec) => {
+	/** `codec`'s untagged dCBOR body for `value`; a malformed request build is `integrity`. */
+	var encodeUr = (value, codec) => {
 		try {
-			return encodeCbor(codec.encode(value));
+			return toUr(value, codec).toCborData();
 		} catch (error) {
 			if (error instanceof KernelError) throw error;
-			return fail$3();
+			throw new KernelError("integrity", "malformed device UR exchange");
 		}
 	};
-	var HARDENED_BIT = 2147483648;
-	/** The BIP-32 `path` as a concrete registry keypath carrying the master fingerprint. */
-	var derivationPath = (path, fingerprint) => {
-		if (fingerprint.length !== 4) fail$3();
-		return {
-			components: path.map((component) => ({
-				kind: "index",
-				index: component % HARDENED_BIT,
-				hardened: component >= HARDENED_BIT
-			})),
-			sourceFingerprint: new DataView(fingerprint.buffer, fingerprint.byteOffset, 4).getUint32(0)
-		};
+	/** A BIP-32 master fingerprint as its uint32 wire form (the registry's `sourceFingerprint`). */
+	var fingerprintNumber = (fingerprint) => {
+		if (fingerprint.length !== 4) integrity$5();
+		return new DataView(fingerprint.buffer, fingerprint.byteOffset, 4).getUint32(0);
 	};
-	/** The map of a registry body: integer keys drawn only from `keys`, nothing else admitted. */
-	var closedIntMap = (value, keys) => {
-		const map = expectMap(value);
-		if (map.size > keys.size) throw CborError$1.outOfRange();
-		for (const { key } of map.entriesArray) {
-			const n = asUnsigned(key);
-			if (typeof n !== "number" || !keys.has(n)) throw CborError$1.wrongType();
-		}
-		return map;
+	/** The `crypto-keypath` a sign or derivation request carries: index steps plus the fingerprint. */
+	var requestKeypath = (path, fingerprint) => ({
+		components: path.map((component) => ({
+			kind: "index",
+			index: component % HARDENED$10,
+			hardened: component >= HARDENED$10
+		})),
+		sourceFingerprint: fingerprintNumber(fingerprint)
+	});
+	var requestIdTagged = (requestId) => {
+		if (requestId.length !== UUID_LEN) throw CborError$1.outOfRange();
+		return taggedValue(UUID_TAG, cbor(new Uint8Array(requestId)));
 	};
-	var uint = (value) => {
-		const n = expectUnsigned(value);
-		if (typeof n !== "number") throw CborError$1.outOfRange();
-		return n;
+	var readRequestId = (value) => {
+		validateTag(value, [UUID_TAG]);
+		const bytes = expectBytes$1(extractTaggedContent(value));
+		if (bytes.length !== UUID_LEN) throw CborError$1.outOfRange();
+		return new Uint8Array(bytes);
 	};
-	/** `text` under `key`, written unless empty — absent encodes as absent, as every vendor does. */
+	/** A signing path is concrete: at least one component, every one an index step. */
+	var assertConcretePath = (path) => {
+		if (path.components.length === 0 || path.components.some((component) => component.kind !== "index")) throw CborError$1.outOfRange();
+		return path;
+	};
+	var derivationPathTagged = (path) => taggedValue(KEYPATH_TAG, cryptoKeypathCodec.encode(assertConcretePath(path)));
+	var readDerivationPath = (value) => {
+		validateTag(value, [...cryptoKeypathCodec.tags]);
+		return assertConcretePath(cryptoKeypathCodec.decode(extractTaggedContent(value)));
+	};
+	var readNonEmptyBytes = (value) => {
+		const bytes = new Uint8Array(expectBytes$1(value));
+		if (bytes.length === 0) throw CborError$1.outOfRange();
+		return bytes;
+	};
 	var optionalText = (map, key) => {
 		const value = map.get(key);
 		if (value === void 0) return;
 		const text = expectText(value);
 		return text === "" ? void 0 : text;
 	};
-	var requestIdTagged = (requestId) => {
-		if (requestId.length !== 16) throw CborError$1.outOfRange();
-		return taggedValue(TAG_UUID, cbor(requestId));
+	var setOptionalText = (map, key, text) => {
+		if (text !== void 0 && text !== "") map.set(key, text);
 	};
-	var requestIdOf = (value) => {
-		const id = expectBytes$1(expectTaggedContent(value, TAG_UUID));
-		if (id.length !== 16) throw CborError$1.outOfRange();
-		return id;
+	/** The closed unsigned-key map every registry structure is. */
+	var closedIntMap = (value, allowed) => {
+		const map = expectMap(value);
+		for (const [key] of map) {
+			const n = expectUnsigned(key);
+			if (typeof n !== "number" || !Number.isInteger(n) || !allowed.has(n)) throw CborError$1.wrongType();
+		}
+		return map;
 	};
-	var ETH_DATA_TYPE = {
-		1: "transaction",
-		2: "typedData",
-		3: "personalMessage",
-		4: "typedTransaction"
-	};
-	var ethSignRequest = (fields) => encodeRegistry(_objectSpread2(_objectSpread2({
-		requestId: fields.requestId,
-		signData: fields.signData,
-		dataType: ETH_DATA_TYPE[fields.dataType]
-	}, fields.chainId === void 0 ? {} : { chainId: fields.chainId }), {}, {
-		derivationPath: derivationPath(fields.path, fields.fingerprint),
-		origin: fields.origin
-	}), ethSignRequestCodec);
-	var SOL_SIGN_TYPE = {
-		1: "transaction",
-		2: "message"
-	};
-	var solSignRequest = (fields) => encodeRegistry({
-		requestId: fields.requestId,
-		signData: fields.signData,
-		derivationPath: derivationPath(fields.path, fields.fingerprint),
-		origin: fields.origin,
-		signType: SOL_SIGN_TYPE[fields.signType]
-	}, solSignRequestCodec);
-	var TRON_DATA_TYPE = {
-		1: "transaction",
-		2: "messageV2"
-	};
-	var tronSignRequest = (fields) => encodeRegistry({
-		requestId: fields.requestId,
-		signData: fields.signData,
-		dataType: TRON_DATA_TYPE[fields.dataType],
-		derivationPath: derivationPath(fields.path, fields.fingerprint),
-		origin: fields.origin
-	}, tronSignRequestCodec);
-	/** Signature answers carry the request id under `#6.37` — present or absent per vendor build. */
-	var optionalRequestId = (map) => {
-		const value = map.get(1);
-		return value === void 0 ? void 0 : requestIdOf(value);
-	};
-	/** A `crypto-psbt` payload is the PSBT byte string — the UR type carries tag 310. */
-	var cryptoPsbt = (psbt) => encodeRegistry({ bytes: psbt }, cryptoPsbtCodec);
 	var BTC_SIGN_REQUEST_KEYS = /* @__PURE__ */ new Set([
 		1,
 		2,
@@ -53180,121 +54250,137 @@ zoo`.split("\n"));
 	var HARDWARE_CALL_KEYS = /* @__PURE__ */ new Set([
 		1,
 		2,
-		3
+		3,
+		4
 	]);
 	var KEY_DERIVATION_CALL_KEYS = /* @__PURE__ */ new Set([1]);
 	var KEY_DERIVATION_SCHEMA_KEYS = /* @__PURE__ */ new Set([
 		1,
 		2,
-		3
+		3,
+		4
 	]);
-	/** A concrete keypath — index components only — written `#6.304`. */
-	var keypathTagged = (path) => {
-		if (path.components.length === 0 || path.components.some((component) => component.kind !== "index")) throw CborError$1.outOfRange();
-		return taggedValue(cryptoKeypathCodec.tags[0], cryptoKeypathCodec.encode(path));
-	};
-	var concreteKeypath = (value) => {
-		validateTag(value, [...cryptoKeypathCodec.tags]);
-		const path = cryptoKeypathCodec.decode(extractTaggedContent(value));
-		if (path.components.length === 0 || path.components.some((component) => component.kind !== "index")) throw CborError$1.outOfRange();
-		return path;
-	};
+	var BTC_MESSAGE_DATA_TYPE = 1;
+	var PUBLIC_KEY_LEN = 33;
+	var TAG_KEY_DERIVATION_CALL = Tag.from(1301, "key-derivation-call");
+	var TAG_KEY_DERIVATION_SCHEMA = Tag.from(1302, "key-derivation-schema");
+	/**
+	* Keystone's `btc-sign-request` (tag 8101): `{1 uuid?, 2 signData, 3 dataType, 4 [keypaths], 5
+	* addresses?, 6 origin?}`. The only data type the vendor enum defines is message (1) — the driver's
+	* bitcoin message signing — so both directions accept it alone.
+	*/
 	var btcSignRequestCodec = {
-		tags: [TAG_BTC_SIGN_REQUEST],
+		tags: [Tag.from(8101, "btc-sign-request")],
 		encode(request) {
+			if (request.derivationPaths.length === 0) throw CborError$1.outOfRange();
+			const signData = new Uint8Array(request.signData);
+			if (signData.length === 0) throw CborError$1.outOfRange();
 			const map = new CborMap();
 			if (request.requestId !== void 0) map.set(1, requestIdTagged(request.requestId));
-			map.set(2, cbor(request.signData));
-			map.set(3, 1);
-			map.set(4, cbor(request.derivationPaths.map((path) => keypathTagged(path))));
-			if (request.origin !== void 0 && request.origin !== "") map.set(6, request.origin);
+			map.set(2, cbor(signData));
+			map.set(3, BTC_MESSAGE_DATA_TYPE);
+			map.set(4, request.derivationPaths.map(derivationPathTagged));
+			if (request.addresses !== void 0 && request.addresses.length > 0) map.set(5, request.addresses.map((address) => {
+				if (address === "") throw CborError$1.outOfRange();
+				return address;
+			}));
+			setOptionalText(map, 6, request.origin);
 			return cbor(map);
 		},
 		decode(value) {
 			const map = closedIntMap(value, BTC_SIGN_REQUEST_KEYS);
-			if (uint(map.getOrThrow(3)) !== 1) throw CborError$1.outOfRange();
-			const requestId = optionalRequestId(map);
+			const requestId = map.get(1);
+			if (expectUnsigned(map.getOrThrow(3)) !== BTC_MESSAGE_DATA_TYPE) throw CborError$1.outOfRange();
+			const addresses = map.get(5);
 			const origin = optionalText(map, 6);
-			return _objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId }), {}, {
-				signData: expectBytes$1(map.getOrThrow(2)),
-				derivationPaths: expectArray(map.getOrThrow(4)).map(concreteKeypath)
-			}, origin === void 0 ? {} : { origin });
+			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
+				signData: readNonEmptyBytes(map.getOrThrow(2)),
+				derivationPaths: expectArray(map.getOrThrow(4)).map(readDerivationPath)
+			}, addresses === void 0 ? {} : { addresses: expectArray(addresses).map((address) => {
+				const text = expectText(address);
+				if (text === "") throw CborError$1.outOfRange();
+				return text;
+			}) }), origin === void 0 ? {} : { origin }));
 		}
 	};
-	var btcSignRequest = (fields) => encodeRegistry({
-		requestId: fields.requestId,
-		signData: fields.signData,
-		derivationPaths: fields.paths.map((path) => derivationPath(path, fields.fingerprint)),
-		origin: fields.origin
-	}, btcSignRequestCodec);
 	var btcSignatureCodec = {
-		tags: [TAG_BTC_SIGNATURE],
+		tags: [Tag.from(8102, "btc-signature")],
 		encode(signature) {
 			const map = new CborMap();
 			if (signature.requestId !== void 0) map.set(1, requestIdTagged(signature.requestId));
-			const signatureBytes = signature.signature;
-			if (signatureBytes.length !== 65 || signature.publicKey.length !== 33) throw CborError$1.outOfRange();
+			const signatureBytes = new Uint8Array(signature.signature);
+			if (signatureBytes.length === 0) throw CborError$1.outOfRange();
 			map.set(2, cbor(signatureBytes));
-			map.set(3, cbor(signature.publicKey));
+			const publicKey = new Uint8Array(signature.publicKey);
+			if (publicKey.length !== PUBLIC_KEY_LEN) throw CborError$1.outOfRange();
+			map.set(3, cbor(publicKey));
 			return cbor(map);
 		},
 		decode(value) {
 			const map = closedIntMap(value, BTC_SIGNATURE_KEYS);
-			const signature = expectBytes$1(map.getOrThrow(2));
-			const publicKey = expectBytes$1(map.getOrThrow(3));
-			if (signature.length !== 65 || publicKey.length !== 33) throw CborError$1.outOfRange();
-			return {
-				requestId: optionalRequestId(map),
-				signature,
-				publicKey
-			};
+			const requestId = map.get(1);
+			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
+				signature: readNonEmptyBytes(map.getOrThrow(2)),
+				publicKey: readNonEmptyBytes(map.getOrThrow(3))
+			}));
 		}
 	};
-	var derivationSchemaTagged = (schema) => {
+	var CURVE_WIRE = {
+		secp256k1: 0,
+		ed25519: 1
+	};
+	var readCurve = (value) => {
+		switch (expectUnsigned(value)) {
+			case 0: return "secp256k1";
+			case 1: return "ed25519";
+			default: throw CborError$1.outOfRange();
+		}
+	};
+	var derivationSchema = (schema) => {
 		const map = new CborMap();
-		map.set(1, keypathTagged(schema.path));
-		map.set(2, schema.curve);
+		map.set(1, derivationPathTagged(schema.path));
+		map.set(2, CURVE_WIRE[schema.curve]);
 		map.set(3, 0);
 		return taggedValue(TAG_KEY_DERIVATION_SCHEMA, cbor(map));
 	};
+	var readDerivationSchema = (value) => {
+		validateTag(value, [TAG_KEY_DERIVATION_SCHEMA]);
+		const map = closedIntMap(extractTaggedContent(value), KEY_DERIVATION_SCHEMA_KEYS);
+		const chainType = map.get(4);
+		if (chainType !== void 0 && chainType.type !== MajorType.ByteString) throw CborError$1.wrongType();
+		if (expectUnsigned(map.getOrThrow(3)) !== 0) throw CborError$1.outOfRange();
+		return {
+			path: readDerivationPath(map.getOrThrow(1)),
+			curve: readCurve(map.getOrThrow(2))
+		};
+	};
+	/**
+	* The `qr-hardware-call` (tag 1201) the wallet sends for key derivation: `{1 callType, 2 #1301
+	* key-derivation-call {1 [schemas]}, 3 origin?, 4 version?}`. Only call-type 0 exists on the wire
+	* this wallet writes, and version stays absent — V0 is the default every client sends (the vendor
+	* encoder drops a falsy version), which is what firmware 3.2.2 parses.
+	*/
 	var qrHardwareCallCodec = {
-		tags: [TAG_QR_HARDWARE_CALL],
-		encode(request) {
-			const call = new CborMap();
-			call.set(1, cbor(request.schemas.map(derivationSchemaTagged)));
+		tags: [Tag.from(1201, "qr-hardware-call")],
+		encode(call) {
+			if (call.schemas.length === 0) throw CborError$1.outOfRange();
+			const params = new CborMap();
+			params.set(1, call.schemas.map(derivationSchema));
 			const map = new CborMap();
 			map.set(1, 0);
-			map.set(2, taggedValue(TAG_KEY_DERIVATION_CALL, cbor(call)));
-			if (request.origin !== void 0 && request.origin !== "") map.set(3, request.origin);
+			map.set(2, taggedValue(TAG_KEY_DERIVATION_CALL, cbor(params)));
+			setOptionalText(map, 3, call.origin);
 			return cbor(map);
 		},
 		decode(value) {
 			const map = closedIntMap(value, HARDWARE_CALL_KEYS);
-			if (uint(map.getOrThrow(1)) !== 0) throw CborError$1.outOfRange();
-			const schemas = expectArray(closedIntMap(expectTaggedContent(map.getOrThrow(2), TAG_KEY_DERIVATION_CALL), KEY_DERIVATION_CALL_KEYS).getOrThrow(1)).map((item) => {
-				const schema = closedIntMap(expectTaggedContent(item, TAG_KEY_DERIVATION_SCHEMA), KEY_DERIVATION_SCHEMA_KEYS);
-				const curve = uint(schema.getOrThrow(2));
-				if (curve !== 0 && curve !== 1) throw CborError$1.outOfRange();
-				if (uint(schema.getOrThrow(3)) !== 0) throw CborError$1.outOfRange();
-				return {
-					path: concreteKeypath(schema.getOrThrow(1)),
-					curve
-				};
-			});
+			if (expectUnsigned(map.getOrThrow(1)) !== 0) throw CborError$1.outOfRange();
+			validateTag(map.getOrThrow(2), [TAG_KEY_DERIVATION_CALL]);
+			const params = closedIntMap(extractTaggedContent(map.getOrThrow(2)), KEY_DERIVATION_CALL_KEYS);
 			const origin = optionalText(map, 3);
-			return _objectSpread2({ schemas }, origin === void 0 ? {} : { origin });
+			return Object.freeze(_objectSpread2({ schemas: expectArray(params.getOrThrow(1)).map(readDerivationSchema) }, origin === void 0 ? {} : { origin }));
 		}
 	};
-	var hardwareCall = (fields) => encodeRegistry({
-		schemas: [...fields.secp256k1.map((path) => ({
-			path: derivationPath(path, fields.fingerprint),
-			curve: 0
-		})), ...fields.ed25519.map((path) => ({
-			path: derivationPath(path, fields.fingerprint),
-			curve: 1
-		}))],
-		origin: fields.origin
-	}, qrHardwareCallCodec);
 	// packages/wallet-kernel/src/modules/signers/keystone/sync.ts
 	init_secp256k1();
 	init_objectSpread2();
@@ -53346,44 +54432,46 @@ zoo`.split("\n"));
 	function fail$2() {
 		throw new KernelError("integrity", "malformed crypto-multi-accounts sync");
 	}
-	/** The derivation path a keypath claims, or `undefined` when a non-index makes it unpinnable. */
-	var pathOf = (keyPath) => {
+	/**
+	* The derivation path a keypath claims, or `undefined` when a non-index component (wildcard, range,
+	* pair) makes it unpinnable.
+	*/
+	var pathOf = (keypath) => {
 		const components = [];
-		for (const component of keyPath.components) {
+		for (const component of keypath.components) {
 			if (component.kind !== "index" || component.index > 2147483647) return;
 			components.push(component.index + (component.hardened ? HARDENED$9 : 0));
 		}
 		return components;
 	};
-	/** A registry uint32 fingerprint as the four-byte big-endian form the kernel pins. */
 	/** Parses the QR response: exactly a `crypto-multi-accounts` UR or `integrity`. */
 	var parseSync = (response) => {
 		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") fail$2();
-		const accounts = decodeRegistry(response.ur.cbor, cryptoMultiAccountsCodec);
+		const accounts = decodeUr("crypto-multi-accounts", response.ur.cbor, cryptoMultiAccountsCodec);
 		const nodes = [];
 		const ed25519 = [];
 		const claimed = [];
-		for (const entry of accounts.keys) {
-			var _key$origin;
-			const { key } = entry;
-			const path = key.origin === void 0 ? void 0 : pathOf(key.origin);
-			const source = (_key$origin = key.origin) === null || _key$origin === void 0 ? void 0 : _key$origin.sourceFingerprint;
-			if (source !== void 0 && source !== accounts.masterFingerprint) fail$2();
+		for (const key of accounts.keys) {
+			const { origin } = key.key;
+			const path = origin === void 0 ? void 0 : pathOf(origin);
+			if ((origin === null || origin === void 0 ? void 0 : origin.sourceFingerprint) !== void 0 && origin.sourceFingerprint !== accounts.masterFingerprint) fail$2();
 			if (path === void 0) continue;
 			if (claimed.some((seen) => samePath(seen, path))) fail$2();
 			claimed.push(path);
 			if (SECP256K1_PATHS.some((wanted) => samePath(path, wanted))) {
-				if (entry.curve !== "secp256k1" || key.chainCode === void 0 || !secp256k1.utils.isValidPublicKey(key.keyData)) fail$2();
+				if (key.curve !== "secp256k1") fail$2();
+				const node = key.key;
+				if (node.chainCode === void 0 || node.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(node.keyData)) fail$2();
 				nodes.push(_objectSpread2({
 					path,
-					publicKey: new Uint8Array(key.keyData),
-					chainCode: new Uint8Array(key.chainCode)
-				}, key.parentFingerprint === void 0 ? {} : { parent: fingerprintBytes(key.parentFingerprint) }));
+					publicKey: new Uint8Array(node.keyData),
+					chainCode: new Uint8Array(node.chainCode)
+				}, node.parentFingerprint === void 0 ? {} : { parent: fingerprintBytes(node.parentFingerprint) }));
 			} else if (ED25519_PATHS.some((wanted) => samePath(path, wanted))) {
-				if (entry.curve !== "ed25519") fail$2();
+				if (key.curve !== "ed25519") fail$2();
 				ed25519.push({
 					path,
-					publicKey: new Uint8Array(key.keyData)
+					publicKey: new Uint8Array(key.key.keyData)
 				});
 			}
 		}
@@ -53443,37 +54531,43 @@ zoo`.split("\n"));
 			kind: "qr",
 			show: {
 				type: "qr-hardware-call",
-				cbor: hardwareCall(_objectSpread2(_objectSpread2({}, need), {}, {
-					fingerprint: pin.fingerprint,
+				cbor: encodeUr({
+					schemas: [...need.secp256k1.map((path) => ({
+						path: requestKeypath(path, pin.fingerprint),
+						curve: "secp256k1"
+					})), ...need.ed25519.map((path) => ({
+						path: requestKeypath(path, pin.fingerprint),
+						curve: "ed25519"
+					}))],
 					origin: ORIGIN$1
-				}))
+				}, qrHardwareCallCodec)
 			},
 			scan: ["crypto-multi-accounts"]
 		});
 		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") integrity$4();
-		const accounts = decodeRegistry(response.ur.cbor, cryptoMultiAccountsCodec);
+		const accounts = decodeUr("crypto-multi-accounts", response.ur.cbor, cryptoMultiAccountsCodec);
 		const nodes = [];
 		const ed25519 = [];
 		const answered = [];
-		for (const entry of accounts.keys) {
-			var _key$origin;
-			const { key } = entry;
-			const path = key.origin === void 0 ? void 0 : pathOf(key.origin);
-			const source = (_key$origin = key.origin) === null || _key$origin === void 0 ? void 0 : _key$origin.sourceFingerprint;
-			if (source !== void 0 && source !== accounts.masterFingerprint) integrity$4();
+		for (const key of accounts.keys) {
+			const { origin } = key.key;
+			const path = origin === void 0 ? void 0 : pathOf(origin);
+			if ((origin === null || origin === void 0 ? void 0 : origin.sourceFingerprint) !== void 0 && origin.sourceFingerprint !== accounts.masterFingerprint) integrity$4();
 			if (path === void 0) integrity$4();
 			if (need.secp256k1.some((wanted) => samePath(path, wanted))) {
-				if (entry.curve !== "secp256k1" || key.chainCode === void 0 || !secp256k1.utils.isValidPublicKey(key.keyData)) integrity$4();
+				if (key.curve !== "secp256k1") integrity$4();
+				const node = key.key;
+				if (node.chainCode === void 0 || node.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(node.keyData)) integrity$4();
 				nodes.push(_objectSpread2({
 					path,
-					publicKey: new Uint8Array(key.keyData),
-					chainCode: new Uint8Array(key.chainCode)
-				}, key.parentFingerprint === void 0 ? {} : { parent: fingerprintBytes(key.parentFingerprint) }));
+					publicKey: new Uint8Array(node.keyData),
+					chainCode: new Uint8Array(node.chainCode)
+				}, node.parentFingerprint === void 0 ? {} : { parent: fingerprintBytes(node.parentFingerprint) }));
 			} else if (need.ed25519.some((wanted) => samePath(path, wanted))) {
-				if (entry.curve !== "ed25519") integrity$4();
+				if (key.curve !== "ed25519") integrity$4();
 				ed25519.push({
 					path,
-					publicKey: new Uint8Array(key.keyData)
+					publicKey: new Uint8Array(key.key.keyData)
 				});
 			}
 			answered.push(path);
@@ -53539,18 +54633,22 @@ zoo`.split("\n"));
 		}
 	};
 	/**
-	* Sends the prepared UR and reads the device's answer: a `qr` response of exactly `type` whose CBOR
-	* decodes under `codec` — anything else, including a well-formed payload under the wrong type or a
-	* library rejection, is `integrity`.
+	* Sends the prepared UR and reads the device's answer: a `qr` response of exactly the answer
+	* codec's type decoded by that codec — anything else, including a well-formed payload under the
+	* wrong type, is `integrity`.
 	*/
-	var exchange = async (link, show, type, codec) => {
+	var exchange = async (link, request, codec) => {
+		const [type] = codecUrTypes(codec);
 		const response = await link.exchange({
 			kind: "qr",
-			show,
+			show: {
+				type: codecUrTypes(request.codec)[0],
+				cbor: encodeUr(request.value, request.codec)
+			},
 			scan: [type]
 		});
 		if (response.kind !== "qr" || response.ur.type !== type) integrity$3();
-		return decodeRegistry(response.ur.cbor, codec);
+		return decodeUr(type, response.ur.cbor, codec);
 	};
 	/** A signature answer must name the request id this exchange minted. */
 	var checkRequestId = (returned, sent) => {
@@ -53573,17 +54671,17 @@ zoo`.split("\n"));
 			signData = evmSigningPreimage(tx);
 			const { chainId: txChainId } = tx;
 			if (tx.type === "legacy") {
-				dataType = 1;
+				dataType = "transaction";
 				chainId = txChainId;
 			} else if (tx.type === "eip1559") {
-				dataType = 4;
+				dataType = "typedTransaction";
 				chainId = txChainId;
 			} else integrity$3();
 			expectDigest(keccak_256(signData), task);
 		} else if (stage.kind === "evm.typed-data") {
 			if (request.kind !== "evm.typed-data") integrity$3();
 			signData = utf8ToBytes$1(request.typedData);
-			dataType = 2;
+			dataType = "typedData";
 			expectDigest(planEvm(request, {
 				path: task.path,
 				publicKey: task.publicKey
@@ -53591,21 +54689,20 @@ zoo`.split("\n"));
 		} else {
 			if (request.kind !== stage.kind) integrity$3();
 			signData = request.kind === "evm.fiat24-session" ? utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline)) : request.message;
-			dataType = 3;
+			dataType = "personalMessage";
 			expectDigest(personalDigest(signData), task);
 		}
 		return compactSecp256k1(await exchange(link, {
-			type: "eth-sign-request",
-			cbor: ethSignRequest(_objectSpread2(_objectSpread2({
+			value: _objectSpread2(_objectSpread2({
 				requestId,
 				signData,
 				dataType
 			}, chainId === void 0 ? {} : { chainId }), {}, {
-				path: task.path,
-				fingerprint: context.pin.fingerprint,
+				derivationPath: requestKeypath(task.path, context.pin.fingerprint),
 				origin: ORIGIN
-			}))
-		}, "eth-signature", ethSignatureCodec), requestId, 65);
+			}),
+			codec: ethSignRequestCodec
+		}, ethSignatureCodec), requestId, 65);
 	};
 	var tron$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
@@ -53614,24 +54711,23 @@ zoo`.split("\n"));
 		let dataType;
 		if (request.kind === "tron.transaction" && stage.kind === "tron.transaction") {
 			signData = request.rawData;
-			dataType = 1;
+			dataType = "transaction";
 			expectDigest(sha256$1(signData), task);
 		} else if (request.kind === "tron.message" && stage.kind === "tron.message") {
 			signData = request.message;
-			dataType = 2;
+			dataType = "messageV2";
 			expectDigest(tronMessageDigest(signData), task);
 		} else integrity$3();
 		return compactSecp256k1(await exchange(link, {
-			type: "tron-sign-request",
-			cbor: tronSignRequest({
+			value: {
 				requestId,
 				signData,
 				dataType,
-				path: task.path,
-				fingerprint: context.pin.fingerprint,
+				derivationPath: requestKeypath(task.path, context.pin.fingerprint),
 				origin: ORIGIN
-			})
-		}, "tron-signature", tronSignatureCodec), requestId, 65);
+			},
+			codec: tronSignRequestCodec
+		}, tronSignatureCodec), requestId, 65);
 	};
 	var solana$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
@@ -53640,25 +54736,24 @@ zoo`.split("\n"));
 		if (!equalBytes$10(signData, task.message)) integrity$3();
 		const requestId = context.random(16);
 		const answer = await exchange(link, {
-			type: "sol-sign-request",
-			cbor: solSignRequest({
+			value: {
 				requestId,
 				signData,
-				signType: request.kind === "solana.transaction" ? 1 : 2,
-				path: task.path,
-				fingerprint: context.pin.fingerprint,
-				origin: ORIGIN
-			})
-		}, "sol-signature", solSignatureCodec);
+				derivationPath: requestKeypath(task.path, context.pin.fingerprint),
+				origin: ORIGIN,
+				signType: request.kind === "solana.transaction" ? "transaction" : "message"
+			},
+			codec: solSignRequestCodec
+		}, solSignatureCodec);
 		checkRequestId(answer.requestId, requestId);
 		if (answer.signature.length !== 64) integrity$3();
 		return answer.signature;
 	};
 	var bitcoinPsbt$1 = async (link, stage) => {
 		const signed = (await exchange(link, {
-			type: "crypto-psbt",
-			cbor: cryptoPsbt(stage.psbt)
-		}, "crypto-psbt", cryptoPsbtCodec)).bytes;
+			value: { bytes: stage.psbt },
+			codec: cryptoPsbtCodec
+		}, cryptoPsbtCodec)).bytes;
 		if (!samePsbtContent(stage.psbt, signed)) integrity$3();
 		let transaction;
 		try {
@@ -53697,15 +54792,14 @@ zoo`.split("\n"));
 		expectDigest(legacyMessageHash(request.message), task);
 		const requestId = context.random(16);
 		const answer = await exchange(link, {
-			type: "btc-sign-request",
-			cbor: btcSignRequest({
+			value: {
 				requestId,
 				signData,
-				paths: [task.path],
-				fingerprint: context.pin.fingerprint,
+				derivationPaths: [requestKeypath(task.path, context.pin.fingerprint)],
 				origin: ORIGIN
-			})
-		}, "btc-signature", btcSignatureCodec);
+			},
+			codec: btcSignRequestCodec
+		}, btcSignatureCodec);
 		checkRequestId(answer.requestId, requestId);
 		if (!equalBytes$10(answer.publicKey, task.publicKey)) wrongDevice$1();
 		if (answer.signature.length !== 65) integrity$3();
@@ -54494,7 +55588,7 @@ zoo`.split("\n"));
 		return 8 + 6 * (known.preimages.size + cost);
 	};
 	var invalid$9 = (message) => new LedgerError("invalid-response", message);
-	var concat$3 = (...parts) => {
+	var concat$4 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let offset = 0;
 		for (const part of parts) {
@@ -54519,7 +55613,7 @@ zoo`.split("\n"));
 		const count = varint(preimage.length);
 		const payload = Math.min(255 - count.length - 1, preimage.length);
 		for (let i = payload; i < preimage.length; i += 1) state.queue.push(preimage.subarray(i, i + 1));
-		return concat$3(count, Uint8Array.of(payload), preimage.subarray(0, payload));
+		return concat$4(count, Uint8Array.of(payload), preimage.subarray(0, payload));
 	};
 	var leafProofCommand = (state, request) => {
 		const reader = new Reader(request);
@@ -54534,7 +55628,7 @@ zoo`.split("\n"));
 		const proof = merkleProof(tree, index);
 		const answer = Math.min(Math.floor(221 / 32), proof.length);
 		for (const hash of proof.slice(answer)) state.queue.push(hash);
-		return concat$3(...tree.slice(index, index + 1), Uint8Array.of(proof.length), Uint8Array.of(answer), ...proof.slice(0, answer));
+		return concat$4(...tree.slice(index, index + 1), Uint8Array.of(proof.length), Uint8Array.of(answer), ...proof.slice(0, answer));
 	};
 	var leafIndexCommand = (state, request) => {
 		const reader = new Reader(request);
@@ -54545,7 +55639,7 @@ zoo`.split("\n"));
 		if (tree === void 0) throw invalid$9("GET_MERKLE_LEAF_INDEX asked for an unknown root");
 		if (state.queue.length > 0) throw invalid$9("GET_MERKLE_LEAF_INDEX arrived with a pending queue");
 		const index = tree.findIndex((hash) => equalBytes$3(hash, leaf));
-		return concat$3(Uint8Array.of(index === -1 ? 0 : 1), varint(Math.max(index, 0)));
+		return concat$4(Uint8Array.of(index === -1 ? 0 : 1), varint(Math.max(index, 0)));
 	};
 	var moreElementsCommand = (state, request) => {
 		if (request.length > 0) throw invalid$9("GET_MORE_ELEMENTS carries trailing bytes");
@@ -54553,7 +55647,7 @@ zoo`.split("\n"));
 		if (first === void 0) throw invalid$9("GET_MORE_ELEMENTS has an empty queue");
 		const count = Math.min(Math.floor(253 / first.length), state.queue.length);
 		const returned = state.queue.splice(0, count);
-		return concat$3(Uint8Array.of(count), Uint8Array.of(first.length), ...returned);
+		return concat$4(Uint8Array.of(count), Uint8Array.of(first.length), ...returned);
 	};
 	var dispatch$1 = (state, request) => {
 		const [code] = request;
@@ -54597,11 +55691,15 @@ zoo`.split("\n"));
 		}
 	}
 	// packages/wallet-kernel/src/modules/signers/ledger/protocol/bitcoin/psbt.ts
+	init_utils$2();
 	init_transaction();
 	var MAGIC = Uint8Array.of(112, 115, 98, 116, 255);
 	var KEY_INPUT_COUNT = 4;
 	var KEY_OUTPUT_COUNT = 5;
 	var KEY_VERSION = 251;
+	var OUT_BIP32_DERIVATION = 2;
+	var OUT_SCRIPT = 4;
+	var OUT_TAP_BIP32_DERIVATION = 7;
 	var invalid$8 = (message) => input(message);
 	var equalBytes$2 = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
 	var compareKeys = (a, b) => {
@@ -54712,6 +55810,54 @@ zoo`.split("\n"));
 			outputs: maps.slice(1 + inputCount).map(sortMap)
 		};
 	}
+	var concat$3 = (...parts) => {
+		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+		let offset = 0;
+		for (const part of parts) {
+			out.set(part, offset);
+			offset += part.length;
+		}
+		return out;
+	};
+	/** One map's wire form: `varint keyLen ‖ key ‖ varint valLen ‖ value` records, then `0x00`. */
+	var encodeMap$1 = (kvs) => concat$3(...kvs.map((kv) => concat$3(varint(kv.key.length), kv.key, varint(kv.value.length), kv.value)), Uint8Array.of(0));
+	/** The v2 wire form back: `MAGIC ‖ (map ‖ 0x00)×` — the inverse of what psbtV2Maps reads. */
+	var encodePsbtV2 = (maps) => concat$3(MAGIC, encodeMap$1(maps.global), ...maps.inputs.map(encodeMap$1), ...maps.outputs.map(encodeMap$1));
+	var derivationFingerprint = (kv) => {
+		if (kv.key[0] === OUT_BIP32_DERIVATION) return kv.value.subarray(0, 4);
+		if (kv.key[0] === OUT_TAP_BIP32_DERIVATION) {
+			const [count] = kv.value;
+			return count === void 0 || count >= 253 ? void 0 : kv.value.subarray(1 + 32 * count, 1 + 32 * count + 4);
+		}
+	};
+	/**
+	* The PSBT as the device should see it. app-bitcoin-new hides as change every output carrying a
+	* derivation under the wallet's fingerprint on the policy's change chain, with no index bound —
+	* while the kernel's own rule shows the unusual entries by address. Strip the wallet's derivation
+	* pairs from every output the kernel did not hide as change so the device displays it too; pairs
+	* under a foreign fingerprint stay. Output derivations are not signed, so the signatures the device
+	* yields are unaffected. `hiddenChange` holds the script hexes the kernel classified.
+	*/
+	var stripUnhiddenDerivations = (psbt, hiddenChange, fingerprint) => {
+		const maps = psbtV2Maps(psbt);
+		let stripped = false;
+		const outputs = maps.outputs.map((kvs) => {
+			var _kvs$find;
+			const script = (_kvs$find = kvs.find((kv) => kv.key.length === 1 && kv.key[0] === OUT_SCRIPT)) === null || _kvs$find === void 0 ? void 0 : _kvs$find.value;
+			if (script === void 0 || hiddenChange.has(bytesToHex$5(script))) return kvs;
+			const kept = kvs.filter((kv) => {
+				const at = derivationFingerprint(kv);
+				return at === void 0 || !equalBytes$2(at, fingerprint);
+			});
+			stripped || (stripped = kept.length !== kvs.length);
+			return kept;
+		});
+		return stripped ? encodePsbtV2({
+			global: maps.global,
+			inputs: maps.inputs,
+			outputs
+		}) : psbt;
+	};
 	/**
 	* `varint n ‖ merkleRoot(keys) ‖ merkleRoot(values)` — the 65–73 byte commitment of doc/merkle.md
 	* (MerkleMap.commitment). `kvs` must already be the sorted map psbtV2Maps returns.
@@ -55926,7 +57072,8 @@ zoo`.split("\n"));
 			keys: context.pin
 		}).extendedPublicKey(account, net.bip32);
 		const policy = defaultPolicy(template, context.pin.fingerprint, account, xpub);
-		const yielded = await call$4(async () => btcSignPsbt(exchange, stage.psbt, policy));
+		const psbt = stage.hiddenChange === void 0 ? stage.psbt : stripUnhiddenDerivations(stage.psbt, stage.hiddenChange, context.pin.fingerprint);
+		const yielded = await call$4(async () => btcSignPsbt(exchange, psbt, policy));
 		return stage.tasks.map((task, index) => {
 			const planned = stage.inputs[index];
 			if (planned === void 0) return integrity$2();
@@ -59747,7 +60894,7 @@ zoo`.split("\n"));
 			versions,
 			depth: node.path.length,
 			index: (_node$path$at = node.path.at(-1)) !== null && _node$path$at !== void 0 ? _node$path$at : 0,
-			parentFingerprint: fingerprintNumber$1(node.parent),
+			parentFingerprint: fingerprintNumber$2(node.parent),
 			chainCode: node.chainCode,
 			publicKey: node.publicKey
 		}).publicExtendedKey;
@@ -60379,16 +61526,19 @@ zoo`.split("\n"));
 		nodes: [...pin.nodes, ...fetched.nodes.filter((n) => !pin.nodes.some((have) => samePath(have.path, n.path)))],
 		ed25519: [...pin.ed25519, ...fetched.ed25519.filter((k) => !pin.ed25519.some((have) => samePath(have.path, k.path)))]
 	});
-	/** The bound for a prompt that gains one appended line: the line's cost comes off the top. */
+	/** The bound for a prompt that gains one prepended line: the line's cost comes off the top. */
 	var shrinkBound = (bound, line) => ({
 		title: bound.title,
 		lines: bound.lines - 1,
 		characters: bound.characters - codePoints(line) - 1
 	});
-	/** The verification prompt's device line, appended to the chain prompt's description (I2). */
+	/**
+	* The verification prompt's device line, ahead of every chain-prompt row — it is the most important
+	* instruction (blind is itself a warning; clear says where the real check happens).
+	*/
 	var devicePrompt = (base, locale, display, device) => ({
 		title: base.title,
-		description: `${base.description}\n${devicePromptLine(locale, display, device)}`
+		description: `${devicePromptLine(locale, display, device)}\n${base.description}`
 	});
 	function createSignersModule(drivers) {
 		const pins = /* @__PURE__ */ new Map();
@@ -70373,7 +71523,7 @@ zoo`.split("\n"));
 		if (liveApprovals(state, ctx, key).length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
 		const { summary, decoded } = decodeIntent(await sparkRuntime(state), params.account, params.intent);
 		const { keystore } = ctx.platform;
-		const shown = keystore === void 0 ? void 0 : boundPrompt(promptLocale(keystore.locale), sparkPrompt(promptLocale(keystore.locale), summary), PROMPT_BOUNDS[keystore.platform]);
+		const shown = keystore === void 0 ? void 0 : boundPrompt(promptLocale(keystore.locale), rowsOf(sparkPrompt(promptLocale(keystore.locale), summary)), PROMPT_BOUNDS[keystore.platform]);
 		if ((shown === null || shown === void 0 ? void 0 : shown.oversize) === true && !policyEnabled(ctx.image, dek, "blind-signing")) throw new KernelError("blind-signing-disabled", "blind signing is turned off for this vault");
 		const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
 		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => shown === void 0 ? sparkPrompt(locale, summary) : shown.prompt);
@@ -73642,6 +74792,21 @@ zoo`.split("\n"));
 			}
 		};
 	}
+	// packages/wallet-native/kernel/policy.ts
+	/**
+	* The native session policy: a 15-minute presence idle lock, same semantics as the Web — only
+	* presence-bearing methods count, so `sessions.sign` trading or background traffic cannot hold the
+	* vault open — under a 24-hour absolute session. The host still locks on backgrounding after
+	* autoLock.backgroundSeconds (W7).
+	*/
+	var NATIVE_POLICY = {
+		maxSessionMs: 864e5,
+		maxScryptLogN: 18,
+		idle: {
+			ms: 9e5,
+			activity: "presence"
+		}
+	};
 	// packages/wallet-native/kernel/secure-input.ts
 	var isValidUtf8 = (value) => {
 		try {
@@ -73654,12 +74819,15 @@ zoo`.split("\n"));
 	/**
 	* The hub's contract for `kind`, rechecked here: an access code is 1..64 printable-ASCII bytes, a
 	* short id is exactly 8 upper-case hex characters, a backup password is 1..1024 bytes of valid
-	* UTF-8. A platform that hands over out-of-shape bytes gets them wiped, not forwarded.
+	* UTF-8, a session approval is exactly 4 ASCII digits. A platform that hands over out-of-shape
+	* bytes gets them wiped, not forwarded.
 	*/
 	function validFor(kind, value) {
 		if (kind === "access-code") return value.length > 0 && value.length <= 64 && value.every((byte) => byte >= 32 && byte <= 126);
 		if (kind === "short-id") return value.length === 8 && value.every((byte) => byte >= 48 && byte <= 57 || byte >= 65 && byte <= 70);
-		return value.length > 0 && value.length <= 1024 && isValidUtf8(value);
+		if (kind === "backup-password") return value.length > 0 && value.length <= 1024 && isValidUtf8(value);
+		if (kind === "session-approval") return value.length === 4 && value.every((byte) => byte >= 48 && byte <= 57);
+		return false;
 	}
 	function bindNativeSecureInput(raw) {
 		return {
@@ -74089,10 +75257,7 @@ zoo`.split("\n"));
 			anchors: PRODUCTION_ANCHORS
 		},
 		secureInput: bindNativeSecureInput(__qntx.secureInput),
-		policy: {
-			maxSessionMs: 864e5,
-			maxScryptLogN: 18
-		},
+		policy: NATIVE_POLICY,
 		backends: {
 			nostr: bindNativeNostr(__qntx.backends.nostr),
 			spark: async () => spark

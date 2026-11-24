@@ -15,6 +15,8 @@ import {
   DEVICE_TAP_PROMPT,
   ECHO_APDUS,
   SELECT_AID_APDU,
+  SESSION_APPROVAL_CODE,
+  SESSION_APPROVAL_LABEL,
   SHORT_ID_LABEL,
   SHORT_ID_NORMALIZED,
   TAG_LOST_APDU,
@@ -108,20 +110,27 @@ const runDeviceTap = async (): Promise<void> => {
   );
 };
 
-const runInput = async (kind: string): Promise<void> => {
-  const isCode = kind === "access-code";
-  const result = await input.request(
-    isCode ? "access-code" : "short-id",
-    isCode ? ACCESS_CODE_LABEL : SHORT_ID_LABEL,
-  );
+const INPUT_KINDS = {
+  "access-code": { label: ACCESS_CODE_LABEL, expected: () => utf8Encode(ACCESS_CODE) },
+  "short-id": { label: SHORT_ID_LABEL, expected: () => utf8Encode(SHORT_ID_NORMALIZED) },
+  "session-approval": {
+    label: SESSION_APPROVAL_LABEL,
+    expected: () => utf8Encode(SESSION_APPROVAL_CODE),
+  },
+} as const;
+
+type InputKind = keyof typeof INPUT_KINDS;
+
+const runInput = async (kind: InputKind): Promise<void> => {
+  const { label, expected } = INPUT_KINDS[kind];
+  const result = await input.request(kind, label);
   if (!result.ok) {
     postJson({ input: result.failure, kind });
     return;
   }
-  const expected = utf8Encode(isCode ? ACCESS_CODE : SHORT_ID_NORMALIZED);
+  const want = expected();
   const value = result.value;
-  const match =
-    value.length === expected.length && value.every((byte, i) => byte === expected[i]);
+  const match = value.length === want.length && value.every((byte, i) => byte === want[i]);
   value.fill(0);
   postJson({ input: "ok", kind, match });
 };
@@ -130,8 +139,8 @@ let pendingInput: Promise<void> | undefined;
 
 const onMessage = (message: ArrayBuffer): void => {
   const cmd = JSON.parse(new TextDecoder().decode(message)) as Command;
-  if (cmd.cmd === "input" && (cmd.kind === "access-code" || cmd.kind === "short-id")) {
-    pendingInput = runInput(cmd.kind);
+  if (cmd.cmd === "input" && typeof cmd.kind === "string" && cmd.kind in INPUT_KINDS) {
+    pendingInput = runInput(cmd.kind as InputKind);
     return;
   }
   if (cmd.cmd === "cancel-input") {

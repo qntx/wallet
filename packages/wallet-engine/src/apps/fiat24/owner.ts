@@ -4,9 +4,8 @@
  * A locked vault maps to `unlock-required`; every other failure collapses to a fixed `unavailable`
  * through `fromSdk` — kernel error messages never reach the host.
  */
-import type { Wallet } from "@qntx/wallet";
 import { WalletError } from "@qntx/wallet";
-import { chains } from "@qntx/wallet/chains";
+import type { ChainsApi } from "@qntx/wallet/chains";
 
 import type { AppGroup } from "../spi.ts";
 import { Fiat24AppError, fromSdk } from "./errors.ts";
@@ -16,11 +15,11 @@ const isEvmAddress = (address: string): address is `0x${string}` =>
 
 export type Fiat24Owner = (group: AppGroup) => Promise<`0x${string}`>;
 
-export function createFiat24Owner(wallet: Wallet): Fiat24Owner {
+export function createFiat24Owner(account: ChainsApi["account"]): Fiat24Owner {
   return async (group) => {
     let resolved;
     try {
-      resolved = await chains(wallet).account({
+      resolved = await account({
         walletId: group.walletId,
         groupIndex: group.groupIndex,
         template: "evm.bip44",

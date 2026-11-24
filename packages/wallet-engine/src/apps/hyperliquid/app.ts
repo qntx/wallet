@@ -65,6 +65,7 @@ export function hyperliquid(
       });
       const provider = createHyperliquidProvider({
         wallet: context.wallet,
+        account: context.account,
         network,
         fetch: context.fetch,
         setTimer: context.setTimer,

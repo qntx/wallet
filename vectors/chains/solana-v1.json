@@ -95,11 +95,11 @@
    "prompt": {
     "en": {
      "title": "Confirm contract call",
-     "description": "Network: Solana\nProgram Dra1ner111111111111111111111111111111111111 receives this account's signature: it can move ALL SOL in this account\nProgram Dra1ner111111111111111111111111111111111111 can act with this account's authority on: So11111111111111111111111111111111111111112 (may be yours); 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR (may be yours)\nProgram calls the wallet cannot decode: Dra1ner111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL"
+     "description": "Program Dra1ner111111111111111111111111111111111111 receives this account's signature: it can move ALL SOL in this account\nProgram Dra1ner111111111111111111111111111111111111 can act with this account's authority on: So11111111111111111111111111111111111111112 (may be yours); 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR (may be yours)\nProgram calls the wallet cannot decode: Dra1ner111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nNetwork: Solana\nMax fee 0.000005 SOL"
     },
     "zh-Hans": {
      "title": "确认合约调用",
-     "description": "网络：Solana\n程序 Dra1ner111111111111111111111111111111111111 获得本账户的签名：可以转走本账户的全部 SOL\n程序 Dra1ner111111111111111111111111111111111111 可以以本账户的权限操作：So11111111111111111111111111111111111111112（可能属于你）；8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR（可能属于你）\n钱包无法解码的程序调用：Dra1ner111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL"
+     "description": "程序 Dra1ner111111111111111111111111111111111111 获得本账户的签名：可以转走本账户的全部 SOL\n程序 Dra1ner111111111111111111111111111111111111 可以以本账户的权限操作：So11111111111111111111111111111111111111112（可能属于你）；8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR（可能属于你）\n钱包无法解码的程序调用：Dra1ner111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n网络：Solana\n最高手续费 0.000005 SOL"
     }
    }
   },
@@ -114,11 +114,11 @@
    "prompt": {
     "en": {
      "title": "Confirm blind signing",
-     "description": "Network: Solana\nProgram Dra1ner111111111111111111111111111111111111 receives this account's signature and can reach accounts the wallet cannot list\nProgram calls the wallet cannot decode: Dra1ner111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL"
+     "description": "Program Dra1ner111111111111111111111111111111111111 receives this account's signature and can reach accounts the wallet cannot list\nProgram calls the wallet cannot decode: Dra1ner111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nNetwork: Solana\nMax fee 0.000005 SOL"
     },
     "zh-Hans": {
      "title": "确认盲签",
-     "description": "网络：Solana\n程序 Dra1ner111111111111111111111111111111111111 获得本账户的签名，并可操作钱包无法列出的账户\n钱包无法解码的程序调用：Dra1ner111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL"
+     "description": "程序 Dra1ner111111111111111111111111111111111111 获得本账户的签名，并可操作钱包无法列出的账户\n钱包无法解码的程序调用：Dra1ner111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n网络：Solana\n最高手续费 0.000005 SOL"
     }
    }
   },
@@ -171,11 +171,11 @@
    "prompt": {
     "en": {
      "title": "Confirm transfer",
-     "description": "Network: Solana\nProgram calls the wallet cannot decode: Data1111111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nSend 0.000001 SOL to 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\nMax fee 0.000005 SOL"
+     "description": "Program calls the wallet cannot decode: Data1111111111111111111111111111111111111111\nThese programs can move assets from the accounts in this transaction\nNetwork: Solana\nSend 0.000001 SOL to 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\nMax fee 0.000005 SOL"
     },
     "zh-Hans": {
      "title": "确认转账",
-     "description": "网络：Solana\n钱包无法解码的程序调用：Data1111111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n发送 0.000001 SOL 到 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\n最高手续费 0.000005 SOL"
+     "description": "钱包无法解码的程序调用：Data1111111111111111111111111111111111111111\n这些程序可以转移本交易涉及账户中的资产\n网络：Solana\n发送 0.000001 SOL 到 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR\n最高手续费 0.000005 SOL"
     }
    }
   }

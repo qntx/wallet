@@ -39,7 +39,7 @@ const i64be = (value: bigint): Uint8Array => {
   return out;
 };
 
-const u64be = (value: bigint): Uint8Array => {
+export const u64be = (value: bigint): Uint8Array => {
   const out = new Uint8Array(8);
   new DataView(out.buffer).setBigUint64(0, value);
   return out;
