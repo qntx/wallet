@@ -29,8 +29,10 @@ import { PROMPT_BOUNDS, promptFits, promptLocale, sessionApprovalCode } from "..
 import { wipe } from "../../secret/secret.ts";
 import type { StoredRecord, VaultImage } from "../../vault/store.ts";
 import {
+  EXTERNAL_CUSTODY_KINDS,
   findRecord,
   findSeedWallet,
+  findWalletRecord,
   openRecord,
   sealRecord,
   verifyFactor,
@@ -61,6 +63,17 @@ const drawSessionKey = (platform: KernelPlatform): Uint8Array => {
     wipe(draw);
   }
   throw new KernelError("integrity", "could not draw a valid session key");
+};
+
+/* External custody never owns a session: the scheme signs with a seed only the vault holds, so a
+   card or hardware owner refuses `unsupported` at the top — before the app-lock gate, before any
+   limits text is generated or bounded, before the session-approval input and before a factor
+   ceremony. Enabling the app lock cannot change a custody the scheme cannot serve. */
+const assertSeedCustody = (image: VaultImage, walletId: string): void => {
+  const record = findWalletRecord(image, walletId);
+  if (record !== undefined && EXTERNAL_CUSTODY_KINDS.has(record.kind)) {
+    throw new KernelError("unsupported", "this wallet is signed outside the vault");
+  }
 };
 
 /**
@@ -183,6 +196,7 @@ export function sessionInfo(record: StoredRecord): SessionInfo {
 export const createSession: (opened: Set<string>) => Handler<"sessions.create"> =
   (opened) => async (ctx, params, session) => {
     const { dek } = ctx.session.require(session);
+    assertSeedCustody(ctx.image, params.owner.walletId);
     const scheme = schemeOf(params.scheme);
     if (scheme === undefined) {
       throw new KernelError("unsupported", "unsupported session scheme");
@@ -362,6 +376,7 @@ export const openSession: (opened: Set<string>) => Handler<"sessions.open"> =
   (opened) => async (ctx, params, session) => {
     const { dek } = ctx.session.require(session);
     const { record, header } = sessionOf(ctx.image, params.address);
+    assertSeedCustody(ctx.image, header.walletId);
     const scheme = schemeOf(header.scheme);
     if (scheme === undefined) {
       throw new KernelError("unsupported", "this kernel does not support the session's scheme");

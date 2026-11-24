@@ -31,6 +31,7 @@ import type { KernelPlatform } from "../src/platform.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
+import { fakeSecureInput } from "./secure-input.ts";
 import { loadTranscript, replayExchange, transcriptSession } from "./onekey-emulator/index.ts";
 import { ACCOUNT_NODES, fakeDevice, masterFingerprint } from "./signers-fake.ts";
 import type { FakeDevice, FakeDeviceOptions } from "./signers-fake.ts";
@@ -832,11 +833,63 @@ describe("hardware wallet refusals", () => {
         },
         session,
       );
-    // App lock off: the metered scheme refuses before any factor verification.
-    expect(errCode(await create())).toBe("app-lock-required");
-    // App lock on: presence passes, but a hardware wallet owns no seed account.
-    ok(await h.call("vault.setAppLock", { enabled: true, verify: { kind: "hardware" } }, session));
     expect(errCode(await create())).toBe("unsupported");
+    /* External custody is refused as `unsupported` at the top of sessions.create — on either
+       platform, with the app lock off and on, with no session-approval input and no keystore
+       prompt ever shown: enabling the lock cannot help a wallet the scheme cannot sign for. */
+    for (const platform of ["ios", "android"] as const) {
+      const pf = fakeKeystore("en-US", platform);
+      const input = fakeSecureInput();
+      const pd = fakeDevice(SEED);
+      const ph = createHarness({
+        keystore: pf.keystore,
+        secureInput: input.secureInput,
+        drivers: { keystone: pd.driver, ledger: pd.driver, onekey: ONEKEY_DRIVER },
+      });
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one platform rig at a time
+      await ph.settle();
+      const pres = ok(
+        await ph.call("wallet.importMnemonic", {
+          mnemonic: utf8ToBytes(MNEMONIC),
+          factor: { kind: "device" },
+        }),
+      );
+      const psession = strField(pres, "session");
+      const phwId = await pairDevice(ph, psession);
+      const pcreate = async () =>
+        ph.call(
+          "sessions.create",
+          {
+            scheme: "hyperliquid-l1-agent",
+            owner: { walletId: phwId, groupIndex: 0 },
+            scope: "Mainnet",
+            name: "bot-1",
+            validUntil: ph.wallNow() + 86_400_000,
+            limits: {
+              notional: "1000000000",
+              maxLeverage: 100,
+              assets: [0, 1, 2, 3, 4, 5, 10107].map((asset) => ({ asset, size: "1000" })),
+            },
+            verify: { kind: "hardware" },
+          },
+          psession,
+        );
+      const callsOff = pf.calls.length;
+      expect(errCode(await pcreate())).toBe("unsupported");
+      expect(pf.calls).toHaveLength(callsOff);
+      expect(input.requests).toHaveLength(0);
+      ok(
+        await ph.call(
+          "vault.setAppLock",
+          { enabled: true, verify: { kind: "hardware" } },
+          psession,
+        ),
+      );
+      const callsOn = pf.calls.length;
+      expect(errCode(await pcreate())).toBe("unsupported");
+      expect(pf.calls).toHaveLength(callsOn);
+      expect(input.requests).toHaveLength(0);
+    }
   });
 
   it("chain.sign refuses a hardware account with device-required", async () => {
