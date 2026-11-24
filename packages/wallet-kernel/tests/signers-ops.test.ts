@@ -766,6 +766,77 @@ describe("hardware wallet refusals", () => {
     expect(fake.calls).toHaveLength(keystoreCalls);
   });
 
+  it("the app lock off still gates sign on presence, and a session scheme refuses a hardware wallet", async () => {
+    /* A keystore vault starts with the silent device factor (app lock off) plus the hardware
+       verifying row: signing still needs presence, and the device factor can never supply it. */
+    const fake = fakeKeystore();
+    const device = fakeDevice(SEED);
+    const h = createHarness({
+      keystore: fake.keystore,
+      drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER },
+    });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(res, "session");
+    const hwId = await pairDevice(h, session);
+    const request = normalizeEvm({
+      kind: "evm.personal-message",
+      network: EVM_NETWORK,
+      account: { kind: "hd", walletId: hwId, groupIndex: 0, template: "evm.bip44" },
+      message: utf8ToBytes("hello"),
+    });
+    // A device factor never verifies: the wire `verifier` validator rejects it, and the decode
+    // failure surfaces as `integrity` before the op even begins.
+    expect(
+      errCode(
+        await h.call(
+          "hardware.begin",
+          { op: { kind: "sign", request }, verify: { kind: "device" } },
+          session,
+        ),
+      ),
+    ).toBe("integrity");
+    const begun = ok(
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "sign", request }, verify: { kind: "hardware" } },
+        session,
+      ),
+    );
+    expect(strField(field(begun, "step"), "kind")).toBe("exchange");
+    ok(await h.call("hardware.cancel", { opId: strField(begun, "opId") }, session));
+    const create = () =>
+      h.call(
+        "sessions.create",
+        {
+          scheme: "hyperliquid-l1-agent",
+          owner: { walletId: hwId, groupIndex: 0 },
+          scope: "Mainnet",
+          name: "bot-1",
+          validUntil: h.wallNow() + 86_400_000,
+          limits: {
+            notional: "1000000000",
+            maxLeverage: 100,
+            assets: [0, 1, 2, 3, 4, 5, 10107],
+          },
+          verify: { kind: "hardware" },
+        },
+        session,
+      );
+    // App lock off: the metered scheme refuses before any factor verification.
+    expect(errCode(await create())).toBe("app-lock-required");
+    // App lock on: presence passes, but a hardware wallet owns no seed account.
+    ok(
+      await h.call("vault.setAppLock", { enabled: true, verify: { kind: "hardware" } }, session),
+    );
+    expect(errCode(await create())).toBe("unsupported");
+  });
+
   it("chain.sign refuses a hardware account with device-required", async () => {
     const { h, session } = await boot();
     const hwId = await pairDevice(h, session);

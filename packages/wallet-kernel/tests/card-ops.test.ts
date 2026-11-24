@@ -3165,6 +3165,58 @@ describe("card sign (fake card)", () => {
     ok(await r.h.call("card.cancel", { opId: relocked.opId }, r.session));
   });
 
+  it("the app lock off still gates sign on presence, and a session scheme refuses a card wallet", async () => {
+    /* keystoreRig's vault carries the silent device factor (app lock off) plus the hardware
+       verifying row: presence is still required for signing, but the device factor itself can
+       never stand in for it. */
+    const r = await keystoreRig();
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    const create = () =>
+      r.h.call(
+        "sessions.create",
+        {
+          scheme: "hyperliquid-l1-agent",
+          owner: { walletId, groupIndex: 0 },
+          scope: "Mainnet",
+          name: "bot-1",
+          validUntil: r.h.wallNow() + 86_400_000,
+          limits: {
+            notional: "1000000000",
+            maxLeverage: 100,
+            assets: [0, 1, 2, 3, 4, 5, 10107],
+          },
+          verify: HARDWARE,
+        },
+        r.session,
+      );
+    // A device factor never verifies: the wire `verifier` validator rejects it, and the decode
+    // failure surfaces as `integrity` before the op even begins.
+    await expect(
+      errCode(
+        r.h.call(
+          "card.begin",
+          { op: { kind: "sign", request: evmMsg(walletId) }, verify: DEVICE },
+          r.session,
+        ),
+      ),
+    ).resolves.toBe("integrity");
+    const begun = ok(
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "sign", request: evmMsg(walletId) }, verify: HARDWARE },
+        r.session,
+      ),
+    ) as { opId: string; step: Step };
+    expect(begun.step.kind).toBe("input");
+    ok(await r.h.call("card.cancel", { opId: begun.opId }, r.session));
+    // App lock off: the metered scheme refuses before any factor verification.
+    await expect(errCode(create())).resolves.toBe("app-lock-required");
+    // App lock on: presence passes, but a card wallet owns no seed account to meter against.
+    ok(await r.h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, r.session));
+    await expect(errCode(create())).resolves.toBe("unsupported");
+  });
+
   it("a sign prompt over the reader text cap is card-unsupported before any tap", async () => {
     const r = await rig();
     const card = await loadedCard();
