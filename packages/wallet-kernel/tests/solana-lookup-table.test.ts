@@ -7,7 +7,7 @@
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { ProtocolValue } from "@qntx/wallet/protocol";
+import type { DeviceRequest, DeviceResponse, ProtocolValue } from "@qntx/wallet/protocol";
 
 import { LEDGER_DRIVER } from "../src/modules/signers/ledger/driver.ts";
 import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
@@ -24,15 +24,12 @@ import {
   ok as okHex,
   scriptedLedger,
   SEED as LEDGER_SEED,
-  unhex,
   utf8Hex,
-  vectorCase,
   xpubAt,
 } from "./signers-ledger-fake.ts";
 import {
   LOOKUP_OTHER,
   LOOKUP_RECIPIENT,
-  LOOKUP_TABLE,
   lookupTransferRequest,
   SOLANA_NETWORK,
 } from "./solana-lookup-fixture.ts";
@@ -43,7 +40,6 @@ const DEVICE = { kind: "device" } as const;
 const HARDWARE = { kind: "hardware" } as const;
 const NETWORK = SOLANA_NETWORK;
 
-const TABLE = LOOKUP_TABLE;
 const ALICE = LOOKUP_RECIPIENT;
 const MALLORY = LOOKUP_OTHER;
 
@@ -168,13 +164,13 @@ const pumpDeviceOp = async (
   h: Harness,
   session: string,
   begin: ProtocolValue,
-  answer: (request: ProtocolValue) => Promise<ProtocolValue>,
+  answer: (request: DeviceRequest) => Promise<DeviceResponse>,
 ): Promise<ProtocolValue> => {
   const opId = str(begin, "opId");
   let step = field(begin, "step");
   for (let guard = 0; str(step, "kind") === "exchange" && guard < 64; guard += 1) {
     // oxlint-disable-next-line no-await-in-loop -- one device turn per step
-    const response = await answer(field(step, "request"));
+    const response = await answer(field(step, "request") as DeviceRequest);
     // oxlint-disable-next-line no-await-in-loop -- one device turn per step
     const next = await h.call("hardware.step", { opId, response }, session);
     if ("err" in next) {

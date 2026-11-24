@@ -5,14 +5,15 @@
  */
 import { base58 } from "@scure/base";
 
+import type { SignRequest } from "@qntx/wallet-chains";
 import { normalizeSolana } from "@qntx/wallet-chains/solana";
 import type { ChainTemplate } from "@qntx/wallet/protocol";
 
 export const SOLANA_NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
-export const LOOKUP_TABLE = base58.encode(new Uint8Array(32).fill(0x07));
-export const LOOKUP_RECIPIENT = base58.encode(new Uint8Array(32).fill(0xa1));
-export const LOOKUP_OTHER = base58.encode(new Uint8Array(32).fill(0xb2));
+export const LOOKUP_TABLE: string = base58.encode(new Uint8Array(32).fill(0x07));
+export const LOOKUP_RECIPIENT: string = base58.encode(new Uint8Array(32).fill(0xa1));
+export const LOOKUP_OTHER: string = base58.encode(new Uint8Array(32).fill(0xb2));
 
 /** A v0 transfer of 1 SOL: fee payer index 0 → `to` = lookup table 0, writable index 0. */
 export const altTransferMessage = (feePayer: Uint8Array): Uint8Array => {
@@ -51,7 +52,7 @@ export const lookupTransferRequest = (
   account: { kind: "hd"; walletId: string; groupIndex: number; template: ChainTemplate },
   own: string,
   recipient: string,
-) =>
+): SignRequest =>
   normalizeSolana(
     {
       kind: "solana.transaction",

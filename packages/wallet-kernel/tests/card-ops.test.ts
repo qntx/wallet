@@ -21,6 +21,7 @@ import {
   recoverEvmSigner,
 } from "@qntx/wallet-chains/evm";
 import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
+import type { ChainTemplate } from "@qntx/wallet/protocol";
 import type { WalletInfo } from "@qntx/wallet/types";
 
 import { walletIdOf } from "../src/derive/wallet-id.ts";
@@ -2295,8 +2296,8 @@ describe("card sign (fake card)", () => {
   const MASTER_FP = 0x73c5da0a;
   const HARDENED = 0x80000000;
 
-  const signAccount = (walletId: string, template: string) => ({
-    kind: "hd",
+  const signAccount = (walletId: string, template: ChainTemplate) => ({
+    kind: "hd" as const,
     walletId,
     groupIndex: 0,
     template,
