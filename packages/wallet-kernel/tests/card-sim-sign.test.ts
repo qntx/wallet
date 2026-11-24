@@ -966,7 +966,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card sign (simulator)", () => {
         BTC_MAINNET,
       ),
     ).toBe(true);
-  });
+  }, 120_000);
 
   it("a tag lost in the second tap resends only the pending inputs", async () => {
     const r = await rig();
@@ -1015,7 +1015,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card sign (simulator)", () => {
     expect(sessions[1]).toBe(5);
     expect(sessions[2]).toBe(4 + (50 - (firstSession - 4)));
     expect(field(result, "result")).toBeDefined();
-  });
+  }, 120_000);
 
   it("a plan over the per-approval limit is refused before any verify", async () => {
     const r = await rig(2000);

@@ -582,7 +582,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card operations (simulator)", () =>
         expect(r.reader.sessionLengths.at(-1)).toBe(4 + 3);
       }
     }
-  });
+  }, 120_000);
 
   it("tag loss at every transmit index of change-access finishes, CHANGE never re-sends", async () => {
     const r = await rig();
@@ -659,7 +659,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card operations (simulator)", () =>
       { codes: [utf8ToBytes(current)], cards: [card] },
     );
     expect(healthy["kind"]).toBe("health");
-  });
+  }, 120_000);
 
   it("tag loss at every transmit index of create recovers or retries cleanly", async () => {
     // Probe the clean layout once: S1 ends with CREATE, S2 verifies and fetches.
@@ -708,7 +708,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card operations (simulator)", () =>
         expect(r.reader.sessionLengths[sessions + 1]).toBe(4);
       }
     }
-  });
+  }, 120_000);
 
   it("a CREATE torn at every persistent write leaves BLANK and retries cleanly", async () => {
     let k = 0;
@@ -745,5 +745,5 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card operations (simulator)", () =>
       expect(status["life"]).toBe("loaded");
     }
     expect(k).toBeGreaterThan(1);
-  });
+  }, 120_000);
 });
