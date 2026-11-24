@@ -272,7 +272,7 @@ const prepareBitcoinPsbt = async (
   } catch (error) {
     mapChainError(error);
   }
-  return { prompt: intent, plan };
+  return { prompt: intent, plan: { ...plan, hiddenChange: own.change } };
 };
 
 /** The message plan: the declared change/index must derive this address, then normalize/plan. */

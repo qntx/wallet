@@ -61,8 +61,10 @@ import {
   qrHardwareCallCodec,
   requestKeypath,
 } from "../src/modules/signers/keystone/ur.ts";
+import { devicePromptLine } from "../src/modules/signers/prompt.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
+import { fakeKeystore } from "./keystore.ts";
 import { keystoneDevice } from "./signers-keystone-device.ts";
 import type { DeviceMutant } from "./signers-keystone-device.ts";
 
@@ -287,14 +289,16 @@ const signOnDevice = async (
   request: unknown,
   mutant: DeviceMutant = {},
   respond?: (request: DeviceRequest, device: DeviceMutant) => DeviceResponse,
+  verify: unknown = PASSKEY(),
 ): Promise<KernelResponse> => {
   const device = keystoneDevice(SEED, MFP, mutant);
   const begin = await h.call(
     "hardware.begin",
-    { op: { kind: "sign", request }, verify: PASSKEY() },
+    { op: { kind: "sign", request }, verify },
     session,
   );
   if ("err" in begin) {
+    console.error("BEGIN-ERR", JSON.stringify(begin.err));
     return begin;
   }
   const opId = strField(begin.ok, "opId");
@@ -311,6 +315,7 @@ const signOnDevice = async (
     // oxlint-disable-next-line no-await-in-loop -- the coroutine advances one turn per step
     const next = await h.call("hardware.step", { opId, response }, session);
     if ("err" in next) {
+      console.error("STEP-ERR", JSON.stringify(next.err));
       return next;
     }
     step = next.ok;
@@ -682,6 +687,107 @@ describe("keystone signing byte-identical to local signing", () => {
     const sw = await signLocal(h, session, local);
     const hw = ok(await signOnDevice(h, session, hardware));
     expect(hw).toStrictEqual(sw);
+  });
+
+  it("sends an unusual own-key output's psbt unchanged and keeps the clear line", async () => {
+    /* keystone3-firmware renders every output — an own-key output at a far change index is shown
+       with a badge, never hidden — so the driver sends the PSBT as-is and the `clear` device line
+       stays true while the prompt shows the unusual-path row. */
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(res, "session");
+    ok(
+      await h.call(
+        "vault.setBlindSigning",
+        { enabled: true, verify: { kind: "hardware" } },
+        session,
+      ),
+    );
+    const paired = ok(
+      await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+    );
+    const done = ok(
+      await h.call(
+        "hardware.step",
+        {
+          opId: strField(paired, "opId"),
+          response: {
+            kind: "qr",
+            ur: { type: "crypto-multi-accounts", cbor: hexToBytes(vectors.sync.cbor) },
+          },
+        },
+        session,
+      ),
+    );
+    const hwId = strField(field(field(done, "result"), "wallet"), "walletId");
+
+    // The signed input sits at /0/0: a change index past the bound is shown, not hidden.
+    const tx = Transaction.fromPSBT(psbt("btc.bip84"), {
+      allowUnknownInputs: true,
+      allowUnknownOutputs: true,
+    });
+    const near = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'/1/0");
+    const far = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'/1/5000");
+    const nearPub = near.publicKey;
+    const farPub = far.publicKey;
+    if (nearPub === null || farPub === null) {
+      throw new Error("no change keys");
+    }
+    tx.addOutput({
+      script: p2wpkh(nearPub).script,
+      amount: 5_000n,
+      bip32Derivation: [
+        [nearPub, { fingerprint: MFP_NUMBER, path: [HARDENED + 84, HARDENED, HARDENED, 1, 0] }],
+      ],
+    });
+    tx.addOutput({
+      script: p2wpkh(farPub).script,
+      amount: 4_000n,
+      bip32Derivation: [
+        [farPub, { fingerprint: MFP_NUMBER, path: [HARDENED + 84, HARDENED, HARDENED, 1, 5000] }],
+      ],
+    });
+    const request = normalizeBitcoin({ ...bip84Request(hwId), psbt: tx.toPSBT(0) });
+    if (request.kind !== "bitcoin.psbt") {
+      throw new Error("normalizeBitcoin changed the request kind");
+    }
+
+    const seen: DeviceRequest[] = [];
+    ok(
+      await signOnDevice(
+        h,
+        session,
+        request,
+        {},
+        (req) => {
+          seen.push(req);
+          return keystoneDevice(SEED, MFP).respond(req);
+        },
+        { kind: "hardware" },
+      ),
+    );
+
+    const shown = seen
+      .flatMap((r) => (r.kind === "qr" && r.show !== undefined ? [r.show] : []))
+      .find((ur) => ur.type === "crypto-psbt");
+    if (shown === undefined) {
+      throw new Error("the driver never showed a crypto-psbt request");
+    }
+    const sentPsbt = new Uint8Array(CryptoPSBT.fromCBOR(Buffer.from(shown.cbor)).getPSBT());
+    expect(sentPsbt).toStrictEqual(request.psbt);
+
+    const prompt = fake.calls
+      .flatMap((c) => (c.op === "open" && c.prompt !== undefined ? [c.prompt] : []))
+      .at(-1);
+    expect(prompt?.description.endsWith(devicePromptLine("en", "clear", "keystone"))).toBe(true);
+    expect(prompt?.description).toContain("m/84'/0'/0'/1/5000");
   });
 });
 

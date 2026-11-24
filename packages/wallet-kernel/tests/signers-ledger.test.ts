@@ -4,8 +4,11 @@
  * byte-for-byte so the driver is exercised over real device responses, and the display matrix and
  * blind-setting prechecks run without hardware.
  */
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
-import { p2pkh } from "@scure/btc-signer";
+import { HDKey } from "@scure/bip32";
+import { p2pkh, p2wpkh, Transaction } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { KeyPath, TaskKey } from "@qntx/wallet-chains";
@@ -22,6 +25,12 @@ import type { HardwarePin, SignContext } from "../src/modules/signers/driver.ts"
 import { LEDGER_DRIVER } from "../src/modules/signers/ledger/driver.ts";
 import { call, mapLedgerError } from "../src/modules/signers/ledger/errors.ts";
 import { LedgerError } from "../src/modules/signers/ledger/protocol/errors.ts";
+import { leafHash, merkleRoot } from "../src/modules/signers/ledger/protocol/bitcoin/merkle.ts";
+import {
+  mapCommitment,
+  psbtV2Maps,
+  stripUnhiddenDerivations,
+} from "../src/modules/signers/ledger/protocol/bitcoin/psbt.ts";
 import { edAt, nodeAt } from "./signers-fake.ts";
 import {
   caseSteps,
@@ -1091,6 +1100,73 @@ describe("ledger driver sign", () => {
     expect(out.map((bytes) => bytes.length)).toStrictEqual([64]);
     fake.done();
     expect(yields.map((y) => y.signature.startsWith("30"))).toStrictEqual([true]);
+  });
+
+  it("sends the device a PSBT without the far-change derivation the kernel shows", async () => {
+    /* app-bitcoin-new hides as change every output carrying the wallet's derivation on the policy's
+       change chain, with no index bound — while the kernel only hides discoverable change and
+       shows e.g. m/84'/0'/0'/1/5000 by address. The driver strips the wallet's derivation pairs
+       from every output the kernel did not hide, so the device displays the same rows. */
+    const fingerprint = HDKey.fromMasterSeed(SEED).fingerprint;
+    const pathAt = (index: number): KeyPath => [H + 84, H, H, 1, index];
+    const spendPub = BTC84_KEY.publicKey;
+    const changePub = publicKeyAt(pathAt(0));
+    const farPub = publicKeyAt(pathAt(5000));
+    const tx = new Transaction({
+      allowUnknownInputs: true,
+      allowUnknownOutputs: true,
+      disableScriptCheck: true,
+    });
+    tx.addInput({
+      txid: "11".repeat(32),
+      index: 0,
+      witnessUtxo: { script: p2wpkh(spendPub).script, amount: 10_000n },
+      bip32Derivation: [[spendPub, { fingerprint, path: [H + 84, H, H, 0, 0] }]],
+    });
+    tx.addOutput({
+      script: p2wpkh(changePub).script,
+      amount: 4_000n,
+      bip32Derivation: [[changePub, { fingerprint, path: pathAt(0) }]],
+    });
+    tx.addOutput({
+      script: p2wpkh(farPub).script,
+      amount: 3_000n,
+      bip32Derivation: [[farPub, { fingerprint, path: pathAt(5000) }]],
+    });
+    const psbt = tx.toPSBT(2);
+    const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
+      kind: "bitcoin.psbt",
+      network: "bip122:000000000019d6689c085ae165831e93",
+      account: hd("btc.bip84"),
+      psbt,
+      sign: [{ index: 0, template: "btc.bip84" }],
+    };
+    const hiddenChange = new Set([hex(p2wpkh(changePub).script)]);
+    const stage = { ...planBitcoinPsbt(psbt, [{ index: 0, key: BTC84_KEY }]), hiddenChange };
+    const DER = secp256k1.Signature.fromBytes(
+      secp256k1.sign(sha256(new Uint8Array(32).fill(7)), new Uint8Array(32).fill(9)),
+    ).toBytes("der");
+    const yielded = Uint8Array.of(0, spendPub.length, ...spendPub, ...DER, 0x01);
+    const fake = scriptedLedger("bitcoin", [
+      { response: `10${hex(yielded)}e000` },
+      { response: "9000" },
+    ]);
+    const out = await LEDGER_DRIVER.sign(fake.link, signContext(request, stage));
+    expect(out).toHaveLength(1);
+    fake.done();
+    /* The SIGN_PSBT APDU (sent[0] is the app-version exchange) commits the stripped output maps —
+       the hidden change keeps its pairs, the far change carries none. */
+    const strippedRoot = merkleRoot(
+      psbtV2Maps(stripUnhiddenDerivations(psbt, hiddenChange, FINGERPRINT)).outputs.map((map) =>
+        leafHash(mapCommitment(map)),
+      ),
+    );
+    const rawRoot = merkleRoot(
+      psbtV2Maps(psbt).outputs.map((map) => leafHash(mapCommitment(map))),
+    );
+    const signPsbtApdu = fake.sent[1] ?? "";
+    expect(signPsbtApdu).toContain(hex(strippedRoot));
+    expect(signPsbtApdu).not.toContain(hex(rawRoot));
   });
 
   it("refuses a mismatched solana stage message", async () => {

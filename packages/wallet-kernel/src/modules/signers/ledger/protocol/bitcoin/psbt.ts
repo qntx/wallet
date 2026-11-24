@@ -8,6 +8,7 @@
  * pairs survive untouched. The map-commitment layout mirrors the reference MerkelizedPsbt/MerkleMap
  * (bitcoin_client_js/src/lib/{merkelizedPsbt,merkleMap}.ts).
  */
+import { bytesToHex } from "@noble/hashes/utils.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 
 import { input, Reader, varint } from "../bytes.ts";
@@ -27,6 +28,10 @@ const MAGIC = Uint8Array.of(0x70, 0x73, 0x62, 0x74, 0xff); // "psbt\xff"
 const KEY_INPUT_COUNT = 0x04;
 const KEY_OUTPUT_COUNT = 0x05;
 const KEY_VERSION = 0xfb;
+// BIP-174/371 output keys: PSBT_OUT_BIP32_DERIVATION / PSBT_OUT_SCRIPT / PSBT_OUT_TAP_BIP32_DERIVATION.
+const OUT_BIP32_DERIVATION = 0x02;
+const OUT_SCRIPT = 0x04;
+const OUT_TAP_BIP32_DERIVATION = 0x07;
 
 const invalid = (message: string): LedgerError => input(message);
 
@@ -160,6 +165,73 @@ export function psbtV2Maps(psbt: Uint8Array): PsbtV2Maps {
     outputs: maps.slice(1 + inputCount).map(sortMap),
   };
 }
+
+const concat = (...parts: ReadonlyArray<Uint8Array>): Uint8Array => {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+};
+
+/** One map's wire form: `varint keyLen ‖ key ‖ varint valLen ‖ value` records, then `0x00`. */
+const encodeMap = (kvs: ReadonlyArray<KeyValue>): Uint8Array =>
+  concat(
+    ...kvs.map((kv) => concat(varint(kv.key.length), kv.key, varint(kv.value.length), kv.value)),
+    Uint8Array.of(0),
+  );
+
+/** The v2 wire form back: `MAGIC ‖ (map ‖ 0x00)×` — the inverse of what psbtV2Maps reads. */
+export const encodePsbtV2 = (maps: PsbtV2Maps): Uint8Array =>
+  concat(MAGIC, encodeMap(maps.global), ...maps.inputs.map(encodeMap), ...maps.outputs.map(encodeMap));
+
+const derivationFingerprint = (kv: KeyValue): Uint8Array | undefined => {
+  if (kv.key[0] === OUT_BIP32_DERIVATION) {
+    return kv.value.subarray(0, 4);
+  }
+  if (kv.key[0] === OUT_TAP_BIP32_DERIVATION) {
+    // BIP-371: `varint leafHashCount ‖ leafHashes ‖ fingerprint ‖ path`; real counts fit one byte.
+    const [count] = kv.value;
+    return count === undefined || count >= 0xfd
+      ? undefined
+      : kv.value.subarray(1 + 32 * count, 1 + 32 * count + 4);
+  }
+  return undefined;
+};
+
+/**
+ * The PSBT as the device should see it. app-bitcoin-new hides as change every output carrying a
+ * derivation under the wallet's fingerprint on the policy's change chain, with no index bound —
+ * while the kernel's own rule shows the unusual entries by address. Strip the wallet's derivation
+ * pairs from every output the kernel did not hide as change so the device displays it too; pairs
+ * under a foreign fingerprint stay. Output derivations are not signed, so the signatures the
+ * device yields are unaffected. `hiddenChange` holds the script hexes the kernel classified.
+ */
+export const stripUnhiddenDerivations = (
+  psbt: Uint8Array,
+  hiddenChange: ReadonlySet<string>,
+  fingerprint: Uint8Array,
+): Uint8Array => {
+  const maps = psbtV2Maps(psbt);
+  let stripped = false;
+  const outputs = maps.outputs.map((kvs) => {
+    const script = kvs.find((kv) => kv.key.length === 1 && kv.key[0] === OUT_SCRIPT)?.value;
+    if (script === undefined || hiddenChange.has(bytesToHex(script))) {
+      return kvs;
+    }
+    const kept = kvs.filter((kv) => {
+      const at = derivationFingerprint(kv);
+      return at === undefined || !equalBytes(at, fingerprint);
+    });
+    stripped ||= kept.length !== kvs.length;
+    return kept;
+  });
+  return stripped
+    ? encodePsbtV2({ global: maps.global, inputs: maps.inputs, outputs })
+    : psbt;
+};
 
 /**
  * `varint n ‖ merkleRoot(keys) ‖ merkleRoot(values)` — the 65–73 byte commitment of doc/merkle.md

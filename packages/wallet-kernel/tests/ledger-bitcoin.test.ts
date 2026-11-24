@@ -12,7 +12,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { createBase58check } from "@scure/base";
 import { HDKey } from "@scure/bip32";
-import { p2wpkh, Transaction } from "@scure/btc-signer";
+import { p2tr, p2wpkh, Transaction } from "@scure/btc-signer";
 import { taprootTweakPubkey } from "@scure/btc-signer/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -43,7 +43,11 @@ import {
   serializePolicy,
 } from "../src/modules/signers/ledger/protocol/bitcoin/policy.ts";
 import type { BitcoinPolicy } from "../src/modules/signers/ledger/protocol/bitcoin/policy.ts";
-import { mapCommitment, psbtV2Maps } from "../src/modules/signers/ledger/protocol/bitcoin/psbt.ts";
+import {
+  mapCommitment,
+  psbtV2Maps,
+  stripUnhiddenDerivations,
+} from "../src/modules/signers/ledger/protocol/bitcoin/psbt.ts";
 import type { KeyValue } from "../src/modules/signers/ledger/protocol/bitcoin/psbt.ts";
 import { varint } from "../src/modules/signers/ledger/protocol/bytes.ts";
 import { LedgerError } from "../src/modules/signers/ledger/protocol/errors.ts";
@@ -327,6 +331,80 @@ describe("ledger bitcoin psbt maps", () => {
     for (const bad of cases) {
       expect(code(() => psbtV2Maps(bad))).toBe("invalid-input");
     }
+  });
+});
+
+describe("ledger bitcoin output derivation stripping", () => {
+  const pubOf = (path: string): Uint8Array => {
+    const pub = ROOT.derive(path).publicKey;
+    if (!(pub instanceof Uint8Array)) {
+      throw new TypeError("derive failed");
+    }
+    return pub;
+  };
+  const CHANGE_PUB = pubOf("m/84'/0'/0'/1/0");
+  const FAR_PUB = pubOf("m/84'/0'/0'/1/5000");
+  const TAP_PUB = pubOf("m/86'/0'/0'/1/5000").subarray(1);
+  const FOREIGN_PUB = pubOf("m/84'/0'/0'/0/9");
+  const fp = ROOT.fingerprint;
+  /* Outputs: a discoverable change the kernel hides, a far change and a taproot derivation it
+     shows, and a foreign-fingerprint pair that is not ours to strip. */
+  const PSBT = ((): Uint8Array => {
+    const tx = new Transaction({
+      allowUnknownInputs: true,
+      allowUnknownOutputs: true,
+      disableScriptCheck: true,
+    });
+    tx.addInput({ txid: "11".repeat(32), index: 0 });
+    tx.addOutput({
+      script: p2wpkh(CHANGE_PUB).script,
+      amount: 4_000n,
+      bip32Derivation: [[CHANGE_PUB, { fingerprint: fp, path: [H + 84, H, H, 1, 0] }]],
+    });
+    tx.addOutput({
+      script: p2wpkh(FAR_PUB).script,
+      amount: 3_000n,
+      bip32Derivation: [[FAR_PUB, { fingerprint: fp, path: [H + 84, H, H, 1, 5000] }]],
+    });
+    tx.addOutput({
+      script: p2tr(TAP_PUB).script,
+      amount: 2_000n,
+      tapBip32Derivation: [
+        [TAP_PUB, { hashes: [], der: { fingerprint: fp, path: [H + 86, H, H, 1, 5000] } }],
+      ],
+    });
+    tx.addOutput({
+      script: p2wpkh(FOREIGN_PUB).script,
+      amount: 1_000n,
+      bip32Derivation: [[FOREIGN_PUB, { fingerprint: 0xde_ad_be_ef, path: [H + 84, H, H, 0, 9] }]],
+    });
+    return tx.toPSBT(2);
+  })();
+  const HIDDEN = new Set([bytesToHex(p2wpkh(CHANGE_PUB).script)]);
+  const typesOf = (kvs: ReadonlyArray<KeyValue> | undefined): number[] =>
+    (kvs ?? []).map((kv) => kv.key[0] ?? -1);
+
+  it("strips the wallet's pairs from shown outputs and keeps them on hidden change", () => {
+    const maps = psbtV2Maps(stripUnhiddenDerivations(PSBT, HIDDEN, FPR));
+    expect(typesOf(maps.outputs[0])).toContain(0x02); // hidden change keeps its derivation
+    expect(typesOf(maps.outputs[1])).not.toContain(0x02); // far change: shown by address
+    expect(typesOf(maps.outputs[2])).not.toContain(0x07); // taproot derivation: stripped too
+    expect(typesOf(maps.outputs[3])).toContain(0x02); // foreign fingerprint stays
+    // the output scripts themselves are untouched
+    for (const kvs of maps.outputs) {
+      expect(kvs.some((kv) => kv.key[0] === 0x04)).toBe(true);
+    }
+  });
+
+  it("is a byte-identical no-op when every own pair sits on hidden change", () => {
+    const allHidden = new Set([
+      bytesToHex(p2wpkh(CHANGE_PUB).script),
+      bytesToHex(p2wpkh(FAR_PUB).script),
+      bytesToHex(p2tr(TAP_PUB).script),
+    ]);
+    expect(stripUnhiddenDerivations(PSBT, allHidden, FPR)).toBe(PSBT);
+    const shown = psbtV2Maps(stripUnhiddenDerivations(PSBT, HIDDEN, FPR));
+    expect(shown.outputs).toHaveLength(4);
   });
 });
 
