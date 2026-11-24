@@ -36,5 +36,8 @@ jobs:
       - run: bun scripts/ledger/build-apps.ts
       - run: bun scripts/ledger/speculos.ts
       - run: bun run --cwd packages/wallet-kernel test:speculos
+      # The engine suite resolves @qntx/wallet(-worker) dist — build them first, same as ci.yml.
+      - run: bunx vp run @qntx/wallet-engine#build
+      - run: bun run --cwd packages/wallet-engine test:speculos
       - if: always()
         run: bun scripts/ledger/speculos.ts stop
