@@ -132,9 +132,9 @@ export class SignersController extends Controller<SignersState> {
     if (info.custody !== "hardware") {
       throw new WalletError("unsupported", "only a paired device can verify an address on screen");
     }
-    const result = await this.trackDevice(
-      info,
-      "verify-address",
+    // Resolved before begin: an unsupported device refuses without publishing an activity.
+    const io = this.deviceIo(info);
+    const result = await this.trackDevice(info, "verify-address", () =>
       hardware(this.options.wallet).start(
         {
           kind: "verify-address",
@@ -144,7 +144,7 @@ export class SignersController extends Controller<SignersState> {
           network: params.network,
           ...(params.index === undefined ? {} : { index: params.index }),
         },
-        { io: this.deviceIo(info) },
+        { io },
       ),
     );
     if (result.kind !== "verify-address") {
@@ -171,6 +171,8 @@ export class SignersController extends Controller<SignersState> {
     if (first === undefined) {
       throw new WalletError("unavailable", `no enabled ${params.family} network to derive on`);
     }
+    // Resolved before begin: an unsupported device refuses without publishing an activity.
+    const io = info.custody === "card" ? undefined : this.deviceIo(info);
     const id = this.begin(info, "accounts");
     const accounts: ChainAccount[] = [];
     try {
@@ -182,15 +184,12 @@ export class SignersController extends Controller<SignersState> {
           templates,
           network,
         };
-        const op = async () =>
-          info.custody === "card"
+        const run = async () =>
+          io === undefined
             ? this.runCard(id, card(this.options.wallet).start(request, {}))
-            : this.runDevice(
-                id,
-                hardware(this.options.wallet).start(request, { io: this.deviceIo(info) }),
-              );
+            : this.runDevice(id, hardware(this.options.wallet).start(request, { io }));
         // oxlint-disable-next-line eslint/no-await-in-loop -- device ops are strictly sequential
-        const result = await op();
+        const result = await run();
         if (result.kind !== "accounts") {
           throw new WalletError("integrity", "device answered a different operation");
         }
@@ -215,9 +214,7 @@ export class SignersController extends Controller<SignersState> {
     if (info === undefined) {
       throw new WalletError("not-found", "wallet does not exist");
     }
-    const result = await this.trackCard(
-      info,
-      "sign",
+    const result = await this.trackCard(info, "sign", () =>
       card(this.options.wallet).start({ kind: "sign", request }, { verify }),
     );
     if (result.kind !== "sign") {
@@ -231,13 +228,10 @@ export class SignersController extends Controller<SignersState> {
     request: Parameters<ChainApis["sign"]>[0]["request"],
     verify: VerifyFactor,
   ): Promise<ChainSignResult> {
-    const result = await this.trackDevice(
-      info,
-      "sign",
-      hardware(this.options.wallet).start(
-        { kind: "sign", request },
-        { io: this.deviceIo(info), verify },
-      ),
+    // Resolved before begin: an unsupported device refuses without publishing an activity.
+    const io = this.deviceIo(info);
+    const result = await this.trackDevice(info, "sign", () =>
+      hardware(this.options.wallet).start({ kind: "sign", request }, { io, verify }),
     );
     if (result.kind !== "sign") {
       throw new WalletError("integrity", "device answered a different operation");
@@ -300,15 +294,16 @@ export class SignersController extends Controller<SignersState> {
     this.activeTask = undefined;
   }
 
-  /** Card activities publish every facade step; hardware publishes exchanges only. */
+  /* The task starts inside the thunk so `begin`'s conflict check lands BEFORE any facade start —
+     a second start would otherwise cancel the task already running under the user's finger. */
   private async trackCard<R>(
     info: WalletInfo,
     operation: SignerActivity["operation"],
-    task: SignerTask<CardStep, R>,
+    start: () => SignerTask<CardStep, R>,
   ): Promise<R> {
     const id = this.begin(info, operation);
     try {
-      return await this.runCard(id, task);
+      return await this.runCard(id, start());
     } finally {
       this.end(id);
     }
@@ -317,11 +312,11 @@ export class SignersController extends Controller<SignersState> {
   private async trackDevice<R>(
     info: WalletInfo,
     operation: SignerActivity["operation"],
-    task: SignerTask<HardwareStep, R>,
+    start: () => SignerTask<HardwareStep, R>,
   ): Promise<R> {
     const id = this.begin(info, operation);
     try {
-      return await this.runDevice(id, task);
+      return await this.runDevice(id, start());
     } finally {
       this.end(id);
     }

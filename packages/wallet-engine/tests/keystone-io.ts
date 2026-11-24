@@ -30,7 +30,7 @@ const parseTypedData = (raw: Uint8Array): Parameters<typeof hashTypedData>[0] =>
  * the key the request's keypath names from the abandon seed, signs the digest the firmware would,
  * and answers `eth-signature`. `compare` requests (verify-address) always match.
  */
-export const keystoneIo = (hang?: () => Promise<never>): DeviceIo => {
+export const keystoneIo = (hang?: () => Promise<unknown>): DeviceIo => {
   const root = HDKey.fromMasterSeed(SEED);
   return {
     exchange: async (request: DeviceRequest): Promise<DeviceResponse> => {
@@ -41,7 +41,8 @@ export const keystoneIo = (hang?: () => Promise<never>): DeviceIo => {
         throw new Error("unexpected device request");
       }
       if (hang !== undefined) {
-        return hang();
+        // Held exchanges still complete (or fail) the way firmware would once the user acts.
+        await hang();
       }
       const decoded = ethSignRequestCodec.decode(decodeCbor(request.show.cbor));
       let node = root;
