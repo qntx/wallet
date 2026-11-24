@@ -29,6 +29,7 @@ packages/wallet-chains/.hermes-chains.iife.js
 packages/wallet-kernel/.hermes-card.iife.js
 packages/wallet-kernel/.hermes-keystone.iife.js
 packages/wallet-engine/.hermes-fiat24.iife.js
+packages/wallet-engine/.hermes-qr.iife.js
 
 # Android CMake/Gradle build outputs
 **/.cxx/
