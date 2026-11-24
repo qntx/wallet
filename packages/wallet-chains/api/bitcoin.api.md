@@ -175,6 +175,7 @@ export type BitcoinPathTail = {
 export type BitcoinPsbtPlan = {
     readonly kind: "bitcoin.psbt";
     readonly psbt: Uint8Array;
+    readonly hiddenChange?: ReadonlySet<string>;
     readonly inputs: ReadonlyArray<{
         readonly index: number;
         readonly publicKey: Uint8Array;
