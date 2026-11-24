@@ -17,26 +17,19 @@ import { integrity } from "../channel.ts";
 import { internalsOf } from "../internal.ts";
 import type { WalletInternals } from "../internal.ts";
 import type {
-  ChainTemplate,
-  ChainAccount,
-  ChainSignRequest,
-  ChainSignResult,
-} from "../protocol/chains.ts";
-import type {
-  DeviceDisplay,
-  DeviceRequest,
-  DeviceResponse,
-  HardwareDevice,
+  DeviceIo,
   HardwareOperation,
   HardwareResult,
+  HardwareStep,
   QrPayload,
 } from "../protocol/hardware.ts";
 import type { ResultOf } from "../protocol/index.ts";
 import { WalletError } from "../types.ts";
-import type { VerifyFactor, Wallet, WalletInfo } from "../types.ts";
+import type { SignerTask, VerifyFactor, Wallet } from "../types.ts";
 
 export type {
   DeviceDisplay,
+  DeviceIo,
   DeviceRequest,
   DeviceResponse,
   HardwareDevice,
@@ -46,153 +39,177 @@ export type {
   QrPayload,
 } from "../protocol/hardware.ts";
 
-/** The host transport for one device operation. */
-export type DeviceIo = {
-  /**
-   * Carries one kernel-produced exchange: show `request.show` / send `request.data`, then resolve
-   * with what the device answered. Rejecting aborts the operation.
-   */
-  readonly exchange: (
-    request: DeviceRequest,
-    context: { readonly device: HardwareDevice; readonly display?: DeviceDisplay },
-  ) => Promise<DeviceResponse>;
-  /** Aborted before or while waiting → the operation is cancelled and the call rejects `cancelled`. */
-  readonly signal?: AbortSignal;
-};
+export { ledgerBleExchange, ledgerHidExchange, ledgerIo } from "./ledger.ts";
+export { oneKeyBleExchange, oneKeyHidExchange, oneKeyIo } from "./onekey.ts";
+export type { BlePort, HidPort } from "./ports.ts";
+
+/** One running device operation: observe every exchange (and the verified `done`), cancel ends it. */
+export type HardwareTask = SignerTask<HardwareStep, HardwareResult>;
 
 export type HardwareApi = {
-  /** Pair a device from its sync answer; resolves with the new hardware wallet. */
-  readonly pair: (device: HardwareDevice, io: DeviceIo) => Promise<WalletInfo>;
-  /** Fetch public keys for paths the device has not yet exported (per-group account nodes). */
-  readonly accounts: (
-    params: {
-      readonly walletId: string;
-      readonly groupIndex: number;
-      readonly templates: ReadonlyArray<ChainTemplate>;
-      readonly network: string;
-    },
-    io: DeviceIo,
-  ) => Promise<ReadonlyArray<ChainAccount>>;
   /**
-   * Sign `request` on the device: the same user verification and the same result checks as
-   * `chains().sign` — a signature that does not verify for the account fails `integrity`.
+   * Runs one device operation — pair, accounts, sign or verify-address — begin, then fold each
+   * `exchange` step through `options.io.exchange` until `done`. A second `start` cancels the
+   * running task. A `sign` result is verified (`chains().sign` rules) before `done` is emitted; a
+   * rejected exchange or a kernel error cancels the operation best-effort and rejects `result`;
+   * `cancel` answers `cancelled`.
    */
-  readonly sign: (
-    params: { readonly request: ChainSignRequest; readonly verify: VerifyFactor },
-    io: DeviceIo,
-  ) => Promise<ChainSignResult>;
-  /** Derive or compare an address on the device; `method` reports which happened. */
-  readonly verifyAddress: (
-    params: {
-      readonly walletId: string;
-      readonly groupIndex: number;
-      readonly template: ChainTemplate;
-      readonly network: string;
-      readonly index?: number;
-    },
-    io: DeviceIo,
-  ) => Promise<{ readonly address: string; readonly method: "device" | "compare" }>;
+  readonly start: (
+    op: HardwareOperation,
+    options: { readonly io: DeviceIo; readonly verify?: VerifyFactor },
+  ) => HardwareTask;
 };
 
-const cancelled = (): WalletError =>
+const cancelledError = (): WalletError =>
   new WalletError("cancelled", "the device operation was aborted");
 
-/** A live read of the abort flag — a plain property access would let TS narrow it to `false`. */
-const aborted = (io: DeviceIo): boolean => io.signal?.aborted === true;
-
-/**
- * Runs one operation: begin, then fold `exchange` steps through `io.exchange` until `done`. Any
- * failure — abort, a rejected `io.exchange`, a kernel error — cancels the operation best-effort
- * before propagating, so no kernel operation outlives the call.
- */
-const run = async (
+function run(
   internals: WalletInternals,
   op: HardwareOperation,
-  io: DeviceIo,
-  verify?: VerifyFactor,
-): Promise<HardwareResult> => {
+  options: { readonly io: DeviceIo; readonly verify?: VerifyFactor },
+): HardwareTask {
+  const { io, verify } = options;
+  const listeners = new Set<(step: HardwareStep) => void>();
+  /** The most recent step reported — a late observe starts from it. */
+  let current: HardwareStep | undefined;
   let opId: string | undefined;
-  try {
-    if (aborted(io)) {
-      throw cancelled();
+  /** `cancel` raced `hardware.begin` — fire `hardware.cancel` the moment the opId lands. */
+  let cancelRequested = false;
+  /** A live read — a plain property access lets TS and the linter treat the flag as constant. */
+  const isCancelled = (): boolean => cancelRequested;
+  let ackCancel: (() => void) | undefined;
+  let cancelAck: Promise<void> | undefined;
+  let done = false;
+  let resolveResult!: (result: HardwareResult) => void;
+  let rejectResult!: (error: unknown) => void;
+  const result = new Promise<HardwareResult>((resolve, reject) => {
+    resolveResult = resolve;
+    rejectResult = reject;
+  });
+  // The task owns `result`'s rejection — it must never surface as unhandled.
+  void (async (): Promise<void> => {
+    try {
+      await result;
+    } catch {
+      // `result` itself surfaces the WalletError to whoever awaited it.
     }
-    const beginCall = async (): Promise<ResultOf<"hardware.begin">> =>
-      internals.secretCall("hardware.begin", async (wire) => ({
-        op,
-        ...(verify === undefined
-          ? {}
-          : { verify: await internals.resolveVerifyFactor(verify, wire) }),
-      }));
-    // The user verification lives inside begin; the QR exchange that follows is not part of it.
-    const begin =
-      verify === undefined ? await beginCall() : await internals.withVerifying(beginCall);
-    ({ opId } = begin);
-    let { step } = begin;
-    while (step.kind === "exchange") {
-      if (aborted(io)) {
-        throw cancelled();
-      }
-      // oxlint-disable-next-line eslint/no-await-in-loop -- one exchange at a time by design.
-      const response = await io.exchange(step.request, {
-        device: step.device,
-        ...(step.display === undefined ? {} : { display: step.display }),
+  })();
+
+  const emit = (step: HardwareStep): void => {
+    current = step;
+    for (const listener of listeners) {
+      listener(step);
+    }
+  };
+
+  const cancel = async (): Promise<void> => {
+    if (done) {
+      return;
+    }
+    cancelRequested = true;
+    if (opId === undefined) {
+      // `hardware.begin` has not answered: remember and resolve once the deferred cancel lands.
+      cancelAck ??= new Promise<void>((resolve) => {
+        ackCancel = resolve;
       });
-      if (aborted(io)) {
-        throw cancelled();
+      await cancelAck;
+      return;
+    }
+    await internals.call("hardware.cancel", { opId }).catch(() => undefined);
+  };
+
+  void (async (): Promise<void> => {
+    try {
+      const beginCall = async (): Promise<ResultOf<"hardware.begin">> =>
+        internals.secretCall("hardware.begin", async (wire) => ({
+          op,
+          ...(verify === undefined
+            ? {}
+            : { verify: await internals.resolveVerifyFactor(verify, wire) }),
+        }));
+      // The user verification lives inside begin; the exchanges that follow are not part of it.
+      const begin =
+        verify === undefined ? await beginCall() : await internals.withVerifying(beginCall);
+      ({ opId } = begin);
+      if (cancelRequested) {
+        await internals.call("hardware.cancel", { opId }).catch(() => undefined);
+        emit(begin.step);
+        done = true;
+        rejectResult(cancelledError());
+        ackCancel?.();
+        return;
       }
-      // oxlint-disable-next-line eslint/no-await-in-loop -- one exchange at a time by design.
-      step = await internals.call("hardware.step", { opId, response });
+      let { step } = begin;
+      while (step.kind === "exchange" && !isCancelled()) {
+        emit(step);
+        // oxlint-disable-next-line eslint/no-await-in-loop -- one exchange at a time by design.
+        const response = await io.exchange(step.request, {
+          device: step.device,
+          ...(step.display === undefined ? {} : { display: step.display }),
+        });
+        if (isCancelled()) {
+          throw cancelledError();
+        }
+        // oxlint-disable-next-line eslint/no-await-in-loop -- one exchange at a time by design.
+        step = await internals.call("hardware.step", { opId, response });
+      }
+      if (isCancelled()) {
+        throw cancelledError();
+      }
+      if (step.kind !== "done") {
+        throw integrity("hardware.step answered a step kind the wire does not define");
+      }
+      const outcome = step.result;
+      if (outcome.kind !== op.kind) {
+        throw integrity("operation result does not match the operation");
+      }
+      if (outcome.kind === "sign" && op.kind === "sign") {
+        // The `done` step goes out only once the signature verifies — an observer never sees a
+        // forged signature reported as done.
+        await checkSignResult(internals, op.request, outcome.result);
+      }
+      emit(step);
+      done = true;
+      resolveResult(outcome);
+    } catch (error) {
+      done = true;
+      ackCancel?.();
+      if (opId !== undefined) {
+        await internals.call("hardware.cancel", { opId }).catch(() => undefined);
+      }
+      if (cancelRequested) {
+        rejectResult(cancelledError());
+      } else {
+        // A host transport failure or a kernel error propagates as itself; only the channel's own
+        // validation failures are WalletErrors already.
+        rejectResult(error);
+      }
     }
-    if (step.result.kind !== op.kind) {
-      throw integrity("operation result does not match the operation");
-    }
-    return step.result;
-  } catch (error) {
-    if (opId !== undefined) {
-      await internals.call("hardware.cancel", { opId }).catch(() => undefined);
-    }
-    if (aborted(io) && !(error instanceof WalletError && error.code === "cancelled")) {
-      throw cancelled();
-    }
-    throw error;
-  }
-};
+  })();
+
+  return {
+    observe: (listener) => {
+      listeners.add(listener);
+      if (current !== undefined) {
+        listener(current);
+      }
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    cancel,
+    result,
+  };
+}
 
 function createHardwareApi(internals: WalletInternals): HardwareApi {
+  /** The running task, if any — a second `start` cancels it (the kernel does the same). */
+  let active: HardwareTask | undefined;
   return {
-    pair: async (device, io) => {
-      const result = await run(internals, { kind: "pair", device }, io);
-      if (result.kind !== "pair") {
-        throw integrity("operation result does not match the operation");
-      }
-      return result.wallet;
-    },
-    accounts: async (params, io) => {
-      const result = await run(internals, { kind: "accounts", ...params }, io);
-      if (result.kind !== "accounts") {
-        throw integrity("operation result does not match the operation");
-      }
-      return result.accounts;
-    },
-    sign: async (params, io) => {
-      const result = await run(
-        internals,
-        { kind: "sign", request: params.request },
-        io,
-        params.verify,
-      );
-      if (result.kind !== "sign") {
-        throw integrity("operation result does not match the operation");
-      }
-      await checkSignResult(internals, params.request, result.result);
-      return result.result;
-    },
-    verifyAddress: async (params, io) => {
-      const result = await run(internals, { kind: "verify-address", ...params }, io);
-      if (result.kind !== "verify-address") {
-        throw integrity("operation result does not match the operation");
-      }
-      return { address: result.address, method: result.method };
+    start: (op, options) => {
+      void active?.cancel();
+      active = run(internals, op, options);
+      return active;
     },
   };
 }

@@ -1070,7 +1070,8 @@ type Options = {
     readonly now: () => number;
     readonly logger: EngineLogger;
     readonly pollMs?: number;
-    readonly chains?: ReturnType<typeof chains>;
+    readonly chains: ReturnType<typeof chains>;
+    readonly isWalletIncomplete?: (walletId: string) => boolean;
 };
 
 // @public

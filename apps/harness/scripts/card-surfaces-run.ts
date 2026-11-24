@@ -33,6 +33,7 @@ const sh = (
 ): string => {
   const result = spawnSync(cmd, args, {
     encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
     timeout: options.timeout ?? 60_000,
     cwd: options.cwd,
     env: process.env,
@@ -122,7 +123,14 @@ const android = (): void => {
     ]);
     sh(adb, ["logcat", "-c"]);
     sh(adb, ["shell", "am", "start", "-n", "org.qntx.wallet.harness/.MainActivity"]);
-    const pid = sh(adb, ["shell", "pidof", "org.qntx.wallet.harness"]).trim();
+    // The process takes a moment to appear after am start returns.
+    let pid = "";
+    for (let attempt = 0; attempt < 20 && pid === ""; attempt += 1) {
+      pid = sh(adb, ["shell", "pidof", "org.qntx.wallet.harness"]).trim();
+      if (pid === "") {
+        spawnSync("sleep", ["0.5"]);
+      }
+    }
     if (pid === "") {
       throw new Error("app did not start");
     }
@@ -132,7 +140,8 @@ const android = (): void => {
     logcat.proc = spawn(adb, ["logcat", "--pid", pid], { stdio: "pipe" });
     logcat.proc.stdout?.on("data", (chunk: Buffer) => appendFileSync(outFile, chunk));
 
-    waitFor("CARD_STEP type-decoy", 120_000);
+    // Cold Metro bundling of the whole graph can take minutes.
+    waitFor("CARD_STEP type-decoy", 300_000);
     typeText(DECOY);
     waitFor("CARD_STEP type-code", 60_000);
     // The field arms on the kernel's request; let the keyboard settle.
@@ -182,7 +191,8 @@ const ios = (): void => {
       log("fb-idb not installed — typing steps cannot be automated");
     }
     sh("xcrun", ["simctl", "launch", udid, "org.qntx.wallet.harness.ios"]);
-    waitFor("CARD_STEP type-decoy", 120_000);
+    // Cold Metro bundling of the whole graph can take minutes.
+    waitFor("CARD_STEP type-decoy", 300_000);
     if (typing) {
       // idb ui key takes a HID usage id: 40 is Return.
       spawnSync("idb", ["ui", "text", DECOY]);

@@ -33,6 +33,18 @@ export type DeviceResponse =
 
 export type DeviceDisplay = "clear" | "blind";
 
+/** The host transport for one device operation. */
+export type DeviceIo = {
+  /**
+   * Carries one kernel-produced exchange: show `request.show` / send `request.data`, then resolve
+   * with what the device answered. Rejecting aborts the operation.
+   */
+  readonly exchange: (
+    request: DeviceRequest,
+    context: { readonly device: HardwareDevice; readonly display?: DeviceDisplay },
+  ) => Promise<DeviceResponse>;
+};
+
 export type HardwareOperation =
   | { readonly kind: "pair"; readonly device: HardwareDevice }
   | {

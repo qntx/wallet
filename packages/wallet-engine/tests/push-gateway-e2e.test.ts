@@ -246,7 +246,9 @@ describe("push engine end to end", () => {
     const reconciled: NotificationEvent[] = [];
     const tree: AccountTreeState = {
       status: "ready",
-      wallets: [{ walletId: "w1", updatedAt: 0 }],
+      wallets: [
+        { walletId: "w1", updatedAt: 0, custody: "vault" as const, state: "ready" as const },
+      ],
       groups: {},
       selected: null,
       totals: {},

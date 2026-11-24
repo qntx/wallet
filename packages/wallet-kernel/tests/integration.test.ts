@@ -305,6 +305,14 @@ async function deriveKey(
   return strField(res, "publicKey");
 }
 
+describe("kernel entry", () => {
+  it("startKernel passes its ES6 block-scoping check under correct closure semantics", () => {
+    // startKernel throws on a runtime that shares loop-scoped bindings (Hermes compiled
+    // without -Xes6-block-scoping); Node's correct semantics must not trip it.
+    expect(() => createHarness()).not.toThrow();
+  });
+});
+
 describe("create / import", () => {
   it("creates a passkey wallet matching the vector and opens a session", async () => {
     const h = createHarness();

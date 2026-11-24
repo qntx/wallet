@@ -103,6 +103,7 @@ function boot(pbkdf2: Pbkdf2): Kernel {
     anchor: createMemoryAnchor(),
     keystore: undefined,
     passkey: undefined,
+    card: undefined,
     secureInput: bindNativeSecureInput(__qntx.secureInput),
     policy: { idle: { ms: 15 * 60_000, activity: "presence" }, maxSessionMs: 12 * 3_600_000, maxScryptLogN: 18 },
     backends: {

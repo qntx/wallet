@@ -2,8 +2,8 @@
 import type { DisplayIntent, KeyPath } from "@qntx/wallet-chains";
 import { decodeEvm, evmAddressFromPublicKey, normalizeEvm, planEvm } from "@qntx/wallet-chains/evm";
 
+import type { PublicMaterial } from "../../derive/material.ts";
 import { KernelError } from "../../errors.ts";
-import type { PublicMaterial } from "./keys.ts";
 import type { EvmRequest, Prepared } from "./shared.ts";
 import { deepEqual, mapChainError } from "./shared.ts";
 

@@ -15,16 +15,12 @@ import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import type { KeyPath } from "@qntx/wallet-chains";
 import type { DeviceDisplay, DeviceRequest, DeviceResponse } from "@qntx/wallet/protocol";
 
+import type { PinnedEd25519, PinnedNode } from "../src/derive/pinned.ts";
+import { pathToString } from "../src/derive/pinned.ts";
 import type { KernelError } from "../src/errors.ts";
 import { seedKeys } from "../src/modules/chains/keys.ts";
 import { taskSignerFor } from "../src/modules/chains/run.ts";
-import type {
-  DeviceLink,
-  Driver,
-  PinnedEd25519,
-  PinnedNode,
-} from "../src/modules/signers/driver.ts";
-import { pathToString } from "../src/modules/signers/record.ts";
+import type { DeviceLink, Driver } from "../src/modules/signers/driver.ts";
 
 const HARDENED = 0x80000000;
 

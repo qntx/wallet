@@ -7,7 +7,7 @@ import type { Wallet } from "@qntx/wallet";
 import { ChainError } from "@qntx/wallet-chains";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import type { decodeEvm } from "@qntx/wallet-chains/evm";
-import { chains } from "@qntx/wallet/chains";
+import type { chains } from "@qntx/wallet/chains";
 
 import type { EvmFeeTier } from "../chains/evm.ts";
 import type { SolanaFeeTier } from "../chains/solana.ts";
@@ -488,8 +488,10 @@ export type Options = {
   readonly now: () => number;
   readonly logger: EngineLogger;
   readonly pollMs?: number;
-  /** Test seam — defaults to the wallet's real chains proxy. */
-  readonly chains?: ReturnType<typeof chains>;
+  /** The engine's signing path — `signers.apis`: custody dispatch lives in the signers module. */
+  readonly chains: ReturnType<typeof chains>;
+  /** A card wallet still waiting on a member card holds no groups — its addresses do not exist. */
+  readonly isWalletIncomplete?: (walletId: string) => boolean;
 };
 
 export type RouteContext = {
@@ -587,7 +589,7 @@ export const accountAddressOf = async (
     }
     return key.address;
   }
-  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const apis = ctx.options.chains;
   return accountAddress(
     await apis.account({
       walletId: account.walletId,

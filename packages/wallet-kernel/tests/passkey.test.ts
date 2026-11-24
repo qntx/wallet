@@ -49,7 +49,7 @@ describe("passkey wallet vector", () => {
     const privateKey = nostrKeyAt(master, vector.index);
     expect(bytesToHex(privateKey)).toBe(vector.privateKey);
     expect(bytesToHex(schnorr.getPublicKey(privateKey))).toBe(vector.publicKey);
-    expect(walletIdOf(master)).toBe(vector.walletId);
+    expect(walletIdOf(master.publicKey!)).toBe(vector.walletId);
     master.wipePrivateData();
   });
 });

@@ -8,15 +8,21 @@ import { BackupFactorInput } from '@qntx/wallet';
 import { BackupHeader } from '@qntx/wallet';
 import { BackupInfo } from '@qntx/wallet';
 import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
+import { CardStep } from '@qntx/wallet/card';
+import { ChainAccount } from '@qntx/wallet/protocol';
+import { ChainAccountsParams } from '@qntx/wallet/protocol';
 import { ChainError } from '@qntx/wallet-chains';
 import { chains } from '@qntx/wallet/chains';
 import { ChainsApi } from '@qntx/wallet/chains';
 import { ChainTemplate } from '@qntx/wallet/protocol';
 import { CooperativeExitResult } from '@qntx/spark';
 import { decodeEvm } from '@qntx/wallet-chains/evm';
+import { DeviceIo } from '@qntx/wallet/hardware';
 import { DisplayExcerpt } from '@qntx/wallet-chains';
 import { Event as Event_2 } from '@qntx/nostr';
 import { Filter } from '@qntx/nostr';
+import { HardwareDevice } from '@qntx/wallet';
+import { HardwareStep } from '@qntx/wallet/hardware';
 import { InitialFactor } from '@qntx/wallet';
 import { KeyInfo } from '@qntx/wallet';
 import { KeysApi } from '@qntx/wallet';
@@ -68,6 +74,7 @@ export type AccountGroup = {
     readonly index: number;
     readonly used?: Readonly<Record<string, boolean>>;
     readonly errors?: Readonly<Record<string, string>>;
+    readonly signer?: Readonly<Record<string, "device-required">>;
     readonly name?: string;
     readonly hidden: boolean;
     readonly boundPubkey?: string;
@@ -103,6 +110,7 @@ export class AccountTreeController extends Controller<AccountTreeState> {
         changed: boolean;
         localNewer: boolean;
     };
+    recheckFamily(walletId: string, groupIndex: number, family: string): Promise<void>;
     reconcile(): void;
     refreshTotals(): Promise<void>;
     // (undocumented)
@@ -126,13 +134,8 @@ type AccountTreeControllerOptions = {
     readonly spark: SparkController;
     readonly sparkNetwork: SparkNetwork;
     readonly networks?: DiscoveryNetworks;
-    readonly chains?: {
-        readonly account: (params: {
-            readonly walletId: string;
-            readonly groupIndex: number;
-            readonly template: string;
-            readonly network: string;
-        }) => Promise<{
+    readonly chains: {
+        readonly account: (params: ChainAccountsParams) => Promise<{
             readonly address?: string;
             readonly xpub?: string;
         }>;
@@ -158,6 +161,8 @@ export type AccountTreeState = {
         readonly walletId: string;
         readonly name?: string;
         readonly updatedAt: number;
+        readonly custody: WalletInfo["custody"];
+        readonly state: "ready" | "incomplete";
     }>;
     readonly groups: Readonly<Record<string, ReadonlyArray<AccountGroup>>>;
     readonly selected: {
@@ -1238,6 +1243,7 @@ export type EngineOptions = {
     readonly metaSync?: MetaSyncConfig;
     readonly pushKeys?: PushKeyStore;
     readonly sparkApis?: SparkControllerOptions["spark"];
+    readonly deviceIo?: (device: HardwareDevice) => DeviceIo;
 };
 
 // @public (undocumented)
@@ -2085,7 +2091,8 @@ type Options = {
     readonly now: () => number;
     readonly logger: EngineLogger;
     readonly pollMs?: number;
-    readonly chains?: ReturnType<typeof chains>;
+    readonly chains: ReturnType<typeof chains>;
+    readonly isWalletIncomplete?: (walletId: string) => boolean;
 };
 
 // @public (undocumented)
@@ -2679,6 +2686,72 @@ export type SetTimer = (ms: number, fn: () => unknown) => () => void;
 export type SignatureResult = {
     readonly kind: "evm.personal-message" | "evm.fiat24-session" | "evm.typed-data" | "tron.message" | "tron.typed-data";
     readonly signature: Uint8Array;
+};
+
+// @public
+export type SignerActivity = {
+    readonly id: string;
+    readonly walletId: string;
+    readonly custody: "card" | "hardware";
+    readonly operation: "sign" | "accounts" | "verify-address";
+    readonly step: {
+        readonly kind: "starting";
+    } | {
+        readonly kind: "card";
+        readonly step: CardStep;
+    } | {
+        readonly kind: "device";
+        readonly step: Extract<HardwareStep, {
+            kind: "exchange";
+        }>;
+    };
+};
+
+// @public (undocumented)
+export type SignerFamily = "evm" | "solana" | "bitcoin" | "tron";
+
+// @public
+export class SignersController extends Controller<SignersState> {
+    constructor(options: SignersControllerOptions);
+    readonly apis: ChainApis;
+    cancel(): Promise<void>;
+    // (undocumented)
+    destroy(): Promise<void>;
+    fetchAccounts(params: {
+        readonly walletId: string;
+        readonly groupIndex: number;
+        readonly family: SignerFamily;
+    }): Promise<ReadonlyArray<ChainAccount>>;
+    // (undocumented)
+    init(): Promise<void>;
+    lock(): void;
+    verifyAddress(params: {
+        readonly walletId: string;
+        readonly groupIndex: number;
+        readonly template: ChainTemplate;
+        readonly network: string;
+        readonly index?: number;
+    }): Promise<{
+        readonly address: string;
+        readonly method: string;
+    }>;
+}
+
+// @public (undocumented)
+type SignersControllerOptions = {
+    readonly wallet: Wallet;
+    readonly deviceIo?: ((device: HardwareDevice) => DeviceIo) | undefined;
+    readonly recheck: (walletId: string, groupIndex: number, family: SignerFamily) => Promise<void>;
+    readonly networks?: {
+        readonly enabled: (family: SignerFamily) => ReadonlyArray<string>;
+    };
+    readonly random: (length: number) => Uint8Array;
+    readonly logger: EngineLogger;
+};
+
+// @public (undocumented)
+export type SignersState = {
+    readonly active: SignerActivity | null;
 };
 
 // @public
@@ -3885,6 +3958,7 @@ export type WalletEngine = {
     };
     readonly transactions: HostController<TransactionController, "txById" | "nextReceiveAddress" | "setUtxosFrozen" | "frozenUtxos">;
     readonly requests: HostController<RequestController, "prepare" | "approve" | "reject" | "outcome" | "signLog" | "clearSignLog">;
+    readonly signers: HostController<SignersController, "cancel" | "verifyAddress" | "fetchAccounts">;
     readonly addressBook: HostController<AddressBookController, "add" | "rename" | "setNote" | "remove">;
     readonly history: HostController<HistoryController, "load" | "loadMore">;
     readonly approvals: HostController<ApprovalsController, "load" | "unload" | "refresh" | "setVisible" | "revoke" | "revokeBatch"> & {

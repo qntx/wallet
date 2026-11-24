@@ -21,11 +21,12 @@ export type FactorInfo =
   | { readonly kind: "password"; readonly id: string; readonly createdAt: number };
 
 /** The hardware-signing device families the kernel knows; each signer lane adds a literal. */
-export const HARDWARE_DEVICES = ["keystone"] as const;
+export const HARDWARE_DEVICES = ["keystone", "ledger", "onekey"] as const;
 
 /** A hardware-signing device family the kernel knows; each signer adds a literal. */
 export type HardwareDevice = (typeof HARDWARE_DEVICES)[number];
 
+/** A wallet whose seed lives sealed in this vault (an `entropy` record). */
 export type VaultWalletInfo = {
   readonly custody: "vault";
   readonly walletId: string;
@@ -50,7 +51,10 @@ export type VaultWalletInfo = {
 export type HardwareWalletInfo = {
   readonly custody: "hardware";
   readonly walletId: string;
-  readonly device: HardwareDevice;
+  /** The paired device kind — possibly one this build does not know (see `supported`). */
+  readonly device: string;
+  /** Whether this build ships a driver for `device`; unknown kinds stay inert. */
+  readonly supported: boolean;
   /** The device master fingerprint as 8 lowercase hex chars. */
   readonly fingerprint: string;
   readonly model?: string;
@@ -58,7 +62,33 @@ export type HardwareWalletInfo = {
   readonly createdAt: number;
 };
 
-export type WalletInfo = VaultWalletInfo | HardwareWalletInfo;
+/**
+ * A wallet whose seed lives only on qntx cards (a `card-wallet` record): the vault caches the
+ * public material a tap fetched, never the seed. `members` is the card count k (1–3).
+ */
+export type CardWalletInfo = {
+  readonly custody: "card";
+  readonly walletId: string;
+  readonly origin: "card-generated" | "card-imported";
+  readonly backup: "cards";
+  readonly createdAt: number;
+  readonly members: number;
+  readonly cards: ReadonlyArray<CardInfo>;
+};
+
+export type CardInfo = {
+  /** `ID(A)`: 32 lowercase hex identifying the card's identity key. */
+  readonly cardId: string;
+  /** `XXXX-XXXX` display id — only when the record pins this card's certificate. */
+  readonly shortId?: string;
+  /** `pending` never finished its IMPORT; `unknown` this kernel has not checked it yet. */
+  readonly state: "ready" | "unknown" | "pending";
+  /** Remaining access-code tries this kernel recorded (0..10). */
+  readonly tries?: number;
+  readonly verifiedAt?: number;
+};
+
+export type WalletInfo = VaultWalletInfo | HardwareWalletInfo | CardWalletInfo;
 
 export type NostrKeyRef = {
   readonly kind: "derived";
@@ -94,6 +124,13 @@ export type WalletErrorCode =
   | "integrity"
   | "blind-signing-disabled"
   | "approval-required"
+  | "card-not-genuine"
+  | "card-id-mismatch"
+  | "card-erased"
+  | "card-locked"
+  | "card-tampered"
+  | "card-fault"
+  | "card-unsupported"
   | "app-lock-required"
   | "limit-exceeded"
   | "crashed"
@@ -384,6 +421,18 @@ export type BackupApi = {
     readonly wallets: ReadonlyArray<VaultWalletInfo>;
     readonly passphraseRequired: ReadonlyArray<string>;
   }>;
+};
+
+/**
+ * One running signer operation (card or device): `observe` replays the current step first, then
+ * every step the kernel reports; `cancel` is idempotent and resolves once the kernel answered the
+ * cancellation; `result` resolves with the operation's result or rejects —
+ * `WalletError("cancelled")` after a cancel.
+ */
+export type SignerTask<Step, Result> = {
+  readonly observe: (listener: (step: Step) => void) => () => void;
+  readonly cancel: () => Promise<void>;
+  readonly result: Promise<Result>;
 };
 
 export type Wallet = {

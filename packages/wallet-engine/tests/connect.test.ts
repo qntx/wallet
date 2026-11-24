@@ -140,6 +140,7 @@ async function rig(options: { allowLocalhost?: boolean; blindSigning?: boolean }
   });
   const transactions = new TransactionController({
     wallet,
+    chains: chains(wallet),
     networks,
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     random,

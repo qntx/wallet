@@ -17,7 +17,7 @@
  * Run from the repo root: bun scripts/vectors/keystone.ts
  */
 import { createHash } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 import {
@@ -369,6 +369,18 @@ const SIGN_DATA = Buffer.from(
   "hex",
 );
 const ORIGIN = "qntx";
+// A valid BIP-174 PSBT for the crypto-psbt case — `psbt` bytes out of the committed
+// chains signing-plan vectors, so this generator keeps importing no project code.
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- vectors are trusted fixtures
+const SIGNING_PLANS = JSON.parse(readFileSync("vectors/chains/signing-plans.json", "utf8")) as {
+  cases: Array<{ name: string; request: { psbt?: string } }>;
+};
+const SIGN_PSBT: string | undefined = SIGNING_PLANS.cases.find(
+  (entry) => entry.name === "bitcoin-psbt-every-template",
+)?.request.psbt;
+if (SIGN_PSBT === undefined) {
+  throw new Error("signing-plans vectors lost their bitcoin.psbt case");
+}
 
 /** The independent encoders' byte output for one fixed request — the kernel must match it. */
 const cborOf = (item: { toCBOR: () => Uint8Array }): string => hex(item.toCBOR());
@@ -521,7 +533,9 @@ const signVectors = {
     {
       name: "crypto-psbt",
       urType: "crypto-psbt",
-      cbor: cborOf(new BtcCryptoPSBT(SIGN_DATA)),
+      // A real BIP-174 PSBT (borrowed from the chains signing-plan vectors): the
+      // kernel-side codec validates the psbt magic, so the oracle payload must be one.
+      cbor: cborOf(new BtcCryptoPSBT(Buffer.from(SIGN_PSBT, "hex"))),
     },
     {
       name: "key-derivation-call",

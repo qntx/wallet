@@ -236,6 +236,8 @@ export { SparkControllerError } from "./spark/errors.ts";
 export { AccountTreeError } from "./accounts/errors.ts";
 export { AccountTreeController } from "./accounts/controller.ts";
 export type { AccountGroup, AccountTreeState } from "./accounts/controller.ts";
+export { SignersController } from "./signers/controller.ts";
+export type { SignerActivity, SignerFamily, SignersState } from "./signers/controller.ts";
 export type { AccountTreeErrorCategory } from "./accounts/errors.ts";
 export { MetaSyncController } from "./meta/controller.ts";
 export type {

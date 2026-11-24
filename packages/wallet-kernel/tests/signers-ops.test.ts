@@ -20,14 +20,18 @@ import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { publicKeyToAddress } from "viem/accounts";
 import { describe, expect, it } from "vite-plus/test";
 
+import { encodeBatchExecute, normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
+import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
 import { createOperationExecutor } from "../src/modules/signers/operation.ts";
 import { hardwareWalletId } from "../src/modules/signers/record.ts";
 import type { KernelPlatform } from "../src/platform.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
+import { fakeKeystore } from "./keystore.ts";
+import { loadTranscript, replayExchange, transcriptSession } from "./onekey-emulator/index.ts";
 import { ACCOUNT_NODES, fakeDevice, masterFingerprint } from "./signers-fake.ts";
 import type { FakeDevice, FakeDeviceOptions } from "./signers-fake.ts";
 
@@ -92,6 +96,13 @@ const arrField = (value: ProtocolValue, key: string): ProtocolValue[] => {
   }
   return v;
 };
+const bytesField = (value: ProtocolValue, key: string): Uint8Array => {
+  const v = field(value, key);
+  if (!(v instanceof Uint8Array)) {
+    throw new TypeError(`${key} is not bytes`);
+  }
+  return v;
+};
 
 type Boot = {
   readonly h: Harness;
@@ -106,7 +117,7 @@ const boot = async (
 ): Promise<Boot> => {
   const device = fakeDevice(SEED, deviceOpts);
   const h = createHarness({
-    drivers: { keystone: device.driver },
+    drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER },
     ...harnessOpts,
   });
   await h.settle();
@@ -135,6 +146,32 @@ const pairDevice = async (h: Harness, session: string): Promise<string> => {
     ),
   );
   const wallet = field(field(done, "result"), "wallet");
+  expect(strField(wallet, "custody")).toBe("hardware");
+  return strField(wallet, "walletId");
+};
+
+/** Runs onekey pair through begin/step, replaying the recorded driver transcript. */
+const pairOneKey = async (h: Harness, session: string): Promise<string> => {
+  const transcript = loadTranscript("pro", "driver");
+  const device = replayExchange(transcriptSession(transcript, "driver-pair"));
+  const begin = ok(
+    await h.call("hardware.begin", { op: { kind: "pair", device: "onekey" } }, session),
+  );
+  const opId = strField(begin, "opId");
+  let step = field(begin, "step");
+  for (let guard = 0; strField(step, "kind") === "exchange" && guard < 64; guard++) {
+    const request = field(step, "request");
+    // oxlint-disable-next-line no-await-in-loop -- the coroutine answers one turn per step
+    const data = await device(bytesField(request, "data"));
+    // oxlint-disable-next-line no-await-in-loop -- the coroutine advances one turn per step
+    const next = await h.call(
+      "hardware.step",
+      { opId, response: { kind: "message", data } },
+      session,
+    );
+    step = ok(next);
+  }
+  const wallet = field(field(step, "result"), "wallet");
   expect(strField(wallet, "custody")).toBe("hardware");
   return strField(wallet, "walletId");
 };
@@ -597,36 +634,107 @@ describe("executor (unit)", () => {
 });
 
 describe("hardware wallet refusals", () => {
+  /** The seed-bound calls every hardware record must refuse. */
+  const seedBoundCalls = (
+    h: Harness,
+    session: string,
+    hwId: string,
+  ): ReadonlyArray<Promise<KernelResponse>> => [
+    h.call("nostr.deriveKey", { walletId: hwId, index: 0 }, session),
+    h.call(
+      "sessions.create",
+      {
+        scheme: "hyperliquid-l1-agent",
+        owner: { walletId: hwId, groupIndex: 0 },
+        scope: "Mainnet",
+        name: "bot-1",
+        validUntil: h.wallNow() + 86_400_000,
+        limits: { notional: "1000000000", maxLeverage: 100, assets: [0, 1] },
+        /* Its own copy — the kernel wipes the verify bytes it consumes. */
+        verify: PASSKEY(),
+      },
+      session,
+    ),
+    h.call("wallet.exportMnemonic", { walletId: hwId, verify: PASSKEY() }, session),
+    h.call(
+      "spark.identityPublicKey",
+      { account: { walletId: hwId, groupIndex: 0, network: "mainnet" } },
+      session,
+    ),
+  ];
+
   it("seed-only commands refuse the hardware record", async () => {
     const { h, session } = await boot();
     const hwId = await pairDevice(h, session);
-    const verify = PASSKEY();
-    const results = await Promise.all([
-      h.call("nostr.deriveKey", { walletId: hwId, index: 0 }, session),
-      h.call(
-        "sessions.create",
-        {
-          scheme: "hyperliquid-l1-agent",
-          owner: { walletId: hwId, groupIndex: 0 },
-          scope: "Mainnet",
-          name: "bot-1",
-          validUntil: h.wallNow() + 86_400_000,
-          limits: { notional: "1000000000", maxLeverage: 100, assets: [0, 1] },
-          /* Its own copy — the kernel wipes the verify bytes it consumes. */
-          verify: PASSKEY(),
-        },
-        session,
-      ),
-      h.call("wallet.exportMnemonic", { walletId: hwId, verify }, session),
-      h.call(
-        "spark.identityPublicKey",
-        { account: { walletId: hwId, groupIndex: 0, network: "mainnet" } },
-        session,
-      ),
-    ]);
+    const results = await Promise.all(seedBoundCalls(h, session, hwId));
     for (const res of results) {
       expect(errCode(res)).toBe("unsupported");
     }
+  });
+
+  it("seed-only commands refuse the onekey record too", async () => {
+    const { h, session } = await boot();
+    const hwId = await pairOneKey(h, session);
+    const results = await Promise.all(seedBoundCalls(h, session, hwId));
+    for (const res of results) {
+      expect(errCode(res)).toBe("unsupported");
+    }
+  });
+
+  it("an over-long prompt refuses a hardware sign as blind before any device exchange", async () => {
+    /* The same oversize→blind rule chain.sign gets: prepareApproval measures the rendered
+       prompt against the platform bound and refuses while blind signing is off — before the
+       presence ceremony and before the first device exchange. */
+    const fake = fakeKeystore();
+    const device = fakeDevice(SEED);
+    const h = createHarness({
+      keystore: fake.keystore,
+      drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER },
+    });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(res, "session");
+    const hwId = await pairDevice(h, session);
+    /* The batch renders only as a self-call to the account's own address. */
+    const ownPub = HDKey.fromMasterSeed(SEED).derive("m/44'/60'/0'/0/0").publicKey!;
+    const own = publicKeyToAddress(
+      `0x${bytesToHex(secp256k1.Point.fromBytes(ownPub).toBytes(false))}`,
+    );
+    const calls = Array.from({ length: 12 }, (_, i) => ({
+      to: `0x00000000000000000000000000000000000000${10 + i}` as `0x${string}`,
+      value: 1n,
+      data: "0x" as `0x${string}`,
+    }));
+    const request = normalizeEvm({
+      kind: "evm.transaction",
+      network: EVM_NETWORK,
+      account: { kind: "hd", walletId: hwId, groupIndex: 0, template: "evm.bip44" },
+      tx: {
+        type: "eip1559",
+        chainId: 1,
+        nonce: 0,
+        gas: "0x5208",
+        value: "0x0",
+        data: encodeBatchExecute(calls),
+        to: own,
+        maxFeePerGas: "0x59682f00",
+        maxPriorityFeePerGas: "0x1",
+        accessList: [],
+      },
+    });
+    const keystoreCalls = fake.calls.length;
+    const begin = await h.call(
+      "hardware.begin",
+      { op: { kind: "sign", request }, verify: { kind: "hardware" } },
+      session,
+    );
+    expect(errCode(begin)).toBe("blind-signing-disabled");
+    expect(fake.calls).toHaveLength(keystoreCalls);
   });
 
   it("chain.sign refuses a hardware account with device-required", async () => {
@@ -781,6 +889,30 @@ describe("record id binding", () => {
     await h.settle();
     const status = ok(await h.call("status", undefined, session));
     expect(field(status, "vault")).toBe("corrupted");
+  });
+});
+
+describe("keys.import against hardware wallets", () => {
+  it("refuses a private key that is a paired hardware wallet's own account", async () => {
+    const { h, session } = await boot();
+    await pairDevice(h, session);
+    // The pin's evm node is m/44'/60'/0'; the group-0 leaf key is the device's account.
+    const master = HDKey.fromMasterSeed(SEED);
+    const leaf = master.derive("m/44'/60'/0'/0/0");
+    const secret = new Uint8Array(leaf.privateKey!);
+    try {
+      expect(errCode(await h.call("keys.import", { family: "evm", secret }, session))).toBe(
+        "conflict",
+      );
+    } finally {
+      leaf.wipePrivateData();
+      master.wipePrivateData();
+    }
+    // A key that is none of the wallet's accounts still imports.
+    const res = ok(
+      await h.call("keys.import", { family: "evm", secret: new Uint8Array(32).fill(3) }, session),
+    );
+    expect(strField(res, "family")).toBe("evm");
   });
 });
 

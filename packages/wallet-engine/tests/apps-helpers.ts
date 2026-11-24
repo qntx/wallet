@@ -11,7 +11,6 @@ import { expect } from "vite-plus/test";
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
-import { chains } from "@qntx/wallet/chains";
 import { sessions } from "@qntx/wallet/sessions";
 import type { SessionInfo } from "@qntx/wallet/sessions";
 
@@ -35,11 +34,13 @@ import {
 } from "../src/apps/polymarket/wallets.ts";
 import { createAppStorage } from "../src/apps/storage.ts";
 import type { AppGroupState } from "../src/apps/types.ts";
+import type { EngineOptions } from "../src/engine.ts";
 import type { EngineLogger } from "../src/events.ts";
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import type { Independent } from "../src/networks/controller.ts";
 import { AcknowledgementRequiredError, RequestController } from "../src/requests/controller.ts";
+import { SignersController } from "../src/signers/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
@@ -399,7 +400,7 @@ export const tick = async (): Promise<void> =>
     setTimeout(resolve);
   });
 
-export const until = async (cond: () => boolean, tries = 300): Promise<void> => {
+export const until = async (cond: () => boolean, tries = 1200): Promise<void> => {
   for (let i = 0; i < tries && !cond(); i++) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- real-kernel turns need the event loop.
     await tick();
@@ -467,27 +468,30 @@ export const swallow = async (promise: Promise<unknown>): Promise<void> => {
 
 let shared: { wallet: Wallet; walletId: string } | undefined;
 
+/** A brand-new node wallet + mnemonic import — each call gets its own kernel and vault. */
+export const freshNodeWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
+  const wallet = await createNodeWallet({
+    verifyEvent,
+    passkey: {
+      rpId: "qntx.test",
+      rpName: "qntx",
+      walletSalt: "qntx/wallet",
+      backupSalt: "qntx/backup",
+      vaultSalt: "qntx/vault",
+    },
+    autoLock: { platform: "web", idleMinutes: 15 },
+    authenticator: createSoftwarePasskey(new Uint8Array(32).fill(11)),
+    kernelUrl: KERNEL_URL,
+  });
+  const { walletId } = await wallet.wallets.importMnemonic({
+    mnemonic: MNEMONIC,
+    factor: VERIFY,
+  });
+  return { wallet, walletId };
+};
+
 export const nodeWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
-  if (shared === undefined) {
-    const wallet = await createNodeWallet({
-      verifyEvent,
-      passkey: {
-        rpId: "qntx.test",
-        rpName: "qntx",
-        walletSalt: "qntx/wallet",
-        backupSalt: "qntx/backup",
-        vaultSalt: "qntx/vault",
-      },
-      autoLock: { platform: "web", idleMinutes: 15 },
-      authenticator: createSoftwarePasskey(new Uint8Array(32).fill(11)),
-      kernelUrl: KERNEL_URL,
-    });
-    const { walletId } = await wallet.wallets.importMnemonic({
-      mnemonic: MNEMONIC,
-      factor: VERIFY,
-    });
-    shared = { wallet, walletId };
-  }
+  shared ??= await freshNodeWallet();
   return shared;
 };
 
@@ -538,6 +542,8 @@ export type World = {
   /** The group's `fiat24` app state — undefined until a flow or reconcile writes it. */
   f24State: () => AppGroupState | undefined;
   approve: (id: string) => Promise<void>;
+  /** The one signing path — its `active` mirrors a running device operation. */
+  signers: SignersController;
 };
 
 export const world = async (
@@ -570,6 +576,12 @@ export const world = async (
     timers?: ReturnType<typeof manualTimer>;
     /** Request/record ids — a counter source when a test must tell two requests apart. */
     random?: (length: number) => Uint8Array;
+    /** The host's transport for paired devices — the world's signing path runs through signers. */
+    deviceIo?: EngineOptions["deviceIo"];
+    /** A caller-provided wallet (the card rig's) — the shared node wallet otherwise. */
+    wallet?: { wallet: Wallet; walletId: string };
+    /** Extra host endpoints per network (the e2e harness registers its stub upstreams here). */
+    rpc?: Record<string, ReadonlyArray<string>>;
     /**
      * Wraps the real `requests` handed to `createApps` — a capture shim for the typed-data
      * documents the flows prepare (approvals still go through `w.requests`).
@@ -579,7 +591,7 @@ export const world = async (
     ) => Pick<RequestController, "prepare" | "outcome" | "reject">;
   } = {},
 ): Promise<World> => {
-  const { wallet, walletId } = await nodeWallet();
+  const { wallet, walletId } = options.wallet ?? (await nodeWallet());
   // A previous test may have locked the shared wallet — restore the unlocked precondition.
   await wallet.vault.unlock(VERIFY).catch(() => undefined);
   const posted: Posted[] = [];
@@ -617,11 +629,23 @@ export const world = async (
       "eip155:421614": ["https://arb-sepolia.test/rpc"],
       "eip155:42161": ["https://arbitrum-one.test/rpc"],
       "eip155:137": ["https://polygon.test/rpc"],
+      ...options.rpc,
     },
     openStore: async () => {
       await Promise.resolve();
       return createMemoryEngineStore();
     },
+    logger,
+  });
+  const signers = new SignersController({
+    wallet,
+    deviceIo: options.deviceIo,
+    recheck: async () => {
+      // Unit fixtures keep no material cache — nothing to recheck.
+    },
+    /* Same wiring as engine.ts: fetchAccounts derives on one enabled network per family. */
+    networks: { enabled: (family) => networks.enabled(family) },
+    random: options.random ?? RANDOM,
     logger,
   });
   const transactions = new TransactionController({
@@ -636,7 +660,7 @@ export const world = async (
     now: () => timers.time,
     logger,
     pollMs: 1,
-    chains: chains(wallet),
+    chains: signers.apis,
   });
   const requests = new RequestController({
     phishing: { check: () => "clear" },
@@ -818,6 +842,7 @@ export const world = async (
     apps: controller,
     destroy,
     requests,
+    signers,
     posted,
     timers,
     hl,

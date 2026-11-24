@@ -8,16 +8,16 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { PinnedKeys } from "../src/derive/pinned.ts";
+import { pathFromString, pathToString } from "../src/derive/pinned.ts";
 import { KernelError } from "../src/errors.ts";
-import type { PinnedKeys } from "../src/modules/signers/driver.ts";
 import {
   encodeHardwareBody,
   encodeHardwareHeader,
   hardwareWalletId,
+  hardwareWalletInfo,
   parseHardwareBody,
   parseHardwareHeader,
-  pathFromString,
-  pathToString,
 } from "../src/modules/signers/record.ts";
 import type { HardwareHeader } from "../src/modules/signers/record.ts";
 
@@ -69,10 +69,24 @@ describe("hardware-wallet header codec", () => {
     expect(parseHardwareHeader(encodeHardwareHeader(minimal))).toStrictEqual(minimal);
   });
 
-  it("rejects a bad device, a bad fingerprint and missing or extra keys", () => {
+  it("accepts an unknown device kind and reports it unsupported", () => {
+    const header = parseHardwareHeader(
+      JSON.stringify({ device: "trezor", fingerprint: "a1b2c3d4", createdAt: 1 }),
+    );
+    expect(header.device).toBe("trezor");
+    expect(hardwareWalletInfo(header).supported).toBe(false);
+    expect(hardwareWalletInfo(header).device).toBe("trezor");
+  });
+
+  it("rejects a malformed device, a bad fingerprint and missing or extra keys", () => {
     const base = { device: "keystone", fingerprint: "a1b2c3d4", createdAt: 1 };
     for (const text of [
-      JSON.stringify({ ...base, device: "ledger" }),
+      JSON.stringify({ ...base, device: "Trezor" }),
+      JSON.stringify({ ...base, device: "1trezor" }),
+      JSON.stringify({ ...base, device: "trezor_3" }),
+      JSON.stringify({ ...base, device: "a" }),
+      JSON.stringify({ ...base, device: `d${"e".repeat(32)}` }),
+      JSON.stringify({ ...base, device: "-trezor" }),
       JSON.stringify({ ...base, device: 1 }),
       JSON.stringify({ ...base, fingerprint: "a1b2c3" }),
       JSON.stringify({ ...base, fingerprint: "A1B2C3D4" }),

@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "vite";
 
+import { HERMES_FLAGS } from "../../../scripts/kernel-build-config.ts";
+
 // The repo does not depend on @types/bun; declare the used surface.
 declare const Bun: {
   write: (path: string, data: unknown) => Promise<unknown>;
@@ -53,7 +55,10 @@ async function main(): Promise<number> {
     },
   });
 
-  const proc = Bun.spawnSync([hermes, outfile], { stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawnSync([hermes, ...HERMES_FLAGS, outfile], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const out = proc.stdout.toString() + proc.stderr.toString();
   process.stdout.write(out);
   if (proc.exitCode !== 0 || !out.includes("HERMES_SMOKE_OK")) {

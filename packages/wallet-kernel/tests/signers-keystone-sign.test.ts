@@ -9,6 +9,15 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import {
+  CborMap,
+  asBytes,
+  asMap,
+  asUnsigned,
+  decodeCbor,
+  encodeCbor,
+  isBytes,
+} from "@blockchaincommons/dcbor";
 import { CryptoPSBT } from "@keystonehq/bc-ur-registry-btc";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
@@ -22,6 +31,9 @@ import * as fc from "fast-check";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
+import { ethSignatureCodec, solSignatureCodec, tronSignatureCodec } from "@qntx/ur/interop";
+import type { UrCodec } from "@qntx/ur/interop";
+import { cryptoPsbtCodec } from "@qntx/ur/registry";
 import {
   bitcoinNetwork,
   normalizeBitcoin,
@@ -32,19 +44,15 @@ import { buildTronRawData, normalizeTron } from "@qntx/wallet-chains/tron";
 import type { DeviceRequest, DeviceResponse, ProtocolValue } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
-import { decodeCbor, encodeCbor } from "../src/modules/signers/keystone/cbor.ts";
 import { derive } from "../src/modules/signers/keystone/derive.ts";
 import {
-  btcSignature,
   btcSignRequest,
+  btcSignatureCodec,
   cryptoPsbt,
-  cryptoPsbtBytes,
-  ethSignature,
+  decodeRegistry,
   ethSignRequest,
   hardwareCall,
-  solSignature,
   solSignRequest,
-  tronSignature,
   tronSignRequest,
 } from "../src/modules/signers/keystone/registry.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
@@ -133,18 +141,15 @@ const BOGUS_V: DeviceMutant = {
 
 /** Re-encodes a signature answer's map with byte field `n` replaced by `value`. */
 const replaceByteField = (bytes: Uint8Array, n: number, value: Uint8Array): Uint8Array => {
-  const map = decodeCbor(bytes);
-  if (map.kind !== "map") {
+  const map = asMap(decodeCbor(bytes));
+  if (map === undefined) {
     throw new Error("not a map");
   }
-  return encodeCbor({
-    kind: "map",
-    entries: map.entries.map(([key, item]) =>
-      key.kind === "uint" && key.value === n && item.kind === "bytes"
-        ? [key, { kind: "bytes" as const, value }]
-        : [key, item],
-    ),
-  });
+  const out = new CborMap();
+  for (const { key, value: item } of map.entriesArray) {
+    out.set(key, asUnsigned(key) === n && isBytes(item) ? value : item);
+  }
+  return encodeCbor(out);
 };
 
 /** A signed PSBT answer whose trailing sighash byte is not the planned one. */
@@ -165,25 +170,31 @@ const tamperedPsbt = (request: DeviceRequest): DeviceResponse => {
 
 /** A signature answer whose field-2 byte string is cut to 64 bytes. */
 const shortenSignature = (bytes: Uint8Array): Uint8Array => {
-  const map = decodeCbor(bytes);
-  if (map.kind !== "map") {
+  const map = asMap(decodeCbor(bytes));
+  if (map === undefined) {
     throw new Error("not a map");
   }
-  const signature = map.entries.find(([k]) => k.kind === "uint" && k.value === 2)?.[1];
-  if (signature === undefined || signature.kind !== "bytes") {
+  const field = map.get(2);
+  const signature = field === undefined ? undefined : asBytes(field);
+  if (signature === undefined) {
     throw new Error("no signature field");
   }
-  return replaceByteField(bytes, 2, signature.value.subarray(0, 64));
+  return replaceByteField(bytes, 2, signature.subarray(0, 64));
 };
 
-const RESPONSE_PARSERS = [ethSignature, solSignature, tronSignature, btcSignature, cryptoPsbtBytes];
+const RESPONSE_CODECS: ReadonlyArray<UrCodec<unknown>> = [
+  ethSignatureCodec,
+  solSignatureCodec,
+  tronSignatureCodec,
+  btcSignatureCodec,
+  cryptoPsbtCodec,
+];
 
 /** `safe` when the decoders only ever refuse with a KernelError (or accept the value). */
 const codeOf = (bytes: Uint8Array): string => {
   try {
-    const tree = decodeCbor(bytes);
-    for (const parse of RESPONSE_PARSERS) {
-      parse(tree);
+    for (const codec of RESPONSE_CODECS) {
+      decodeRegistry(bytes, codec);
     }
     return "safe";
   } catch (error) {
@@ -381,7 +392,9 @@ describe("keystone sign requests encode like the vendor SDK's", () => {
           origin: signVectors.origin,
         });
       case "crypto-psbt":
-        return cryptoPsbt(signData);
+        // The payload is the PSBT inside the recorded answer — re-encoding it must
+        // reproduce the vendor bytes.
+        return cryptoPsbt(decodeRegistry(hexToBytes(c.cbor), cryptoPsbtCodec).bytes);
       case "qr-hardware-call": {
         const [secp, ed] = c.paths ?? [];
         return hardwareCall({

@@ -22,24 +22,27 @@ import type {
   SessionSchemeId,
 } from "@qntx/wallet/protocol";
 
-import type { Handler, VaultHooks } from "../../commands/context.ts";
+import type { Handler, KernelContext, VaultHooks } from "../../commands/context.ts";
 import { withWalletSeed } from "../../commands/vault.ts";
+import type { PublicMaterial } from "../../derive/material.ts";
 import { KernelError } from "../../errors.ts";
+import type { KeystorePrompt } from "../../platform.ts";
 import { PROMPT_BOUNDS, promptLocale } from "../../prompts.ts";
 import type { Secret } from "../../secret/secret.ts";
 import { wipe } from "../../secret/secret.ts";
 import { parseKeyHeader } from "../../vault/headers.ts";
 import { BLIND_SIGNING, policyEnabled } from "../../vault/policy.ts";
-import type { StoredRecord, VaultImage } from "../../vault/store.ts";
+import type { StoredRecord } from "../../vault/store.ts";
 import { findWalletRecord, openRecord, verifyFactor } from "../../vault/vault.ts";
 import { findSession, parseSessionHeader } from "../sessions/record.ts";
 import { prepareBitcoin } from "./bitcoin.ts";
 import { assertFiat24Deadline, prepareEvm } from "./evm.ts";
 import { importedKeys, pathString, seedKeys } from "./keys.ts";
-import type { KeySource, PublicMaterial } from "./keys.ts";
+import type { KeySource } from "./keys.ts";
 import { boundChainPrompt, chainPrompt } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
 import { signPlan, taskSignerFor } from "./run.ts";
+import type { ChainPlan } from "./run.ts";
 import type { Prepared, SignRequest } from "./shared.ts";
 import { BTC_PURPOSE } from "./shared.ts";
 import { prepareSolana } from "./solana.ts";
@@ -124,18 +127,11 @@ export const accountFor = async (
  */
 type AccountCache = WeakMap<StoredRecord, Map<string, ChainAccount>>;
 
-/**
- * The signers module's `pinnedMaterial`, injected so chains never imports its owner: returns the
- * public material pinned to an external-signer record or throws `device-required`.
- */
-export type ExternalMaterial = (image: VaultImage, record: StoredRecord) => PublicMaterial;
-
 const walletAccounts = async (
   ctx: Parameters<Handler<"wallet.accounts">>[0],
   params: Parameters<Handler<"wallet.accounts">>[1],
   session: string | undefined,
   cache: AccountCache,
-  external: ExternalMaterial,
 ): Promise<ChainAccount> => {
   const { dek } = ctx.session.require(session);
   const record = findWalletRecord(ctx.image, params.walletId);
@@ -164,7 +160,7 @@ const walletAccounts = async (
           }
         })
       : await accountFor(
-          external(ctx.image, record),
+          ctx.externalMaterial(record),
           params.template,
           params.network,
           params.groupIndex,
@@ -205,11 +201,14 @@ const TEMPLATES_BY_FAMILY: Readonly<Record<string, ReadonlyArray<string>>> = {
 };
 
 /**
- * The request family must match the account's template — the same check the local HD source runs,
- * shared with the external-signer executor.
+ * The request family must match the account's template — the same check every HD sign path runs
+ * (local seed, card, external device). Imported keys have no template.
  */
 export const assertHdTemplates = (request: SignRequest): void => {
   const { account } = request;
+  if (account.kind !== "hd") {
+    return;
+  }
   if (request.kind === "bitcoin.psbt") {
     if (request.sign.some((s) => BTC_PURPOSE[s.template] === undefined)) {
       throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
@@ -223,7 +222,7 @@ export const assertHdTemplates = (request: SignRequest): void => {
   }
 };
 
-/** The HD source: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
+/** The HD source: the wallet's entropy record, and the seed via `withWalletSeed`. */
 const hdSource = (
   ctx: Parameters<Handler<"chain.sign">>[0],
   request: SignRequest,
@@ -233,12 +232,15 @@ const hdSource = (
   if (account.kind === "imported") {
     throw new KernelError("integrity", "unreachable: hd path with an imported account");
   }
-  assertHdTemplates(request);
   const record = findWalletRecord(ctx.image, account.walletId);
   if (record === undefined) {
     throw new KernelError("not-found", "no such wallet");
   }
   if (record.kind !== "entropy") {
+    /* External custody never opens a key source here: cards sign through card.begin's tap
+       pipeline, hardware through hardware.begin's host-step protocol. An inert record (a device
+       kind this build does not know) reports `unsupported` instead. */
+    ctx.externalMaterial(record);
     throw new KernelError("device-required", "this wallet signs on its device");
   }
   return async (use) =>
@@ -369,19 +371,27 @@ export const bindAgent = (
   return { ...prompt, agentHeld: true };
 };
 
-const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
-  const { dek } = ctx.session.require(session);
-  const { request, verify } = params;
-  const openKeys =
-    request.account.kind === "imported"
-      ? importedSource(ctx, request, dek)
-      : hdSource(ctx, request, dek);
-  // The key source opens twice: `prepare` checks ownership, normalizes, decodes and plans — the
-  // secret and every node are wiped before the (possibly long) system verification prompt; the
-  // sign pass re-opens it and executes the prepared plan unchanged.
-  const prepared = await openKeys(async (keys) =>
-    prepareFor(request, keys.material, ctx.platform.now()),
-  );
+/**
+ * Everything `chain.sign` prepares before the factor verify — shared with the card sign op (design
+ * §8), which hands it the card's public material instead of the seed source.
+ */
+export type PreparedApproval = {
+  readonly request: SignRequest;
+  readonly prompt: PromptIntent;
+  /* The prompt bounded to the platform's verification dialog — `undefined` off a keystore host.
+     Callers render `shown?.prompt ?? chainPrompt(...)`; the hardware device line wraps it. */
+  readonly shown: { readonly prompt: KeystorePrompt; readonly oversize: boolean } | undefined;
+  readonly plan: ChainPlan;
+};
+
+export const prepareApproval = async (
+  ctx: KernelContext,
+  request: SignRequest,
+  material: PublicMaterial,
+  dek: Secret,
+): Promise<PreparedApproval> => {
+  assertHdTemplates(request);
+  const prepared = await prepareFor(request, material, ctx.platform.now());
   const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
   /* A keystore host shows this text in a bounded system dialog, so it is rendered and measured
      before the blind check: an over-long prompt counts as blind and, when allowed, reaches the
@@ -395,13 +405,31 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
           PROMPT_BOUNDS[ctx.platform.keystore.platform],
         );
   assertSignable(ctx, dek, prompt, shown?.oversize ?? false);
+  return { request, prompt, shown, plan: prepared.plan };
+};
+
+const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
+  const { dek } = ctx.session.require(session);
+  const { request, verify } = params;
+  const openKeys =
+    request.account.kind === "imported"
+      ? importedSource(ctx, request, dek)
+      : hdSource(ctx, request, dek);
+  // The key source opens twice: `prepare` checks ownership, normalizes, decodes and plans — the
+  // secret and every node are wiped before the (possibly long) system verification prompt; the
+  // sign pass re-opens it and executes the prepared plan unchanged.
+  const prepared = await openKeys(async (keys) =>
+    prepareApproval(ctx, request, keys.material, dek),
+  );
   await verifyFactor(
     ctx.platform,
     ctx.image,
     verify,
     dek,
     ctx.commit,
-    () => shown?.prompt ?? chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prompt),
+    () =>
+      prepared.shown?.prompt ??
+      chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
   );
   // The session may have ended while the prompt was up; the fiat24 window re-checks too, as the
   // old sign pass did.
@@ -414,7 +442,7 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   );
 };
 
-export function createChainsModule(external: ExternalMaterial): ChainsModule {
+export function createChainsModule(): ChainsModule {
   let accounts: AccountCache = new WeakMap();
   const vault: VaultHooks = {
     ownsRecord: () => false,
@@ -429,7 +457,7 @@ export function createChainsModule(external: ExternalMaterial): ChainsModule {
 
   const handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> } = {
     "wallet.accounts": async (ctx, params, session) =>
-      walletAccounts(ctx, params, session, accounts, external),
+      walletAccounts(ctx, params, session, accounts),
     "chain.sign": chainSign,
   };
 

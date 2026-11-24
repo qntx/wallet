@@ -59,6 +59,7 @@ hermes::vm::RuntimeConfig runtimeConfigFor(KernelProfile profile) {
   return builder.withMicrotaskQueue(true)
       .withEnableEval(false)
       .withAsyncBreakCheckInEval(true)
+      .withES6BlockScoping(true)
       .build();
 }
 

@@ -13,32 +13,12 @@ import type {
   DeviceResponse,
 } from "@qntx/wallet/protocol";
 
+import type { PinnedKeys } from "../../derive/pinned.ts";
 import type { ChainPlan } from "../chains/run.ts";
 
 /** The host transport: suspends until `hardware.step` answers with the device's response. */
 export type DeviceLink = {
   readonly exchange: (request: DeviceRequest) => Promise<DeviceResponse>;
-};
-
-/** A pinned BIP-32 node: `m/…` path with its compressed public key and chain code. */
-export type PinnedNode = {
-  readonly path: KeyPath;
-  readonly publicKey: Uint8Array;
-  readonly chainCode: Uint8Array;
-  /** The parent node's 4-byte fingerprint — needed to serialize this node's xpub. */
-  readonly parent?: Uint8Array;
-};
-
-/** A pinned SLIP-10 ed25519 public key at an all-hardened path. */
-export type PinnedEd25519 = {
-  readonly path: KeyPath;
-  readonly publicKey: Uint8Array;
-};
-
-/** The public key material a device published, keyed by derivation path. */
-export type PinnedKeys = {
-  readonly nodes: ReadonlyArray<PinnedNode>;
-  readonly ed25519: ReadonlyArray<PinnedEd25519>;
 };
 
 /** What a device claims to be; `fingerprint` is the BIP-32 master fingerprint. */
@@ -59,6 +39,8 @@ export type SignContext = {
   readonly request: ChainSignRequest;
   readonly stage: ChainPlan;
   readonly pin: HardwarePin;
+  /** The display the user was prompted with — the live device must still be able to show it. */
+  readonly display: DeviceDisplay;
   /** Fresh platform randomness for request ids and challenges — never a device input. */
   readonly random: (length: number) => Uint8Array;
 };
@@ -75,11 +57,24 @@ export type VerifyVerdict = {
 export type Driver = {
   /** The pairing ceremony: claims the identity and publishes the initial pinned keys. */
   readonly pair: (link: DeviceLink) => Promise<PairingResult>;
-  /** What the device shows for this request and plan; `unsupported` refuses before any prompt. */
-  readonly display: (request: ChainSignRequest, plan: ChainPlan) => DeviceDisplay | "unsupported";
+  /**
+   * What the device shows for this request and plan; `unsupported` refuses before any prompt.
+   * `identity` is the paired record's claimed identity — a driver whose display depends on the
+   * model or firmware must refuse when the record cannot promise what the device would show.
+   */
+  readonly display: (
+    request: ChainSignRequest,
+    plan: ChainPlan,
+    identity: DeviceIdentity,
+  ) => DeviceDisplay | "unsupported";
   /** Signs one plan stage: one 64-byte signature per task, in order; assemble verifies. */
   readonly sign: (link: DeviceLink, context: SignContext) => Promise<ReadonlyArray<Uint8Array>>;
-  /** Fetches missing public material (hardened nodes); the claimed fingerprint must match `pin`. */
+  /**
+   * Fetches missing public material (hardened nodes). The driver must prove the answering device
+   * holds `pin` — a device-reported fingerprint, or already-pinned material of the same family
+   * re-fetched byte-for-byte — `wrong-device` on a mismatch, and returns the fingerprint only after
+   * that proof; the module's check on the returned fingerprint is the generic backstop.
+   */
   readonly accounts: (
     link: DeviceLink,
     need: {

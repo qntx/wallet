@@ -16,8 +16,8 @@ import {
   planBitcoinPsbt,
 } from "@qntx/wallet-chains/bitcoin";
 
+import type { PublicMaterial } from "../../derive/material.ts";
 import { KernelError } from "../../errors.ts";
-import type { PublicMaterial } from "./keys.ts";
 import { messagePromptIntent } from "./prompt.ts";
 import type { BitcoinRequest, Prepared } from "./shared.ts";
 import { BTC_PURPOSE, deepEqual, mapChainError } from "./shared.ts";
@@ -203,7 +203,11 @@ const bitcoinOwnScripts = async (b: BitcoinDerive, tx: Transaction): Promise<Set
         if (deepEqual(output.script, expectedScript(purpose, pub))) {
           ownScripts.add(hex(output.script));
         }
-      } catch {
+      } catch (error) {
+        // A miss on external material is a real answer, not "not ours" — the signer must serve.
+        if (error instanceof KernelError && error.code === "device-required") {
+          throw error;
+        }
         continue;
       }
     }

@@ -520,6 +520,7 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
     });
     transactions = new TransactionController({
       wallet,
+      chains: chains(wallet),
       networks,
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       random: (n) => randomBytes(n),
@@ -798,6 +799,7 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
       });
       const blockedTxs = new TransactionController({
         wallet,
+        chains: chains(wallet),
         networks: blockedNetworks,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         random: (n) => randomBytes(n),
@@ -960,6 +962,7 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
       });
       const timedTxs = new TransactionController({
         wallet,
+        chains: chains(wallet),
         networks: timedNetworks,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         random: (n) => randomBytes(n),

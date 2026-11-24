@@ -3,6 +3,8 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { HERMES_FLAGS } from "../../../scripts/kernel-build-config.ts";
+
 type BunBuildOutput = {
   success: boolean;
   logs: ReadonlyArray<{ toString: () => string }>;
@@ -55,8 +57,15 @@ async function main(): Promise<number> {
     console.error("bun build produced no entry-point output");
     return 1;
   }
-  await Bun.write(outfile, `${await shim.text()}\n${await bundle.text()}`);
-  const run = Bun.spawnSync([hermes, outfile], { stdout: "pipe", stderr: "pipe" });
+  await Bun.write(
+    outfile,
+    `${await shim.text()}
+${await bundle.text()}`,
+  );
+  const run = Bun.spawnSync([hermes, ...HERMES_FLAGS, outfile], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const out = `${run.stdout.toString()}\n${run.stderr.toString()}`;
   console.log(out);
   if (!out.includes("HERMES_CHAINS_OK")) {

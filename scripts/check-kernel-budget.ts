@@ -19,8 +19,8 @@
  *   tree-shaken extras). Kernel infrastructure, not an application unit: it is out of the share and
  *   has its own budget.
  */
-import { existsSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { build } from "vite";
@@ -38,23 +38,23 @@ const CARD_BUDGET = 40_192;
 const SIGNERS_ENTRY = "qntx-budget-signers.ts";
 const SIGNERS_ENTRY_ID = "\0qntx-budget-signers";
 const SIGNERS_MODULE = "packages/wallet-kernel/src/modules/signers/";
-const SIGNERS_FILES = [
-  "index.ts",
-  "driver.ts",
-  "drivers.ts",
-  "material.ts",
-  "operation.ts",
-  "prompt.ts",
-  "record.ts",
-  "keystone/cbor.ts",
-  "keystone/derive.ts",
-  "keystone/driver.ts",
-  "keystone/registry.ts",
-  "keystone/sign.ts",
-  "keystone/sync.ts",
-];
-// measured 63384 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
-const SIGNERS_BUDGET = 66_560;
+
+/** Every .ts file under modules/signers/, relative to the module root — a new driver just lands. */
+const signersFiles = (dir: string): string[] =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? signersFiles(join(dir, entry.name)).map((file) => `${entry.name}/${file}`)
+      : entry.name.endsWith(".ts")
+        ? [entry.name]
+        : [],
+  );
+const SIGNERS_FILES = signersFiles(resolve(ROOT, SIGNERS_MODULE)).toSorted();
+// measured 297659 B (rendered, all exports retained — ledger/protocol moved under the driver,
+// owner decision 2026-11-24: accept the measured size; +3248 B when the onekey driver split into
+// per-operation files added module-boundary overhead); budget from measurement with ≥ 5 % headroom
+const SIGNERS_BUDGET = 313_000;
+/** Breakdown lines printed every run: shared core files first, then one line per driver dir. */
+const SIGNERS_GROUPS = ["keystone", "ledger", "onekey"];
 
 type Unit = {
   readonly name: string;
@@ -102,6 +102,13 @@ const UNITS: ReadonlyArray<Unit> = [
     match: /^packages\/wallet-chains\/src\/evm\/apps\.ts$/,
     budget: undefined,
     note: "recognizer dispatch — counts toward the share, has no per-unit budget",
+  },
+  {
+    name: "card module",
+    match: /^packages\/wallet-kernel\/src\/modules\/card\/(?!protocol\/)/,
+    // measured 132741 B; budget from measurement with ≥ 5 % headroom (2026-11-23)
+    budget: 139_776,
+    note: "card operation engine — record, taps, ops, text (the protocol client has its own line)",
   },
 ];
 
@@ -270,10 +277,15 @@ if (cardBytes > CARD_BUDGET) {
   breaches.push(`card protocol client: ${cardBytes} B exceeds ${CARD_BUDGET} B`);
 }
 let signersBytes = 0;
+const signersGroups = new Map<string, number>();
 for (const [id, renderedLength] of signers.rendered) {
-  if (id.startsWith(SIGNERS_MODULE)) {
-    signersBytes += renderedLength;
+  if (!id.startsWith(SIGNERS_MODULE)) {
+    continue;
   }
+  signersBytes += renderedLength;
+  const rest = id.slice(SIGNERS_MODULE.length);
+  const group = rest.includes("/") ? (rest.split("/")[0] ?? "core") : "core";
+  signersGroups.set(group, (signersGroups.get(group) ?? 0) + renderedLength);
 }
 const signersDelta = signers.bytes - full.bytes;
 console.log(
@@ -284,6 +296,17 @@ if (signersBytes === 0) {
 }
 if (signersBytes > SIGNERS_BUDGET) {
   breaches.push(`signers module: ${signersBytes} B exceeds ${SIGNERS_BUDGET} B`);
+}
+for (const group of [
+  "core",
+  ...SIGNERS_GROUPS,
+  ...[...signersGroups.keys()].filter((name) => name !== "core" && !SIGNERS_GROUPS.includes(name)),
+]) {
+  const bytes = signersGroups.get(group);
+  if (bytes === undefined) {
+    continue;
+  }
+  console.log(`    ${group.padEnd(24)} ${String(bytes).padStart(7)} B`);
 }
 console.log(
   "note: prompt rows for hyperliquid/polymarket inside modules/chains/prompt.ts share a file with core rows and are not attributed.",

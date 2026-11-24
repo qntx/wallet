@@ -1,7 +1,20 @@
 import { WalletError } from "@qntx/wallet";
-import type { HardwareWalletInfo, Wallet, WalletErrorCode, WalletInfo } from "@qntx/wallet";
-import { hardware, qrParts, qrReader } from "@qntx/wallet/hardware";
-import type { DeviceIo } from "@qntx/wallet/hardware";
+import type {
+  HardwareWalletInfo,
+  VerifyFactor,
+  Wallet,
+  WalletErrorCode,
+  WalletInfo,
+} from "@qntx/wallet";
+import {
+  hardware,
+  oneKeyBleExchange,
+  oneKeyHidExchange,
+  oneKeyIo,
+  qrParts,
+  qrReader,
+} from "@qntx/wallet/hardware";
+import type { BlePort, DeviceIo, HidPort } from "@qntx/wallet/hardware";
 import type { ChainSignRequest, ChainSignResult } from "@qntx/wallet/protocol";
 
 /**
@@ -19,7 +32,12 @@ export function walletBadge(info: WalletInfo): string {
         ? `mnemonic wallet ${info.walletId}`
         : `passkey wallet ${info.walletId}`;
     case "hardware":
-      return `${info.device} ${info.model ?? "device"} (${info.fingerprint})`;
+      // `device` may name a kind this build does not know — `supported` gates every operation.
+      return info.supported
+        ? `${info.device} ${info.model ?? "device"} (${info.fingerprint})`
+        : `unsupported device ${info.device} (${info.fingerprint})`;
+    case "card":
+      return `card wallet ${info.walletId} (${String(info.members)} cards)`;
   }
 }
 
@@ -35,7 +53,7 @@ export function requiresSeed(info: WalletInfo): info is Extract<WalletInfo, { wo
 export function deviceErrorHint(code: WalletErrorCode): string | undefined {
   switch (code) {
     case "device-required":
-      // The kernel has no public material for this path yet — run hardware().accounts first.
+      // The kernel has no public material for this path yet — run an "accounts" op first.
       return "connect the device to export this account";
     case "device-locked":
       return "unlock the device and retry";
@@ -98,11 +116,11 @@ export function keystoneQrIo(ui: {
 
 /** Pair the device: scans its sync QR, resolves with the new `HardwareWalletInfo`. */
 export async function pairKeystone(wallet: Wallet, io: DeviceIo): Promise<HardwareWalletInfo> {
-  const info = await hardware(wallet).pair("keystone", io);
-  if (info.custody !== "hardware") {
+  const result = await hardware(wallet).start({ kind: "pair", device: "keystone" }, { io }).result;
+  if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
     throw new WalletError("integrity", "pair did not return a hardware wallet");
   }
-  return info;
+  return result.wallet;
 }
 
 /**
@@ -112,8 +130,39 @@ export async function pairKeystone(wallet: Wallet, io: DeviceIo): Promise<Hardwa
 export async function signOnDevice(
   wallet: Wallet,
   request: ChainSignRequest,
-  verify: Parameters<ReturnType<typeof hardware>["sign"]>[0]["verify"],
+  verify: VerifyFactor,
   io: DeviceIo,
 ): Promise<ChainSignResult> {
-  return hardware(wallet).sign({ request, verify }, io);
+  const result = await hardware(wallet).start({ kind: "sign", request }, { io, verify }).result;
+  if (result.kind !== "sign") {
+    throw new WalletError("integrity", "a sign task answered another result");
+  }
+  return result.result;
+}
+
+/**
+ * `"onekey"` joins the device literals. A OneKey speaks Protocol-V1 frames, so its `exchange` sees
+ * `message` requests only: `request.data` is one framed command — the whole 64-byte report sequence
+ * — and the device answers one framed message. The shipped transports run the wire contract:
+ * `oneKeyHidExchange(port)` writes report by report and collects the whole answer sequence over
+ * USB; `oneKeyBleExchange(port, mtu)` splits the same sequence into writes of at most `mtu` bytes
+ * and concatenates notifications until the announced length (GATT service
+ * `00000001-0000-1000-8000-00805f9b34fb`, write `…0002…`, notify `…0003…`). `oneKeyIo` adapts
+ * either exchange into the `DeviceIo` every `hardware(wallet)` call takes; `qr` and `compare`
+ * requests never occur.
+ */
+export function oneKeyUsbIo(port: HidPort): DeviceIo {
+  return oneKeyIo(oneKeyHidExchange(port));
+}
+export function oneKeyBleIo(port: BlePort, mtu: number): DeviceIo {
+  return oneKeyIo(oneKeyBleExchange(port, mtu));
+}
+
+/** Pair a OneKey — resolves with the new `HardwareWalletInfo`, like `pairKeystone`. */
+export async function pairOneKey(wallet: Wallet, io: DeviceIo): Promise<HardwareWalletInfo> {
+  const result = await hardware(wallet).start({ kind: "pair", device: "onekey" }, { io }).result;
+  if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
+    throw new WalletError("integrity", "pair did not return a hardware wallet");
+  }
+  return result.wallet;
 }

@@ -1,4 +1,4 @@
-import { argon2Sync, pbkdf2Sync } from "node:crypto";
+import { pbkdf2Sync } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 /// <reference types="node" />
 /**
@@ -15,6 +15,8 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { HERMES_FLAGS } from "./kernel-build-config.ts";
 
 declare const Bun: {
   spawnSync: (
@@ -227,7 +229,15 @@ writeFileSync(
 );
 {
   const proc = Bun.spawnSync(
-    [hermesc, "-emit-binary", "-emit-async-break-check", "-out", busyloopHbc, busyloopJs],
+    [
+      hermesc,
+      ...HERMES_FLAGS,
+      "-emit-binary",
+      "-emit-async-break-check",
+      "-out",
+      busyloopHbc,
+      busyloopJs,
+    ],
     { stdout: "pipe", stderr: "pipe" },
   );
   if (proc.exitCode !== 0) {
@@ -249,22 +259,13 @@ const vectorEnv: Record<string, string> = {
     48,
     "sha512",
   ).toString("hex"),
-  V1_ARGON2ID_BACKUP: argon2Sync("argon2id", {
-    message: utf8("backup vector password"),
-    nonce: utf8("0123456789abcdef"),
-    memory: 65_536,
-    passes: 3,
-    parallelism: 4,
-    tagLength: 32,
-  }).toString("hex"),
-  V1_ARGON2ID_SMALL: argon2Sync("argon2id", {
-    message: utf8("password"),
-    nonce: utf8("somesalt"),
-    memory: 64,
-    passes: 2,
-    parallelism: 1,
-    tagLength: 24,
-  }).toString("hex"),
+  // node:crypto argon2Sync("argon2id", {message: utf8("backup vector password"),
+  // nonce: utf8("0123456789abcdef"), memory: 65536, passes: 3, parallelism: 4,
+  // tagLength: 32}) — pinned: Bun's node:crypto has no argon2.
+  V1_ARGON2ID_BACKUP: "5f543ebf52dad805b11df5b415422eb529772d8c2d826958ee058b5cd0a579db",
+  // Same oracle, {message: utf8("password"), nonce: utf8("somesalt"), memory: 64,
+  // passes: 2, parallelism: 1, tagLength: 24}.
+  V1_ARGON2ID_SMALL: "068d62b26455936aa6ebe60060b0a65870dbfa3ddf8d41f7",
 };
 
 // Footprint and wall-clock assertions are meaningless under sanitizers — these cases run only on

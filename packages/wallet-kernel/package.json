@@ -16,19 +16,22 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "vp test",
-    "test:coverage": "vp test --coverage",
+    "test": "vp test --project unit",
+    "test:coverage": "vp test --coverage --project unit",
+    "test:speculos": "vp test --project speculos",
     "smoke:hermes": "bun scripts/hermes-smoke.ts",
     "fuzz": "vp test fuzz --testTimeout 1800000",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json"
   },
   "dependencies": {
+    "@blockchaincommons/dcbor": "1.0.0-beta.5",
     "@noble/ciphers": "2.4.0",
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@qntx/nostr": "0.16.0",
     "@qntx/siwx": "0.8.0",
     "@qntx/spark": "0.5.2",
+    "@qntx/ur": "4.0.0",
     "@qntx/wallet": "0.13.0",
     "@qntx/wallet-chains": "0.13.0",
     "@scure/base": "2.4.0",
@@ -46,7 +49,9 @@
     "@qntx/tsconfig": "1.0.1",
     "@solana/kit": "8.5.0",
     "@types/node": "26.6.6",
+    "bitcoinjs-lib": "7.0.5",
     "fast-check": "4.10.2",
+    "tiny-secp256k1": "2.2.5",
     "typescript": "7.0.2",
     "viem": "2.57.12",
     "vite-plus": "1.4.0"
@@ -54,7 +59,7 @@
   "devEngines": {
     "packageManager": {
       "name": "bun",
-      "version": "1.4.0",
+      "version": "1.4.4",
       "onFail": "ignore"
     }
   },

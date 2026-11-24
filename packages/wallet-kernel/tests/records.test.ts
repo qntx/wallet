@@ -134,6 +134,7 @@ describe("vault meta vector", () => {
       policy: { maxSessionMs: 0, maxScryptLogN: 20, idle: { ms: 0, activity: "presence" } },
       keystore: undefined,
       passkey: undefined,
+      card: undefined,
       secureInput: undefined,
       backends: {
         spark: async () => {

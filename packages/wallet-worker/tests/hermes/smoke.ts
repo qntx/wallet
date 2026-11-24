@@ -193,6 +193,7 @@ function boot(store: ReturnType<typeof createMemoryStore>): Kernel {
     random,
     keystore: undefined,
     passkey: undefined,
+    card: undefined,
     secureInput: undefined,
     now: () => 1_700_000_000_000,
     elapsed: () => 0,

@@ -212,6 +212,7 @@ const fakeCtx = (rpc: MockRpc) => {
   const ctx: RouteContext = {
     options: {
       wallet: {} as Wallet,
+      chains: {} as never,
       networks: {
         solanaRpc: () => rpc,
         pinnedSolanaRpc: () => rpc,
@@ -696,6 +697,7 @@ describe("a persisted durableNonce row", () => {
     const timers = manualTimers();
     const ctl = new TransactionController({
       wallet: {} as Wallet,
+      chains: {} as never,
       networks: new NetworkController({
         ...idleNetworkDeps,
         fetch: async () => Promise.reject(new Error("no fetch")),

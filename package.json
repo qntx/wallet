@@ -17,6 +17,8 @@
   "scripts": {
     "connect:provider": "bun scripts/build-provider.ts",
     "lint": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp check && bun scripts/check-version.ts && bun scripts/check-migration-guide.ts && bun scripts/check-cycles.ts && bun scripts/check-boundaries.ts && bun scripts/check-bundles.ts && bun scripts/build-provider.ts --check && bun scripts/check-lint-boundaries.ts && bun scripts/check-kernel-budget.ts",
+    "ledger:apps": "bun scripts/ledger/build-apps.ts",
+    "ledger:speculos": "bun scripts/ledger/speculos.ts",
     "typecheck": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp run --concurrency-limit 1 -r typecheck && tsc --noEmit && tsc --noEmit -p tests/migration && bun scripts/readme-blocks.ts && tsc --noEmit -p tests/readme-blocks",
     "test": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp run --concurrency-limit 1 -r test",
     "test:coverage": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp run --concurrency-limit 1 -r test:coverage",
@@ -24,6 +26,7 @@
     "test:browser": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp run @qntx/wallet-engine#test:browser && vp run @qntx/wallet-worker#test:browser && vp run @qntx/playground#test:browser",
     "check:pkg": "bun scripts/check-links.ts && vp run @qntx/wallet#check:pkg && vp run @qntx/wallet-worker#check:pkg && vp run @qntx/wallet-engine#check:pkg && vp run @qntx/wallet-chains#check:pkg && vp run @qntx/wallet-native#check:pkg",
     "smoke:hermes": "bun run --cwd packages/wallet-worker smoke:hermes && bun run --cwd packages/wallet-chains smoke:hermes && bun run --cwd packages/wallet-kernel smoke:hermes && bun run --cwd packages/wallet-engine smoke:hermes",
+    "card:sim": "bash scripts/card-sim/build.sh",
     "harness:bundles": "vp run @qntx/wallet-chains#build && bun scripts/harness-bundles.ts",
     "native:host-test": "vp run @qntx/wallet#build && vp run @qntx/wallet-worker#build && bun scripts/native-host-test.ts",
     "release": "bumpp",
@@ -71,7 +74,7 @@
   "devEngines": {
     "packageManager": {
       "name": "bun",
-      "version": "1.4.0",
+      "version": "1.4.4",
       "onFail": "ignore"
     }
   },

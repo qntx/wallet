@@ -467,6 +467,7 @@ describe.runIf(RUN)("anvil e2e: approvals inventory and revocation", () => {
     });
     transactions = new TransactionController({
       wallet,
+      chains: chains(wallet),
       networks,
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       random: taggedRandom(),

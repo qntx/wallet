@@ -13,10 +13,10 @@ const W = "w";
 const HD = HDKey.fromMasterSeed(new Uint8Array(64).fill(1)).derive("m/84'/0'/0'");
 const LOGGER: EngineLogger = { warn: () => {} };
 
-const walletStub = (custody: "vault" | "hardware" = "vault"): Wallet =>
+const walletStub = (custody: "vault" | "hardware" | "card" = "vault"): Wallet =>
   ({
     getSnapshot: () => ({
-      wallets: [{ walletId: W, custody }],
+      wallets: [{ walletId: W, custody, cards: [] }],
       nostr: { keys: [] as unknown[] },
     }),
   }) as unknown as Wallet;
@@ -30,7 +30,7 @@ type Rig = {
   readonly tronUsed: Set<number>;
   readonly sparkUsed: Set<number>;
   readonly deviceRequired: Set<string>;
-  readonly custody: "vault" | "hardware";
+  readonly custody: "vault" | "hardware" | "card";
   readonly failOn: Set<string>;
   readonly calls: string[];
   readonly sparkAccounts: ReadonlyArray<ReadonlyArray<unknown>>;
@@ -385,6 +385,33 @@ describe("a hardware wallet's account tree", () => {
 
   it("refreshes no spark totals for hardware groups", async () => {
     const r = rig({ custody: "hardware" });
+    await init(r);
+    r.ctl.addGroup(W);
+    r.ctl.select(W, 1);
+    const before = r.calls.length;
+    await r.ctl.refreshTotals();
+    expect(r.calls.slice(before)).not.toContain("spark");
+    expect(r.calls.slice(before)).toHaveLength(0);
+  });
+});
+
+describe("a card wallet's account tree", () => {
+  it("never inspects spark during discovery", async () => {
+    const r = rig({ custody: "card", sparkUsed: new Set([1, 2, 3, 4, 5]) });
+    await init(r);
+    await r.ctl.discoverGroups(W);
+    expect(r.calls).not.toContain("spark");
+  });
+
+  it("drives no spark account for a selected card group", async () => {
+    const r = rig({ custody: "card" });
+    await init(r);
+    expect(r.sparkAccounts.length).toBeGreaterThan(0);
+    expect(r.sparkAccounts.every((refs) => refs.length === 0)).toBe(true);
+  });
+
+  it("refreshes no spark totals for card groups", async () => {
+    const r = rig({ custody: "card" });
     await init(r);
     r.ctl.addGroup(W);
     r.ctl.select(W, 1);

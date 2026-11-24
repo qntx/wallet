@@ -5,6 +5,7 @@ import { verifyEvent } from "@qntx/nostr";
 import type { Event, Filter } from "@qntx/nostr";
 import type { Wallet, WalletInfo } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
+import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
 import type { WalletSyncSigner } from "@qntx/wallet/nostr";
 
@@ -14,6 +15,7 @@ import { META_SYNC_KIND, MetaSyncController } from "../src/meta/controller.ts";
 import { decodeMetaDocBytes, encodeMetaDoc } from "../src/meta/doc.ts";
 import { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { cardRig } from "./card-rig.ts";
 import { realTimer } from "./send-helpers.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
@@ -78,15 +80,22 @@ type Rig = {
 };
 
 async function rig(
-  opts: { relay?: FakeRelay; syncSignerWrap?: (s: WalletSyncSigner) => WalletSyncSigner } = {},
+  opts: {
+    relay?: FakeRelay;
+    syncSignerWrap?: (s: WalletSyncSigner) => WalletSyncSigner;
+    /** A caller-provided wallet (the card rig's) — a fresh node wallet otherwise. */
+    wallet?: Wallet;
+  } = {},
 ): Promise<Rig> {
-  const wallet = await createNodeWallet({
-    verifyEvent,
-    passkey: PASSKEY_CONFIG,
-    autoLock: { platform: "web", idleMinutes: 15 },
-    authenticator: createSoftwarePasskey(randomBytes(32)),
-    kernelUrl: KERNEL_URL,
-  });
+  const wallet =
+    opts.wallet ??
+    (await createNodeWallet({
+      verifyEvent,
+      passkey: PASSKEY_CONFIG,
+      autoLock: { platform: "web", idleMinutes: 15 },
+      authenticator: createSoftwarePasskey(randomBytes(32)),
+      kernelUrl: KERNEL_URL,
+    }));
   let t = 1_700_000_000_000;
   const spark = new SparkController({
     setTimer: realTimer,
@@ -99,6 +108,7 @@ async function rig(
   const accounts = new AccountTreeController({
     setTimer: realTimer,
     wallet,
+    chains: { account: async (params) => chains(wallet).account(params) },
     spark,
     sparkNetwork: NETWORK,
     logger: LOGGER,
@@ -185,6 +195,30 @@ async function waitPublished(relay: FakeRelay, count: number): Promise<void> {
 // Every rig creates a real vault (a 600k-round PBKDF2 password factor per device) and waits out
 // the controller's real debounce, so the multi-device cases carry explicit timeouts.
 describe("MetaSyncController", () => {
+  it("a card wallet never pulls — only vault wallets carry a sync key", async () => {
+    const { wallet, cardWalletId } = await cardRig();
+    // The card import consumed the source vault; a second seed wallet gives the positive control.
+    const { walletId: vaultId } = await wallet.wallets.importMnemonic({
+      mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow",
+    });
+    let signers = 0;
+    const r = await rig({
+      wallet,
+      syncSignerWrap: (s) => {
+        signers += 1;
+        return s;
+      },
+    });
+    /* The wrap counts every syncSigner call; pullOne must never reach it for the card wallet. */
+    await r.accounts.init();
+    await r.addressBook.init();
+    await r.metaSync.init();
+    const s = r.metaSync.getState().wallets;
+    expect(s[cardWalletId]).toBeUndefined();
+    expect(s[vaultId]?.status).toBe("synced");
+    expect(signers).toBe(1);
+  });
+
   it("a wallet with no derived identity still syncs on its dedicated key", async () => {
     const r = await rig();
     const created = await vaultWithMnemonic(r.wallet);

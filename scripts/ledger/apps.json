@@ -1,0 +1,56 @@
+{
+  "images": {
+    "speculos": "ghcr.io/ledgerhq/speculos@sha256:56c7ec84c903147dac28e68706d3241218a3d9beb9562dd4a8c02947b2a24f47",
+    "builder": "ghcr.io/ledgerhq/ledger-app-builder/ledger-app-builder-lite@sha256:45ec491f28489aa0337eea8d50e9962a700ed41054081ee1b639bc1b128e6a32"
+  },
+  "model": "nanosp",
+  "target": "nanos2",
+  "seed": "glory promote mansion idle axis finger extra february uncover one trip resource lawn turtle enact monster seven myth punch hobby comfort wild raise skin",
+  "deterministicRng": "1",
+  "apps": {
+    "bitcoin": {
+      "repo": "LedgerHQ/app-bitcoin-new",
+      "tag": "nanos+_1.6.1_2.5.1_sdk_v26.6.2",
+      "commit": "44ecd0410dcd6ca2f4728cf3c1b49800c30ca74a",
+      "version": "2.5.1",
+      "sdk": "v26.6.2",
+      "sdkCommit": "22d1131a03fcd89c5d2e660de886c8b0417b0789",
+      "name": "Bitcoin",
+      "make": ["COIN=bitcoin"],
+      "submodules": []
+    },
+    "ethereum": {
+      "repo": "LedgerHQ/app-ethereum",
+      "tag": "nanos+_1.7.0_1.24.0_sdk_v27.1.7",
+      "commit": "936b61b0ccb7052fda1b1ac2596e38db6b1b1614",
+      "version": "1.24.0",
+      "sdk": "v27.1.7",
+      "sdkCommit": "9ea0fae9b40bb91e7c4f94bb0e9b8cf22df36306",
+      "name": "Ethereum",
+      "make": ["CHAIN=ethereum"],
+      "submodules": ["ethereum-plugin-sdk"]
+    },
+    "solana": {
+      "repo": "LedgerHQ/app-solana",
+      "tag": "nanos+_1.6.1_1.16.0_sdk_v26.4.0",
+      "commit": "f36225a6cc4615d64df1533cfc40f49b28ef659d",
+      "version": "1.16.0",
+      "sdk": "v26.4.0",
+      "sdkCommit": "0be079ad4f6d2c35540b9c5a4fa486c592bf6999",
+      "name": "Solana",
+      "make": [],
+      "submodules": []
+    },
+    "tron": {
+      "repo": "LedgerHQ/app-tron",
+      "tag": "nanos+_1.7.0_0.8.2_sdk_v27.1.5",
+      "commit": "0dffd0c8b81fbc324fb05a67d929082ed9e67044",
+      "version": "0.8.2",
+      "sdk": "v27.1.5",
+      "sdkCommit": "5171c9732a8705d609f9594fb5d811f893521d1d",
+      "name": "Tron",
+      "make": [],
+      "submodules": []
+    }
+  }
+}

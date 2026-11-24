@@ -7,17 +7,17 @@
  * fingerprint is returned unchanged; the module compares it against the pin and maps a mismatch to
  * `wrong-device`.
  */
-import { equalBytes } from "@noble/ciphers/utils.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 
+import { cryptoMultiAccountsCodec } from "@qntx/ur/interop";
 import type { KeyPath } from "@qntx/wallet-chains";
 
+import type { PinnedEd25519, PinnedNode } from "../../../derive/pinned.ts";
+import { pathToString, fingerprintBytes, samePath } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
-import type { DeviceLink, PairingResult, PinnedEd25519, PinnedNode } from "../driver.ts";
-import { pathToString } from "../record.ts";
-import { decodeCbor } from "./cbor.ts";
-import { hardwareCall, multiAccounts } from "./registry.ts";
-import { pathOf, samePath } from "./sync.ts";
+import type { DeviceLink, PairingResult } from "../driver.ts";
+import { decodeRegistry, hardwareCall } from "./registry.ts";
+import { pathOf } from "./sync.ts";
 
 const HARDENED = 0x80000000;
 const ORIGIN = "qntx";
@@ -87,43 +87,41 @@ export const derive = async (
   if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") {
     integrity();
   }
-  const accounts = multiAccounts(decodeCbor(response.ur.cbor));
+  const accounts = decodeRegistry(response.ur.cbor, cryptoMultiAccountsCodec);
   const nodes: PinnedNode[] = [];
   const ed25519: PinnedEd25519[] = [];
   const answered: KeyPath[] = [];
-  for (const key of accounts.keys) {
+  for (const entry of accounts.keys) {
+    const { key } = entry;
     const path = key.origin === undefined ? undefined : pathOf(key.origin);
-    if (key.origin !== undefined) {
-      const source = key.origin.sourceFingerprint;
-      if (source !== undefined && !equalBytes(source, accounts.masterFingerprint)) {
-        integrity();
-      }
+    const source = key.origin?.sourceFingerprint;
+    if (source !== undefined && source !== accounts.masterFingerprint) {
+      integrity();
     }
-    if (key.isMaster || key.isPrivate || key.key === undefined || path === undefined) {
+    if (path === undefined) {
       integrity();
     }
     if (need.secp256k1.some((wanted) => samePath(path, wanted))) {
       if (
-        key.key.length !== 33 ||
+        entry.curve !== "secp256k1" ||
         key.chainCode === undefined ||
-        key.chainCode.length !== 32 ||
-        !secp256k1.utils.isValidPublicKey(key.key)
+        !secp256k1.utils.isValidPublicKey(key.keyData)
       ) {
         integrity();
       }
       nodes.push({
         path,
-        publicKey: new Uint8Array(key.key),
+        publicKey: new Uint8Array(key.keyData),
         chainCode: new Uint8Array(key.chainCode),
         ...(key.parentFingerprint === undefined
           ? {}
-          : { parent: new Uint8Array(key.parentFingerprint) }),
+          : { parent: fingerprintBytes(key.parentFingerprint) }),
       });
     } else if (need.ed25519.some((wanted) => samePath(path, wanted))) {
-      if (key.key.length !== 32) {
+      if (entry.curve !== "ed25519") {
         integrity();
       }
-      ed25519.push({ path, publicKey: new Uint8Array(key.key) });
+      ed25519.push({ path, publicKey: new Uint8Array(key.keyData) });
     }
     answered.push(path);
   }
@@ -136,9 +134,9 @@ export const derive = async (
     integrity();
   }
   return {
-    fingerprint: accounts.masterFingerprint,
+    fingerprint: fingerprintBytes(accounts.masterFingerprint),
     ...(accounts.device === undefined ? {} : { model: accounts.device }),
-    ...(accounts.deviceVersion === undefined ? {} : { firmware: accounts.deviceVersion }),
+    ...(accounts.version === undefined ? {} : { firmware: accounts.version }),
     nodes,
     ed25519,
   };

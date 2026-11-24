@@ -160,6 +160,7 @@ const ctx = (
       ...networks,
     } as never,
     wallet: {} as never,
+    chains: {} as never,
     openStore: async () => Promise.resolve({} as never),
     random: (n: number) => new Uint8Array(n),
     setTimer: () => () => {},

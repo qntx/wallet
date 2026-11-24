@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Bun 1.4** — package scripts, tests, and tooling.
+- **Bun 1.4.4** — package scripts, tests, and tooling.
 - **Node >= 20.19** — the Node test host for the kernel.
 - **Playwright Chromium** — `bunx playwright install chromium`; needed by the
   `@qntx/wallet-worker` web tests and its coverage gate.

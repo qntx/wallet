@@ -10,6 +10,9 @@ export function isRecordKind(kind: string): boolean {
   return RECORD_KIND_PATTERN.test(kind);
 }
 
+/** The card module's wallet record kind — named here so the vault and commands layers know it. */
+export const CARD_WALLET_KIND = "card-wallet";
+
 /** On-disk vault shapes. `header` is the raw JSON text, authenticated as-is. */
 export type StoredRecord = {
   readonly kind: string; // see isRecordKind

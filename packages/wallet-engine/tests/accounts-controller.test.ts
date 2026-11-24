@@ -5,6 +5,7 @@ import { verifyEvent } from "@qntx/nostr";
 import type { SparkClient, SparkNetwork } from "@qntx/spark";
 import type { Wallet, WalletInfo } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
+import { chains } from "@qntx/wallet/chains";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import { AccountTreeController } from "../src/accounts/controller.ts";
@@ -132,6 +133,7 @@ async function rig(opts: { inspects?: Rig["inspects"] } = {}): Promise<Rig> {
   const accounts = new AccountTreeController({
     setTimer: () => () => undefined,
     wallet,
+    chains: { account: async (params) => chains(wallet).account(params) },
     spark,
     sparkNetwork: NETWORK,
     logger: LOGGER,
@@ -253,6 +255,7 @@ describe("AccountTreeController", () => {
     const accounts = new AccountTreeController({
       setTimer: () => () => undefined,
       wallet,
+      chains: { account: async (params) => chains(wallet).account(params) },
       spark,
       sparkNetwork: NETWORK,
       logger: LOGGER,
@@ -437,6 +440,7 @@ describe("AccountTreeController", () => {
     const again = new AccountTreeController({
       setTimer: () => () => undefined,
       wallet: r.wallet,
+      chains: { account: async (params) => chains(r.wallet).account(params) },
       spark: r.spark,
       sparkNetwork: NETWORK,
       logger: LOGGER,
@@ -478,6 +482,7 @@ describe("AccountTreeController", () => {
     const accounts = new AccountTreeController({
       setTimer: () => () => undefined,
       wallet: r.wallet,
+      chains: { account: async (params) => chains(r.wallet).account(params) },
       spark: r.spark,
       sparkNetwork: NETWORK,
       logger: {
@@ -511,6 +516,7 @@ describe("AccountTreeController", () => {
     const accounts = new AccountTreeController({
       setTimer: () => () => undefined,
       wallet: r.wallet,
+      chains: { account: async (params) => chains(r.wallet).account(params) },
       spark: r.spark,
       sparkNetwork: NETWORK,
       logger: { warn: () => {} },
@@ -567,6 +573,7 @@ describe("AccountTreeController", () => {
     const again = new AccountTreeController({
       setTimer: () => () => undefined,
       wallet: r.wallet,
+      chains: { account: async (params) => chains(r.wallet).account(params) },
       spark: r.spark,
       sparkNetwork: NETWORK,
       logger: LOGGER,
@@ -607,6 +614,7 @@ describe("AccountTreeController", () => {
     const accounts = new AccountTreeController({
       setTimer: () => () => undefined,
       wallet,
+      chains: { account: async (params) => chains(wallet).account(params) },
       spark,
       sparkNetwork: NETWORK,
       logger: LOGGER,

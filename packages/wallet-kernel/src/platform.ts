@@ -6,6 +6,7 @@ import { KernelError } from "./errors.ts";
  * Platform capabilities injected by the host packages. The kernel holds no ambient singletons and
  * imports no platform APIs; every capability arrives through these types.
  */
+import type { Anchor } from "./modules/card/protocol/identity.ts";
 import type { NostrBackend } from "./modules/nostr/backend.ts";
 import type { RecordStore } from "./vault/store.ts";
 
@@ -106,6 +107,8 @@ export type KernelPlatform = {
    * the host runs the ceremony and hands over the evidence.
    */
   readonly passkey: PasskeyAuthenticator | undefined;
+  /** The card reader + secure input + trust anchors; `undefined` on hosts without NFC. */
+  readonly card: CardPlatform | undefined;
   /**
    * The trusted secure-input view — present only where the kernel runs input ceremonies itself
    * (RN), so the cloud-backup password and the card's secrets never cross the main runtime.
@@ -228,24 +231,68 @@ export function serializeCeremonies(
   onCeremony: (active: boolean) => void,
 ): KernelPlatform {
   let tail: Promise<void> = Promise.resolve();
-  const queue = async <T>(work: () => Promise<T>): Promise<T> => {
+  /** Takes the ceremony slot and returns its release — the base of `queue` and `reader.open`. */
+  const acquire = async (): Promise<() => void> => {
     const previous = tail;
     let release: (() => void) | undefined;
     tail = new Promise<void>((resolve) => {
       release = resolve;
     });
-    try {
-      await previous;
-      onCeremony(true);
-      return await work();
-    } finally {
+    await previous;
+    onCeremony(true);
+    let done = false;
+    return () => {
+      if (done) {
+        return;
+      }
+      done = true;
       release?.();
       onCeremony(false);
+    };
+  };
+  const queue = async <T>(work: () => Promise<T>): Promise<T> => {
+    const release = await acquire();
+    try {
+      return await work();
+    } finally {
+      release();
     }
   };
-  const { keystore, passkey, secureInput } = platform;
+  const { keystore, passkey, card, secureInput } = platform;
+  // A reader session holds the ceremony slot from `open` until `close` (or a failed `open`) —
+  // the platform's NFC sheet and the secure-input view are one surface.
+  let releaseReader: (() => void) | undefined;
+  const reader: CardReader | undefined =
+    card === undefined
+      ? undefined
+      : {
+          open: async (prompt) => {
+            const release = await acquire();
+            const result = await card.reader.open(prompt);
+            if (!result.ok) {
+              release();
+              return result;
+            }
+            releaseReader = release;
+            return result;
+          },
+          transmit: async (apdu) => card.reader.transmit(apdu),
+          close: (outcome, text) => {
+            card.reader.close(outcome, text);
+            releaseReader?.();
+            releaseReader = undefined;
+          },
+        };
   return {
     ...platform,
+    card:
+      card === undefined || reader === undefined
+        ? card
+        : {
+            anchors: card.anchors,
+            reader,
+            ...(card.planMs === undefined ? {} : { planMs: card.planMs }),
+          },
     keystore:
       keystore === undefined
         ? undefined
@@ -276,7 +323,13 @@ export function serializeCeremonies(
       secureInput === undefined
         ? undefined
         : {
-            request: async (kind, label) => queue(async () => secureInput.request(kind, label)),
+            /* A request made while the kernel's own reader session holds the slot runs inside
+               that slot — the session already owns the surface and a queue would deadlock on
+               itself. Everything else takes the queue. */
+            request: async (kind, label) =>
+              releaseReader === undefined
+                ? queue(async () => secureInput.request(kind, label))
+                : secureInput.request(kind, label),
             cancel: () => {
               secureInput.cancel();
             },
@@ -391,4 +444,21 @@ export type SecureInputResult =
 export type SecureInput = {
   readonly request: (kind: SecureInputKind, label: string) => Promise<SecureInputResult>;
   readonly cancel: () => void;
+};
+
+/**
+ * The card capability bundle: reader session and the CA anchors the kernel trusts — input comes
+ * through the top-level `secureInput`. Present only on hosts with an NFC card surface — `undefined`
+ * on web/node, where every `card.*` method and every card-wallet seed lookup answers
+ * `unsupported`.
+ */
+export type CardPlatform = {
+  readonly reader: CardReader;
+  readonly anchors: ReadonlyArray<Anchor>;
+  /**
+   * The host's real per-tap reader budget in ms — how long one card connection may run. iOS plans
+   * 18 seconds per connection (§8); a host with a different reader budget sets it here. The kernel
+   * plans each tap's commands inside this budget; when unset the protocol default applies.
+   */
+  readonly planMs?: number;
 };

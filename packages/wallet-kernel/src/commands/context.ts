@@ -1,5 +1,6 @@
 import type { MethodName, ParamsOf, ResultOf } from "@qntx/wallet/protocol";
 
+import type { PublicMaterial } from "../derive/material.ts";
 import type { KernelPlatform } from "../platform.ts";
 import type { Secret } from "../secret/secret.ts";
 import type { Session } from "../session/session.ts";
@@ -58,6 +59,12 @@ export type KernelContext = {
   readonly platform: KernelPlatform;
   readonly session: Session;
   readonly modules: ReadonlyArray<VaultHooks>;
+  /**
+   * Live public material for an external-custody record (card or hardware) — `integrity` when the
+   * owning module has not claimed it, `unsupported` when the record is inert (an unknown device
+   * kind). Every key the pin cannot serve answers `device-required` at call time.
+   */
+  readonly externalMaterial: (record: StoredRecord) => PublicMaterial;
   image: VaultImage;
   /**
    * The kernel's read on the store: "corrupted" (authentication or structure), "unsupported" (data

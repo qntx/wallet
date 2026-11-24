@@ -27,6 +27,7 @@ const platform: KernelPlatform = {
   policy: { maxSessionMs: 0, maxScryptLogN: 20 },
   keystore: undefined,
   passkey: undefined,
+  card: undefined,
   secureInput: undefined,
   backends: {
     spark: async () => {

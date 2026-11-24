@@ -27,36 +27,37 @@ import type {
   ResultOf,
   HARDWARE_METHODS,
 } from "@qntx/wallet/protocol";
+import { HARDWARE_DEVICES } from "@qntx/wallet/types";
 
 import type { Handler, KernelContext, VaultHooks } from "../../commands/context.ts";
+import type { PublicMaterial } from "../../derive/material.ts";
+import { pinnedMaterial, samePath } from "../../derive/pinned.ts";
+import type { PinnedKeys } from "../../derive/pinned.ts";
 import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt, KernelPlatform } from "../../platform.ts";
 import { PROMPT_BOUNDS, codePoints, promptLocale } from "../../prompts.ts";
 import type { PromptBound } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
-import type { StoredRecord, VaultImage } from "../../vault/store.ts";
+import type { StoredRecord } from "../../vault/store.ts";
 import type { OpenedRecord } from "../../vault/vault.ts";
 import { sealRecord, verifyFactor } from "../../vault/vault.ts";
 import { assertFiat24Deadline } from "../chains/evm.ts";
 import {
   accountFor,
-  assertHdTemplates,
   assertSignable,
-  bindAgent,
   checkNetwork,
   leafPath,
-  prepareFor,
+  prepareApproval,
 } from "../chains/index.ts";
-import type { ExternalMaterial } from "../chains/index.ts";
 import { boundChainPrompt, chainPrompt } from "../chains/prompt.ts";
 import { signStages } from "../chains/run.ts";
 import { BTC_PURPOSE } from "../chains/shared.ts";
-import type { DeviceLink, Driver, HardwarePin, PinnedKeys } from "./driver.ts";
-import { pinnedMaterial } from "./material.ts";
+import type { DeviceLink, Driver, HardwarePin } from "./driver.ts";
 import type { OperationExecutor } from "./operation.ts";
 import { createOperationExecutor } from "./operation.ts";
 import { devicePromptLine } from "./prompt.ts";
 import {
+  deviceSupported,
   encodeHardwareBody,
   encodeHardwareHeader,
   HARDWARE_WALLET_KIND,
@@ -75,8 +76,8 @@ const DEVICE_TEXT = /^[\u0020-\u007E]{1,64}$/;
 export type SignersModule = {
   readonly vault: VaultHooks;
   readonly handlers: { [M in keyof typeof HARDWARE_METHODS & MethodName]: Handler<M> };
-  /** `pinnedMaterial` bound to the live pin map — injected into the chains module. */
-  readonly material: ExternalMaterial;
+  /** `pinnedMaterial` bound to the live pin map — the kernel's external-material seam. */
+  readonly material: (record: StoredRecord) => PublicMaterial;
 };
 
 const integrity = (message: string): KernelError => new KernelError("integrity", message);
@@ -91,21 +92,22 @@ const authenticatedBody = (keys: PinnedKeys): Uint8Array => {
   return body;
 };
 
-const samePath = (a: KeyPath, b: KeyPath): boolean =>
-  a.length === b.length && a.every((v, i) => v === b[i]);
-
 /**
  * The live pin for a record: the authenticated body's keys under the claimed header fingerprint. An
  * existing record with no claimed body means the vault lied about its records — `integrity`.
  */
 const pinAt = (pins: ReadonlyMap<string, PinnedKeys>, record: StoredRecord): HardwarePin => {
-  const keys = pins.get(record.id);
-  if (keys === undefined) {
-    throw integrity("hardware wallet record has no authenticated material");
-  }
   const header = parseHardwareHeader(record.header);
   if (hardwareWalletId(header.device, header.fingerprint) !== record.id) {
     throw integrity("hardware wallet record does not match its id");
+  }
+  // A device kind this build does not know is inert: authenticated, listed, never driven.
+  if (!deviceSupported(header.device)) {
+    throw new KernelError("unsupported", `unknown hardware device ${header.device}`);
+  }
+  const keys = pins.get(record.id);
+  if (keys === undefined) {
+    throw integrity("hardware wallet record has no authenticated material");
   }
   return hardwarePin(header, keys);
 };
@@ -145,7 +147,7 @@ const neededPaths = async (
   network: string,
   groupIndex: number,
 ): Promise<{ secp256k1: KeyPath[]; ed25519: KeyPath[] }> => {
-  const material = pinnedMaterial(pin);
+  const material = pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin });
   const need: { secp256k1: KeyPath[]; ed25519: KeyPath[] } = { secp256k1: [], ed25519: [] };
   const purpose = BTC_PURPOSE[template];
   if (template === "evm.bip44") {
@@ -216,9 +218,18 @@ export function createSignersModule(
     return executor;
   };
 
-  const driverFor = (record: StoredRecord): { driver: Driver; header: HardwareHeader } => {
+  /* The device gate every driven op shares: the header parses, the id matches the record, and
+     the kind is one this build ships a driver for — anything else is `unsupported`, never a
+     destructure crash. */
+  const driverFor = (
+    record: StoredRecord,
+  ): { driver: Driver; header: HardwareHeader; device: HardwareDevice } => {
     const header = parseHardwareHeader(record.header);
-    return { driver: drivers[header.device], header };
+    const device = HARDWARE_DEVICES.find((d) => d === header.device);
+    if (device === undefined) {
+      throw new KernelError("unsupported", `unknown hardware device ${header.device}`);
+    }
+    return { driver: drivers[device], device, header };
   };
 
   const pairBody = (
@@ -318,7 +329,7 @@ export function createSignersModule(
         ]);
         wipe(body);
       }
-      const material = pinnedMaterial(pin);
+      const material = pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin });
       const accounts: ChainAccount[] = [];
       for (const template of op.templates) {
         // oxlint-disable-next-line eslint/no-await-in-loop -- account derivation is sequential by design
@@ -344,7 +355,7 @@ export function createSignersModule(
     }
     return async (link) => {
       const pin = pinAt(pins, record);
-      const material = pinnedMaterial(pin);
+      const material = pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin });
       let address: string;
       let path: KeyPath;
       if (op.template === "evm.bip44") {
@@ -394,15 +405,19 @@ export function createSignersModule(
     if (request.account.kind === "imported") {
       throw new KernelError("invalid-input", "an imported key is not a hardware wallet");
     }
-    assertHdTemplates(request);
     const record = hardwareRecord(ctx, request.account.walletId);
-    const { driver, header } = driverFor(record);
+    const { driver, device, header } = driverFor(record);
     const pin = pinAt(pins, record);
-    // The same pipeline chain.sign runs (I2): prepare on public material, agent binding, the
-    // blind-signing policy, the system verification prompt — plus the device's display line.
-    const prepared = await prepareFor(request, pinnedMaterial(pin), ctx.platform.now());
-    const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
-    const display = driver.display(request, prepared.plan);
+    // The same approval pipeline chain.sign runs (I2): template checks, prepare on public
+    // material, agent binding, the blind-signing policy — then the device's display gate and the
+    // system verification prompt carry the device line.
+    const prepared = await prepareApproval(
+      ctx,
+      request,
+      pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin }),
+      dek,
+    );
+    const display = driver.display(request, prepared.plan, header);
     if (display === "unsupported") {
       throw new KernelError("unsupported", "the device cannot sign this request");
     }
@@ -414,24 +429,24 @@ export function createSignersModule(
         ? undefined
         : boundChainPrompt(
             locale,
-            prompt,
+            prepared.prompt,
             shrinkBound(
               PROMPT_BOUNDS[ctx.platform.keystore.platform],
-              devicePromptLine(locale, display, header.device),
+              devicePromptLine(locale, display, device),
             ),
           );
-    assertSignable(ctx, dek, prompt, shown?.oversize ?? false);
+    assertSignable(ctx, dek, prepared.prompt, shown?.oversize ?? false);
     await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () =>
-      devicePrompt(shown?.prompt ?? chainPrompt(locale, prompt), locale, display, header.device),
+      devicePrompt(shown?.prompt ?? chainPrompt(locale, prepared.prompt), locale, display, device),
     );
     ctx.session.require(session);
     if (request.kind === "evm.fiat24-session") {
       assertFiat24Deadline(request, ctx.platform.now());
     }
-    return executorOf(ctx.platform).begin(header.device, display, async (link) => ({
+    return executorOf(ctx.platform).begin(device, display, async (link) => ({
       kind: "sign",
       result: await signStages(prepared.plan, async (stage) =>
-        driver.sign(link, { request, stage, pin, random: ctx.platform.random }),
+        driver.sign(link, { request, stage, pin, display, random: ctx.platform.random }),
       ),
     }));
   };
@@ -450,7 +465,12 @@ export function createSignersModule(
           continue;
         }
         try {
-          pins.set(record.id, parseHardwareBody(record.plaintext));
+          /* A device kind this build does not know stays inert — the record authenticated, so it
+             lists with supported: false; its body is never parsed and never driven. */
+          const header = parseHardwareHeader(record.header);
+          if (deviceSupported(header.device)) {
+            pins.set(record.id, parseHardwareBody(record.plaintext));
+          }
         } catch {
           throw new KernelError(
             "integrity",
@@ -501,13 +521,13 @@ export function createSignersModule(
           return exec.begin(op.device, undefined, pairBody(ctx, op.device));
         case "accounts":
           return exec.begin(
-            driverFor(hardwareRecord(ctx, op.walletId)).header.device,
+            driverFor(hardwareRecord(ctx, op.walletId)).device,
             undefined,
             accountsBody(ctx, op),
           );
         case "verify-address":
           return exec.begin(
-            driverFor(hardwareRecord(ctx, op.walletId)).header.device,
+            driverFor(hardwareRecord(ctx, op.walletId)).device,
             undefined,
             verifyAddressBody(ctx, op),
           );
@@ -533,6 +553,9 @@ export function createSignersModule(
   return {
     vault,
     handlers,
-    material: (_image: VaultImage, record: StoredRecord) => pinnedMaterial(pinAt(pins, record)),
+    material: (record: StoredRecord) => {
+      const pin = pinAt(pins, record);
+      return pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin });
+    },
   };
 }

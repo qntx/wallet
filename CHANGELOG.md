@@ -163,6 +163,9 @@ Engine options, facades and the in-app browser:
   cross-check clients are gone from the engine; controller constructors take new required options
   (`AssetsController` `chains`, `gateway`, `fetch`, `now`; `SparkControllerOptions.random` is
   removed). `engine.bridges.quote` requires `maxFeeBps`. (MIGRATION §2, §13)
+- `@qntx/wallet-engine`: `TransactionController`'s `Options.chains` is required — the controller
+  signs through the injected apis so an external-custody request routes to its signer; what was a
+  test seam defaulting to `chains(wallet)` is a constructor requirement. (MIGRATION §31)
 - `@qntx/wallet-engine`: `RequestEndedError`'s constructor takes a third `signed` argument; read
   `error.signed` to tell whether anything may have been broadcast. `EvmSignInput.nonce` pins the
   nonce of an app's `evm.transaction` (`NonceConflictError` at `prepare`). (MIGRATION §29)
@@ -841,7 +844,8 @@ Gateway (operators):
   the kernel, not yet wired to any kernel command). A self-contained host implementation of the
   qntx card protocol 1 (`qntx/wallet-applet` `spec/protocol.md`): card IDs and short IDs,
   certificate verification against batch anchors (`PRODUCTION_ANCHORS` is empty until the first
-  production batch; a card that chains to no anchor is `card-not-genuine`), `accessHash` through
+  production batch; a card that chains to no anchor — including one that never finished
+  personalisation — is `card-not-genuine`), `accessHash` through
   the injected Argon2id (6–64 printable ASCII characters, `m = 64 MiB, t = 3, p = 4`), OPEN with
   the signed ephemeral ECDH and SP 800-56C key schedule, the AES-CBC/CMAC record layer with
   counters, pre-wrapped records and teardown on any failure (`session-broken`, keys wiped), encoders
@@ -871,17 +875,47 @@ Gateway (operators):
   drives the tap cadence (the card-wallet transport architecture, AGENTS.md). `__qntx.secureInput`
   collects a card access code or printed short ID from a native field and hands the bytes to the
   kernel runtime only. Neither is registered with Nitro or reachable from the main runtime.
-  Kernel-side bindings: `kernel/card.ts` (`bindNativeCardReader`, `bindNativeSecureInput`);
-  platform types `CardReader`, `SecureInput` in the kernel's `platform.ts` (not yet wired into
-  `KernelPlatform`).
-- `@qntx/wallet-native/secure-input` (experimental: may change before card wallets ship): the
-  `SecureInput` Nitro host component. The main runtime can
+  Kernel-side bindings: `kernel/card.ts` (`bindNativeCardReader`, `bindNativeSecureInput`),
+  wired into the kernel as `KernelPlatform.card` (reader, secure input and certificate anchors).
+- `@qntx/wallet-native/secure-input`: the `SecureInput` Nitro host component. The main runtime can
   mount and size it and receives only `idle | empty | filled | submitted`; the kernel decides
   whether it collects an access code (masked, printable ASCII, ≤ 64), a short ID (8 hex digits)
   or the backup password (`backup-password` — how the kernel collects it on React Native) and
   which label it shows. The field is editable only while a kernel request is pending, takes
   focus and raises the keyboard on that request, has no edit menu (no paste, copy or cut), is
   excluded from autofill, and on Android sets `FLAG_SECURE` while an access code is being typed.
+- **qntx card wallets** (React Native). A wallet's seed can live only on one to three qntx cards:
+  the vault keeps a `card-wallet` record (card IDs and pinned certificates, the wallet anchor,
+  the public keys a tap fetched, optionally the sealed access-code hash), never the seed.
+  `@qntx/wallet/card`: `card(wallet).start(op, verify)` returns a `CardTask` (`observe`, `cancel`,
+  `result`); operations `status`, `add`, `accounts`, `health`, `change-access`, `erase`,
+  `create` (card-generated, or moving a vault wallet onto the cards), `transfer`, `reseal`,
+  `sign` and `forget-access`. Kernel protocol `card.begin` / `card.step` / `card.cancel`
+  (`CARD_METHODS`); the host only starts, observes and cancels — APDUs flow between the kernel
+  runtime and the native reader, the kernel collects the access code from `SecureInput`, and the
+  NFC sheet's text is the kernel's decoded prompt of the request (for a blind request, the blind
+  warning and the network).
+- Card signing covers every `chain.sign` request: EVM transactions (incl. EIP-7702
+  authorisations), personal messages and EIP-712 (incl. Fiat24 sessions and app-origin typed
+  data), Bitcoin PSBTs (multi-input, all four account templates, Taproot key path), BIP-322 and legacy messages, Solana
+  legacy/v0/v1 transactions and messages (≤ 16 KiB), and TRON. ECDSA, BIP-340 and Ed25519
+  (streamed) run on the card; every card signature is verified against the cached public key
+  before assembly, and a repeated ECDSA `r` within one operation is `card-fault`. A plan that
+  needs more than one tap resumes on the next tap of the same card without a new prompt.
+- Every tap is its own authenticated session: the card's certificate must chain to a pinned
+  anchor (else `card-not-genuine`), its ephemeral key must not repeat, the card ID must be the
+  one the step expects before any access-code hash is sent (`card-id-mismatch`), a failure
+  counter that moved without this kernel is `card-tampered`, and every exit path wipes the code,
+  the hashes, the session keys and any generated entropy or imported seed. An operation without
+  progress for 120 s, a lock or `card.cancel` discards it.
+- `@qntx/wallet`: `CardWalletInfo`, `VaultWalletInfo`, `CardInfo`; error codes
+  `card-not-genuine`, `card-id-mismatch`, `card-erased`, `card-locked`,
+  `card-tampered`, `card-fault`, `card-unsupported`. `@qntx/wallet/protocol`: `CARD_METHODS`, the
+  `cardId` validator and the `Card*` wire types.
+- `scripts/card-sim/` and `bun run card:sim`: the real qntx applet at the commit
+  `vectors/card/SOURCE` pins, in its patched jcardsim, behind a multi-card stdio bridge with a
+  power-loss hook; the kernel's simulator suites and CI's `card.yml` run against it.
+- `scripts/check-kernel-budget.ts` reports the card module on its own line with a measured budget.
 - `apps/harness`: a card-surfaces page (`EXPO_PUBLIC_CARD_SURFACES=1`) that drives both surfaces
   through a real kernel runtime with a fake card reader, and a leak check proving the typed code
   never appears in any main-runtime message, log, event payload or React state.
@@ -1025,7 +1059,8 @@ Gateway (operators):
   report its settlement or on-chain failure. New `EngineOptions.pushKeys` (`PushKeyStore`) hands the
   per-subscription payload keys to the host for its notification extension. A family whose
   addresses need a hardware device that has not pinned that path reports `device-required` in the
-  per-wallet `NotificationStatus` instead of silently staying pending, and a failing family no
+  per-wallet `NotificationStatus` — the same for a card wallet's family with no cached
+  material — instead of silently staying pending, and a failing family no
   longer aborts the reconcile for the remaining wallets and families.
 - `@qntx/wallet-engine/push`: `openPush(message, keys)`, the dependency-light opener (only
   `@noble/ciphers` and `@scure/base`, no runtime globals) a notification extension or headless task
@@ -1072,13 +1107,18 @@ Gateway (operators):
   serves `wallet.accounts`, including public derivation off the non-hardened tail. A wallet whose
   `custody` is `"hardware"` carries no seed, so no hardware secret ever exists in the kernel.
 - `@qntx/wallet`: `WalletInfo` is a `custody` union — `VaultWalletInfo` (the existing shape) or
-  `HardwareWalletInfo` (`device`, `fingerprint`, optional `model`/`firmware`). `HARDWARE_DEVICES`
+  `HardwareWalletInfo` (`device`, `fingerprint`, optional `model`/`firmware`, and `supported`:
+  whether this build ships a driver for `device` — a wallet paired under a device kind a later
+  build dropped stays inert, not unreadable). `HARDWARE_DEVICES`
   lists the supported devices. Error codes `device-required`, `device-locked`,
   `device-app-closed`, `device-rejected`, `wrong-device`.
-- `@qntx/wallet/hardware`: `hardware(wallet)` — `pair`, `accounts`, `sign`, `verifyAddress` over a
-  host-supplied `DeviceIo`; `sign` takes the same `verify` factor and re-runs the same result
-  checks as `chains().sign`. `qrParts`/`qrReader` are the UR plumbing for air-gapped transports:
-  cyclic uppercase fountain parts and a strict incremental decoder over `@qntx/ur` (optional
+- `@qntx/wallet/hardware`: `hardware(wallet)` — `start(op, { io, verify? })` runs one operation
+  (`pair`, `accounts`, `sign`, `verify-address`) over a host-supplied `DeviceIo` and returns a
+  `SignerTask`; `sign` takes the same `verify` factor and re-runs the same result checks as
+  `chains().sign`. `HidPort`/`BlePort` are the host transport contracts the shipped
+  `ledgerHidExchange`/`ledgerBleExchange`/`oneKeyHidExchange`/`oneKeyBleExchange` run over.
+  `qrParts`/`qrReader` are the UR plumbing for air-gapped transports:
+  cyclic uppercase fountain parts and a strict incremental decoder over `@qntx/ur` 4.0.0 (optional
   peer).
 - **Keystone 3 Pro over QR** (`modules/signers/keystone/`): pairing from the sync
   `crypto-multi-accounts`, per-group account keys via `qr-hardware-call` key derivation (firmware
@@ -1089,8 +1129,75 @@ Gateway (operators):
   request-id binding, `samePsbtContent` on returned PSBTs. `vectors/keystone/` +
   `scripts/vectors/keystone.ts` pin sync, sign and hardware-call frames against the vendor
   encoders.
+- **OneKey hardware wallets over USB or BLE** (`modules/signers/onekey/`; emulator-tested on Classic 1S
+  3.21.0 and Pro 4.21.0; Classic, Mini and Touch follow the same protocol under firmware gates from
+  source, untested on hardware): `"onekey"` in
+  `HARDWARE_DEVICES` and a Protocol-V1 wire client with the driver over it. Pairing pins six
+  secp256k1 account nodes (BIP-44/49/84/86, EVM, TRON) and the SLIP-10 ed25519 Solana leaf with
+  root-fingerprint agreement and host-side address cross-checks; `sign` re-probes the pinned
+  account node and re-checks the live device display against the confirmed one before any
+  signing exchange. EVM legacy/EIP-1559/EIP-7702 (both stages)/personal/typed-data, Solana
+  transaction/message, TRON transaction/message, Bitcoin PSBT (streaming `SignTx`, incl.
+  taproot) and legacy/BIP-322 messages (BIP-322 on Pro ≥ 4.9.3). `@qntx/wallet/hardware` exports
+  `oneKeyHidExchange` (64-byte report writes, whole-sequence answers), `oneKeyBleExchange`
+  (MTU-split writes, concatenated notifications) and `oneKeyIo` — the host half of the OneKey
+  transport. `vectors/onekey/` pins emulator recordings at
+  protocol and driver level for Classic 1S 3.21.0 and Pro 4.21.0; `onekey.yml` re-records them
+  in CI.
 - `@qntx/wallet-chains/evm`: `evmSigningPreimage` — the unsigned EIP-155/EIP-2718 bytes whose
-  keccak is the signer's digest; `@qntx/wallet-chains/bitcoin`: `legacyMessageHash`.
+  keccak is the signer's digest; `typedDataHashes` — the domain separator and struct hash of an
+  EIP-712 document, for signers that take the two hashes; `@qntx/wallet-chains/bitcoin`:
+  `legacyMessageHash`.
+- **Ledger Nano S Plus / Nano X / Stax / Flex** (`modules/signers/ledger/`, device literal
+  `"ledger"`): pairing from the Bitcoin app (the only Ledger app that reveals the BIP-32 master
+  fingerprint) with the four group-0 Bitcoin account keys pinned; per-family account keys from the
+  Ethereum (chain-code public key), Tron and Solana apps, one app per `accounts` call; on-device
+  address display for every family; signing of EVM legacy / EIP-2930 / EIP-1559 / personal_sign /
+  EIP-712, TRON transaction / message / TIP-712, Solana legacy / v0 transaction and formal off-chain
+  message, Bitcoin PSBT (P2PKH, P2SH-P2WPKH, P2WPKH, P2TR key path) and legacy message. Every
+  device payload is recomputed from the request and checked against the plan digest before an APDU
+  leaves the kernel; requests the device can only blind-sign read the app configuration first and
+  fail `blind-signing-disabled` when the app's setting is off (the Tron app hash-signs personal messages, so they are blind too); the prompt says whether the device
+  shows the request in full or signs blind. Refused before any prompt (`unsupported`): EIP-7702
+  (not in the Ethereum app's default build since 1.24.0), raw Solana messages that are not formal
+  off-chain documents, BIP-322 (Bitcoin app 2.6.0 is not released to devices), mixed-template
+  PSBTs, non-mainnet Bitcoin.
+- The Ledger protocol client (`modules/signers/ledger/protocol/`): a pure, Hermes-safe implementation of
+  the documented APDU protocols of the Bitcoin (v2: merkleized PSBTv2, default wallet policies,
+  bounded interactive client), Ethereum (incl. EIP-712 full mode and the legacy safe-chunk rule),
+  Solana and Tron apps; no vendor SDK (none runs in the bare kernel runtime). Exact reply parsing:
+  on-curve keys, addresses bound to the returned key, xpub depth and child checked, wallet
+  addresses re-derived locally, PSBT yields bound to the input's own derivation under the policy
+  key.
+- `@qntx/wallet/hardware`: `ledgerHidExchange` (64-byte HID reports), `ledgerBleExchange` (BLE
+  with MTU negotiation) and `ledgerIo` — the host half of the Ledger transport; framing violations
+  fail `integrity`.
+- `@qntx/wallet-chains/tron`: `tronTypedDataHashes` (domain separator and message hash of a TIP-712
+  document, for signers that take the two hashes).
+- Vectors: `vectors/ledger/framing.json` (the vendor's framing vectors) and
+  `vectors/ledger/{bitcoin,ethereum,solana,tron}.json` (APDU transcripts recorded from the pinned
+  device releases on Speculos, replayed byte for byte in unit tests). CI `ledger.yml` builds the
+  pinned apps (`scripts/ledger/apps.json`) and re-checks the transcripts and the end-to-end
+  signing flow live on Speculos.
+- `@qntx/wallet-engine`: `EngineOptions.deviceIo` — the host's per-device-kind `DeviceIo`
+  factory, wired once at `createWalletEngine` — and `engine.signers`, the engine's
+  external-signer orchestration. `getState`/`store.subscribe` reports the one `SignerActivity`
+  allowed at a time (a card operation publishes the kernel's `card` steps, a hardware operation
+  `device` exchanges); a second start refuses `conflict` without touching the running operation;
+  a vault lock cancels it. `cancel()` ends the running operation; `verifyAddress` shows an
+  address on the device's screen; `fetchAccounts` pulls one family's pinned accounts (Bitcoin
+  once per enabled network, the others once) and re-runs that family's discovery check. Every
+  engine signature routes through it — vault material signs directly, a card request runs a card
+  task, a hardware request a device operation — and the typed refusals (`unsupported` for
+  sessions/Spark/Nostr, `invalid-input` for a Fiat24 session grant) land before any activity
+  publishes. `SignersController`, `SignerActivity`, `SignerFamily` and `SignersState` are
+  exported. (MIGRATION §31)
+- `@qntx/wallet-engine`: the account tree knows external custody. Wallet entries carry
+  `custody` and `state` — an `incomplete` card wallet (still waiting on a member card) holds no
+  groups and no addresses: `nextReceiveAddress` and sends on it throw until it is `ready`.
+  `AccountGroup.signer` marks a family only the signer can answer as `device-required` — neither
+  used nor an error in discovery, and a group whose every chain family waits on the signer ends
+  the scan. (MIGRATION §31)
 
 ### Changed
 
@@ -1277,6 +1384,25 @@ Gateway (operators):
 
 ### Fixed
 
+- `@qntx/wallet-engine`: a second signer operation started while one runs no longer cancels the
+  running one — `card()`/`hardware()` start semantics tore down the tap or device confirmation in
+  progress before the `conflict` refusal; the op now refuses before it starts, and an unsupported
+  device refuses without publishing an activity.
+- `@qntx/wallet-kernel`: fetching a non-bitcoin family's accounts on a Ledger re-proves the live
+  device's identity first — those apps cannot reveal the master fingerprint, so one already-pinned
+  key of the same family is re-fetched and must match byte for byte (`wrong-device` otherwise);
+  material from a different device answering could merge undetected before. The first fetch of a
+  family stays trust-on-first-use, like pairing; verify an address on the device to close it.
+- `@qntx/wallet-kernel`: a user rejecting an on-device address verification reports
+  `device-rejected` on every driver — a Ledger rejection was previously read as `wrong-device`,
+  the code reserved for a device showing a different address.
+- `@qntx/wallet`: the OneKey HID/BLE exchanges collect a device answer to its announced length
+  exactly — short HID reports, an empty read and a BLE stream past the declared payload are
+  `integrity` like the Ledger assemblers report them.
+- `@qntx/wallet-native`: the kernel bytecode is compiled with `-Xes6-block-scoping`. hermesc
+  leaves ES6 block scoping off by default, so on React Native a closure over a loop-scoped
+  `let`/`const` in kernel code saw the last iteration's value. The kernel now refuses to start in
+  a runtime without block scoping.
 - `@qntx/wallet-chains/evm`: native value sent with calldata is always an outflow; an unrecognised
   payable call, a payable token call and a contract creation decoded with no outflow (#224).
   Native amounts in typed data take the request network's symbol and decimals (Seaport no longer

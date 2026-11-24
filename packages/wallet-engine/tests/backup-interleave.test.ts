@@ -17,6 +17,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
  */
 import type {
   BackupInfo,
+  CardWalletInfo,
   FactorInfo,
   HardwareWalletInfo,
   KeyInfo,
@@ -344,7 +345,21 @@ function addHardwareWallet(d: Device, walletId: string): void {
     walletId,
     custody: "hardware",
     device: "keystone",
+    supported: true,
     fingerprint: "0123abcd",
+    createdAt: 1,
+  };
+  d.state.wallets.push(info);
+}
+
+function addCardWallet(d: Device, walletId: string): void {
+  const info: CardWalletInfo = {
+    custody: "card",
+    walletId,
+    origin: "card-imported",
+    backup: "cards",
+    members: 1,
+    cards: [{ cardId: "aa".repeat(16), state: "ready" }],
     createdAt: 1,
   };
   d.state.wallets.push(info);
@@ -650,6 +665,44 @@ describe("two devices, one shared cloud", () => {
     expect(files.size).toBe(1);
     // The adopted head covers A's seed wallets, so A wrote exactly its first upload — a
     // coverage leak (the hardware wallet counted) would re-upload a version no file can match.
+    expect(sched.calls("A:write")).toBe(1);
+    expect(unionCoverage(cloudFiles(files)).wallets).toStrictEqual(new Set(["w-a", "w-b"]));
+  });
+
+  it("a card wallet stays out of coverage, unprotected, uploads and conflicts", async () => {
+    const files = new Map<string, string>();
+    const inner = createMemoryCloudStore(files);
+    const sched = new Scheduler();
+    const a = device("A", sched.wrap(inner, "A"));
+    const b = device("B", sched.wrap(inner, "B"), { fresh: true });
+
+    // A creates a card wallet next to its seed wallet; the cloud may only see the seed one —
+    // the cards ARE its backup, and the vault caches public material only.
+    addWallet(a, "w-a");
+    addCardWallet(a, "card-a");
+
+    await sched.drive([a.backup.sync()]);
+    const a0 = singleFile(files);
+    expect(cloudFiles(files)).toStrictEqual([{ name: a0, wallets: ["w-a"], keys: [] }]);
+    // A card wallet's seed never touched the vault, so it can never wait for a backup.
+    expect(a.backup.getState().unprotected.walletIds).toStrictEqual([]);
+
+    // The next pass confirms the head instead of re-uploading: coverage matches without card-a.
+    await sched.drive([a.backup.sync()]);
+    expect(files.size).toBe(1);
+    expect(a.backup.getState().status).toBe("synced");
+
+    // Same merge dance as the hardware sibling: B adopts, adds its seed wallet, uploads the
+    // union; A merge-restores and both end synced — no file is ever expected to cover card-a.
+    await sched.drive([b.backup.restore({ name: a0, backupFactor: { kind: "passkey" } })]);
+    addWallet(b, "w-b");
+    await sched.drive([b.backup.sync()]);
+    const union = singleFile(files);
+    await sched.drive([a.backup.restore({ name: union, backupFactor: { kind: "passkey" } })]);
+    await sched.drive([a.backup.sync(), b.backup.sync()]);
+    expect(a.backup.getState().status).toBe("synced");
+    expect(b.backup.getState().status).toBe("synced");
+    expect(files.size).toBe(1);
     expect(sched.calls("A:write")).toBe(1);
     expect(unionCoverage(cloudFiles(files)).wallets).toStrictEqual(new Set(["w-a", "w-b"]));
   });

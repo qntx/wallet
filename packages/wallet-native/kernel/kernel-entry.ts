@@ -5,9 +5,12 @@
  */
 
 import { startKernel } from "../../wallet-kernel/src/kernel.ts";
+import { PRODUCTION_ANCHORS } from "../../wallet-kernel/src/modules/card/protocol/index.ts";
 import type { KernelPlatform } from "../../wallet-kernel/src/platform.ts";
 import { bindNativeAnchor } from "./anchor.ts";
 import type { KernelAnchorNative } from "./anchor.ts";
+import { bindNativeCardReader } from "./card.ts";
+import type { KernelCardReaderNative } from "./card.ts";
 import { bindNativeKeystore } from "./keystore.ts";
 import type { KernelKeystoreNative } from "./keystore.ts";
 import { bindNativeNostr } from "./nostr.ts";
@@ -49,6 +52,7 @@ export type KernelGlobals = {
   readonly anchor: KernelAnchorNative;
   readonly keystore: KernelKeystoreNative;
   readonly passkey: KernelPasskeyNative;
+  readonly cardReader: KernelCardReaderNative;
   readonly secureInput: KernelSecureInputNative;
   readonly frames: KernelFramePipe;
   readonly backends: {
@@ -101,6 +105,10 @@ const platform: KernelPlatform = {
   anchor: bindNativeAnchor(__qntx.anchor),
   keystore: bindNativeKeystore(__qntx.keystore),
   passkey: bindNativePasskey(__qntx.passkey, (length) => __qntx.random(length)),
+  card: {
+    reader: bindNativeCardReader(__qntx.cardReader),
+    anchors: PRODUCTION_ANCHORS,
+  },
   secureInput: bindNativeSecureInput(__qntx.secureInput),
   // No foreground idle lock on native — the host locks on backgrounding after
   // autoLock.backgroundSeconds (W7); the session still ends at 24 h.

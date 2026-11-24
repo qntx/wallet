@@ -107,6 +107,10 @@ export function openResponse(
     if (!equalBytes(request, expectedRequest)) {
       throw new CardError("invalid-input", "request does not carry the host ephemeral");
     }
+    if (response.length >= 2 && readSw(response) === 0x6283) {
+      // §4.3 — the card never finished personalisation init; the wallet never initialises one.
+      throw new CardError("card-not-genuine", "the card is not initialised", 0x6283);
+    }
     if (response.length !== 228 || response.at(-2) !== 0x90 || response.at(-1) !== 0x00) {
       throw new CardError(
         "card-not-genuine",

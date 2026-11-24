@@ -1363,6 +1363,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
       id: 11,
       ok: {
         wallet: {
+          custody: "vault",
           walletId: WALLET_ID,
           origin: "mnemonic",
           words: 12,

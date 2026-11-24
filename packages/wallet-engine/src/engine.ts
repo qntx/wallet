@@ -11,7 +11,7 @@ import type { Event } from "@qntx/nostr";
 import { createSparkClient } from "@qntx/spark";
 import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
 import { WalletError } from "@qntx/wallet";
-import type { KeysApi, Wallet } from "@qntx/wallet";
+import type { KeysApi, Wallet, HardwareDevice } from "@qntx/wallet";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
 import {
   addSolanaSignature,
@@ -20,6 +20,7 @@ import {
   normalizeSolana,
 } from "@qntx/wallet-chains/solana";
 import { chains } from "@qntx/wallet/chains";
+import type { DeviceIo } from "@qntx/wallet/hardware";
 import { nostr } from "@qntx/wallet/nostr";
 import { sessions } from "@qntx/wallet/sessions";
 import { spark } from "@qntx/wallet/spark";
@@ -72,6 +73,7 @@ import { valueHoldings } from "./prices/valuation.ts";
 import type { Valuation } from "./prices/valuation.ts";
 import { RequestController } from "./requests/controller.ts";
 import { knownAddresses } from "./requests/risk.ts";
+import { SignersController } from "./signers/controller.ts";
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
 import { DepositClaimer } from "./spark/deposit-claim.ts";
@@ -151,6 +153,11 @@ export type EngineOptions = {
   readonly pushKeys?: PushKeyStore;
   /** Test seam — defaults to the wallet's real spark proxy. */
   readonly sparkApis?: SparkControllerOptions["spark"];
+  /**
+   * The host's transport for a paired hardware device (Ledger APDUs, a Keystone QR channel). Absent
+   * → hardware wallets cannot sign, verify addresses or fetch accounts here.
+   */
+  readonly deviceIo?: (device: HardwareDevice) => DeviceIo;
 };
 
 /** A controller's store without `setState`: hosts read and subscribe, only the engine writes. */
@@ -246,6 +253,12 @@ export type WalletEngine = {
     RequestController,
     "prepare" | "approve" | "reject" | "outcome" | "signLog" | "clearSignLog"
   >;
+  /**
+   * External signers: at most one card/hardware operation at a time, its progress in `active`.
+   * Every engine signature runs through its `apis` — the request's wallet custody decides whether
+   * the vault signs directly or the signer runs first.
+   */
+  readonly signers: HostController<SignersController, "cancel" | "verifyAddress" | "fetchAccounts">;
   readonly addressBook: HostController<
     AddressBookController,
     "add" | "rename" | "setNote" | "remove"
@@ -530,9 +543,25 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
   });
 
+  const signers = new SignersController({
+    wallet: options.wallet,
+    deviceIo: options.deviceIo,
+    /* The tree is constructed below — the thunk resolves at call time: a fetch can only run
+       once init wired everything. */
+    recheck: async (walletId, groupIndex, family) =>
+      accounts.recheckFamily(walletId, groupIndex, family),
+    networks: { enabled: (family) => networks.enabled(family) },
+    random: options.random,
+    logger: options.logger,
+  });
+
   const transactions = new TransactionController({
     wallet: options.wallet,
     networks,
+    chains: signers.apis,
+    /* The tree is constructed below; the check runs at call time. */
+    isWalletIncomplete: (walletId) =>
+      accounts.getState().wallets.find((w) => w.walletId === walletId)?.state === "incomplete",
     openStore: sessionStore,
     random: options.random,
     setTimer,
@@ -642,6 +671,11 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     spark: controller,
     sparkNetwork: options.sparkNetwork,
     networks,
+    // Deferred like every other chains() call here — resolving the api at construction would
+    // validate the wallet before any discovery check needs it.
+    chains: {
+      account: async (params) => chains(options.wallet).account(params),
+    },
     logger: options.logger,
     now: options.now,
     setTimer,
@@ -723,7 +757,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         for (const wire of request.transactions) {
           const { message } = decodeSolanaTransaction(wire, account.address);
           // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
-          const result = await chains(options.wallet).sign({
+          const result = await signers.apis.sign({
             request: {
               kind: "solana.transaction",
               network,
@@ -786,7 +820,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         },
         account.address,
       );
-      const result = await chains(options.wallet).sign({
+      const result = await signers.apis.sign({
         request: {
           kind: "solana.message",
           format: "raw",
@@ -803,7 +837,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
     bitcoinPrepare: async (account, network, psbts) =>
       prepareDappPsbts(
-        chains(options.wallet),
+        signers.apis,
         networks.esplora(network),
         account,
         network,
@@ -832,7 +866,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       };
     },
     bitcoinSign: async (account, network, request, verify) => {
-      const result = await chains(options.wallet).sign({
+      const result = await signers.apis.sign({
         request: {
           kind: "bitcoin.message",
           network,
@@ -942,7 +976,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   ): Promise<ReadonlyArray<{ readonly network: string; readonly address: string }>> => {
     const enabled = networks.enabled(family);
     const [first] = enabled;
-    if (first === undefined) {
+    if (
+      first === undefined ||
+      accounts.getState().wallets.find((w) => w.walletId === group.walletId)?.state === "incomplete"
+    ) {
       return [];
     }
     const template =
@@ -1179,6 +1216,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     nfts.lock();
     notifications.lock();
     prices.lock();
+    signers.lock();
     assets.lock();
     networks.lock();
     // Lock: cancel sync write-backs, tree → locked, spark.setAccounts([]), totals flush.
@@ -1227,6 +1265,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         await assets.init();
         await prices.init();
         await transactions.init();
+        await signers.init();
         await history.init();
         await approvals.init();
         await nfts.init();
@@ -1297,6 +1336,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
     transactions,
     requests,
+    signers,
     history,
     approvals: {
       getState: () => approvals.getState(),

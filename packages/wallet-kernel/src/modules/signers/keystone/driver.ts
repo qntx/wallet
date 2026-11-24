@@ -1,3 +1,4 @@
+import { pathToString } from "../../../derive/pinned.ts";
 /**
  * The Keystone driver: QR air-gapped pairing, compare-style address checks, and QR signing. `pair`
  * scans the device's `crypto-multi-accounts` sync and pins the public material `sync.ts` admits;
@@ -8,7 +9,6 @@
  */
 import { KernelError } from "../../../errors.ts";
 import type { Driver } from "../driver.ts";
-import { pathToString } from "../record.ts";
 import { derive } from "./derive.ts";
 import { display, sign } from "./sign.ts";
 import { parseSync } from "./sync.ts";

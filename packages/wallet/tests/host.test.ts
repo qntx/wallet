@@ -18,6 +18,7 @@ import type {
   PasskeyConfig,
   StatusPayload,
   WalletErrorCode,
+  WalletInfo,
 } from "../src/types.ts";
 import { connectKernel } from "../src/wallet.ts";
 
@@ -1011,6 +1012,14 @@ const PASSPHRASE_WALLET = {
 } as const;
 const SESSION_ID = "ab".repeat(16);
 
+/** Narrows a wallet info to the vault arm for assertions on vault-only fields. */
+const vaultOf = (info: WalletInfo): Extract<WalletInfo, { custody: "vault" }> => {
+  if (info.custody !== "vault") {
+    throw new Error("expected a vault wallet");
+  }
+  return info;
+};
+
 const sentPassphrase = (params: Record<string, unknown> | undefined): boolean =>
   params !== undefined && "passphrase" in params;
 
@@ -1028,7 +1037,8 @@ describe("BIP-39 passphrase wire", () => {
       mnemonic: "abandon abandon abandon",
       passphrase: "p\u00E4ss word",
     });
-    expect(imported.passphrase).toBe(true);
+    expect(imported.custody).toBe("vault");
+    expect(vaultOf(imported).passphrase).toBe(true);
     expect(text(seen[0]?.["passphrase"])).toBe("p\u00E4ss word");
 
     await wallet.wallets.importMnemonic({ mnemonic: "abandon", passphrase: "" });
@@ -1053,7 +1063,8 @@ describe("BIP-39 passphrase wire", () => {
     });
     const draft = await wallet.wallets.createMnemonic({ words: 12 });
     const confirmed = await draft.confirm(["a", "b", "c"], { passphrase: "secret" });
-    expect(confirmed.passphrase).toBe(true);
+    expect(confirmed.custody).toBe("vault");
+    expect(vaultOf(confirmed).passphrase).toBe(true);
     expect(text(confirmParams["passphrase"])).toBe("secret");
 
     await draft.confirm(["a", "b", "c"]);

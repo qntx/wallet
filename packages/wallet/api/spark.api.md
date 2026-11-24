@@ -44,6 +44,26 @@ type BackupInfo = {
 };
 
 // @public (undocumented)
+type CardInfo = {
+    readonly cardId: string;
+    readonly shortId?: string;
+    readonly state: "ready" | "unknown" | "pending";
+    readonly tries?: number;
+    readonly verifiedAt?: number;
+};
+
+// @public
+type CardWalletInfo = {
+    readonly custody: "card";
+    readonly walletId: string;
+    readonly origin: "card-generated" | "card-imported";
+    readonly backup: "cards";
+    readonly createdAt: number;
+    readonly members: number;
+    readonly cards: ReadonlyArray<CardInfo>;
+};
+
+// @public (undocumented)
 type DataKeyApi = {
     readonly get: (purpose: string) => Promise<Uint8Array>;
 };
@@ -81,16 +101,11 @@ type FactorInfo = {
 };
 
 // @public
-const HARDWARE_DEVICES: readonly ["keystone"];
-
-// @public
-type HardwareDevice = (typeof HARDWARE_DEVICES)[number];
-
-// @public
 type HardwareWalletInfo = {
     readonly custody: "hardware";
     readonly walletId: string;
-    readonly device: HardwareDevice;
+    readonly device: string;
+    readonly supported: boolean;
     readonly fingerprint: string;
     readonly model?: string;
     readonly firmware?: string;
@@ -248,7 +263,7 @@ type VaultApi = {
 // @public
 type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
 
-// @public (undocumented)
+// @public
 type VaultWalletInfo = {
     readonly custody: "vault";
     readonly walletId: string;
@@ -277,7 +292,7 @@ type Wallet = {
 };
 
 // @public (undocumented)
-type WalletInfo = VaultWalletInfo | HardwareWalletInfo;
+type WalletInfo = VaultWalletInfo | HardwareWalletInfo | CardWalletInfo;
 
 // @public (undocumented)
 type WalletsApi = {

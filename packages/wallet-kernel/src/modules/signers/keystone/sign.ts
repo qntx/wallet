@@ -12,9 +12,12 @@ import { equalBytes } from "@noble/ciphers/utils.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { concatBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 
+import type { UrCodec } from "@qntx/ur/interop";
+import { ethSignatureCodec, solSignatureCodec, tronSignatureCodec } from "@qntx/ur/interop";
+import { cryptoPsbtCodec } from "@qntx/ur/registry";
 import { legacyMessageHash, samePsbtContent } from "@qntx/wallet-chains/bitcoin";
 import {
   evmSigningPreimage,
@@ -27,20 +30,16 @@ import type { ChainSignRequest, DeviceDisplay } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../../../errors.ts";
 import type { ChainPlan } from "../../chains/run.ts";
-import type { DeviceLink, SignContext } from "../driver.ts";
-import { decodeCbor } from "./cbor.ts";
-import type { Cbor } from "./cbor.ts";
+import { expectDigest, personalDigest } from "../digest.ts";
+import type { DeviceIdentity, DeviceLink, SignContext } from "../driver.ts";
 import {
-  btcSignature,
   btcSignRequest,
+  btcSignatureCodec,
   cryptoPsbt,
-  cryptoPsbtBytes,
+  decodeRegistry,
   ethSignRequest,
-  ethSignature,
   solSignRequest,
-  solSignature,
   tronSignRequest,
-  tronSignature,
 } from "./registry.ts";
 
 const ORIGIN = "qntx";
@@ -57,6 +56,7 @@ function wrongDevice(): never {
 export const display = (
   _request: ChainSignRequest,
   plan: ChainPlan,
+  _identity: DeviceIdentity,
 ): DeviceDisplay | "unsupported" => {
   switch (plan.kind) {
     case "evm.transaction":
@@ -78,20 +78,21 @@ export const display = (
 };
 
 /**
- * Sends the prepared UR and reads the device's answer: a `qr` response of exactly `type` carrying
- * strictly-decoded CBOR — anything else, including a well-formed payload under the wrong type, is
- * `integrity`.
+ * Sends the prepared UR and reads the device's answer: a `qr` response of exactly `type` whose CBOR
+ * decodes under `codec` — anything else, including a well-formed payload under the wrong type or a
+ * library rejection, is `integrity`.
  */
-const exchange = async (
+const exchange = async <T>(
   link: DeviceLink,
   show: { readonly type: string; readonly cbor: Uint8Array },
   type: string,
-): Promise<Cbor> => {
+  codec: UrCodec<T>,
+): Promise<T> => {
   const response = await link.exchange({ kind: "qr", show, scan: [type] });
   if (response.kind !== "qr" || response.ur.type !== type) {
     integrity();
   }
-  return decodeCbor(response.ur.cbor);
+  return decodeRegistry(response.ur.cbor, codec);
 };
 
 /** A signature answer must name the request id this exchange minted. */
@@ -102,7 +103,7 @@ const checkRequestId = (returned: Uint8Array | undefined, sent: Uint8Array): voi
 };
 
 const compactSecp256k1 = (
-  signature: { readonly requestId: Uint8Array | undefined; readonly signature: Uint8Array },
+  signature: { readonly requestId?: Uint8Array; readonly signature: Uint8Array },
   requestId: Uint8Array,
   length: number,
 ): Uint8Array => {
@@ -111,18 +112,6 @@ const compactSecp256k1 = (
     integrity();
   }
   return signature.signature.subarray(0, 64);
-};
-
-/** The EIP-191 digest of `message` — what a personal-message task must equal. */
-const personalDigest = (message: Uint8Array): Uint8Array =>
-  keccak_256(
-    concatBytes(utf8ToBytes(`\u0019Ethereum Signed Message:\n${message.length}`), message),
-  );
-
-const expectDigest = (computed: Uint8Array, task: { readonly digest: Uint8Array }): void => {
-  if (!equalBytes(computed, task.digest)) {
-    integrity();
-  }
 };
 
 const evm = async (
@@ -190,8 +179,11 @@ const evm = async (
     fingerprint: context.pin.fingerprint,
     origin: ORIGIN,
   });
-  const answer = ethSignature(
-    await exchange(link, { type: "eth-sign-request", cbor }, "eth-signature"),
+  const answer = await exchange(
+    link,
+    { type: "eth-sign-request", cbor },
+    "eth-signature",
+    ethSignatureCodec,
   );
   return compactSecp256k1(answer, requestId, 65);
 };
@@ -225,8 +217,11 @@ const tron = async (
     fingerprint: context.pin.fingerprint,
     origin: ORIGIN,
   });
-  const answer = tronSignature(
-    await exchange(link, { type: "tron-sign-request", cbor }, "tron-signature"),
+  const answer = await exchange(
+    link,
+    { type: "tron-sign-request", cbor },
+    "tron-signature",
+    tronSignatureCodec,
   );
   return compactSecp256k1(answer, requestId, 65);
 };
@@ -254,8 +249,11 @@ const solana = async (
     fingerprint: context.pin.fingerprint,
     origin: ORIGIN,
   });
-  const answer = solSignature(
-    await exchange(link, { type: "sol-sign-request", cbor }, "sol-signature"),
+  const answer = await exchange(
+    link,
+    { type: "sol-sign-request", cbor },
+    "sol-signature",
+    solSignatureCodec,
   );
   checkRequestId(answer.requestId, requestId);
   if (answer.signature.length !== 64) {
@@ -269,9 +267,13 @@ const bitcoinPsbt = async (
   stage: Extract<ChainPlan, { kind: "bitcoin.psbt" }>,
 ): Promise<ReadonlyArray<Uint8Array>> => {
   const cbor = cryptoPsbt(stage.psbt);
-  const signed = cryptoPsbtBytes(
-    await exchange(link, { type: "crypto-psbt", cbor }, "crypto-psbt"),
+  const response = await exchange(
+    link,
+    { type: "crypto-psbt", cbor },
+    "crypto-psbt",
+    cryptoPsbtCodec,
   );
+  const signed = response.bytes;
   if (!samePsbtContent(stage.psbt, signed)) {
     integrity();
   }
@@ -339,8 +341,11 @@ const bitcoinMessage = async (
     fingerprint: context.pin.fingerprint,
     origin: ORIGIN,
   });
-  const answer = btcSignature(
-    await exchange(link, { type: "btc-sign-request", cbor }, "btc-signature"),
+  const answer = await exchange(
+    link,
+    { type: "btc-sign-request", cbor },
+    "btc-signature",
+    btcSignatureCodec,
   );
   checkRequestId(answer.requestId, requestId);
   if (!equalBytes(answer.publicKey, task.publicKey)) {

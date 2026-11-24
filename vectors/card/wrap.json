@@ -1,0 +1,50 @@
+{
+  "wrapLabel": "716e74782d636172642f76312f77726170",
+  "fingerprintLabel": "716e74782d636172642f76312f66696e6765727072696e74",
+  "cases": [
+    {
+      "name": "wrap-1",
+      "wrapKey": "b11b677d30b0f9722dc9b304e3dae5ca",
+      "accessHash": "fb338bdcb5d0c823d15e558ada1947c261fbab781124bd2380af0ecaf1e6265d",
+      "seed": "f23f9c9a1fb9a8e1937e10e29df177f0ce4d5ca711a6e3dade08c4db3a3918e26c1e3fb97deebdb05f19c5c24e3229d24c37f5809baca77d27a3fc96a7735c89",
+      "kEnc": "195d2dc89d8743e8022f0dc2ab92b202",
+      "kMac": "cfad17ccdd0825a9699de8678670bd49",
+      "ct": "707063a884416bca7be2d700117fdc67cc8a8d286b82e941ac64cd6e4e5a7ab41c5210ada38a87c83f72c5af47d3c7970ee1dbf182ecc13316d93c583449850e",
+      "tag": "7871d877b0020e263ce7fb7dc838636f",
+      "fp": "e995713e5f2b6d49303aec2e7d2f19ad82d910abc56ea1cc74f27ca25e8a736b"
+    },
+    {
+      "name": "wrap-2",
+      "wrapKey": "b5ed114c47faa992bc0ff5a20d50e1c4",
+      "accessHash": "e6ea2e35f641a4581572019ed5c406a851b14eac7be45bb9661689c4ff7c3c98",
+      "seed": "a851cdcf85412aed2144095d5101c9014341b42f91c46f02771a041b7864971a12f86e6582281e3b8bcf881fc0c3f038c93fb3734da6f85a4ac437b348b2fcd9",
+      "kEnc": "ea768d526be7e7e92313cb562ad14eb2",
+      "kMac": "c34459ff7306686b8750926ec7d4dbd4",
+      "ct": "34fdaa519417b634946994e96850889265ba39370c706bc67deb451281dc6f0000332f70ee96107af07c63a8dfede495487cdfc1b2951f44599a3b30807ad194",
+      "tag": "a22b965ef9f1f5b2ebaf9d8c7b5671d6",
+      "fp": "9d04333ab42f8f03aba7bdd3b24624101b49d78c3b4c8e526791061e03dd8ae4"
+    },
+    {
+      "name": "wrap-3",
+      "wrapKey": "93364b8ea84a67a550bea4b97974761d",
+      "accessHash": "bf22f57e205f3e90e1cefa1a94e79d0061d95b88c76fcc6c4212efba3df42d91",
+      "seed": "d113a34e921934d748877399b2b640ad0a105aa929b143e63a60157817df816556d9c8f33985c20d9295d4bbba72287288c1ab0f6be1f6d34bcb545a0344d602",
+      "kEnc": "d297f1a0cacd2ca2ade3948f39611e06",
+      "kMac": "231fff3e677c3dd87f08b9cadeda76b9",
+      "ct": "554d1e833fd2c8b315d854a3001ed5e6f035f5f6df178d8c1a840b5137bebd8482d78be67eabca5dfaf49223b85d5c17082e440a149e8132b0ae1b8b5fbfdd87",
+      "tag": "6518dd5bce33415e2b5ea9ca4bce2aca",
+      "fp": "b098aff55d637de481999aa0fa21e6d447cc820c35d627a6bf8159b77d9405b7"
+    },
+    {
+      "name": "wrap-template-seed",
+      "wrapKey": "cb512bd9a48f91be1221a6a064ccd0bc",
+      "accessHash": "ddb68dd0229109fe8ccb112cda77470f3191c3a62d5b3175e3bc5addd84ab9b6",
+      "seed": "b9a2c8f1dbc1f834743189d1f6fb56c19459f64e27a423b39a3300dcf6be9a168a43a5609a6c464782e26649237b7b7378fb53064c412a45a6fe8595a1905119",
+      "kEnc": "288ed18d49975795a9e6bb8401c8f5e3",
+      "kMac": "5643ccad0e5646ebac910bbcb1df24bc",
+      "ct": "48cd484f779c0d25b5c53569d877c42e40d9717d0cc22db0ea43b5ed6f8d11efeed1c8abe22824b89907edd885e2ba516b7de320ef03c020d5e9066355cbd12d",
+      "tag": "6cf5cf938dd77b74317b4fbc9e369f82",
+      "fp": "b7a2d431c3ea9832acdf48902c4de8d676cb4127c60f16bdce65b8929012a831"
+    }
+  ]
+}

@@ -186,6 +186,7 @@ async function engineRig() {
   });
   const transactions = new TransactionController({
     wallet,
+    chains: chains(wallet),
     networks,
     openStore: memoryStore,
     random,

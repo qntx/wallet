@@ -129,3 +129,11 @@ Browser workflow, not in `test:coverage`.
 
 The root scripts build consumed workspace packages first; per-package scripts must stay
 build-free — never nest `vp run …#build` inside a package's own lint/typecheck/test script.
+
+`bun run card:sim` builds the card simulator — the real qntx card applet at the commit
+`vectors/card/SOURCE` pins, running in its patched jcardsim behind a stdio bridge — into
+`${QNTX_CARD_SIM_HOME:-~/.cache/qntx-card-sim}/<commit>/` and prints the launcher path (needs JDK
+25, `JAVA_HOME` or `~/.jdks/temurin-25/Contents/Home`, and network access for the first clone).
+Pointing `QNTX_CARD_SIM` at the launcher enables the simulator tests in
+`packages/wallet-kernel/tests/card-simulator.test.ts` and `card-sim-bridge.test.ts`, which skip
+without it; CI's card workflow builds it and runs them on every pull request.

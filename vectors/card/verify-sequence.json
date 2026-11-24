@@ -1,0 +1,1440 @@
+{
+  "constants": {
+    "L": 10,
+    "F": 3,
+    "W": 15,
+    "I": 400
+  },
+  "setups": {
+    "create": "The card under test is LOADED by CREATE with the right access hash (any 32-byte value; the wrong access hash is any other value), followed by a new OPEN: f = 0, waited = 0, not verified.",
+    "set": "Two cards personalized under one CA: the member Y and the card under test X. Y is LOADED by CREATE P1 = 01 with the right access hash, any valid seed and ID(X) as the other member. X (BLANK) answers OFFER; Y exports to X (EXPORT P1 = 00 with X's certificate and that OFFER response, EXPORT P1 = 01 with the right access hash); X answers IMPORT P1 = 00 and P1 = 01 with 9000. Then a new OPEN on X: X is LOADED with Y's wallet (members Y, X), f = 0, waited = 0, not verified, offer = NONE."
+  },
+  "stepRules": "After a step that has status the replayer sends STATUS in the current session of the card under test and compares its response with status (life(1) \u2016 tries(1), \u00a79.3); STATUS has no side effect on the card but, like every command that does not continue it, ends a pending import (\u00a79.2), so steps that leave one for the next step have no status. A step with repeat n is sent n times, each answered with sw; status is checked after the last one. Codes: right is the access hash of the setup, wrong any other, new a third access hash. OFFER: lk new means the returned LK differs from every LK the card returned before, same that it equals the LK of the previous OFFER. EXPORT runs on the member Y, not on the card under test: a new OPEN on Y, VERIFY with the right code, EXPORT P1 = 00 with X's certificate and X's most recent OFFER response, then EXPORT P1 = 01 with the access hash named by code; both return sw, and the exports of a sequence are numbered 1, 2, \u2026 in order. IMPORT0 sends IMPORT P1 = 00 with Y's certificate and the E \u2016 sig_S of export number export (default: the latest); IMPORT1 sends IMPORT P1 = 01 with the ct \u2016 tag of the export of the pending import, or of the latest export when there is none.",
+  "tear": "after-T-FAIL: power is lost after the T-FAIL transaction of this VERIFY committed and before any later persistent write (\u00a79.5 steps 5-9). The command has no response (sw torn); the replayer powers the card up, SELECTs the wallet applet and OPENs a new session before the STATUS check.",
+  "sequences": [
+    {
+      "name": "wrong-to-limit",
+      "description": "Wrong codes from f = 0 to L: three free attempts, then 6986 until W WAITs complete in the session (a refused VERIFY keeps waited), then one attempt per W WAITs; the L-th failure erases. Afterwards VERIFY and WAIT are refused in BLANK.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "6986",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 14,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "6986",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 1,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c6",
+          "status": "0206"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0206"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c5",
+          "status": "0205"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0205"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c4",
+          "status": "0204"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0204"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c3",
+          "status": "0203"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0203"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c2",
+          "status": "0202"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0202"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c1",
+          "status": "0201"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0201"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "6983",
+          "status": "0100"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "6985",
+          "status": "0100"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 1,
+          "sw": "6985",
+          "status": "0100"
+        }
+      ]
+    },
+    {
+      "name": "right-resets-at-f-0",
+      "description": "k = 0 wrong codes, then the right code resets f to 0; the free attempts return.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        }
+      ]
+    },
+    {
+      "name": "right-resets-at-f-1",
+      "description": "k = 1 wrong codes, then the right code resets f to 0; the free attempts return.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        }
+      ]
+    },
+    {
+      "name": "right-resets-at-f-2",
+      "description": "k = 2 wrong codes, then the right code resets f to 0; the free attempts return.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        }
+      ]
+    },
+    {
+      "name": "right-resets-at-f-3",
+      "description": "k = 3 wrong codes, then the right code resets f to 0; the free attempts return.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        }
+      ]
+    },
+    {
+      "name": "right-resets-at-f-4",
+      "description": "k = 4 wrong codes, then the right code resets f to 0; the free attempts return.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c6",
+          "status": "0206"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0206"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        }
+      ]
+    },
+    {
+      "name": "right-resets-at-f-5",
+      "description": "k = 5 wrong codes, then the right code resets f to 0; the free attempts return.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c6",
+          "status": "0206"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0206"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c5",
+          "status": "0205"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0205"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        }
+      ]
+    },
+    {
+      "name": "right-resets-at-f-6",
+      "description": "k = 6 wrong codes, then the right code resets f to 0; the free attempts return.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c6",
+          "status": "0206"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0206"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c5",
+          "status": "0205"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0205"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c4",
+          "status": "0204"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0204"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        }
+      ]
+    },
+    {
+      "name": "right-resets-at-f-7",
+      "description": "k = 7 wrong codes, then the right code resets f to 0; the free attempts return.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c6",
+          "status": "0206"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0206"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c5",
+          "status": "0205"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0205"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c4",
+          "status": "0204"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0204"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c3",
+          "status": "0203"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0203"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        }
+      ]
+    },
+    {
+      "name": "right-resets-at-f-8",
+      "description": "k = 8 wrong codes, then the right code resets f to 0; the free attempts return.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c6",
+          "status": "0206"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0206"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c5",
+          "status": "0205"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0205"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c4",
+          "status": "0204"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0204"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c3",
+          "status": "0203"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0203"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c2",
+          "status": "0202"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0202"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        }
+      ]
+    },
+    {
+      "name": "right-resets-at-f-9",
+      "description": "k = 9 wrong codes, then the right code resets f to 0; the free attempts return.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c6",
+          "status": "0206"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0206"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c5",
+          "status": "0205"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0205"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c4",
+          "status": "0204"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0204"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c3",
+          "status": "0203"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0203"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c2",
+          "status": "0202"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0202"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c1",
+          "status": "0201"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0201"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        }
+      ]
+    },
+    {
+      "name": "right-needs-wait",
+      "description": "Once f >= F the wait applies to the right code too; nothing is written while it is refused.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "6986",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        }
+      ]
+    },
+    {
+      "name": "waited-lost-on-open",
+      "description": "waited is session state: a new OPEN discards completed WAITs.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "OPEN",
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "6986",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c6",
+          "status": "0206"
+        }
+      ]
+    },
+    {
+      "name": "wait-beyond-W",
+      "description": "waited saturates at W; one VERIFY consumes all of it, so the next attempt needs W new WAITs.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 20,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c6",
+          "status": "0206"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "6986",
+          "status": "0206"
+        }
+      ]
+    },
+    {
+      "name": "torn-right-code-counts",
+      "description": "The right code with power lost after T-FAIL: the attempt stays counted; the next right code resets.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "tear": "after-T-FAIL",
+          "sw": "torn",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        }
+      ]
+    },
+    {
+      "name": "tries-zero",
+      "description": "Power lost after the L-th T-FAIL, before T-ERASE: STATUS reports tries = 0 and the next VERIFY erases at step 2 without comparing, even with the right code and no WAIT.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c6",
+          "status": "0206"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0206"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c5",
+          "status": "0205"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0205"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c4",
+          "status": "0204"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0204"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c3",
+          "status": "0203"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0203"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c2",
+          "status": "0202"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0202"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c1",
+          "status": "0201"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0201"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "tear": "after-T-FAIL",
+          "sw": "torn",
+          "status": "0200"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "6983",
+          "status": "0100"
+        }
+      ]
+    },
+    {
+      "name": "offer-repeated",
+      "description": "OFFER with a valid offer returns the same LK and writes nothing; the offer survives a new session.",
+      "setup": "create",
+      "steps": [
+        {
+          "command": "OFFER",
+          "sw": "9000",
+          "lk": "new",
+          "status": "020a"
+        },
+        {
+          "command": "OFFER",
+          "sw": "9000",
+          "lk": "same",
+          "status": "020a"
+        },
+        {
+          "command": "OPEN",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "OFFER",
+          "sw": "9000",
+          "lk": "same",
+          "status": "020a"
+        }
+      ]
+    },
+    {
+      "name": "reseal-resets-fails",
+      "description": "A re-seal of a LOADED card from the member Y with a new access hash resets f; the old code no longer matches, the new one does.",
+      "setup": "set",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c6",
+          "status": "0206"
+        },
+        {
+          "command": "OFFER",
+          "sw": "9000",
+          "lk": "new",
+          "status": "0206"
+        },
+        {
+          "command": "EXPORT",
+          "code": "new",
+          "sw": "9000",
+          "status": "0206"
+        },
+        {
+          "command": "IMPORT0",
+          "sw": "9000"
+        },
+        {
+          "command": "IMPORT1",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "new",
+          "sw": "9000",
+          "status": "020a"
+        }
+      ]
+    },
+    {
+      "name": "import-after-install",
+      "description": "After a committed install offer = NONE: IMPORT P1 = 00 with the same export returns 6985; after a new OFFER the export made for the earlier offer is refused.",
+      "setup": "set",
+      "steps": [
+        {
+          "command": "OFFER",
+          "sw": "9000",
+          "lk": "new",
+          "status": "020a"
+        },
+        {
+          "command": "EXPORT",
+          "code": "new",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "IMPORT0",
+          "sw": "9000"
+        },
+        {
+          "command": "IMPORT1",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "IMPORT0",
+          "sw": "6985",
+          "status": "020a"
+        },
+        {
+          "command": "IMPORT1",
+          "sw": "6985",
+          "status": "020a"
+        },
+        {
+          "command": "OFFER",
+          "sw": "9000",
+          "lk": "new",
+          "status": "020a"
+        },
+        {
+          "command": "IMPORT0",
+          "export": 1,
+          "sw": "6a80",
+          "status": "020a"
+        }
+      ]
+    },
+    {
+      "name": "import-pending-ended",
+      "description": "A pending import ends at any command that does not continue it (here STATUS); IMPORT P1 = 00 can be repeated with the same export while offer = VALID.",
+      "setup": "set",
+      "steps": [
+        {
+          "command": "OFFER",
+          "sw": "9000",
+          "lk": "new",
+          "status": "020a"
+        },
+        {
+          "command": "EXPORT",
+          "code": "new",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "IMPORT0",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "IMPORT1",
+          "sw": "6985",
+          "status": "020a"
+        },
+        {
+          "command": "IMPORT0",
+          "sw": "9000"
+        },
+        {
+          "command": "IMPORT0",
+          "sw": "9000"
+        },
+        {
+          "command": "IMPORT1",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "new",
+          "sw": "9000",
+          "status": "020a"
+        }
+      ]
+    },
+    {
+      "name": "limit-erased-reprovision",
+      "description": "A card erased by the failure limit is re-provisioned from the member Y: BLANK, OFFER, export, IMPORT; the new code then matches.",
+      "setup": "set",
+      "steps": [
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c9",
+          "status": "0209"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c8",
+          "status": "0208"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c7",
+          "status": "0207"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0207"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c6",
+          "status": "0206"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0206"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c5",
+          "status": "0205"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0205"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c4",
+          "status": "0204"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0204"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c3",
+          "status": "0203"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0203"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c2",
+          "status": "0202"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0202"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "63c1",
+          "status": "0201"
+        },
+        {
+          "command": "WAIT",
+          "repeat": 15,
+          "sw": "9000",
+          "status": "0201"
+        },
+        {
+          "command": "VERIFY",
+          "code": "wrong",
+          "sw": "6983",
+          "status": "0100"
+        },
+        {
+          "command": "OFFER",
+          "sw": "9000",
+          "lk": "new",
+          "status": "0100"
+        },
+        {
+          "command": "EXPORT",
+          "code": "new",
+          "sw": "9000",
+          "status": "0100"
+        },
+        {
+          "command": "IMPORT0",
+          "sw": "9000"
+        },
+        {
+          "command": "IMPORT1",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "new",
+          "sw": "9000",
+          "status": "020a"
+        }
+      ]
+    },
+    {
+      "name": "erase-ends-offer",
+      "description": "ERASE ends a valid offer: the export made for it is refused with 6985, and with 6a80 after a new OFFER.",
+      "setup": "set",
+      "steps": [
+        {
+          "command": "OFFER",
+          "sw": "9000",
+          "lk": "new",
+          "status": "020a"
+        },
+        {
+          "command": "EXPORT",
+          "code": "new",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "VERIFY",
+          "code": "right",
+          "sw": "9000",
+          "status": "020a"
+        },
+        {
+          "command": "ERASE",
+          "sw": "9000",
+          "status": "0100"
+        },
+        {
+          "command": "IMPORT0",
+          "sw": "6985",
+          "status": "0100"
+        },
+        {
+          "command": "OFFER",
+          "sw": "9000",
+          "lk": "new",
+          "status": "0100"
+        },
+        {
+          "command": "IMPORT0",
+          "export": 1,
+          "sw": "6a80",
+          "status": "0100"
+        }
+      ]
+    }
+  ]
+}

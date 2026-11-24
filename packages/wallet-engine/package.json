@@ -74,12 +74,13 @@
   },
   "scripts": {
     "build": "vp run @qntx/wallet-worker#build && vp pack",
-    "test": "vp test && bun scripts/size-check.ts",
-    "test:coverage": "vp test --coverage",
+    "test": "vp test --project unit && bun scripts/size-check.ts",
+    "test:coverage": "vp test --coverage --project unit",
     "fuzz": "vp test fuzz --testTimeout 1800000",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p src/idb/tsconfig.json && tsc --noEmit -p src/connect/inject/tsconfig.json",
     "check:pkg": "vp pack && bun ../../scripts/check-dist-deps.ts . && bun ../../scripts/check-api.ts . && publint && attw --pack . --profile esm-only",
     "connect:provider": "bun ../../scripts/build-provider.ts",
+    "test:speculos": "vp test --project speculos",
     "test:browser": "playwright test --config tests/browser/playwright.config.ts",
     "smoke:hermes": "bun scripts/hermes-smoke.ts"
   },
@@ -106,14 +107,23 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
+    "@blockchaincommons/dcbor": "1.0.0-beta.5",
+    "@keystonehq/bc-ur-registry": "0.8.1",
+    "@keystonehq/bc-ur-registry-eth": "0.23.0",
+    "@keystonehq/bc-ur-registry-sol": "0.9.5",
+    "@keystonehq/bc-ur-registry-tron": "0.5.0",
+    "@noble/curves": "2.0.1",
     "@playwright/test": "1.64.1",
     "@qntx/nostr": "0.16.0",
     "@qntx/spark": "0.5.2",
     "@qntx/spark-wasm": "0.5.2",
+    "@qntx/ur": "4.0.0",
     "@qntx/wallet": "0.13.0",
     "@qntx/wallet-chains": "0.13.0",
     "@qntx/wallet-worker": "0.13.0",
     "@reown/walletkit": "1.6.0",
+    "@scure/bip32": "2.4.0",
+    "@scure/bip39": "2.4.0",
     "@solana/wallet-standard-features": "1.5.0",
     "@solana/wallet-standard-util": "1.2.0",
     "@tronweb3/tronwallet-adapter-tronlink": "1.3.0",
@@ -127,7 +137,9 @@
     "@walletconnect/utils": "2.25.0",
     "fake-indexeddb": "6.2.6",
     "fast-check": "4.10.2",
-    "publint": "0.3.25"
+    "micro-key-producer": "0.10.2",
+    "publint": "0.3.25",
+    "tronweb": "6.5.2"
   },
   "peerDependencies": {
     "@qntx/nostr": "~0.16.0",
@@ -156,7 +168,7 @@
   "devEngines": {
     "packageManager": {
       "name": "bun",
-      "version": "1.4.0",
+      "version": "1.4.4",
       "onFail": "ignore"
     }
   },

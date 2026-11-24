@@ -11,6 +11,11 @@
   },
   "libraries": [
     {
+      "name": "@blockchaincommons/dcbor",
+      "version": "1.0.0-beta.5",
+      "integrity": "sha512-dmuEkmfcJk6g/+m73F9Rosxb+sHb790fiNfOdE6CI/TFLZCnXCRr3+K1QR4Se+vtBllEBgv85s28zaC1Jnegkw=="
+    },
+    {
       "name": "@noble/ciphers",
       "version": "2.4.0",
       "integrity": "sha512-AnjFn0Jv92laAkvMrghlFZq4qQCIN/4DxFV/eooqtC2YTjB7kBeLMS2T9KJX4Dn+ZVXLOwK0lSgqDtx9gvxtiw=="
@@ -51,6 +56,11 @@
       "integrity": "sha512-MclvFeazgWKxf98hIFlBcO+wVoQkv8r0ap6lXGUyfaVT4qqvf2r837DMJ1Bb3kNJUcgNCBmUd0Hej/L4honRpw=="
     },
     {
+      "name": "@qntx/ur",
+      "version": "4.0.0",
+      "integrity": "sha512-1257AiSHTS4dTMAB6GbIE17NoPZ9txjIewEqaVLYMeFw2efZnszPUrhN+hIMAT5f/vENm60jOcxag4m7sth8/g=="
+    },
+    {
       "name": "@scure/base",
       "version": "2.4.0",
       "integrity": "sha512-thZ1TuJwFwBblOhgsjDKvvGirBxNp+wSvY/DR6tJBJOTDhdAAcHJ8Vbr2eFnqaxeca4+t0i9KBf+uHYGWwZORg=="
@@ -79,7 +89,7 @@
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "8634368b3adebe7e5f781d433047138ced735a2be55c586f747df24df96d245e"
+      "sha256": "d61d09d6401a90b1ba1364091bc2670f1d0f6dba60b8ef30348a0d7e7055735f"
     }
   ]
 }

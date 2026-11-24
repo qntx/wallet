@@ -723,6 +723,7 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
 
       const ctl = new TransactionController({
         wallet,
+        chains: chains(wallet),
         networks: new NetworkController({
           ...idleNetworkDeps,
           fetch: globalThis.fetch.bind(globalThis),
@@ -830,6 +831,7 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
       );
       const ctl = new TransactionController({
         wallet,
+        chains: chains(wallet),
         networks: new NetworkController({
           ...idleNetworkDeps,
           fetch: globalThis.fetch.bind(globalThis),
@@ -1060,6 +1062,7 @@ describe.runIf(RUN)("solana e2e: approvals inventory and revocation", () => {
       });
       const transactions = new TransactionController({
         wallet,
+        chains: chains(wallet),
         networks,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         random: taggedRandom(),
@@ -1360,6 +1363,7 @@ describe.runIf(RUN)("solana e2e: dApp-supplied v1 transactions", () => {
       });
       const transactions = new TransactionController({
         wallet,
+        chains: chains(wallet),
         networks,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         random: taggedRandom(),

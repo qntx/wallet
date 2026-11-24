@@ -495,6 +495,7 @@ const ctlRig = async (
   const xpub = "xpub" in acct ? acct.xpub : "";
   const ctl = new TransactionController({
     wallet,
+    chains: chains(wallet),
     networks: new NetworkController({
       ...realDeps,
       now: () => Date.now(),
@@ -736,7 +737,7 @@ const legacyFlow = async (): Promise<void> => {
           tracked(`account ${params.template} group ${params.groupIndex}`, async () =>
             chains(wallet).account(params),
           ),
-      } as never,
+      },
       logger: quiet,
       now: () => 0,
     });
@@ -748,6 +749,7 @@ const legacyFlow = async (): Promise<void> => {
     // Send from each legacy template through engine.transactions — change lands on bip84.
     const txCtl = new TransactionController({
       wallet,
+      chains: chains(wallet),
       networks: new NetworkController({
         ...realDeps,
         now: () => Date.now(),

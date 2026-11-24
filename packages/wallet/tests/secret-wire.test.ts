@@ -784,6 +784,7 @@ describe("method classification", () => {
       | "backup.enable"
       | "backup.disable"
       | "backup.restore"
+      | "card.begin"
       | "nostr.exportKey"
       | "chain.sign"
       | "spark.approve"

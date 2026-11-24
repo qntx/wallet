@@ -35,7 +35,9 @@ export {
   TYPED_FIELD_CODE_POINTS,
   parseTypedData,
   typedDataFields,
+  typedDataHashes,
 } from "./typed-data.ts";
+export type { TypedDataInput } from "./typed-data.ts";
 export { hyperliquidL1Document } from "./hyperliquid-l1.ts";
 export type {
   HyperliquidL1Action,

@@ -23,7 +23,6 @@ import {
   verifyTronTransactionSignature,
 } from "@qntx/wallet-chains/tron";
 import type { TronContract } from "@qntx/wallet-chains/tron";
-import { chains } from "@qntx/wallet/chains";
 
 import {
   account,
@@ -558,7 +557,7 @@ type TronFinish = {
 const finishTron = (ctx: RouteContext, input: TronFinish): PreparedRequest => {
   const { api, ref, network, from, contract, head, params: params0, resources: res } = input;
   const { flags, risk } = input;
-  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const apis = ctx.options.chains;
   const { estimate } = input;
   const feeLimit =
     estimate === undefined
@@ -1399,7 +1398,7 @@ export const prepareDappTron = async (
           };
   const id = newId(ctx.options.random);
   const txid = bytesToHex(tronTransactionId(rawData));
-  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const apis = ctx.options.chains;
 
   const submit = async (
     verify: SignParams["verify"],

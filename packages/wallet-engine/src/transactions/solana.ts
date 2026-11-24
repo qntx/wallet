@@ -24,7 +24,7 @@ import {
 } from "@qntx/wallet-chains/solana";
 import type { MintExtensionSummary, ParsedSolanaMessage } from "@qntx/wallet-chains/solana";
 /** Solana route: SOL/SPL send → sign → broadcast, plus status poll with rebroadcast/drop. */
-import { chains } from "@qntx/wallet/chains";
+import type { chains } from "@qntx/wallet/chains";
 
 import {
   CORE_KEY_ASSET_V1,
@@ -318,7 +318,7 @@ export const prepareSolana = async (
   const { account, network, to, amount, fee } = params;
   const rpc = ctx.options.networks.solanaRpc(network);
   const independent = ctx.options.networks.independentSolanaRpc(network);
-  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const apis = ctx.options.chains;
   const from = await accountAddressOf(ctx, account, "solana.bip44-change", network);
   // For an SPL transfer, resolve the mint's owner (Token vs Token-2022) and reject the
   // extension combinations the wallet cannot carry before any signing or broadcast.
@@ -666,7 +666,7 @@ export const prepareSolanaStake = async (
   const { account, network, action, fee } = input;
   const rpc = ctx.options.networks.solanaRpc(network);
   const independent = ctx.options.networks.independentSolanaRpc(network);
-  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const apis = ctx.options.chains;
   const from = await accountAddressOf(ctx, account, "solana.bip44-change", network);
   const flags: Array<RequestCheckCode | undefined> = [];
 
@@ -857,7 +857,7 @@ export const prepareSolanaNftSend = async (
   const { account, network, asset, to, fee } = input;
   const rpc = ctx.options.networks.solanaRpc(network);
   const independent = ctx.options.networks.independentSolanaRpc(network);
-  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const apis = ctx.options.chains;
   const from = await accountAddressOf(ctx, account, "solana.bip44-change", network);
   const flags: Array<RequestCheckCode | undefined> = [];
   const risk: RiskFinding[] = [];
@@ -1509,7 +1509,7 @@ export const prepareSolanaSwap = async (
   }
   const rpc = ctx.options.networks.solanaRpc(network);
   const independent = ctx.options.networks.independentSolanaRpc(network);
-  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const apis = ctx.options.chains;
   const from = await accountAddressOf(ctx, account, "solana.bip44-change", network);
   if (quote.taker !== from) {
     throw new ChainError("invalid-request", "the swap quote is for a different taker");

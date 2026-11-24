@@ -7,6 +7,7 @@ const config: UserConfig = defineConfig({
       index: "src/index.ts",
       chains: "src/chains/index.ts",
       hardware: "src/hardware/index.ts",
+      card: "src/card/index.ts",
       host: "src/host.ts",
       sessions: "src/sessions/index.ts",
       nostr: "src/nostr/index.ts",

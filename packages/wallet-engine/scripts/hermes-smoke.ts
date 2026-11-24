@@ -6,6 +6,8 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { HERMES_FLAGS } from "../../../scripts/kernel-build-config.ts";
+
 type BunBuildOutput = {
   success: boolean;
   logs: ReadonlyArray<{ toString: () => string }>;
@@ -50,7 +52,10 @@ async function main(): Promise<number> {
     return 1;
   }
   await Bun.write(outfile, bundle);
-  const run = Bun.spawnSync([hermes, outfile], { stdout: "pipe", stderr: "pipe" });
+  const run = Bun.spawnSync([hermes, ...HERMES_FLAGS, outfile], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const out = `${run.stdout.toString()}\n${run.stderr.toString()}`;
   console.log(out);
   if (!out.includes("HERMES_FIAT24_OK")) {

@@ -14,6 +14,7 @@ export const basePlatform = (): Pick<
   | "argon2id"
   | "keystore"
   | "passkey"
+  | "card"
   | "secureInput"
 > => ({
   random: (length) => crypto.getRandomValues(new Uint8Array(length)),
@@ -29,5 +30,6 @@ export const basePlatform = (): Pick<
   argon2id: nobleArgon2id,
   keystore: undefined,
   passkey: undefined,
+  card: undefined,
   secureInput: undefined,
 });

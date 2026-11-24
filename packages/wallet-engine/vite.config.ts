@@ -32,7 +32,6 @@ const config: UserConfig = defineConfig({
     },
   ],
   test: {
-    include: ["tests/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "text-summary"],
@@ -40,6 +39,26 @@ const config: UserConfig = defineConfig({
       exclude: ["src/connect/inject.generated.ts"],
       thresholds: { lines: 84, branches: 75, functions: 85, statements: 84 },
     },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          // The speculos e2e needs the Ledger app containers from scripts/ledger/speculos.ts and
+          // is not part of `vp test` — it runs under `test:speculos`.
+          include: ["tests/**/*.test.ts"],
+          exclude: ["tests/signers-e2e/ledger.test.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "speculos",
+          include: ["tests/signers-e2e/ledger.test.ts"],
+          testTimeout: 300_000,
+        },
+      },
+    ],
   },
 });
 

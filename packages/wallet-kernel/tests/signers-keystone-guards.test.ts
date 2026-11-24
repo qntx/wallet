@@ -1,3 +1,15 @@
+import {
+  CborMap,
+  Tag,
+  asMap,
+  asUnsigned,
+  cbor,
+  decodeCbor,
+  encodeCbor,
+  isBytes,
+  taggedValue,
+} from "@blockchaincommons/dcbor";
+import type { CborInput } from "@blockchaincommons/dcbor";
 /**
  * Guard-level unit tests on the Keystone exchanges and the record id binding: a staged plan that no
  * longer matches the request about to be shown, a solana answer of the wrong length or a message
@@ -28,11 +40,10 @@ import type {
 import { KernelError } from "../src/errors.ts";
 import type { DeviceLink, SignContext } from "../src/modules/signers/driver.ts";
 import { createSignersModule } from "../src/modules/signers/index.ts";
-import { decodeCbor, encodeCbor } from "../src/modules/signers/keystone/cbor.ts";
-import type { Cbor } from "../src/modules/signers/keystone/cbor.ts";
 import { derive } from "../src/modules/signers/keystone/derive.ts";
 import { KEYSTONE_DRIVER } from "../src/modules/signers/keystone/driver.ts";
 import { sign } from "../src/modules/signers/keystone/sign.ts";
+import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
 import { keystoneDevice } from "./signers-keystone-device.ts";
 
 const HARDENED = 0x80000000;
@@ -184,6 +195,7 @@ const psbt84Context = (): SignContext => {
     },
     stage: planBitcoinPsbt(bytes, [{ index: 0, key: { path: BTC84_PATH, publicKey: BTC84_PUB } }]),
     pin,
+    display: "clear" as const,
     random,
   };
 };
@@ -222,6 +234,7 @@ const psbt86Context = (): SignContext => {
     },
     stage: planBitcoinPsbt(bytes, [{ index: 0, key: { path: BTC86_PATH, publicKey: BTC86_PUB } }]),
     pin,
+    display: "clear" as const,
     random,
   };
 };
@@ -257,18 +270,15 @@ const indexOf = (haystack: Uint8Array, needle: Uint8Array): number => {
 
 /** Re-encodes a signature answer's map with byte field `n` replaced by `value`. */
 const replaceByteField = (bytes: Uint8Array, n: number, value: Uint8Array): Uint8Array => {
-  const map = decodeCbor(bytes);
-  if (map.kind !== "map") {
+  const map = asMap(decodeCbor(bytes));
+  if (map === undefined) {
     throw new Error("not a map");
   }
-  return encodeCbor({
-    kind: "map",
-    entries: map.entries.map(([key, item]) =>
-      key.kind === "uint" && key.value === n && item.kind === "bytes"
-        ? [key, { kind: "bytes" as const, value }]
-        : [key, item],
-    ),
-  });
+  const out = new CborMap();
+  for (const { key, value: item } of map.entriesArray) {
+    out.set(key, asUnsigned(key) === n && isBytes(item) ? value : item);
+  }
+  return encodeCbor(out);
 };
 
 /** Signs verbatim, then rewrites the signature field to an oversized 65 bytes. */
@@ -344,9 +354,9 @@ describe("keystone sign stage/request consistency", () => {
       },
     };
     const stage = planEvm({ ...request, tx: { ...request.tx, nonce: 1 } }, EVM_KEY);
-    await expect(code(async () => sign(link(), { request, stage, pin, random }))).resolves.toBe(
-      "integrity",
-    );
+    await expect(
+      code(async () => sign(link(), { request, stage, pin, random, display: "clear" as const })),
+    ).resolves.toBe("integrity");
   });
 
   it("refuses a mismatched stage on every secp256k1 family", async () => {
@@ -396,36 +406,42 @@ describe("keystone sign stage/request consistency", () => {
         request: personal,
         stage: planEvm({ ...personal, message: utf8ToBytes("bye") }, EVM_KEY),
         pin,
+        display: "clear" as const,
         random,
       },
       {
         request: fiat24,
         stage: planEvm({ ...fiat24, tokenId: "8" }, EVM_KEY),
         pin,
+        display: "clear" as const,
         random,
       },
       {
         request: typed,
         stage: planEvm({ ...typed, typedData: OTHER_TYPED_DATA }, EVM_KEY),
         pin,
+        display: "clear" as const,
         random,
       },
       {
         request: tronTx,
         stage: planTron({ ...tronTx, rawData: tronTransfer(2n) }, TRON_KEY),
         pin,
+        display: "clear" as const,
         random,
       },
       {
         request: tronMsg,
         stage: planTron({ ...tronMsg, message: utf8ToBytes("bye tron") }, TRON_KEY),
         pin,
+        display: "clear" as const,
         random,
       },
       {
         request: btcMsg,
         stage: planBitcoinMessage({ ...btcMsg, message: "sign that" }, BTC44_KEY),
         pin,
+        display: "clear" as const,
         random,
       },
     ];
@@ -444,9 +460,9 @@ describe("keystone sign stage/request consistency", () => {
       format: "raw",
     };
     const stage = planSolana({ ...request, message: utf8ToBytes("different") }, SOLANA_KEY);
-    await expect(code(async () => sign(link(), { request, stage, pin, random }))).resolves.toBe(
-      "integrity",
-    );
+    await expect(
+      code(async () => sign(link(), { request, stage, pin, random, display: "clear" as const })),
+    ).resolves.toBe("integrity");
   });
 
   it("refuses a solana signature that is not 64 bytes", async () => {
@@ -459,12 +475,25 @@ describe("keystone sign stage/request consistency", () => {
     };
     const stage = planSolana(request, SOLANA_KEY);
     await expect(
-      code(async () => sign(link(longSignature), { request, stage, pin, random })),
+      code(async () =>
+        sign(link(longSignature), { request, stage, pin, random, display: "clear" as const }),
+      ),
     ).resolves.toBe("integrity");
   });
 });
 
 describe("keystone psbt answer binding", () => {
+  it("refuses a crypto-psbt answer that is not a PSBT", async () => {
+    const hostile: DeviceLink = {
+      exchange: async () =>
+        Promise.resolve({
+          kind: "qr",
+          ur: { type: "crypto-psbt", cbor: encodeCbor(cbor(new Uint8Array(42))) },
+        }),
+    };
+    await expect(code(async () => sign(hostile, psbt84Context()))).resolves.toBe("integrity");
+  });
+
   it("refuses a signed PSBT whose transaction content differs", async () => {
     await expect(code(async () => sign(link(tamperedPayee), psbt84Context()))).resolves.toBe(
       "integrity",
@@ -489,71 +518,25 @@ describe("keystone key-derivation answer", () => {
     const path = [84 + HARDENED, HARDENED, 1 + HARDENED];
     const badKey = new Uint8Array(33);
     badKey[0] = 0x02;
-    const cbor = encodeCbor({
-      kind: "map",
-      entries: [
-        [
-          { kind: "uint", value: 1 },
-          { kind: "uint", value: MFP },
-        ],
-        [
-          { kind: "uint", value: 2 },
-          {
-            kind: "array",
-            items: [
-              {
-                kind: "tag",
-                tag: 303,
-                item: {
-                  kind: "map",
-                  entries: [
-                    [
-                      { kind: "uint", value: 3 },
-                      { kind: "bytes", value: badKey },
-                    ],
-                    [
-                      { kind: "uint", value: 4 },
-                      { kind: "bytes", value: new Uint8Array(32).fill(7) },
-                    ],
-                    [
-                      { kind: "uint", value: 6 },
-                      {
-                        kind: "tag",
-                        tag: 304,
-                        item: {
-                          kind: "map",
-                          entries: [
-                            [
-                              { kind: "uint", value: 1 },
-                              {
-                                kind: "array",
-                                items: path.flatMap((index): Cbor[] => [
-                                  { kind: "uint", value: index % HARDENED },
-                                  { kind: "bool", value: index >= HARDENED },
-                                ]),
-                              },
-                            ],
-                            [
-                              { kind: "uint", value: 2 },
-                              { kind: "uint", value: MFP },
-                            ],
-                          ],
-                        },
-                      },
-                    ],
-                  ],
-                },
-              },
-            ],
-          },
-        ],
-      ],
-    });
+    const keypath = new CborMap();
+    keypath.set(
+      1,
+      path.flatMap((index): CborInput[] => [index % HARDENED, index >= HARDENED]),
+    );
+    keypath.set(2, MFP);
+    const hdkey = new CborMap();
+    hdkey.set(3, badKey);
+    hdkey.set(4, new Uint8Array(32).fill(7));
+    hdkey.set(6, taggedValue(Tag.from(304, "crypto-keypath"), cbor(keypath)));
+    const accounts = new CborMap();
+    accounts.set(1, MFP);
+    accounts.set(2, [taggedValue(Tag.from(303, "crypto-hdkey"), cbor(hdkey))]);
+    const payload = encodeCbor(cbor(accounts));
     const hostile: DeviceLink = {
       exchange: async () =>
         Promise.resolve({
           kind: "qr",
-          ur: { type: "crypto-multi-accounts", cbor },
+          ur: { type: "crypto-multi-accounts", cbor: payload },
         }),
     };
     await expect(
@@ -564,7 +547,11 @@ describe("keystone key-derivation answer", () => {
 
 describe("hardware-wallet record id binding", () => {
   it("a header that does not name its record id is integrity", () => {
-    const module = createSignersModule({ keystone: KEYSTONE_DRIVER });
+    const module = createSignersModule({
+      keystone: KEYSTONE_DRIVER,
+      ledger: KEYSTONE_DRIVER,
+      onekey: ONEKEY_DRIVER,
+    });
     const record = {
       kind: "hardware-wallet",
       id: "deadbeefdeadbeef",

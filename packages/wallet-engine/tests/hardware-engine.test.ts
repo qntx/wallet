@@ -1,49 +1,18 @@
-/* oxlint-disable vitest/expect-expect -- assertions run inside expectDeviceRejected */
 /**
  * Engine features against a paired hardware wallet in a real Node wallet: every signing path fails
  * with a typed `device-required` WalletError and the request ends terminally (rejected), nothing is
  * tracked, and a Hyperliquid enable ends in a typed, resumable state rather than a stuck flow.
  */
-import { readFileSync } from "node:fs";
-
-import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { WalletError } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
-import { hardware } from "@qntx/wallet/hardware";
 
 import { approval } from "./approval.ts";
 import type { Arb1Rpc } from "./apps-helpers.ts";
 import { HL_ENABLE, VERIFY, world } from "./apps-helpers.ts";
-
-const SYNC = hexToBytes(
-  (
-    JSON.parse(
-      readFileSync(new URL("../../../vectors/keystone/sync.json", import.meta.url), "utf8"),
-    ) as { sync: { cbor: string } }
-  ).sync.cbor,
-);
+import { keystoneIo, pairKeystone } from "./keystone-io.ts";
 
 const NETWORK = "eip155:42161";
-
-/** Pairs the Keystone sync vector through the real wallet/hardware coroutine. */
-const pairKeystone = async (w: Awaited<ReturnType<typeof world>>): Promise<string> => {
-  /* The world wallet is shared across tests — a device already paired is reused. */
-  try {
-    const info = await hardware(w.wallet).pair("keystone", {
-      exchange: async () =>
-        Promise.resolve({ kind: "qr", ur: { type: "crypto-multi-accounts", cbor: SYNC } }),
-    });
-    return info.walletId;
-  } catch (error) {
-    if (!(error instanceof WalletError && error.code === "already-exists")) {
-      throw error;
-    }
-    const existing = w.wallet.getSnapshot().wallets.find((entry) => entry.custody === "hardware");
-    return existing?.walletId ?? "";
-  }
-};
 
 const hwAccount = (hwId: string) =>
   ({ kind: "hd", walletId: hwId, groupIndex: 0, template: "evm.bip44" }) as const;
@@ -102,6 +71,7 @@ const hwRpc = (owner: () => string): Arb1Rpc => {
     eth_estimateGas: "0x5208",
     eth_feeHistory: { baseFeePerGas: ["0x64"], reward: [["0x1", "0x1", "0x1"]] },
     eth_getCode: "0x",
+    eth_sendRawTransaction: "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   };
   return ({ method, params }) => {
     if (method === "eth_call") {
@@ -143,13 +113,13 @@ type World = Awaited<ReturnType<typeof world>>;
 type RequestInput = Parameters<World["requests"]["prepare"]>[0];
 type RequestApp = Parameters<World["requests"]["prepare"]>[1];
 
-/** `prepare` → `approve` on a hardware account ends the request rejected with `device-required`. */
-const expectDeviceRejected = async (
+/** `prepare` → `approve` on a hardware account signs on the device and enters the pipeline. */
+const expectDeviceSigned = async (
   w: World,
   input: RequestInput,
   method: "evm-sign" | "evm-revoke" | "evm-nft-send",
   app?: RequestApp,
-): Promise<void> => {
+): Promise<string> => {
   const pending = await w.requests.prepare(input, app);
   expect(pending.stage).toBe("awaiting-approval");
   const approved =
@@ -158,11 +128,10 @@ const expectDeviceRejected = async (
       : method === "evm-revoke"
         ? w.requests.approve(pending.id, "evm-revoke", approval(pending, VERIFY))
         : w.requests.approve(pending.id, "evm-nft-send", approval(pending, VERIFY));
-  await expect(approved).rejects.toSatisfy(
-    (error) => error instanceof WalletError && error.code === "device-required",
-  );
-  /* Terminal, not stuck at signing — and nothing was broadcast or tracked. */
-  expect(w.requests.getState().requests[pending.id]?.stage).toBe("rejected");
+  await expect(approved).resolves.toBeDefined();
+  /* The device answered — the request is past approval, never a typed refusal. */
+  expect(w.requests.getState().requests[pending.id]?.stage).not.toBe("rejected");
+  return pending.id;
 };
 
 /** The hardware account's EVM address — the `ownerOf`/`allowance` answers need the real one. */
@@ -180,57 +149,62 @@ const hwEvmAddress = async (w: World, hwId: string): Promise<string> => {
 };
 
 describe("hardware wallet × engine features", () => {
-  it("typed-data and fiat24-session approvals end rejected with device-required", async () => {
-    const w = await world(11);
-    const hwId = await pairKeystone(w);
-    await expectDeviceRejected(w, typedDataRequest(hwId), "evm-sign");
-    await expectDeviceRejected(w, sessionRequest(hwId), "evm-sign", {
-      kind: "app",
-      id: "fiat24",
-    });
+  it("typed-data approvals sign on the device; fiat24-session is a typed refusal", async () => {
+    const w = await world(11, { deviceIo: () => keystoneIo() });
+    const hwId = await pairKeystone(w.wallet);
+    await expectDeviceSigned(w, typedDataRequest(hwId), "evm-sign");
+    /* An app-scheme document is not a chain sign request the device can check — the kernel
+       refuses it typed, and the request ends rejected rather than reaching the wire. */
+    const pending = await w.requests.prepare(sessionRequest(hwId), { kind: "app", id: "fiat24" });
+    await expect(
+      w.requests.approve(pending.id, "evm-sign", approval(pending, VERIFY)),
+    ).rejects.toMatchObject({ code: "invalid-input" });
+    expect(w.requests.getState().requests[pending.id]?.stage).toBe("rejected");
     await w.destroy();
   });
 
-  it("revoke and nft-send approvals end rejected with device-required, nothing broadcast", async () => {
+  it("revoke and nft-send approvals sign on the device and reach the wire", async () => {
     /* `hwAddress` is filled in after pairing; the rpc reads it lazily per call. */
     let hwAddress = "";
-    const w = await world(11, { arb1: hwRpc(() => hwAddress) });
-    const hwId = await pairKeystone(w);
+    const w = await world(11, { arb1: hwRpc(() => hwAddress), deviceIo: () => keystoneIo() });
+    const hwId = await pairKeystone(w.wallet);
     hwAddress = await hwEvmAddress(w, hwId);
-    await expectDeviceRejected(
-      w,
-      {
-        method: "evm-revoke",
-        account: hwAccount(hwId),
-        network: NETWORK,
-        targets: [{ kind: "erc20", token: TOKEN, spender: SPENDER }],
-        fee: "normal",
-      },
-      "evm-revoke",
-    );
-    await expectDeviceRejected(
-      w,
-      {
-        method: "evm-nft-send",
-        account: hwAccount(hwId),
-        network: NETWORK,
-        contract: NFT_CONTRACT,
-        items: [{ tokenId: 7n }],
-        to: NFT_TO,
-        fee: "normal",
-      },
-      "evm-nft-send",
-    );
-    /* No raw transaction ever left for the wire. */
-    expect(w.posted.filter((p) => String(p.body).includes("eth_sendRawTransaction"))).toStrictEqual(
-      [],
-    );
+    const submitted = [
+      await expectDeviceSigned(
+        w,
+        {
+          method: "evm-revoke",
+          account: hwAccount(hwId),
+          network: NETWORK,
+          targets: [{ kind: "erc20", token: TOKEN, spender: SPENDER }],
+          fee: "normal",
+        },
+        "evm-revoke",
+      ),
+      await expectDeviceSigned(
+        w,
+        {
+          method: "evm-nft-send",
+          account: hwAccount(hwId),
+          network: NETWORK,
+          contract: NFT_CONTRACT,
+          items: [{ tokenId: 7n }],
+          to: NFT_TO,
+          fee: "normal",
+        },
+        "evm-nft-send",
+      ),
+    ];
+    /* Both requests reached "submitted" — signed bytes accepted by the wire. */
+    for (const id of submitted) {
+      expect(w.requests.getState().requests[id]?.stage).toBe("submitted");
+    }
     await w.destroy();
   });
 
   it("a hardware group's Hyperliquid enable ends typed and resumable, not stuck", async () => {
     const w = await world(12);
-    const hwId = await pairKeystone(w);
+    const hwId = await pairKeystone(w.wallet);
     const group = { walletId: hwId, groupIndex: 0 };
     const gkey = `${hwId}/0`;
     await w.apps.acknowledgeTerms(group, "hyperliquid");

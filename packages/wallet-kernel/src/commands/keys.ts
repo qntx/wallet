@@ -10,6 +10,7 @@ import type { Factor, NullValue } from "@qntx/wallet/protocol";
 
 import { keyIdOf } from "../derive/key-id.ts";
 import type { KeyFamily } from "../derive/key-id.ts";
+import type { PublicMaterial } from "../derive/material.ts";
 import { KernelError } from "../errors.ts";
 import { corePromptFor } from "../prompts.ts";
 import { encodeBase58Ascii, encodeHexAscii } from "../secret/encode.ts";
@@ -17,7 +18,13 @@ import type { Secret } from "../secret/secret.ts";
 import { wipe } from "../secret/secret.ts";
 import { encodeHeader, parseKeyHeader } from "../vault/headers.ts";
 import type { StoredRecord } from "../vault/store.ts";
-import { findRecord, openRecord, sealRecord, verifyFactor } from "../vault/vault.ts";
+import {
+  EXTERNAL_CUSTODY_KINDS,
+  findRecord,
+  openRecord,
+  sealRecord,
+  verifyFactor,
+} from "../vault/vault.ts";
 import type { KernelContext } from "./context.ts";
 import { withWalletSeed } from "./vault.ts";
 
@@ -102,12 +109,64 @@ const keyInfoOf = (record: StoredRecord): ImportedKeyInfo => {
 };
 
 /**
- * Every address a mnemonic wallet can derive inside the first OWN_GROUP_BOUND groups — EVM bip44,
- * Solana bip44-change plus TRON bip44. A key matching one of them is a second handle on an account
- * the wallet already owns, so import refuses it.
+ * Every address a wallet can derive inside the first OWN_GROUP_BOUND groups — EVM bip44, Solana
+ * bip44-change plus TRON bip44. A key matching one of them is a second handle on an account the
+ * wallet already owns, so import refuses it. External-custody wallets (card and hardware) answer
+ * from their pinned public material; a path the record did not pin (`device-required`) is skipped —
+ * anything else throws.
  */
 async function ownAddresses(ctx: KernelContext, dek: Secret) {
   const addresses = new Set<string>();
+  const externalAddresses = async (record: StoredRecord): Promise<void> => {
+    // The owning module claimed the sealed body at unlock; the pin answers from its live state.
+    let material: PublicMaterial;
+    try {
+      material = ctx.externalMaterial(record);
+    } catch (error) {
+      // An inert record (a device kind this build does not know) serves no material to collect.
+      if (error instanceof KernelError && error.code === "unsupported") {
+        return;
+      }
+      throw error;
+    }
+    {
+      const h = 0x80000000; // hardened bit — the own paths match leafPath in modules/chains
+      const collect = (
+        settled: ReadonlyArray<PromiseSettledResult<Uint8Array>>,
+        toAddress: (key: Uint8Array) => string,
+      ): void => {
+        for (const result of settled) {
+          if (result.status === "fulfilled") {
+            addresses.add(toAddress(result.value));
+          } else if (
+            !(result.reason instanceof KernelError && result.reason.code === "device-required")
+          ) {
+            throw result.reason instanceof Error ? result.reason : new Error("derivation failed");
+          }
+        }
+      };
+      const groups = Array.from({ length: OWN_GROUP_BOUND }, (_, group) => group);
+      const [evm, tron, solana] = await Promise.all([
+        Promise.allSettled(
+          groups.map(async (group) => material.secp256k1([44 + h, 60 + h, h, 0, group])),
+        ),
+        Promise.allSettled(
+          groups.map(async (group) => material.secp256k1([44 + h, 195 + h, h, 0, group])),
+        ),
+        Promise.allSettled(
+          groups.map(async (group) => material.ed25519([44 + h, 501 + h, group + h, h])),
+        ),
+      ]);
+      collect(evm, (key) => evmAddressFromPublicKey(key).toLowerCase());
+      collect(tron, tronAddressFromPublicKey);
+      collect(solana, solanaAddressFromPublicKey);
+    }
+  };
+  await Promise.all(
+    ctx.image.records
+      .filter((r) => EXTERNAL_CUSTODY_KINDS.has(r.kind))
+      .map(async (record) => externalAddresses(record)),
+  );
   const entropyRecords = ctx.image.records.filter((r) => r.kind === "entropy");
   await Promise.all(
     entropyRecords.map(async (record) =>
