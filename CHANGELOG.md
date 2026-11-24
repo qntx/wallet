@@ -1350,8 +1350,10 @@ Gateway (operators):
   progress before the `conflict` refusal; the op now refuses before it starts, and an unsupported
   device refuses without publishing an activity.
 - `@qntx/wallet-kernel`: fetching a non-bitcoin family's accounts on a Ledger re-proves the live
-  device's identity against the wallet's pinned fingerprint — those apps cannot reveal the master
-  fingerprint, so material from a different device answering could merge undetected.
+  device's identity first — those apps cannot reveal the master fingerprint, so one already-pinned
+  key of the same family is re-fetched and must match byte for byte (`wrong-device` otherwise);
+  material from a different device answering could merge undetected before. The first fetch of a
+  family stays trust-on-first-use, like pairing; verify an address on the device to close it.
 - `@qntx/wallet-kernel`: a user rejecting an on-device address verification reports
   `device-rejected` on every driver — a Ledger rejection was previously read as `wrong-device`,
   the code reserved for a device showing a different address.
