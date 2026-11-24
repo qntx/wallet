@@ -1098,10 +1098,10 @@ Gateway (operators):
   account xpub), behind user verification, from derived (vault) or pinned (hardware) material.
 - `@qntx/wallet-engine`: `RequestOrigin` gains `{ kind: "qr", declared? }` — a request that
   entered through a scanned UR frame, attributed to the counterpart's self-declared label
-  (display-only, untrusted). Every switch on `RequestOrigin["kind"]` must name it. (MIGRATION §31)
+  (display-only, untrusted). Every switch on `RequestOrigin["kind"]` must name it. (MIGRATION §32)
 - `@qntx/wallet-engine`: `EngineOptions.devices` (`DeviceTransport`) — called once per signature
   for a hardware-custody account, whatever the request's origin; the host aborts through the
-  io's `signal`. Absent, hardware wallets cannot sign (`device-required`). (MIGRATION §31)
+  io's `signal`. Absent, hardware wallets cannot sign (`device-required`). (MIGRATION §32)
 - `@qntx/wallet-engine/qr`: QR signer mode — `createQrScanner` folds scanned UR frames into a
   payload, `readQrRequest` decodes and re-checks it, `inspectQrRequest` decodes without binding,
   `qrSigner({ engine, wallet }).prepare` binds it (per-family network binding, account match,
@@ -1110,7 +1110,7 @@ Gateway (operators):
   `discloses` list for the prompt, `qrFrames` animates the answer. The counterpart side:
   `readQrExport`, `qrSignRequest`, `readQrSignature` and the `QrLink`/`QrSignInput`/
   `QrSentRequest`/`QrSignature` types. `WatchAccount.qr` persists a phone link on a watch-only
-  account so a Web session can sign through it without holding keys. (MIGRATION §31)
+  account so a Web session can sign through it without holding keys. (MIGRATION §32)
 
 ### Changed
 
@@ -1298,7 +1298,7 @@ Gateway (operators):
   decodes through it — the hand-written CBOR and firmware-3.2.2 registry copies are gone.
 - `@qntx/wallet-engine`: `BitcoinPsbtInput.sign[].template` accepts all four account templates —
   a QR counterpart may name `btc.bip44`/`btc.bip49` where a dApp only uses `btc.bip84`/`btc.bip86`.
-  Hosts switching on the template need the new members. (MIGRATION §31)
+  Hosts switching on the template need the new members. (MIGRATION §32)
 
 ### Fixed
 

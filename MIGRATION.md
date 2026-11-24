@@ -2201,10 +2201,37 @@ export async function signWithinBudget(
       }
     }
     throw error;
-   change before card wallets ship. Never collect a card access code or short ID in a JS
-   `TextInput`.
+  }
+}
 
-## 31. QR signer mode
+/**
+ * The engine path: `enable`/`renew` take the same `{ limits, verify }`, and `reopen` re-approves
+ * the agent in the kernel — the kernel's prompt restates the limits and the remaining budget.
+ */
+export async function enableAndReopen(
+  apps: AppsController<{ readonly hyperliquid: HyperliquidGroupState }>,
+  provider: HyperliquidProvider,
+  group: HyperliquidGroup,
+  verify: VerifyFactor,
+): Promise<void> {
+  await apps.enable(group, "hyperliquid", { limits: LIMITS, verify });
+  try {
+    await provider.reopen(group, verify);
+  } catch (error) {
+    if (error instanceof HyperliquidError && error.category === "app-lock-required") {
+      throw new Error("turn the app lock on first", { cause: error });
+    }
+    throw error;
+  }
+}
+
+/** Trading answers `reopen-required` while the session is unopened — call `reopen`, not enable. */
+export function isReopen(error: unknown): boolean {
+  return error instanceof HyperliquidError && error.category === "reopen-required";
+}
+```
+
+## 32. QR signer mode
 
 `@qntx/wallet-engine/qr` turns the wallet into the signing half of an air-gapped pair: a
 watch-only counterpart shows an animated UR request, the user scans it, approves it like any
@@ -2278,29 +2305,6 @@ export function originBadge(origin: RequestOrigin): string {
 }
 
 /**
- * The engine path: `enable`/`renew` take the same `{ limits, verify }`, and `reopen` re-approves
- * the agent in the kernel — the kernel's prompt restates the limits and the remaining budget.
- */
-export async function enableAndReopen(
-  apps: AppsController<{ readonly hyperliquid: HyperliquidGroupState }>,
-  provider: HyperliquidProvider,
-  group: HyperliquidGroup,
-  verify: VerifyFactor,
-): Promise<void> {
-  await apps.enable(group, "hyperliquid", { limits: LIMITS, verify });
-  try {
-    await provider.reopen(group, verify);
-  } catch (error) {
-    if (error instanceof HyperliquidError && error.category === "app-lock-required") {
-      throw new Error("turn the app lock on first", { cause: error });
-    }
-    throw error;
-  }
-}
-
-/** Trading answers `reopen-required` while the session is unopened — call `reopen`, not enable. */
-export function isReopen(error: unknown): boolean {
-  return error instanceof HyperliquidError && error.category === "reopen-required";
  * `BitcoinPsbtInput.sign[].template` widened from the two dApp-facing templates to all four — a QR
  * counterpart may ask for `btc.bip44` or `btc.bip49` inputs too. A host that rendered or filtered
  * PSBT inputs by template must expect every member.
