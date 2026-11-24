@@ -273,14 +273,8 @@ const allowListed = l1Cases.filter((c) => c.action["type"] !== "dummy");
 const dummies = l1Cases.filter((c) => c.action["type"] === "dummy");
 
 describe("sessions.sign against the oracle vectors", () => {
-  /* The oracle scheduleCancel vectors' `time` values are far in the past — under the window policy
-     the kernel refuses them, so the sign call substitutes the session's own validUntil (their
-     encoding stays pinned by the connectionId checks above and the window test's bounds). */
   const signArgs = (vector: L1Case) => ({
-    action:
-      vector.action["type"] === "scheduleCancel" && vector.action["time"] !== undefined
-        ? ({ ...vector.action, time: vector.nonce + DAY } as never)
-        : (vector.action as never),
+    action: vector.action as never,
     nonce: vector.nonce,
     ...(vector.vaultAddress === undefined ? {} : { vaultAddress: vector.vaultAddress }),
     expiresAfter: vector.expiresAfter ?? vector.nonce + 15_000,
@@ -454,8 +448,6 @@ describe("protocol: strict action validation", () => {
     { type: "modify", oid: 1, order },
     { type: "modify", oid: `0x${"00".repeat(16)}`, order, a: true },
     { type: "batchModify", modifies: [{ oid: 1, order }] },
-    { type: "scheduleCancel" },
-    { type: "scheduleCancel", time: T0 + 10_000 },
     { type: "updateLeverage", asset: 0, isCross: true, leverage: 5 },
     { type: "updateIsolatedMargin", asset: 0, isBuy: true, ntli: -100 },
     { type: "twapCancel", a: 0, t: 1 },
@@ -482,6 +474,8 @@ describe("protocol: strict action validation", () => {
     },
     { type: "twapOrder", twap: { a: 0, b: true, s: "1", r: false, m: 30, t: false } },
     { type: "createSubAccount", name: "x" },
+    { type: "scheduleCancel" },
+    { type: "scheduleCancel", time: T0 + 10_000 },
     { type: "noop" },
     { type: "reserveRequestWeight", weight: 1 },
     { type: "agentSendAsset" },

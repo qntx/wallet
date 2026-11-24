@@ -20,9 +20,6 @@ const MAX_AGENTS = 16;
    takes nonces up to a day ahead; the engine's `assertClock()` is the mitigation). */
 const EXPIRES_AFTER_MS = 60_000;
 const NONCE_WINDOW_MS = 60_000;
-/* A scheduled cancel must land ≥ 5 s out (docs §Schedule cancel) and within the session's own
-   validUntil — the kernel signs no scheduled effect past the approved authorisation. */
-const SCHEDULE_CANCEL_MIN_MS = 5000;
 
 export const hyperliquidL1Agent: SessionScheme = defineSessionScheme({
   id: "hyperliquid-l1-agent",
@@ -30,22 +27,12 @@ export const hyperliquidL1Agent: SessionScheme = defineSessionScheme({
   maxPerVault: MAX_AGENTS,
   parseScope: hyperliquidNetwork,
   params: hyperliquidL1Params,
-  document: (params, header, scope, now) => {
+  document: (params, _header, scope, now) => {
     if (!(now < params.expiresAfter && params.expiresAfter <= now + EXPIRES_AFTER_MS)) {
       throw new KernelError("invalid-input", "expiresAfter outside the signing window");
     }
     if (Math.abs(params.nonce - now) > NONCE_WINDOW_MS) {
       throw new KernelError("invalid-input", "nonce outside the signing window");
-    }
-    if (
-      params.action.type === "scheduleCancel" &&
-      params.action.time !== undefined &&
-      !(
-        params.action.time >= now + SCHEDULE_CANCEL_MIN_MS &&
-        params.action.time <= header.validUntil
-      )
-    ) {
-      throw new KernelError("invalid-input", "schedule time outside the session");
     }
     return hyperliquidL1Document(params, scope);
   },

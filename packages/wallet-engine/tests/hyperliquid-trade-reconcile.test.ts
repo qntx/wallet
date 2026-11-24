@@ -596,7 +596,10 @@ describe("hyperliquid trade — unknown POST outcomes", () => {
     });
     const { group } = await enable(provider, wallet, walletId);
 
-    const result = await drive(timers, provider.trade.scheduleCancel(group, NOW + 60_000));
+    const result = await drive(
+      timers,
+      provider.trade.twapCancel(group, { coin: "BTC", twapId: 1 }),
+    );
 
     expect(result).toStrictEqual({ kind: "unknown" });
     expect(exchangeCount(posted)).toBe(1);
@@ -1305,31 +1308,6 @@ describe("hyperliquid trade — wire actions", () => {
     expect(first.cancels).toHaveLength(64);
     expect(second.cancels).toHaveLength(6);
     expect(first.cancels[0]).toStrictEqual({ a: 3, o: 1 });
-  });
-
-  it("scheduleCancel carries the time and clears without one", async () => {
-    const posted: Posted[] = [];
-    const timers = manualTimer();
-    const { provider, wallet, walletId } = await rig(posted, timers);
-    const { group } = await enable(provider, wallet, walletId);
-
-    await provider.trade.scheduleCancel(group, NOW + 60_000);
-    expect(actionOf(posted)).toStrictEqual({ type: "scheduleCancel", time: NOW + 60_000 });
-    await provider.trade.scheduleCancel(group);
-    const posts = posted.filter((entry) => entry.endpoint === "exchange");
-    expect(posts[1]?.body["action"]).toStrictEqual({ type: "scheduleCancel" });
-  });
-
-  it("a schedule inside the 5 s window is invalid input and never posts", async () => {
-    const posted: Posted[] = [];
-    const timers = manualTimer();
-    const { provider, wallet, walletId } = await rig(posted, timers);
-    const { group } = await enable(provider, wallet, walletId);
-
-    await expect(category(provider.trade.scheduleCancel(group, NOW + 4000))).resolves.toBe(
-      "invalid-input",
-    );
-    expect(exchangeCount(posted)).toBe(0);
   });
 
   it("twapCancel uses the twap wire shape", async () => {

@@ -31,7 +31,7 @@ export type HyperliquidL1Order = {
   readonly c?: string;
 };
 
-/** The ten allow-listed L1 actions (research H2-T), in the table's order. */
+/** The nine allow-listed L1 actions (research H2-T), in the table's order. */
 export type HyperliquidL1Action =
   | {
       readonly type: "order";
@@ -63,7 +63,6 @@ export type HyperliquidL1Action =
       }>;
       readonly a?: true;
     }
-  | { readonly type: "scheduleCancel"; readonly time?: number }
   | {
       readonly type: "updateLeverage";
       readonly asset: number;
@@ -213,13 +212,6 @@ export function encodeL1Action(action: HyperliquidL1Action): Uint8Array {
         ],
       ];
       return optFlag(entries, "a", action.a);
-    }
-    case "scheduleCancel": {
-      const entries: Entry[] = [["type", packStr("scheduleCancel")]];
-      if (action.time !== undefined) {
-        entries.push(["time", packInt(action.time)]);
-      }
-      return packMap(entries);
     }
     case "updateLeverage":
       return packMap([

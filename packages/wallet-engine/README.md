@@ -534,8 +534,8 @@ restrictions; the gateway answer only decides what the UI offers.
   the cloid corrects to `resting` immediately, a `fills` frame carrying it triggers an
   immediate `orderStatus` check (a fill alone cannot prove a full fill). Locking the vault
   drops the pending set.
-- `trade.modify`/`batchModify`/`cancel`/`cancelByCloid`/`cancelAll`/`scheduleCancel`/`twap`/
-  `twapCancel`/`setLeverage`/`adjustMargin`/`close` round out the action set.
+- `trade.modify`/`batchModify`/`cancel`/`cancelByCloid`/`cancelAll`/`twapCancel`/`setLeverage`/
+  `adjustMargin`/`close` round out the action set.
 
 ### Live views
 

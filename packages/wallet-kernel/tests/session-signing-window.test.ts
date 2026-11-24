@@ -1,7 +1,7 @@
 /**
  * The kernel-side bounds of `sessions.sign` for hyperliquid-l1-agent: `expiresAfter` is required
- * and at most 60 s after the wall clock, the nonce stays within ±60 s, a scheduled cancel cannot
- * outlive the session, and a signature keeps covering its action after the record is deleted.
+ * and at most 60 s after the wall clock, the nonce stays within ±60 s, and a signature keeps
+ * covering its action after the record is deleted.
  */
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { recoverTypedDataAddress } from "viem";
@@ -181,40 +181,6 @@ describe("sessions.sign hyperliquid-l1-agent signing window", () => {
         }),
       ),
     ).toBe(code);
-  });
-
-  it.each([
-    ["now + 4_999", T0 + 4999, "invalid-input"],
-    ["now + 5_000", T0 + 5000, undefined],
-    ["validUntil", T0 + 32 * DAY, undefined],
-    ["validUntil + 1", T0 + 32 * DAY + 1, "invalid-input"],
-  ])("scheduleCancel time %s → %s", async (_label, time, code) => {
-    const { h, session, address } = await setup();
-    expect(
-      errCode(
-        await sign(h, session, address, {
-          action: { type: "scheduleCancel", time },
-          nonce: T0,
-          expiresAfter: T0 + 15_000,
-        }),
-      ),
-    ).toBe(code);
-  });
-
-  it("a scheduleCancel without a time clears the schedule and signs", async () => {
-    const { h, session, address } = await setup();
-    expect(
-      bytesField(
-        ok(
-          await sign(h, session, address, {
-            action: { type: "scheduleCancel" },
-            nonce: T0,
-            expiresAfter: T0 + 15_000,
-          }),
-        ),
-        "signature",
-      ),
-    ).toHaveLength(65);
   });
 
   it("the window is measured on the platform clock — a device 23 h ahead signs its own now", async () => {

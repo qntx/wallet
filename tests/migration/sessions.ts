@@ -30,7 +30,7 @@ export async function sessionKeys(wallet: Wallet, walletId: string): Promise<Ses
     scheme: "hyperliquid-l1-agent",
     address,
     params: {
-      action: { type: "scheduleCancel" },
+      action: { type: "cancel", cancels: [{ a: 0, o: 1 }] },
       nonce: Date.now(),
       expiresAfter: Date.now() + 15_000,
     },

@@ -187,7 +187,7 @@ describe("app-lock gate", () => {
     expect(errCode(await h.call("sessions.open", { address, verify: HARDWARE }, session))).toBe(
       "app-lock-required",
     );
-    expect(errCode(await sign(h, session, address, { type: "scheduleCancel" }))).toBe(
+    expect(errCode(await sign(h, session, address, { type: "twapCancel", a: 0, t: 1 }))).toBe(
       "app-lock-required",
     );
     /* Nothing reached the keystore: the refusal happens before any verification prompt. */
@@ -210,7 +210,7 @@ describe("app-lock gate", () => {
     expect(errCode(await h2.call("sessions.open", { address, verify: HARDWARE }, session2))).toBe(
       "app-lock-required",
     );
-    expect(errCode(await sign(h2, session2, address, { type: "scheduleCancel" }))).toBe(
+    expect(errCode(await sign(h2, session2, address, { type: "twapCancel", a: 0, t: 1 }))).toBe(
       "app-lock-required",
     );
   });
@@ -282,7 +282,7 @@ describe("approval ceremony", () => {
     h.advance(15 * 60_000 + 1);
     await h.settle();
     session = strField(ok(await h.call("vault.unlock", { factor: HARDWARE })), "session");
-    expect(errCode(await sign(h, session, address, { type: "scheduleCancel" }))).toBe(
+    expect(errCode(await sign(h, session, address, { type: "twapCancel", a: 0, t: 1 }))).toBe(
       "approval-required",
     );
 
@@ -294,7 +294,7 @@ describe("approval ceremony", () => {
         .map((p) => p.description)
         .join("\n"),
     ).toContain("Remaining: 1000");
-    const signature = ok(await sign(h, session, address, { type: "scheduleCancel" }));
+    const signature = ok(await sign(h, session, address, { type: "twapCancel", a: 0, t: 1 }));
     expect(field(signature, "signature")).toBeInstanceOf(Uint8Array);
   });
 
@@ -305,21 +305,21 @@ describe("approval ceremony", () => {
       await create(w, createParams(w.walletId, { name: "bot-2" })),
       "address",
     );
-    ok(await sign(w.h, w.session, first, { type: "scheduleCancel" }));
-    ok(await sign(w.h, w.session, second, { type: "scheduleCancel" }));
+    ok(await sign(w.h, w.session, first, { type: "twapCancel", a: 0, t: 1 }));
+    ok(await sign(w.h, w.session, second, { type: "twapCancel", a: 0, t: 1 }));
     /* The delete commits a removal; reconcile forgets only that record's mark. */
     ok(await w.h.call("sessions.delete", { address: first }, w.session));
-    expect(errCode(await sign(w.h, w.session, first, { type: "scheduleCancel" }))).toBe(
+    expect(errCode(await sign(w.h, w.session, first, { type: "twapCancel", a: 0, t: 1 }))).toBe(
       "not-found",
     );
-    ok(await sign(w.h, w.session, second, { type: "scheduleCancel" }));
+    ok(await sign(w.h, w.session, second, { type: "twapCancel", a: 0, t: 1 }));
   });
 
   it("on the web the opened mark is lost on relaunch — open verifies, then sign works", async () => {
     const first = await webSetup();
     const created = await create(first, createParams(first.walletId));
     const address = strField(created, "address");
-    ok(await sign(first.h, first.session, address, { type: "scheduleCancel" }));
+    ok(await sign(first.h, first.session, address, { type: "twapCancel", a: 0, t: 1 }));
 
     const second = createHarness({
       start: T0,
@@ -331,12 +331,12 @@ describe("approval ceremony", () => {
       ok(await second.call("vault.unlock", { factor: PASSKEY() })),
       "session",
     );
-    expect(errCode(await sign(second, session, address, { type: "scheduleCancel" }))).toBe(
+    expect(errCode(await sign(second, session, address, { type: "twapCancel", a: 0, t: 1 }))).toBe(
       "approval-required",
     );
     ok(await second.call("sessions.open", { address, verify: PASSKEY() }, session));
     expect(
-      errCode(await sign(second, session, address, { type: "scheduleCancel" })),
+      errCode(await sign(second, session, address, { type: "twapCancel", a: 0, t: 1 })),
     ).toBeUndefined();
   });
 });
@@ -435,23 +435,46 @@ describe("metering", () => {
     await expect(spentOf(h, session)).resolves.toBe("10");
   });
 
-  it("cancels are free and not asset-restricted", async () => {
+  it("cancels are free but restricted to the allow-list", async () => {
     const { h, session, address } = await seeded({ ...LIMITS, assets: [0], notional: "1" });
-    const free: ReadonlyArray<Record<string, unknown>> = [
+    /* A cancel on an asset the session never approved could strip the user's protection on
+       positions outside its scope — every cancel kind answers limit-exceeded. */
+    const offList: ReadonlyArray<Record<string, unknown>> = [
       { type: "cancel", cancels: [{ a: 999, o: 1 }] },
       {
         type: "cancelByCloid",
         cancels: [{ asset: 999, cloid: `0x${"ab".repeat(16)}` }],
       },
-      { type: "scheduleCancel" },
-      { type: "scheduleCancel", time: T0 + 10_000 },
       { type: "twapCancel", a: 999, t: 1 },
+    ];
+    for (const action of offList) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential kernel calls.
+      expect(errCode(await sign(h, session, address, action))).toBe("limit-exceeded");
+    }
+    const free: ReadonlyArray<Record<string, unknown>> = [
+      { type: "cancel", cancels: [{ a: 0, o: 1 }] },
+      {
+        type: "cancelByCloid",
+        cancels: [{ asset: 0, cloid: `0x${"ab".repeat(16)}` }],
+      },
+      { type: "twapCancel", a: 0, t: 1 },
     ];
     for (const action of free) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential kernel calls.
       ok(await sign(h, session, address, action));
     }
     await expect(spentOf(h, session)).resolves.toBe("0");
+  });
+
+  it("scheduleCancel is not admitted — it cancels every open order on every asset", async () => {
+    const { h, session, address } = await seeded(LIMITS);
+    for (const action of [
+      { type: "scheduleCancel" },
+      { type: "scheduleCancel", time: T0 + 10_000 },
+    ]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential kernel calls.
+      expect(errCode(await sign(h, session, address, action))).toBe("invalid-input");
+    }
   });
 
   it("updateLeverage respects the cap and both account actions the allow-list", async () => {

@@ -1,4 +1,4 @@
-/* The scheme's strict validators — the network scope and the wire params over the ten
+/* The scheme's strict validators — the network scope and the wire params over the nine
    allow-listed action schemas (research H2-T); a failure inside `document` answers
    `invalid-input`. */
 import { arr, bool, int, literal, obj, opt, str, union } from "@qntx/wallet/protocol";
@@ -58,7 +58,8 @@ const oid = union(id, cloid);
 /* Every action is an exact-key object; unknown `type` or extra keys fail. `grouping` admits only
    the free groupings — `{p}` is a priority fee of up to 100 % of notional (nktkas order.ts:69-84)
    — and builder `s` splits are not accepted. `twapOrder` is not admitted: a TWAP's slices carry
-   no price the kernel could meter against the session budget. */
+   no price the kernel could meter against the session budget. `scheduleCancel` is not admitted:
+   it cancels every open order on every asset, so no allow-list could scope it. */
 export const hyperliquidL1Action: Validator<HyperliquidL1Action> = union(
   obj({
     type: literal("order"),
@@ -87,7 +88,6 @@ export const hyperliquidL1Action: Validator<HyperliquidL1Action> = union(
     modifies: arr(obj({ oid, order: orderWire }), 64, 1),
     a: opt(literal(true)),
   }),
-  obj({ type: literal("scheduleCancel"), time: opt(id) }),
   obj({ type: literal("updateLeverage"), asset, isCross: bool, leverage: int(1, 1000) }),
   obj({
     type: literal("updateIsolatedMargin"),

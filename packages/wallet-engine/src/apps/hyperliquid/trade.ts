@@ -51,11 +51,6 @@ export type HyperliquidTrade = {
   ) => Promise<ReadonlyArray<HyperliquidCancelOutcome>>;
   /** Cancel every open order of the account — one batch action per ≤64-order chunk. */
   readonly cancelAll: (group: HyperliquidGroup) => Promise<ReadonlyArray<HyperliquidCancelOutcome>>;
-  /** Arm (or clear, with `undefined`) the dead-man's switch. */
-  readonly scheduleCancel: (
-    group: HyperliquidGroup,
-    time?: number,
-  ) => Promise<HyperliquidActionOutcome>;
   /**
    * Stop a running TWAP — starting one needs no price-less action the kernel could not meter, so it
    * is not offered.
@@ -153,8 +148,6 @@ export function createHyperliquidTrade(options: {
       }
       return outcomes;
     },
-    scheduleCancel: async (group, time) =>
-      options.exchange.action(group, options.actions.scheduleCancel(time)),
     twapCancel: async (group, params) =>
       options.exchange.action(group, await options.actions.twapCancel(params)),
     setLeverage: async (group, params) =>

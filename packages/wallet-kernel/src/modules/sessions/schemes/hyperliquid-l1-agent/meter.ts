@@ -2,8 +2,10 @@
  * The hyperliquid-l1-agent meter: every value-moving action a session signs is charged against the
  * approved limits — an order's notional (p × s, a trigger order at max(p, triggerPx)) accumulates
  * into the record's `spent`, `updateLeverage` respects the cap, and every charged action's asset
- * must sit in the limits' allow-list. Cancels are free and need no allow-list membership: they
- * release nothing and move no value.
+ * must sit in the limits' allow-list. Cancels are free but still allow-listed: a cancel on an asset
+ * the session never approved could strip the user's stop-loss/take-profit orders on positions
+ * outside the session's scope. Trapping is not a concern — the user can always cancel from the main
+ * key.
  */
 import type {
   HyperliquidAgentLimits,
@@ -71,11 +73,17 @@ export function meterHyperliquid(
       inAllowList(limits, action.asset);
       break;
     case "cancel":
+      for (const cancel of action.cancels) {
+        inAllowList(limits, cancel.a);
+      }
+      break;
     case "cancelByCloid":
-    case "scheduleCancel":
+      for (const cancel of action.cancels) {
+        inAllowList(limits, cancel.asset);
+      }
+      break;
     case "twapCancel":
-      /* Free actions: nothing is charged and no asset check applies — refusing a cancel because
-         its asset is outside the list would trap the user into an unwanted position. */
+      inAllowList(limits, action.a);
       break;
   }
   const next = decimalToUnits(spent) + charge;

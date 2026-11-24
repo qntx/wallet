@@ -24,7 +24,7 @@ const OTHER_KEY = new Uint8Array(32).fill(23);
 const SESSION_ADDRESS = evmAddressFromPublicKey(secp256k1.getPublicKey(SESSION_KEY, true));
 
 const PARAMS: HyperliquidL1Params = {
-  action: { type: "scheduleCancel", time: T0 + 2 * DAY },
+  action: { type: "cancel", cancels: [{ a: 0, o: 1 }] },
   nonce: T0,
   expiresAfter: T0 + 15_000,
 };

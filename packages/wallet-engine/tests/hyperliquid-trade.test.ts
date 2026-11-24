@@ -565,14 +565,13 @@ describe("hyperliquid trade on the node host", () => {
     /* The registry's verified list is kernel state — enabling touched no wire endpoint, so the
        clock has no estimate and the sign must fetch one first. */
     expect(posted).toHaveLength(0);
-    await provider.trade.scheduleCancel(GROUP(walletId), NOW + 60_000);
-    /* scheduleCancel needs no market data — the allMids read is the clock's priming read. */
-    const endpoints = posted.map((entry) => entry.endpoint);
-    const mids = posted.map((entry) => entry.body["type"]).indexOf("allMids");
-    const exchange = endpoints.indexOf("exchange");
-    expect(mids).toBeGreaterThanOrEqual(0);
-    expect(endpoints[mids]).toBe("info");
-    expect(mids).toBeLessThan(exchange);
+    await provider.trade.cancel(GROUP(walletId), [{ coin: "BTC", oid: 1 }]);
+    /* The clock's estimate comes from a response's Date header: the action's own meta read
+       primes it, so an info read always lands before the exchange POST. */
+    const exchange = posted.findIndex((entry) => entry.endpoint === "exchange");
+    const firstInfo = posted.findIndex((entry) => entry.endpoint === "info");
+    expect(firstInfo).toBeGreaterThanOrEqual(0);
+    expect(firstInfo).toBeLessThan(exchange);
   });
 
   it("a user-signed send primes the estimate the same way and refuses on a skewed clock", async () => {
