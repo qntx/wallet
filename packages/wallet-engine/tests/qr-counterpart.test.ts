@@ -1211,10 +1211,7 @@ describe("qr counterpart — request and signature guards", () => {
     /* A short signature never reaches our checks — the codec's own bounds refuse it, wrapped
        as the same result-mismatch every other codec refusal is. */
     const short = encodeCbor(
-      taggedValue(
-        INTEROP_TAGS["eth-signature"],
-        new CborMap(new Map<number, unknown>([[2, new Uint8Array(64)]])),
-      ),
+      taggedValue(INTEROP_TAGS["eth-signature"], new CborMap(new Map([[2, new Uint8Array(64)]]))),
     );
     expect(() => readQrSignature(sent, { type: "eth-signature", cbor: short })).toThrow(
       expect.objectContaining({ code: "result-mismatch" }),
