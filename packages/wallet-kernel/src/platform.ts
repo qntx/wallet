@@ -448,8 +448,8 @@ export type SecureInput = {
 
 /**
  * The card capability bundle: reader session and the CA anchors the kernel trusts — input comes
- * through the top-level `secureInput`. Present only on hosts with an NFC card surface —
- * `undefined` on web/node, where every `card.*` method and every card-wallet seed lookup answers
+ * through the top-level `secureInput`. Present only on hosts with an NFC card surface — `undefined`
+ * on web/node, where every `card.*` method and every card-wallet seed lookup answers
  * `unsupported`.
  */
 export type CardPlatform = {

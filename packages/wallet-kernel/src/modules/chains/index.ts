@@ -421,9 +421,15 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   const prepared = await openKeys(async (keys) =>
     prepareApproval(ctx, request, keys.material, dek),
   );
-  await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () =>
-    prepared.shown?.prompt ??
-    chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
+  await verifyFactor(
+    ctx.platform,
+    ctx.image,
+    verify,
+    dek,
+    ctx.commit,
+    () =>
+      prepared.shown?.prompt ??
+      chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
   );
   // The session may have ended while the prompt was up; the fiat24 window re-checks too, as the
   // old sign pass did.

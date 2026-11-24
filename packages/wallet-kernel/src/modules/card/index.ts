@@ -238,10 +238,7 @@ export function createCardModule(platform: KernelPlatform): CardModule {
           if (secureInput === undefined) {
             throw new KernelError("unsupported", "this host has no secure input");
           }
-          const response = await secureInput.request(
-            active.pending.secure,
-            active.pending.label,
-          );
+          const response = await secureInput.request(active.pending.secure, active.pending.label);
           if (!response.ok) {
             throw response.failure === "cancelled"
               ? new KernelError("cancelled", "the secure input was dismissed")

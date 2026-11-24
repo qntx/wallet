@@ -773,5 +773,5 @@ describe("serializeCeremonies", () => {
     platform.card!.reader.close("success", "done");
     expect(events).toStrictEqual([true, false]);
     expect(input.requests).toStrictEqual([{ kind: "access-code", label: "enter the code" }]);
-  }, 5_000);
+  }, 5000);
 });

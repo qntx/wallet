@@ -20,9 +20,8 @@ import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { publicKeyToAddress } from "viem/accounts";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { ProtocolValue } from "@qntx/wallet/protocol";
-
 import { encodeBatchExecute, normalizeEvm } from "@qntx/wallet-chains/evm";
+import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
 import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
@@ -702,10 +701,7 @@ describe("hardware wallet refusals", () => {
     const session = strField(res, "session");
     const hwId = await pairDevice(h, session);
     /* The batch renders only as a self-call to the account's own address. */
-    const ownPub = HDKey.fromMasterSeed(SEED).derive("m/44'/60'/0'/0/0").publicKey;
-    if (ownPub === null) {
-      throw new Error("no public key");
-    }
+    const ownPub = HDKey.fromMasterSeed(SEED).derive("m/44'/60'/0'/0/0").publicKey!;
     const own = publicKeyToAddress(
       `0x${bytesToHex(secp256k1.Point.fromBytes(ownPub).toBytes(false))}`,
     );
@@ -738,7 +734,7 @@ describe("hardware wallet refusals", () => {
       session,
     );
     expect(errCode(begin)).toBe("blind-signing-disabled");
-    expect(fake.calls.length).toBe(keystoreCalls);
+    expect(fake.calls).toHaveLength(keystoreCalls);
   });
 
   it("chain.sign refuses a hardware account with device-required", async () => {
