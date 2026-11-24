@@ -46,11 +46,11 @@ export function result(command: Inner, response: InnerResponse): Uint8Array {
   if (sw === 0x6f00) {
     throw new CardError("card-fault", "card reported an internal fault", sw);
   }
-  if (sw === 0x6283) {
-    throw new CardError("card-not-genuine", "the card is not initialised", sw);
-  }
   if (data.length > 0) {
     throw new CardError("card-fault", "a failed command returned data", sw);
+  }
+  if (sw === 0x6283) {
+    throw new CardError("card-not-genuine", "the card is not initialised", sw);
   }
   const { name } = command;
   if (name === "verify" && sw >= 0x63c1 && sw <= 0x63c9) {

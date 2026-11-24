@@ -75,6 +75,7 @@ const h32 = hex("11".repeat(32));
 describe("result() status-word matrix", () => {
   const SW_SET = [
     0x9000,
+    0x6283,
     ...Array.from({ length: 11 }, (_, i) => 0x63c0 + i),
     0x6700,
     0x6982,
@@ -121,6 +122,9 @@ describe("result() status-word matrix", () => {
     if (sw === 0x6f00) {
       return { code: "card-fault", remaining: undefined };
     }
+    if (sw === 0x6283) {
+      return { code: "card-not-genuine", remaining: undefined };
+    }
     if (name === "verify" && sw >= 0x63c1 && sw <= 0x63c9) {
       return { code: "wrong-access-code", remaining: sw - 0x63c0 };
     }
@@ -165,6 +169,10 @@ describe("result() status-word matrix", () => {
 
   it.each(NAMES)("command=%s failing with data is card-fault", (name) => {
     expect(cardError(() => result(innerOf(name), respond(SOME_DATA, 0x6982)))).toBe("card-fault");
+  });
+
+  it.each(NAMES)("command=%s failing 6283 with data is card-fault", (name) => {
+    expect(cardError(() => result(innerOf(name), respond(SOME_DATA, 0x6283)))).toBe("card-fault");
   });
 
   it("tells VERIFY's wait gate (6986) from a wrong card state (6985)", () => {
