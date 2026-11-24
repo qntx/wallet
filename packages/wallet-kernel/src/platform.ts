@@ -49,16 +49,19 @@ export type VaultAnchor = {
   readonly replace: (next: Uint8Array, expected: Uint8Array | undefined) => Promise<boolean>;
 };
 
-/** Session limits owned by the worker entry (Web and Node: idle 5/15/60 min, max 12 h). */
+/**
+ * Session limits owned by the worker entry (Web and Node: idle 5/15/60 min, max 12 h; native: 15
+ * min presence idle, max 24 h).
+ */
 export type KernelPolicy = {
   readonly maxSessionMs: number;
   /** Upper bound for ncryptsec imports; enforced by the nostr module. */
   readonly maxScryptLogN: number;
   /**
-   * Idle lock. Absent on hosts that never idle-lock in the foreground (native locks on
-   * backgrounding instead): the session then ends only at `maxSessionMs`. "presence" counts only
-   * user-presence-bearing methods (web — background traffic must not hold a session open);
-   * "request" counts every successful request (node — there is no human to observe).
+   * Idle lock. "presence" counts only user-presence-bearing methods, so background traffic or a
+   * signing session cannot hold the vault open (Web, native); "request" counts every successful
+   * request (node — there is no human to observe). Absent: the session ends only at
+   * `maxSessionMs`.
    */
   readonly idle?:
     | {

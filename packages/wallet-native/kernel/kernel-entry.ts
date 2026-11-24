@@ -14,6 +14,7 @@ import { bindNativeNostr } from "./nostr.ts";
 import type { KernelNostrNative } from "./nostr.ts";
 import { bindNativePasskey } from "./passkey.ts";
 import type { KernelPasskeyNative } from "./passkey.ts";
+import { NATIVE_POLICY } from "./policy.ts";
 import { bindNativeSecureInput } from "./secure-input.ts";
 import type { KernelSecureInputNative } from "./secure-input.ts";
 import { bindNativeSpark } from "./spark.ts";
@@ -102,9 +103,9 @@ const platform: KernelPlatform = {
   keystore: bindNativeKeystore(__qntx.keystore),
   passkey: bindNativePasskey(__qntx.passkey, (length) => __qntx.random(length)),
   secureInput: bindNativeSecureInput(__qntx.secureInput),
-  // No foreground idle lock on native — the host locks on backgrounding after
-  // autoLock.backgroundSeconds (W7); the session still ends at 24 h.
-  policy: { maxSessionMs: 24 * 3_600_000, maxScryptLogN: 18 },
+  // 15-minute presence idle lock plus the backgrounding lock (autoLock.backgroundSeconds,
+  // W7); the session still ends at 24 h. See policy.ts.
+  policy: NATIVE_POLICY,
   backends: {
     nostr: bindNativeNostr(__qntx.backends.nostr),
     // oxlint-disable-next-line typescript/require-await -- the loader signature is a promise

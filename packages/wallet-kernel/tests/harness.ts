@@ -155,7 +155,7 @@ export function createHarness(opts?: {
   maxSessionMs?: number;
   /** KernelPolicy.activity; defaults to "presence" (the browser policy). */
   activity?: "presence" | "request";
-  /** Omit the idle policy entirely (the native policy — no foreground idle lock). */
+  /** Omit the idle policy entirely (a host that never idle-locks in the foreground). */
   noIdle?: boolean;
   /** Share one store between harnesses (the raw store — each kernel still gets its own view). */
   store?: RecordStore;
