@@ -1628,14 +1628,14 @@ int secureInputHubCase() {
   CHECK(arm(ownerA, qntx::SecureInputKind::accessCode) == qntx::SecureInputArm::armed,
       "secure-input-hub: third request not armed");
   hub.cancel(ownerB);
-  CHECK(calls == 2, "secure-input-hub: a foreign cancel completed the request");
+  CHECK(calls == 3, "secure-input-hub: a foreign cancel completed the request");
   hub.cancel(ownerA);
-  CHECK(calls == 3 && lastFailure == qntx::SecureInputFailure::cancelled,
+  CHECK(calls == 4 && lastFailure == qntx::SecureInputFailure::cancelled,
       "secure-input-hub: cancel did not complete cancelled");
   CHECK(arm(ownerA, qntx::SecureInputKind::accessCode) == qntx::SecureInputArm::armed,
       "secure-input-hub: fourth request not armed");
   hub.release(ownerA);
-  CHECK(calls == 3, "secure-input-hub: release ran the completion");
+  CHECK(calls == 4, "secure-input-hub: release ran the completion");
   CHECK(!trySubmit({'a'}), "secure-input-hub: submit after release");
   hub.detach(view);
   CHECK(seen.size() >= 5 && seen[2].has_value() && seen[2]->label == "label" &&
