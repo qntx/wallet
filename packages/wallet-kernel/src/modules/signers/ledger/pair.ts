@@ -5,6 +5,12 @@
  * group-0 account xpubs it serves. `accounts` serves one chain family per call — coin type 0' →
  * bitcoin (re-checking the master fingerprint against the pin), 60' → ethereum, 195' → tron, 501' →
  * solana; any other type or a mix is `unsupported`.
+ *
+ * For a family the pin already carries, the driver first re-fetches one pinned path of that family
+ * in the same session and compares it byte-for-byte — the device-identity proof the fingerprint
+ * check gives for bitcoin (`wrong-device` on mismatch). The first fetch of a family stays
+ * trust-on-first-use: there is nothing pinned to prove against, so a foreign device could merge its
+ * material — the same trust pairing extends, and on-device verify-address is the mitigation.
  */
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { HDKey } from "@scure/bip32";
@@ -123,6 +129,19 @@ export const accounts = async (
     }
     if (app === "ethereum" || app === "tron") {
       const get = app === "ethereum" ? ethPublicNode : tronPublicNode;
+      const coin = app === "ethereum" ? 60 : 195;
+      // The app cannot reveal the master fingerprint; a pinned node re-fetched byte-for-byte is
+      // the same proof. Trust-on-first-use only when the pin holds nothing of this family.
+      const pinned = pin.nodes.find((node) => coinType(node.path) === coin);
+      if (pinned !== undefined) {
+        const proof = await get(exchange, pinned.path);
+        if (
+          !equalBytes(proof.publicKey, pinned.publicKey) ||
+          !equalBytes(proof.chainCode, pinned.chainCode)
+        ) {
+          throw new KernelError("wrong-device", "the device is not the paired one");
+        }
+      }
       const nodes: PinnedNode[] = [];
       for (const path of need.secp256k1) {
         // oxlint-disable-next-line eslint/no-await-in-loop -- one exchange at a time on one link
@@ -130,6 +149,14 @@ export const accounts = async (
         nodes.push({ path, publicKey: node.publicKey, chainCode: node.chainCode });
       }
       return { fingerprint: pin.fingerprint, nodes, ed25519: [] };
+    }
+    // Same proof for ed25519: a pinned leaf key must come back identical.
+    const pinnedEd = pin.ed25519.find((key) => coinType(key.path) === 501);
+    if (
+      pinnedEd !== undefined &&
+      !equalBytes(await solanaAddress(exchange, pinnedEd.path, false), pinnedEd.publicKey)
+    ) {
+      throw new KernelError("wrong-device", "the device is not the paired one");
     }
     const ed25519 = [];
     for (const path of need.ed25519) {

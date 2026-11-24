@@ -307,6 +307,78 @@ describe("ledger driver accounts", () => {
     ]);
     fake.done();
   });
+
+  it("re-probes a pinned ethereum node before serving a new one", async () => {
+    const pinnedEth: HardwarePin = {
+      ...pin,
+      nodes: [...pin.nodes, nodeAt(SEED, [H + 44, H + 60, H])],
+    };
+    const node = vectorCase("ethereum", "public-node");
+    // Any-APDU steps: the first answers the re-probe of the pinned path, the second the new fetch.
+    const answers = node.commands.map((c) => ({ response: c.response }));
+    const fake = scriptedLedger("ethereum", [...answers, ...answers]);
+    const result = await LEDGER_DRIVER.accounts(
+      fake.link,
+      { secp256k1: [[H + 44, H + 60, H + 1]], ed25519: [] },
+      pinnedEth,
+    );
+    const expected = node.result as { publicKey: string };
+    expect(result.nodes[0]?.publicKey).toStrictEqual(unhex(expected.publicKey));
+    fake.done();
+  });
+
+  it("refuses a different device answering a pinned ethereum path", async () => {
+    const pinnedEth: HardwarePin = {
+      ...pin,
+      nodes: [...pin.nodes, nodeAt(SEED, [H + 44, H + 60, H + 1])],
+    };
+    const node = vectorCase("ethereum", "public-node"); // answers the account-0 node
+    const answers = node.commands.map((c) => ({ response: c.response }));
+    const fake = scriptedLedger("ethereum", answers);
+    await expect(
+      code(async () =>
+        LEDGER_DRIVER.accounts(
+          fake.link,
+          { secp256k1: [[H + 44, H + 60, H + 2]], ed25519: [] },
+          pinnedEth,
+        ),
+      ),
+    ).resolves.toBe("wrong-device");
+  });
+
+  it("refuses a different device answering a pinned tron path", async () => {
+    const pinnedTrx: HardwarePin = {
+      ...pin,
+      nodes: [...pin.nodes, nodeAt(SEED, [H + 44, H + 195, H + 1])],
+    };
+    const node = vectorCase("tron", "public-node"); // answers the account-0 node
+    const answers = node.commands.map((c) => ({ response: c.response }));
+    const fake = scriptedLedger("tron", answers);
+    await expect(
+      code(async () =>
+        LEDGER_DRIVER.accounts(
+          fake.link,
+          { secp256k1: [[H + 44, H + 195, H + 2]], ed25519: [] },
+          pinnedTrx,
+        ),
+      ),
+    ).resolves.toBe("wrong-device");
+  });
+
+  it("refuses a different device answering a pinned solana key", async () => {
+    const pinnedSol: HardwarePin = { ...pin, ed25519: [edAt(SEED, SOL_PATH)] };
+    const foreign = edAt(SEED, [H + 44, H + 501, H + 1, H]).publicKey;
+    const fake = scriptedLedger("solana", [{ response: ok(hex(foreign)) }]);
+    await expect(
+      code(async () =>
+        LEDGER_DRIVER.accounts(
+          fake.link,
+          { secp256k1: [], ed25519: [[H + 44, H + 501, H + 1, H]] },
+          pinnedSol,
+        ),
+      ),
+    ).resolves.toBe("wrong-device");
+  });
 });
 
 describe("ledger driver verifyAddress", () => {

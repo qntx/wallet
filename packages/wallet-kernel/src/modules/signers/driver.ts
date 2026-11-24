@@ -69,7 +69,12 @@ export type Driver = {
   ) => DeviceDisplay | "unsupported";
   /** Signs one plan stage: one 64-byte signature per task, in order; assemble verifies. */
   readonly sign: (link: DeviceLink, context: SignContext) => Promise<ReadonlyArray<Uint8Array>>;
-  /** Fetches missing public material (hardened nodes); the claimed fingerprint must match `pin`. */
+  /**
+   * Fetches missing public material (hardened nodes). The driver must prove the answering device
+   * holds `pin` — a device-reported fingerprint, or already-pinned material of the same family
+   * re-fetched byte-for-byte — `wrong-device` on a mismatch, and returns the fingerprint only after
+   * that proof; the module's check on the returned fingerprint is the generic backstop.
+   */
   readonly accounts: (
     link: DeviceLink,
     need: {
