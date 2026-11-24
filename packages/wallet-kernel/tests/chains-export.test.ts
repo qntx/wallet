@@ -9,6 +9,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import type { VaultAnchor } from "../src/platform.ts";
+import { decodeAnchor } from "../src/vault/anchor.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { loadVectors } from "./helpers.ts";
@@ -84,6 +86,40 @@ const expectKey = (key: Record<string, unknown>, wanted: VectorKey): void => {
     expect(bytesToHex(key["chainCode"] as Uint8Array)).toBe(wanted.chainCode);
     expect(key["parentFingerprint"]).toBe(wanted.parentFingerprint);
   }
+};
+
+/** An anchor view that holds the counter-clearing CAS until released — the post-verify window. */
+const holdCounterClear = (): {
+  readonly entered: Promise<void>;
+  readonly release: () => void;
+  readonly wrap: (inner: VaultAnchor) => VaultAnchor;
+} => {
+  let notify: () => void = () => undefined;
+  let open: () => void = () => undefined;
+  const entered = new Promise<void>((resolve) => {
+    notify = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  const clears = (next: Uint8Array, expected: Uint8Array | undefined): boolean =>
+    expected !== undefined &&
+    decodeAnchor(expected).failedAttempts !== 0 &&
+    decodeAnchor(next).failedAttempts === 0;
+  return {
+    entered,
+    release: () => open(),
+    wrap: (inner) => ({
+      ...inner,
+      replace: async (next, expected) => {
+        if (clears(next, expected)) {
+          notify();
+          await gate;
+        }
+        return inner.replace(next, expected);
+      },
+    }),
+  };
 };
 
 describe("chain.exportAccount", () => {
@@ -208,6 +244,43 @@ describe("chain.exportAccount", () => {
     await prompted;
     h.advance(60_001);
     release();
+    const response = await pending;
+    expect(errCode(response)).toBe("locked");
+    expect("ok" in response).toBe(false);
+  });
+
+  it("a session that ends during the post-verification write fails locked", async () => {
+    /* For a password factor verifyFactor clears a nonzero failure count with an anchor CAS
+       AFTER its wiped-DEK check: holding that write leaves a real await window in which the
+       session can end. Without the post-verification `session.require`, the export pass would
+       then open a wiped DEK and fail "integrity". */
+    const gate = holdCounterClear();
+    const h = createHarness({ maxSessionMs: 60_000, wrapAnchor: gate.wrap });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(vectors.wallets[0]!.mnemonic),
+        factor: { kind: "password", password: utf8ToBytes("correct horse battery staple") },
+      }),
+    );
+    const session = strField(res, "session");
+    const walletId = strField(field(res, "wallet"), "walletId");
+    const exportParams = (password: string) => ({
+      walletId,
+      groupIndex: 0,
+      nodes: [{ kind: "leaf", template: "evm.bip44" }],
+      verify: { kind: "password", password: utf8ToBytes(password) },
+    });
+    const wrong = await h.call("chain.exportAccount", exportParams("a wrong password"), session);
+    expect(errCode(wrong)).toBe("wrong-password");
+    const pending = h.call(
+      "chain.exportAccount",
+      exportParams("correct horse battery staple"),
+      session,
+    );
+    await gate.entered;
+    h.advance(60_001);
+    gate.release();
     const response = await pending;
     expect(errCode(response)).toBe("locked");
     expect("ok" in response).toBe(false);

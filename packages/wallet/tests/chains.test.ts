@@ -1268,5 +1268,15 @@ describe("chains(wallet)", () => {
         (e) => walletError(e).code === "integrity",
       );
     });
+
+    it("rejects an answer with more keys than the nodes it requested", async () => {
+      /* The wire result may carry up to four keys independent of the request's node count, so a
+         kernel answering a two-node request with four valid keys is only caught by the count
+         check — the per-node loop would look at the first two and pass. */
+      const { wallet } = await exportConnect(result(), {});
+      await expect(
+        chains(wallet).exportAccount({ ...params(), nodes: nodes.slice(0, 2) }),
+      ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
+    });
   });
 });
