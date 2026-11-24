@@ -9,6 +9,7 @@ import { hex } from "@scure/base";
 import { Transaction } from "@scure/btc-signer";
 
 import { ChainError } from "@qntx/wallet-chains";
+import type { BitcoinTemplate } from "@qntx/wallet-chains";
 import {
   bitcoinAddressFromXpub,
   bitcoinNetwork,
@@ -18,7 +19,6 @@ import {
 import type { ChainsApi } from "@qntx/wallet/chains";
 
 import type {
-  BitcoinAccount,
   BitcoinGroup,
   BitcoinPsbtInput,
   BitcoinSigHash,
@@ -70,10 +70,19 @@ type TemplateDerive = {
   readonly base: ReadonlyArray<number>;
 };
 
-const DAPP_TEMPLATES: ReadonlyArray<BitcoinAccount["template"]> = ["btc.bip84", "btc.bip86"];
+/**
+ * Every template of the group a PSBT input may be under — a QR counterpart may name bip44/49/86
+ * where a dApp only requests the two dApp-facing ones.
+ */
+const PSBT_TEMPLATES: ReadonlyArray<BitcoinTemplate> = [
+  "btc.bip44",
+  "btc.bip49",
+  "btc.bip84",
+  "btc.bip86",
+];
 
 /**
- * Enriches and normalizes each dApp PSBT for `group`: a sign entry's prevout script must be a
+ * Enriches and normalizes each dApp or QR PSBT for `group`: a sign entry's prevout script must be a
  * scanned address of the template the entry names (a template with no inputs to sign contributes
  * only its fixed 0/0 address), gets that address's derivation, and agrees on the sighash. Outputs
  * to any own script get the same derivation binding.
@@ -88,14 +97,11 @@ export const prepareDappPsbts = async (
 ): Promise<ReadonlyArray<PreparedBitcoinPsbt>> => {
   const net = bitcoinNetwork(network);
   const signing = new Set(psbts.flatMap((p) => p.sign.map((s) => s.template)));
-  const derives = new Map<BitcoinAccount["template"], TemplateDerive>();
+  const derives = new Map<BitcoinTemplate, TemplateDerive>();
   // script hex → owning template and its address path tail.
-  const own = new Map<
-    string,
-    { template: BitcoinAccount["template"]; chain: 0 | 1; index: number }
-  >();
+  const own = new Map<string, { template: BitcoinTemplate; chain: 0 | 1; index: number }>();
   await Promise.all(
-    DAPP_TEMPLATES.map(async (template) => {
+    PSBT_TEMPLATES.map(async (template) => {
       const derived = await apis.account({
         walletId: group.walletId,
         groupIndex: group.groupIndex,
@@ -137,7 +143,7 @@ export const prepareDappPsbts = async (
   const ownScripts = new Set(own.keys());
 
   const derivation = (
-    template: BitcoinAccount["template"],
+    template: BitcoinTemplate,
     chain: 0 | 1,
     index: number,
   ): { pubkey: Uint8Array; der: { fingerprint: number; path: number[] } } => {
@@ -163,7 +169,7 @@ export const prepareDappPsbts = async (
         index: number;
         value: number;
         sigHash: BitcoinSigHash;
-        template: BitcoinAccount["template"];
+        template: BitcoinTemplate;
         frozen: boolean;
       }> = [];
       // Validate every sign entry first; the previous transactions are then fetched in one call.
@@ -216,7 +222,9 @@ export const prepareDappPsbts = async (
           index,
           {
             witnessUtxo: { script: prev.script, amount: prev.amount },
-            ...(template === "btc.bip84" ? { nonWitnessUtxo: raw } : {}),
+            /* Every non-taproot template carries the raw previous transaction so the kernel can
+               prove the amount it signs for. */
+            ...(template === "btc.bip86" ? {} : { nonWitnessUtxo: raw }),
             ...(sighashType === undefined ? {} : { sighashType }),
             ...(template === "btc.bip86"
               ? { tapInternalKey: pubkey, tapBip32Derivation: [[pubkey, { hashes: [], der }]] }

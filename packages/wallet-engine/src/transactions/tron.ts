@@ -76,9 +76,11 @@ import type {
   AccountRef,
   ChainRequestInput,
   PrepareParams,
+  PreparedQrSign,
   PreparedRequest,
   RouteContext,
   SendParams,
+  SignedTransactionResult,
   SignParams,
   TrackedTransaction,
   TxPoll,
@@ -1208,18 +1210,50 @@ const dappTrc20Changes = (
   return { status: "success", changes };
 };
 
+/** Why a transaction's TaPoS reference could not be bound to this network. */
+export type TronBindingReason = "reference-block-unknown";
+
+/**
+ * A `tron-sign` transaction whose reference block cannot be proven to belong to this network —
+ * `code` is `invalid-request` like every other binding refusal; `reason` names which check failed.
+ */
+export class TronBindingError extends ChainError {
+  readonly reason: TronBindingReason;
+
+  constructor(reason: TronBindingReason, message: string) {
+    super("invalid-request", message);
+    this.name = "TronBindingError";
+    this.reason = reason;
+  }
+}
+
 /**
  * A dApp-built transaction: the wallet never re-encodes the `raw_data` — the bytes the dApp sent
  * are the bytes the kernel signs. Validation decodes them, models the one contract, bounds
  * expiration, and proves the reference block is still on this chain before quoting fees and
- * simulating.
+ * simulating. `broadcast: false` (the QR path) signs the same bytes but tracks and observes nothing
+ * — the counterpart broadcasts them itself.
  */
-export const prepareDappTron = async (
+export function prepareDappTron(
   ctx: RouteContext,
   ref: AccountRef,
   network: string,
   rawData: Uint8Array,
-): Promise<PreparedRequest> => {
+): Promise<PreparedRequest>;
+export function prepareDappTron(
+  ctx: RouteContext,
+  ref: AccountRef,
+  network: string,
+  rawData: Uint8Array,
+  options: { readonly broadcast: false },
+): Promise<PreparedQrSign>;
+export async function prepareDappTron(
+  ctx: RouteContext,
+  ref: AccountRef,
+  network: string,
+  rawData: Uint8Array,
+  options?: { readonly broadcast?: boolean },
+): Promise<PreparedRequest | PreparedQrSign> {
   const independent = ctx.options.networks.independentTronApi(network);
   const from = await accountAddressOf(ctx, ref, "tron.bip44", network);
   const risk: RiskFinding[] = [];
@@ -1275,8 +1309,8 @@ export const prepareDappTron = async (
   const refNumber = headFull - ((((headFull - refLow16) % 65536) + 65536) % 65536);
   const refId = await blockId(api, refNumber, refNumber <= solid.number);
   if (refId === undefined || refId.slice(16, 32) !== bytesToHex(raw.refBlockHash)) {
-    throw new ChainError(
-      "invalid-request",
+    throw new TronBindingError(
+      "reference-block-unknown",
       "the transaction references a block that is not on this chain",
     );
   }
@@ -1401,7 +1435,22 @@ export const prepareDappTron = async (
   const txid = bytesToHex(tronTransactionId(rawData));
   const apis = ctx.options.chains ?? chains(ctx.options.wallet);
 
-  const submit = async (
+  const sign = async (verify: SignParams["verify"], commit: () => void): Promise<Uint8Array> => {
+    const result = await apis.sign({ request, verify });
+    if (result.kind !== "tron.transaction" || !(result.signature instanceof Uint8Array)) {
+      throw new Error("unexpected tron sign result");
+    }
+    if (!verifyTronTransactionSignature(rawData, result.signature, from)) {
+      throw new ChainError(
+        "invalid-request",
+        "the kernel's signature does not verify against the sender",
+      );
+    }
+    commit();
+    return result.signature;
+  };
+
+  const submitBroadcast = async (
     verify: SignParams["verify"],
     commit: () => void,
   ): Promise<TrackedTransaction> => {
@@ -1450,8 +1499,15 @@ export const prepareDappTron = async (
     return tracked;
   };
 
-  return {
-    txId: id,
+  const submitQr = async (
+    verify: SignParams["verify"],
+    commit: () => void,
+  ): Promise<SignedTransactionResult> => ({
+    kind: "tron.signed-transaction",
+    signature: await sign(verify, commit),
+  });
+
+  const base = {
     account: ref,
     network,
     intent,
@@ -1472,10 +1528,13 @@ export const prepareDappTron = async (
         return errorMessage(error);
       }
     },
-    submit,
     release: () => undefined,
   };
-};
+  /* A QR counterpart broadcasts the signed bytes itself: no tracked row, no observer. */
+  return options?.broadcast === false
+    ? { ...base, submit: submitQr }
+    : { ...base, txId: id, submit: submitBroadcast };
+}
 
 const dappUnsigned = (): ChainError =>
   new ChainError("invalid-request", "this transaction was not signed by this wallet");

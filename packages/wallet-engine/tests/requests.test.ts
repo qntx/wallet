@@ -14,7 +14,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
 import type { BlindReason, SignRequest } from "@qntx/wallet-chains";
-import { decodeEvm } from "@qntx/wallet-chains/evm";
+import { EVM_DELEGATOR, decodeEvm } from "@qntx/wallet-chains/evm";
 import { decodeTron } from "@qntx/wallet-chains/tron";
 import type { chains } from "@qntx/wallet/chains";
 
@@ -26,7 +26,7 @@ import {
   REQUEST_TTL_MS,
   RequestController,
 } from "../src/requests/controller.ts";
-import { isRequestOrigin } from "../src/requests/types.ts";
+import { isRequestOrigin, OriginBusyError } from "../src/requests/types.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -537,6 +537,7 @@ function evmWorld(options: {
   host?: Rpc | undefined;
   hostEndpoints?: boolean;
   custom?: boolean;
+  phishingCheck?: ConstructorParameters<typeof RequestController>[0]["phishing"]["check"];
 }) {
   const base: Rpc = {
     eth_chainId: "0xaa36a7",
@@ -664,7 +665,7 @@ function evmWorld(options: {
     return counter;
   };
   const requests = new RequestController({
-    phishing: { check: () => "clear" },
+    phishing: { check: options.phishingCheck ?? (() => "clear") },
     blindSigning: () => false,
     simulateSolana: simulateSolanaStub,
     tokens: tokensStub,
@@ -1749,5 +1750,271 @@ describe("app sign kinds and the pinned nonce", () => {
     ).rejects.toThrow("transactions require an unlocked vault");
     await expect(outcome).rejects.toMatchObject({ name: "RequestEndedError", signed: true });
     expect(locked.calls.map((c) => c.method)).not.toContain("eth_sendRawTransaction");
+  });
+});
+
+const QR = { kind: "qr" as const };
+const qrSign = (request: SignRequest) => ({ ...evmSign(request), origin: QR });
+
+if (evmTxRequest.kind !== "evm.transaction") {
+  throw new Error("not a transaction");
+}
+const qrTx = evmTxRequest.tx;
+const resultKind = (result: unknown): string | undefined =>
+  typeof result === "object" &&
+  result !== null &&
+  "kind" in result &&
+  typeof result.kind === "string"
+    ? result.kind
+    : undefined;
+const qrNonceFee = (signed: SignRequest | undefined): { nonce: number; fee: string } | undefined =>
+  signed?.kind === "evm.transaction"
+    ? {
+        nonce: signed.tx.nonce,
+        fee: "maxFeePerGas" in signed.tx ? signed.tx.maxFeePerGas : signed.tx.gasPrice,
+      }
+    : undefined;
+const SIWE_BODY = [
+  "victim.example wants you to sign in with your Ethereum account:",
+  ADDR,
+  "",
+  "Sign in",
+  "",
+  "URI: https://victim.example/login",
+  "Version: 1",
+  "Chain ID: 1",
+  "Nonce: 12341234abcd",
+  "Issued At: 2026-11-17T12:45:13.610Z",
+].join("\n");
+const qrMessage = (message: Uint8Array): SignRequest => ({
+  kind: "evm.personal-message",
+  network: SEPOLIA,
+  account: ACCOUNT,
+  message,
+});
+
+describe("a scanned QR request in the pipeline", () => {
+  it("signs the counterpart's transaction bytes unchanged — nothing broadcast or tracked", async () => {
+    const w = evmWorld({});
+    await w.start();
+    const request = await w.requests.prepare(qrSign(evmTxRequest));
+    expect(request.origin).toStrictEqual(QR);
+    const result = await w.requests.approve(request.id, "evm-sign", approval(request, VERIFY));
+    expect(resultKind(result)).toBe("evm.signed-transaction");
+    /* The counterpart broadcasts: no send call left the engine and no row is tracked. */
+    expect(w.calls.map((c) => c.method)).not.toContain("eth_sendRawTransaction");
+    expect(Object.keys(w.transactions.getState().txs)).toHaveLength(0);
+    /* The request's own nonce and fees were signed — the signer saw them unchanged. */
+    const [signed] = w.signedRequests as ReadonlyArray<SignRequest>;
+    expect(qrNonceFee(signed)).toStrictEqual({ nonce: 0, fee: "0x0" });
+    const [entry] = await w.requests.signLog();
+    expect(entry?.origin).toStrictEqual({ kind: "qr" });
+  });
+
+  it("a nonce the counterpart chose is a check, never a rewrite", async () => {
+    const w = evmWorld({});
+    await w.start();
+    const wrongNonce: SignRequest = {
+      ...evmTxRequest,
+      tx: { ...qrTx, nonce: 7 },
+    };
+    const request = await w.requests.prepare(qrSign(wrongNonce));
+    expect(request.checks).toContain("nonce-mismatch");
+  });
+
+  it("a fee cap far above the network's is a check, never a rewrite", async () => {
+    const w = evmWorld({ gateway: {}, host: {} });
+    await w.start();
+    const greedy: SignRequest = {
+      ...evmTxRequest,
+      tx: {
+        type: "eip1559",
+        chainId: 11155111,
+        nonce: 0,
+        gas: "0x0",
+        to: PARAMS.to,
+        value: "0x0",
+        data: "0x",
+        accessList: [],
+        maxFeePerGas: "0x3b9aca00",
+        maxPriorityFeePerGas: "0x0",
+      },
+    };
+    const request = await w.requests.prepare(qrSign(greedy));
+    expect(request.checks).toContain("fee-above-network");
+  });
+
+  it("a QR request never reaches the phishing list — it has no URL to check", async () => {
+    const checked: string[] = [];
+    const w = evmWorld({
+      phishingCheck: (url) => {
+        checked.push(url);
+        return "blocked";
+      },
+    });
+    await w.start();
+    /* Even a list that blocks everything cannot stop a QR request — it is never consulted. */
+    await w.requests.prepare(qrSign(evmTxRequest));
+    expect(checked).toStrictEqual([]);
+  });
+
+  it("refuses an authorization transaction, contract creation and a self-call", async () => {
+    const w = evmWorld({});
+    await w.start();
+    const auth: SignRequest = {
+      kind: "evm.transaction",
+      network: SEPOLIA,
+      account: ACCOUNT,
+      tx: {
+        type: "eip7702",
+        chainId: 11155111,
+        nonce: 0,
+        gas: "0x0",
+        to: PARAMS.to,
+        value: "0x0",
+        data: "0x",
+        accessList: [],
+        maxFeePerGas: "0x0",
+        maxPriorityFeePerGas: "0x0",
+        authorization: { address: PARAMS.to },
+      },
+    };
+    await expect(w.requests.prepare(qrSign(auth))).rejects.toThrow(/authorization/);
+    /* A valid delegator authorization passes normalization — the QR route refuses it itself. */
+    const validAuth: SignRequest = {
+      kind: "evm.transaction",
+      network: SEPOLIA,
+      account: ACCOUNT,
+      tx: {
+        type: "eip7702",
+        chainId: 11155111,
+        nonce: 0,
+        gas: "0x0",
+        to: PARAMS.to,
+        value: "0x0",
+        data: "0x",
+        accessList: [],
+        maxFeePerGas: "0x0",
+        maxPriorityFeePerGas: "0x0",
+        authorization: { address: EVM_DELEGATOR.address },
+      },
+    };
+    await expect(w.requests.prepare(qrSign(validAuth))).rejects.toThrow(/authorization/);
+    const create: SignRequest = {
+      kind: "evm.transaction",
+      network: SEPOLIA,
+      account: ACCOUNT,
+      tx: {
+        type: "eip1559",
+        chainId: 11155111,
+        nonce: 0,
+        gas: "0x0",
+        value: "0x0",
+        data: "0x6000",
+        accessList: [],
+        maxFeePerGas: "0x0",
+        maxPriorityFeePerGas: "0x0",
+      },
+    };
+    await expect(w.requests.prepare(qrSign(create))).rejects.toThrow(
+      "contract creation is not supported",
+    );
+    const selfCall: SignRequest = {
+      kind: "evm.transaction",
+      network: SEPOLIA,
+      account: ACCOUNT,
+      tx: {
+        type: "eip1559",
+        chainId: 11155111,
+        nonce: 0,
+        gas: "0x0",
+        to: ADDR,
+        value: "0x0",
+        data: "0x1234",
+        accessList: [],
+        maxFeePerGas: "0x0",
+        maxPriorityFeePerGas: "0x0",
+      },
+    };
+    await expect(w.requests.prepare(qrSign(selfCall))).rejects.toThrow(
+      "dApp transactions calling your own account are refused",
+    );
+  });
+
+  it("a QR origin cannot open a fiat24 session either", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await expect(w.requests.prepare(qrSign(sessionRequest(2_000_000_000)))).rejects.toThrow(
+      "a dApp cannot sign a fiat24 session",
+    );
+  });
+
+  it("a sign-in text warns that a QR origin cannot be verified", async () => {
+    const w = evmWorld({});
+    await w.start();
+    const request = await w.requests.prepare(
+      qrSign(qrMessage(new TextEncoder().encode(SIWE_BODY))),
+    );
+    expect(request.risk).toContainEqual({ code: "qr-sign-in-unverified", level: "warning" });
+  });
+
+  it("a blind message is refused while blind signing is off, like for a dApp", async () => {
+    const w = evmWorld({});
+    await w.start();
+    const request = await w.requests.prepare(qrSign(qrMessage(new Uint8Array(32).fill(0x61))));
+    expect(request.risk).toContainEqual({ code: "blind-signing", level: "danger" });
+    await expect(
+      w.requests.approve(request.id, "evm-sign", approval(request, VERIFY)),
+    ).rejects.toBeInstanceOf(BlindSigningDisabledError);
+  });
+
+  it("one QR request at a time — a second prepare hits the shared busy key", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await w.requests.prepare(qrSign(evmTxRequest));
+    await expect(w.requests.prepare(qrSign(typedDataRequest))).rejects.toBeInstanceOf(
+      OriginBusyError,
+    );
+    /* A dApp origin is a different busy key — it still prepares beside the QR one. */
+    const dapp = await w.requests.prepare({
+      ...evmSign(typedDataRequest),
+      origin: { kind: "browser", origin: SITE },
+    });
+    expect(dapp.origin).toStrictEqual({ kind: "browser", origin: SITE });
+  });
+
+  it("a QR request cannot ask the wallet to broadcast solana or bitcoin", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await expect(
+      w.requests.prepare({
+        method: "solana-sign",
+        origin: QR,
+        account: { walletId: "w", groupIndex: 0, address: "sol" },
+        network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        request: { kind: "transactions", transactions: [new Uint8Array([1])], send: true },
+      }),
+    ).rejects.toThrow("a QR request cannot ask the wallet to broadcast");
+    await expect(
+      w.requests.prepare({
+        method: "bitcoin-sign",
+        origin: QR,
+        account: { walletId: "w", groupIndex: 0 },
+        network: "bip122:000000000019d6689c085ae165831e93",
+        request: {
+          kind: "psbt",
+          psbts: [{ psbt: new Uint8Array([0x70]), sign: [] }],
+          send: true,
+        },
+      }),
+    ).rejects.toThrow("a QR request cannot ask the wallet to broadcast");
+  });
+
+  it("isRequestOrigin accepts a qr origin and refuses malformed ones", () => {
+    expect(isRequestOrigin(QR)).toBe(true);
+    expect(isRequestOrigin({ kind: "qr", declared: "keystone" })).toBe(true);
+    expect(isRequestOrigin({ kind: "qr", declared: 1 })).toBe(false);
+    expect(isRequestOrigin({ kind: "qr", extra: 1 })).toBe(false);
+    expect(isRequestOrigin({ kind: "qr", declared: "x".repeat(65) })).toBe(false);
   });
 });

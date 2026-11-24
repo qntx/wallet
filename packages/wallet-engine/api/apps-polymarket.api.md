@@ -5,6 +5,7 @@
 ```ts
 
 import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
+import { BitcoinTemplate } from '@qntx/wallet-chains';
 import { chains } from '@qntx/wallet/chains';
 import { CooperativeExitResult } from '@qntx/spark';
 import { decodeEvm } from '@qntx/wallet-chains/evm';
@@ -324,7 +325,7 @@ type BitcoinPsbtInput = {
     readonly sign: ReadonlyArray<{
         readonly index: number;
         readonly sigHash: BitcoinSigHash;
-        readonly template: BitcoinAccount["template"];
+        readonly template: BitcoinTemplate;
     }>;
 };
 
@@ -343,7 +344,7 @@ type BitcoinSignInput = {
     };
 } | {
     readonly method: "bitcoin-sign";
-    readonly origin: DappOrigin;
+    readonly origin: DappOrigin | QrOrigin;
     readonly account: BitcoinGroup;
     readonly network: string;
     readonly request: {
@@ -637,7 +638,7 @@ type EvmRevokeTarget = {
 // @public
 type EvmSignInput = {
     readonly method: "evm-sign";
-    readonly origin?: DappOrigin;
+    readonly origin?: DappOrigin | QrOrigin;
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;
@@ -1679,7 +1680,7 @@ type PreparedBitcoinPsbt = {
         readonly index: number;
         readonly value: number;
         readonly sigHash: BitcoinSigHash;
-        readonly template: BitcoinAccount["template"];
+        readonly template: BitcoinTemplate;
         readonly frozen: boolean;
     }>;
 };
@@ -1688,6 +1689,12 @@ type PreparedBitcoinPsbt = {
 type PreparedMessage = Omit<PreparedRequest, "submit" | "txId"> & {
     readonly signer: string;
     readonly submit: (verify: SendParams["verify"]) => Promise<SignatureResult>;
+};
+
+// @public
+type PreparedQrSign = Omit<PreparedRequest, "submit" | "txId"> & {
+    readonly signer: string;
+    readonly submit: (verify: SendParams["verify"], commit: () => void) => Promise<SignedTransactionResult>;
 };
 
 // @public
@@ -1732,6 +1739,12 @@ type PublicStore = {
 };
 
 // @public
+type QrOrigin = {
+    readonly kind: "qr";
+    readonly declared?: string;
+};
+
+// @public
 type RequestAcknowledgement = {
     readonly risk: ReadonlyArray<RiskFinding["code"]>;
     readonly checks: ReadonlyArray<RequestCheckCode>;
@@ -1747,7 +1760,7 @@ class RequestController extends Controller<RequestControllerState> {
     // (undocumented)
     approve(id: string, method: "pay" | "zap" | "spark-exit", options?: ApproveOptions): Promise<SparkResult>;
     // (undocumented)
-    approve(id: string, method: "evm-sign" | "tron-sign", options?: ApproveOptions): Promise<TrackedTransaction | SignatureResult>;
+    approve(id: string, method: "evm-sign" | "tron-sign", options?: ApproveOptions): Promise<TrackedTransaction | SignatureResult | SignedTransactionResult>;
     // (undocumented)
     approve(id: string, method: "nostr-sign", options?: ApproveOptions): Promise<NostrSignResult>;
     // (undocumented)
@@ -1824,17 +1837,17 @@ type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "tron-sig
 // @public (undocumented)
 type RequestOrigin = {
     readonly kind: "internal";
-} | AppOrigin | DappOrigin;
+} | AppOrigin | DappOrigin | QrOrigin;
 
 // @public
-type RequestResult = TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult | TokenWatchResult | SolanaSignResult | BitcoinSignResult;
+type RequestResult = TrackedTransaction | SparkResult | SignatureResult | SignedTransactionResult | NostrSignResult | WeblnInvoiceResult | TokenWatchResult | SolanaSignResult | BitcoinSignResult;
 
 // @public
 type RequestStage = "awaiting-approval" | "signing" | "signed" | "submitted" | "rejected" | "failed" | "expired" | "invalidated";
 
 // @public
 type RiskFinding = {
-    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-account-move" | "fiat24-account-burn";
+    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-account-move" | "fiat24-account-burn" | "qr-sign-in-unverified";
     readonly level: "warning" | "danger";
 };
 
@@ -1858,6 +1871,15 @@ type SetTimer = (ms: number, fn: () => unknown) => () => void;
 // @public (undocumented)
 type SignatureResult = {
     readonly kind: "evm.personal-message" | "evm.fiat24-session" | "evm.typed-data" | "tron.message" | "tron.typed-data";
+    readonly signature: Uint8Array;
+};
+
+// @public
+type SignedTransactionResult = {
+    readonly kind: "evm.signed-transaction";
+    readonly signedTransaction: Uint8Array;
+} | {
+    readonly kind: "tron.signed-transaction";
     readonly signature: Uint8Array;
 };
 
@@ -1942,7 +1964,7 @@ type SolanaRpc = {
 // @public
 type SolanaSignInput = {
     readonly method: "solana-sign";
-    readonly origin: DappOrigin;
+    readonly origin: DappOrigin | QrOrigin;
     readonly account: SolanaAccount;
     readonly network: string;
     readonly request: {
@@ -2317,10 +2339,13 @@ class TransactionController extends Controller<TransactionControllerState> {
     prepareDapp(account: AccountRef, request: SignRequest, options?: {
         readonly nonce?: number;
     }): Promise<PreparedRequest | PreparedMessage>;
-    prepareDappTron(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
+    prepareDappTron(account: AccountRef, request: SignRequest, options?: {
+        readonly broadcast: false;
+    }): Promise<PreparedRequest | PreparedMessage | PreparedQrSign>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
         method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-revoke" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
     }>, _requestId: string): Promise<PreparedRequest>;
+    prepareQrEvm(account: AccountRef, request: SignRequest): Promise<PreparedQrSign>;
     prepareReplacement(input: Extract<ChainRequestInput, {
         method: "speed-up" | "cancel" | "cpfp";
     }>, requestId: string): Promise<PreparedRequest>;
@@ -2769,7 +2794,7 @@ type TronNodePath = keyof typeof TRON_NODE_PATHS;
 // @public
 type TronSignInput = {
     readonly method: "tron-sign";
-    readonly origin?: DappOrigin;
+    readonly origin?: DappOrigin | QrOrigin;
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;

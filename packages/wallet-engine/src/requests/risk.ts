@@ -67,7 +67,8 @@ export type RiskFinding = {
     | "fiat24-exact-out-unbounded"
     | "fiat24-payee-offchain"
     | "fiat24-account-move"
-    | "fiat24-account-burn";
+    | "fiat24-account-burn"
+    | "qr-sign-in-unverified";
   readonly level: "warning" | "danger";
 };
 
@@ -288,7 +289,7 @@ export function assessSafe(safe: SafeTransaction | undefined): ReadonlyArray<Ris
 export function assessBitcoinPsbts(
   inputs: ReadonlyArray<{
     readonly value: number;
-    readonly template: "btc.bip84" | "btc.bip86";
+    readonly template: "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
     readonly sigHash: "ALL" | "SINGLE|ANYONECANPAY";
     readonly frozen: boolean;
   }>,

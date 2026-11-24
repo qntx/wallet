@@ -5,7 +5,18 @@ export type QrErrorCode =
   | "malformed"
   | "unsupported"
   | "fingerprint-missing"
-  | "result-mismatch";
+  | "result-mismatch"
+  | "account-mismatch"
+  | "network-unknown"
+  | "chain-mismatch"
+  | "network-ambiguous"
+  | "unbound"
+  | "contract-creation"
+  | "self-call"
+  | "multisig-unsupported"
+  | "nothing-to-sign"
+  | "sighash-unsupported"
+  | "wallet-unsupported";
 
 /** Every failure the qr layer reports; nothing else may escape a public entry point. */
 export class QrError extends Error {

@@ -1,6 +1,7 @@
 import type {
   AccountRef,
   SignatureResult,
+  SignedTransactionResult,
   TrackedTransaction,
   WalletEngine,
 } from "@qntx/wallet-engine";
@@ -40,14 +41,16 @@ export function browserBridge(
  * A dApp TRON request arrives as `tron-sign`. The outcome is a `TrackedTransaction` for a
  * transaction — created in `submitted` with `tron.dappSignature` and no `raw`, because the dApp
  * broadcasts and the wallet only observes — or a `SignatureResult` for `tron.message` /
- * `tron.typed-data`. When the dApp hands the signed transaction back for broadcast it calls the
- * injected `tronWeb.trx.sendRawTransaction`, which routes through the bridge to `submitDappTron` on
- * the same tracked entry — there is no host-side broadcast call to wire.
+ * `tron.typed-data`. A scanned QR request's outcome is a `SignedTransactionResult` instead: the
+ * counterpart broadcasts the signed bytes itself. When the dApp hands the signed transaction back
+ * for broadcast it calls the injected `tronWeb.trx.sendRawTransaction`, which routes through the
+ * bridge to `submitDappTron` on the same tracked entry — there is no host-side broadcast call to
+ * wire.
  */
 export async function approveTronDapp(
   engine: WalletEngine,
   requestId: string,
-): Promise<TrackedTransaction | SignatureResult> {
+): Promise<TrackedTransaction | SignatureResult | SignedTransactionResult> {
   return engine.requests.approve(requestId, "tron-sign", {
     verify: { kind: "password", password: "…" },
   });
