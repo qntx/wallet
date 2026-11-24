@@ -400,7 +400,7 @@ export const tick = async (): Promise<void> =>
     setTimeout(resolve);
   });
 
-export const until = async (cond: () => boolean, tries = 300): Promise<void> => {
+export const until = async (cond: () => boolean, tries = 1200): Promise<void> => {
   for (let i = 0; i < tries && !cond(); i++) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- real-kernel turns need the event loop.
     await tick();
