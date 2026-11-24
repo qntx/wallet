@@ -7,7 +7,7 @@
  */
 import { KernelError } from "./errors.ts";
 
-export const DECIMAL_SCALE = 10n ** 16n;
+export const DECIMAL_SCALE: bigint = 10n ** 16n;
 
 /** A canonical decimal to units of `DECIMAL_SCALE` — throws `integrity` past its precision. */
 export const decimalToUnits = (decimal: string): bigint => {
