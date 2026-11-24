@@ -19,7 +19,7 @@ import type { ProtocolValue } from "@qntx/wallet/protocol";
 import { KernelError } from "../src/errors.ts";
 import { chainPrompt } from "../src/modules/chains/prompt.ts";
 import { sparkPrompt } from "../src/modules/spark/prompt.ts";
-import type { KeystorePrompt, KernelPlatform, Pbkdf2 } from "../src/platform.ts";
+import type { CardPlatform, KeystorePrompt, KernelPlatform, Pbkdf2 } from "../src/platform.ts";
 import { serializeCeremonies } from "../src/platform.ts";
 import { corePrompt } from "../src/prompts.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
@@ -752,7 +752,7 @@ describe("serializeCeremonies", () => {
       {
         keystore: undefined,
         passkey: undefined,
-        card: { reader: field.reader, anchors: [] },
+        card: { reader: field.reader, anchors: [] } as CardPlatform,
         secureInput: input.secureInput,
       } as KernelPlatform,
       (active) => events.push(active),

@@ -690,7 +690,7 @@ describe("hardware wallet refusals", () => {
     const device = fakeDevice(SEED);
     const h = createHarness({
       keystore: fake.keystore,
-      drivers: { keystone: device.driver },
+      drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER },
     });
     await h.settle();
     const res = ok(
