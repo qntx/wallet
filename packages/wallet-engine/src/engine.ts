@@ -13,12 +13,6 @@ import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
 import { WalletError } from "@qntx/wallet";
 import type { KeysApi, Wallet, HardwareDevice } from "@qntx/wallet";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
-import {
-  addSolanaSignature,
-  decodeSolana,
-  decodeSolanaTransaction,
-  normalizeSolana,
-} from "@qntx/wallet-chains/solana";
 import type { DeviceIo } from "@qntx/wallet/hardware";
 import { nostr } from "@qntx/wallet/nostr";
 import { sessions } from "@qntx/wallet/sessions";
@@ -33,8 +27,8 @@ import { AssetsController } from "./assets/controller.ts";
 import type { AccountBalances } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
-import { prepareDappPsbts, signDappPsbts } from "./chains/bitcoin-dapp.ts";
-import { SOLANA_MAX_PROCESSING_AGE, SolanaChainAdapter } from "./chains/solana.ts";
+import { dappLanes } from "./chains/dapp-lanes.ts";
+import { SolanaChainAdapter } from "./chains/solana.ts";
 import { BITCOIN_CHAIN_IDS, BitcoinWalletHandler } from "./connect/bitcoin.ts";
 import { ConnectionController } from "./connect/controller.ts";
 import { Eip1193Handler } from "./connect/eip1193.ts";
@@ -88,10 +82,9 @@ import {
   fetchSwapQuote,
 } from "./swaps/quote.ts";
 import { ownBitcoinTxids } from "./transactions/bitcoin.ts";
-import { submitInOrder } from "./transactions/broadcast.ts";
 import { TransactionController } from "./transactions/controller.ts";
 import { accountAddress } from "./transactions/route.ts";
-import type { AccountRef, DelegationStatus, DisplayIntent } from "./transactions/route.ts";
+import type { AccountRef, DelegationStatus } from "./transactions/route.ts";
 
 export type EngineOptions = {
   readonly wallet: Wallet;
@@ -749,153 +742,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     openStore: sessionStore,
     spark: controller,
     nostrSign: async (ref, event) => nostr(options.wallet).signer(ref).signEvent(event),
-    solanaSign: async (account, network, request, verify, commit) => {
-      const rpc = networks.solanaRpc(network);
-      const adapter = new SolanaChainAdapter();
-      const hdAccount = {
-        kind: "hd" as const,
-        walletId: account.walletId,
-        groupIndex: account.groupIndex,
-        template: "solana.bip44-change" as const,
-      };
-      if (request.kind === "transactions") {
-        const wires: Uint8Array[] = [];
-        const messages: Uint8Array[] = [];
-        for (const wire of request.transactions) {
-          const { message } = decodeSolanaTransaction(wire, account.address);
-          // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
-          const result = await signers.apis.sign({
-            request: {
-              kind: "solana.transaction",
-              network,
-              account: hdAccount,
-              message,
-            },
-            verify,
-          });
-          if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
-            throw new Error("unexpected solana sign result");
-          }
-          wires.push(addSolanaSignature(wire, account.address, result.signature));
-          messages.push(message);
-        }
-        if (!request.send) {
-          return { kind: "solana.transactions" as const, send: false, signedTransactions: wires };
-        }
-        const intents = messages.map((message): DisplayIntent =>
-          decodeSolana(
-            { kind: "solana.transaction", network, account: hdAccount, message },
-            account.address,
-          ),
-        );
-        /* The message carries only a blockhash: bound its expiry by the processed height at
-           request time plus Agave's processing age. The dApp fetched the blockhash earlier, at
-           any commitment, so the processed height is the bound that never comes in too low — a
-           low bound would let the poll prove a drop while the bytes can still land. Read once,
-           before commit: a failed read sends nothing. */
-        const lastValidBlockHeight =
-          (await adapter.blockHeight(rpc, "processed")) + SOLANA_MAX_PROCESSING_AGE;
-        commit();
-        const batch = await submitInOrder(wires.length, async (index) => {
-          const wire = wires[index];
-          const intent = intents[index];
-          if (wire === undefined || intent === undefined) {
-            throw new Error("signed transaction without its input");
-          }
-          return transactions.submitDappSolana(
-            network,
-            account.walletId,
-            wire,
-            lastValidBlockHeight,
-            intent,
-          );
-        });
-        return {
-          kind: "solana.transactions" as const,
-          send: true,
-          signatures: batch.ids,
-          ...(batch.stopped === undefined ? {} : { stopped: batch.stopped }),
-        };
-      }
-      normalizeSolana(
-        {
-          kind: "solana.message",
-          format: "raw",
-          network,
-          account: hdAccount,
-          message: request.message,
-        },
-        account.address,
-      );
-      const result = await signers.apis.sign({
-        request: {
-          kind: "solana.message",
-          format: "raw",
-          network,
-          account: hdAccount,
-          message: request.message,
-        },
-        verify,
-      });
-      if (result.kind !== "solana.message" || !(result.signature instanceof Uint8Array)) {
-        throw new Error("unexpected solana sign result");
-      }
-      return { kind: "solana.message" as const, signature: result.signature };
-    },
-    bitcoinPrepare: async (account, network, psbts) =>
-      prepareDappPsbts(
-        signers.apis,
-        networks.esplora(network),
-        account,
-        network,
-        psbts,
-        new Set(
-          transactions.frozenUtxos(
-            { walletId: account.walletId, groupIndex: account.groupIndex },
-            network,
-          ),
-        ),
-      ),
-    bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
-      const { signedPsbts, txids, stopped } = await signDappPsbts(
-        signers.apis,
-        prepared,
-        send,
-        verify,
-        commit,
-        async (p, r) => transactions.submitDappBitcoin(network, account.walletId, p, r),
-      );
-      return {
-        kind: "bitcoin.psbts" as const,
-        signedPsbts,
-        txids,
-        ...(stopped === undefined ? {} : { stopped }),
-      };
-    },
-    bitcoinSign: async (account, network, request, verify) => {
-      const result = await signers.apis.sign({
-        request: {
-          kind: "bitcoin.message",
-          network,
-          account: {
-            kind: "hd",
-            walletId: account.walletId,
-            groupIndex: account.groupIndex,
-            template: account.template,
-          },
-          address: account.address,
-          message: request.message,
-          format: "bip322-simple",
-          change: 0,
-          index: 0,
-        },
-        verify,
-      });
-      if (result.kind !== "bitcoin.message") {
-        throw new Error("unexpected bitcoin sign result");
-      }
-      return { kind: "bitcoin.message" as const, signature: result.signature };
-    },
+    ...dappLanes({ signers, networks, transactions }),
     fetch: options.fetch,
     random: options.random,
     now: options.now,

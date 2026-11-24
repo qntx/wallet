@@ -48,18 +48,11 @@ import { cryptoPsbtCodec } from "@qntx/ur/registry";
 import { Ur, fromUr } from "@qntx/ur/typed";
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
-import {
-  addSolanaSignature,
-  decodeSolana,
-  decodeSolanaTransaction,
-  normalizeSolana,
-} from "@qntx/wallet-chains/solana";
 import { tronAddressToHex, tronRawDataFromJson } from "@qntx/wallet-chains/tron";
 import type { ChainTemplate } from "@qntx/wallet/chains";
 
-import { prepareDappPsbts, signDappPsbts } from "../../src/chains/bitcoin-dapp.ts";
 import { scripthash } from "../../src/chains/bitcoin-scan.ts";
-import { SOLANA_MAX_PROCESSING_AGE, SolanaChainAdapter } from "../../src/chains/solana.ts";
+import { dappLanes } from "../../src/chains/dapp-lanes.ts";
 import { BitcoinWalletHandler } from "../../src/connect/bitcoin.ts";
 import { ConnectionController } from "../../src/connect/controller.ts";
 import type { AccountGroup, PendingConnection } from "../../src/connect/controller.ts";
@@ -68,26 +61,15 @@ import { SolanaWalletHandler } from "../../src/connect/solana.ts";
 import { TronWalletHandler } from "../../src/connect/tron.ts";
 import type { EngineOptions } from "../../src/engine.ts";
 import type { ApproveOptions } from "../../src/index.ts";
-import type { NetworkController } from "../../src/networks/controller.ts";
 import { readQrExport, qrSignRequest, readQrSignature } from "../../src/qr/counterpart.ts";
 import type { QrSignInput } from "../../src/qr/counterpart.ts";
 import { readQrRequest } from "../../src/qr/request.ts";
 import { qrSigner } from "../../src/qr/signer.ts";
 import type { QrEngineSurface } from "../../src/qr/signer.ts";
-import type {
-  RequestController as RequestControllerType,
-  RequestResult,
-} from "../../src/requests/controller.ts";
+import type { RequestResult } from "../../src/requests/controller.ts";
 import type { RequestMethod } from "../../src/requests/types.ts";
-import type { SignersController } from "../../src/signers/controller.ts";
 import { createMemoryEngineStore } from "../../src/store/memory.ts";
-import { submitInOrder } from "../../src/transactions/broadcast.ts";
-import type { TransactionController } from "../../src/transactions/controller.ts";
-import type {
-  DisplayIntent,
-  SendParams,
-  TrackedTransaction,
-} from "../../src/transactions/route.ts";
+import type { SendParams, TrackedTransaction } from "../../src/transactions/route.ts";
 import { approval } from "../approval.ts";
 import { manualTimer, until, VERIFY, world } from "../apps-helpers.ts";
 
@@ -464,155 +446,6 @@ const evmAnswer = (method: string, params: unknown, caught: CaughtBroadcast[]): 
 };
 
 /* ----------------------------------------------------------------------------- world --- */
-
-/**
- * The dApp/QR lanes the world stubs out — the same wiring `createWalletEngine` gives its
- * RequestController (engine.ts), minus spark, nostr and the token metadata lookups. `solanaSign`
- * and the bitcoin lanes submit through `signers.apis`, the one signing seam.
- */
-const dappLanes = (deps: {
-  readonly networks: NetworkController;
-  readonly signers: SignersController;
-  readonly transactions: TransactionController;
-}): Partial<ConstructorParameters<typeof RequestControllerType>[0]> => ({
-  solanaSign: async (account, network, request, verify, commit) => {
-    const rpc = deps.networks.solanaRpc(network);
-    const adapter = new SolanaChainAdapter();
-    const hdAccount = {
-      kind: "hd" as const,
-      walletId: account.walletId,
-      groupIndex: account.groupIndex,
-      template: "solana.bip44-change" as const,
-    };
-    if (request.kind === "transactions") {
-      const wires: Uint8Array[] = [];
-      const messages: Uint8Array[] = [];
-      for (const wire of request.transactions) {
-        const { message } = decodeSolanaTransaction(wire, account.address);
-        // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
-        const result = await deps.signers.apis.sign({
-          request: { kind: "solana.transaction", network, account: hdAccount, message },
-          verify,
-        });
-        if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
-          throw new Error("unexpected solana sign result");
-        }
-        wires.push(addSolanaSignature(wire, account.address, result.signature));
-        messages.push(message);
-      }
-      if (!request.send) {
-        return { kind: "solana.transactions" as const, send: false, signedTransactions: wires };
-      }
-      const intents = messages.map((message): DisplayIntent =>
-        decodeSolana(
-          { kind: "solana.transaction", network, account: hdAccount, message },
-          account.address,
-        ),
-      );
-      const lastValidBlockHeight =
-        (await adapter.blockHeight(rpc, "processed")) + SOLANA_MAX_PROCESSING_AGE;
-      commit();
-      const batch = await submitInOrder(wires.length, async (index) => {
-        const wire = wires[index];
-        const intent = intents[index];
-        if (wire === undefined || intent === undefined) {
-          throw new Error("signed transaction without its input");
-        }
-        return deps.transactions.submitDappSolana(
-          network,
-          account.walletId,
-          wire,
-          lastValidBlockHeight,
-          intent,
-        );
-      });
-      return {
-        kind: "solana.transactions" as const,
-        send: true,
-        signatures: batch.ids,
-        ...(batch.stopped === undefined ? {} : { stopped: batch.stopped }),
-      };
-    }
-    normalizeSolana(
-      {
-        kind: "solana.message",
-        format: "raw",
-        network,
-        account: hdAccount,
-        message: request.message,
-      },
-      account.address,
-    );
-    const result = await deps.signers.apis.sign({
-      request: {
-        kind: "solana.message",
-        format: "raw",
-        network,
-        account: hdAccount,
-        message: request.message,
-      },
-      verify,
-    });
-    if (result.kind !== "solana.message" || !(result.signature instanceof Uint8Array)) {
-      throw new Error("unexpected solana sign result");
-    }
-    return { kind: "solana.message" as const, signature: result.signature };
-  },
-  bitcoinPrepare: async (account, network, psbts) =>
-    prepareDappPsbts(
-      deps.signers.apis,
-      deps.networks.esplora(network),
-      account,
-      network,
-      psbts,
-      new Set(
-        deps.transactions.frozenUtxos(
-          { walletId: account.walletId, groupIndex: account.groupIndex },
-          network,
-        ),
-      ),
-    ),
-  bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
-    const { signedPsbts, txids, stopped } = await signDappPsbts(
-      deps.signers.apis,
-      prepared,
-      send,
-      verify,
-      commit,
-      async (p, r) => deps.transactions.submitDappBitcoin(network, account.walletId, p, r),
-    );
-    return {
-      kind: "bitcoin.psbts" as const,
-      signedPsbts,
-      txids,
-      ...(stopped === undefined ? {} : { stopped }),
-    };
-  },
-  bitcoinSign: async (account, network, request, verify) => {
-    const result = await deps.signers.apis.sign({
-      request: {
-        kind: "bitcoin.message",
-        network,
-        account: {
-          kind: "hd",
-          walletId: account.walletId,
-          groupIndex: account.groupIndex,
-          template: account.template,
-        },
-        address: account.address,
-        message: request.message,
-        format: "bip322-simple",
-        change: 0,
-        index: 0,
-      },
-      verify,
-    });
-    if (result.kind !== "bitcoin.message") {
-      throw new Error("unexpected bitcoin sign result");
-    }
-    return { kind: "bitcoin.message" as const, signature: result.signature };
-  },
-});
 
 /* ------------------------------------------------------------------------- dApp layer --- */
 
