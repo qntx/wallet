@@ -11,14 +11,14 @@ import { Transaction } from "@scure/btc-signer";
 import * as TypedData from "ox/TypedData";
 
 import type { AccountRef, DisplayIntent, SignRequest, TaskKey } from "@qntx/wallet-chains";
-import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
+import { BITCOIN_NETWORKS, decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { decodeEvm, parseTypedData, planEvm } from "@qntx/wallet-chains/evm";
 import { decodeSolana } from "@qntx/wallet-chains/solana";
 import { decodeTron, tronMessageDigest } from "@qntx/wallet-chains/tron";
 
 import { inputEntries } from "./bind.ts";
 import { QrError, qrGuard } from "./errors.ts";
-import { BITCOIN_MAINNET, BITCOIN_TESTNET } from "./link.ts";
+import { BITCOIN_MAINNET } from "./link.ts";
 import type { QrRequest } from "./request.ts";
 
 export type QrDigestKind =
@@ -117,11 +117,21 @@ const tronProbe = (
         message: request.data,
       };
 
-/* The coin-type-1' encodings, in CAIP-2 ids from @qntx/wallet-chains' `bitcoin/networks.ts`:
-   testnet and signet share the `tb1…` prefix (one display serves both); regtest's `bcrt1…` is its
-   own display. */
-const BITCOIN_SIGNET = "bip122:00000008819873e925422c1ff0f99f7c";
-const BITCOIN_REGTEST = "bip122:0f9188f13cb7b2c71f2a335e3a4fc328";
+/* The coin-type-1' encodings from @qntx/wallet-chains' bitcoin network table, one CAIP-2 id
+   group per bech32 prefix: testnet and signet share `tb1…` (one display serves both); regtest's
+   `bcrt1…` is its own display. */
+const COIN1_ENCODINGS: ReadonlyArray<ReadonlyArray<string>> = (() => {
+  const groups = new Map<string, string[]>();
+  for (const network of Object.values(BITCOIN_NETWORKS)) {
+    if (network.coinType !== 1) {
+      continue;
+    }
+    const list = groups.get(network.params.bech32) ?? [];
+    list.push(network.caip2);
+    groups.set(network.params.bech32, list);
+  }
+  return [...groups.values()];
+})();
 
 const HARDENED = 0x80000000;
 
@@ -179,7 +189,7 @@ const psbtEncodings = (psbt: Uint8Array): ReadonlyArray<ReadonlyArray<string>> =
     return [[BITCOIN_MAINNET]];
   }
   if (coin === 1) {
-    return [[BITCOIN_TESTNET, BITCOIN_SIGNET], [BITCOIN_REGTEST]];
+    return COIN1_ENCODINGS;
   }
   throw new QrError(
     "network-ambiguous",
@@ -234,8 +244,8 @@ const evmDigests = (request: Extract<QrRequest, { family: "evm" }>): ReadonlyArr
       {
         kind: "evm-transaction-hash",
         value: hex(planEvm(evmProbe(request), probeKey(request)).tasks[0].digest),
-        /* Ledger app-ethereum ≥ 1.14.0: the blind-signing flow shows the transaction hash —
-           CHANGELOG "Changed" (n10/qr-signer/research.md §Device displays). */
+        /* Ledger app-ethereum ≥ 1.14.0 shows the transaction hash in the blind-signing flow —
+           https://github.com/LedgerHQ/app-ethereum/blob/master/CHANGELOG.md §1.14.0 "Changed". */
         shownBy: ["ledger-ethereum"],
       },
     ];
@@ -249,8 +259,8 @@ const evmDigests = (request: Extract<QrRequest, { family: "evm" }>): ReadonlyArr
           domain: json.domain,
           types: json.types,
         }),
-        /* Ledger app-ethereum ≥ 1.18.0: a setting shows the EIP-712 domain and message hashes —
-           same CHANGELOG (research.md §Device displays). */
+        /* Ledger app-ethereum ≥ 1.18.0 shows the EIP-712 domain and message hashes —
+           https://github.com/LedgerHQ/app-ethereum/blob/master/CHANGELOG.md §1.18.0. */
         shownBy: ["ledger-ethereum"],
       },
       {
@@ -359,8 +369,8 @@ export const inspectQrRequest = (request: QrRequest): QrInspection => {
               kind: "solana-message-hash",
               value: base58.encode(sha256(request.data)),
               /* Ledger app-solana blind signing shows base58(sha256(message)) as "Message Hash" —
-                 handle_sign_message.c (cx_hash_sha256 over the message; research.md §Device
-                 displays). */
+                 https://github.com/LedgerHQ/app-solana/blob/a19da6c/src/handle_sign_message.c
+                 (cx_hash_sha256 over the message). */
               shownBy: ["ledger-solana"],
             },
           ],
