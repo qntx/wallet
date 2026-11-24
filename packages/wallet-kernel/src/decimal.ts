@@ -1,9 +1,10 @@
 /**
  * Canonical-decimal ↔ fixed-point codec shared by every metered session scheme: a scheme's meter
  * charges in units of `DECIMAL_SCALE` and the record header stores the canonical decimal string
- * (`SESSION_SPENT`). Arithmetic is exact on bigints — no float is ever involved. 1e-16 admits the
- * sixteen fractional digits an 8-decimal price times an 8-decimal size produces exactly; a meter
- * whose grammar admits finer decimals picks a coarser scale and rounds a charge up, never down.
+ * (the scheme's spent grammar). Arithmetic is exact on bigints — no float is ever involved. 1e-16
+ * admits the sixteen fractional digits an 8-decimal price times an 8-decimal size produces exactly;
+ * a meter whose grammar admits finer decimals picks a coarser scale and rounds a charge up, never
+ * down.
  */
 import { KernelError } from "./errors.ts";
 

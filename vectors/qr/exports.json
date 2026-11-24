@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "wallets": [
+    {
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "fingerprint": "73c5da0a"
+    }
+  ],
+  "cases": [
+    {
+      "name": "crypto-hdkey-evm",
+      "form": "crypto-hdkey",
+      "result": {
+        "fingerprint": "73c5da0a",
+        "keys": [
+          {
+            "node": {
+              "kind": "evm.account"
+            },
+            "path": "m/44'/60'/0'",
+            "curve": "secp256k1",
+            "publicKey": "02eae4b876a8696134b868f88cc2f51f715f2dbedb7446b8e6edf3d4541c4eb67b",
+            "chainCode": "d882718b7a42806803eeb17f7483f20620611adb88fc943c898dc5aba94c2819",
+            "parentFingerprint": "d32e4508"
+          }
+        ]
+      },
+      "expect": {
+        "discloses": "evm-all-addresses",
+        "note": "account.standard",
+        "name": "qntx",
+        "children": "0/*",
+        "originPath": "44'/60'/0'",
+        "depth": 3
+      }
+    },
+    {
+      "name": "crypto-account-bip84",
+      "form": "crypto-account",
+      "result": {
+        "fingerprint": "73c5da0a",
+        "keys": [
+          {
+            "node": {
+              "kind": "btc.account",
+              "template": "btc.bip84",
+              "network": "bip122:000000000019d6689c085ae165831e93"
+            },
+            "path": "m/84'/0'/0'",
+            "curve": "secp256k1",
+            "publicKey": "02707a62fdacc26ea9b63b1c197906f56ee0180d0bcf1966e1a2da34f5f3a09a9b",
+            "chainCode": "4a53a0ab21b9dc95869c4e92a161194e03c0ef3ff5014ac692f433c4765490fc",
+            "parentFingerprint": "7ef32bdb"
+          }
+        ]
+      },
+      "expect": {
+        "discloses": "account-addresses",
+        "descriptor": "wpkh(",
+        "coinType": 0,
+        "network": 0
+      }
+    },
+    {
+      "name": "crypto-account-bip86",
+      "form": "crypto-account",
+      "result": {
+        "fingerprint": "73c5da0a",
+        "keys": [
+          {
+            "node": {
+              "kind": "btc.account",
+              "template": "btc.bip86",
+              "network": "bip122:000000000019d6689c085ae165831e93"
+            },
+            "path": "m/86'/0'/0'",
+            "curve": "secp256k1",
+            "publicKey": "03418278a2885c8bb98148158d1474634097a179c642f23cf1cc04da629ac6f0fb",
+            "chainCode": "c61a8f27e98182314d2444da3e600eb5836ec8ad183c86c311f95df8082b18aa",
+            "parentFingerprint": "035270da"
+          }
+        ]
+      },
+      "expect": {
+        "discloses": "account-addresses",
+        "descriptor": "tr(",
+        "coinType": 0,
+        "network": 0
+      }
+    },
+    {
+      "name": "multi-group0",
+      "form": "crypto-multi-accounts",
+      "result": {
+        "fingerprint": "73c5da0a",
+        "keys": [
+          {
+            "node": {
+              "kind": "leaf",
+              "template": "evm.bip44"
+            },
+            "path": "m/44'/60'/0'/0/0",
+            "curve": "secp256k1",
+            "publicKey": "0237b0bb7a8288d38ed49a524b5dc98cff3eb5ca824c9f9dc0dfdb3d9cd600f299"
+          },
+          {
+            "node": {
+              "kind": "leaf",
+              "template": "tron.bip44"
+            },
+            "path": "m/44'/195'/0'/0/0",
+            "curve": "secp256k1",
+            "publicKey": "03ff21f8e64d3a3c0198edfbb7afdc79be959432e92e2f8a1984bb436a414b8edc"
+          },
+          {
+            "node": {
+              "kind": "leaf",
+              "template": "solana.bip44-change"
+            },
+            "path": "m/44'/501'/0'/0'",
+            "curve": "ed25519",
+            "publicKey": "f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f7"
+          },
+          {
+            "node": {
+              "kind": "btc.account",
+              "template": "btc.bip84",
+              "network": "bip122:000000000019d6689c085ae165831e93"
+            },
+            "path": "m/84'/0'/0'",
+            "curve": "secp256k1",
+            "publicKey": "02707a62fdacc26ea9b63b1c197906f56ee0180d0bcf1966e1a2da34f5f3a09a9b",
+            "chainCode": "4a53a0ab21b9dc95869c4e92a161194e03c0ef3ff5014ac692f433c4765490fc",
+            "parentFingerprint": "7ef32bdb"
+          }
+        ]
+      },
+      "expect": {
+        "discloses": "account-addresses",
+        "device": "qntx",
+        "keyCount": 4
+      }
+    },
+    {
+      "name": "multi-leaves-only",
+      "form": "crypto-multi-accounts",
+      "result": {
+        "fingerprint": "73c5da0a",
+        "keys": [
+          {
+            "node": {
+              "kind": "leaf",
+              "template": "evm.bip44"
+            },
+            "path": "m/44'/60'/0'/0/0",
+            "curve": "secp256k1",
+            "publicKey": "0237b0bb7a8288d38ed49a524b5dc98cff3eb5ca824c9f9dc0dfdb3d9cd600f299"
+          },
+          {
+            "node": {
+              "kind": "leaf",
+              "template": "tron.bip44"
+            },
+            "path": "m/44'/195'/0'/0/0",
+            "curve": "secp256k1",
+            "publicKey": "03ff21f8e64d3a3c0198edfbb7afdc79be959432e92e2f8a1984bb436a414b8edc"
+          }
+        ]
+      },
+      "expect": {
+        "discloses": "single-addresses",
+        "device": "qntx",
+        "keyCount": 2
+      }
+    }
+  ]
+}

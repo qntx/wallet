@@ -822,7 +822,7 @@ describe("hardware wallet refusals", () => {
           limits: {
             notional: "1000000000",
             maxLeverage: 100,
-            assets: [0, 1, 2, 3, 4, 5, 10107],
+            assets: [0, 1, 2, 3, 4, 5, 10107].map((asset) => ({ asset, size: "1000000000" })),
           },
           verify: { kind: "hardware" },
         },

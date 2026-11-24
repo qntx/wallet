@@ -36,6 +36,7 @@ import type { Harness, KernelResponse } from "./harness.ts";
 import { loadVectors } from "./helpers.ts";
 import { fakeKeystore } from "./keystore.ts";
 import type { KeystoreCall } from "./keystore.ts";
+import { fakeSecureInput } from "./secure-input.ts";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -115,7 +116,12 @@ async function setup(start?: number): Promise<{
  * Generous default limits for tests that only exercise signing — the metering tests pin their own
  * budgets instead. Covers every asset id the oracle vectors carry (0–5) plus a spot id.
  */
-const LIMITS = { notional: "1000000000", maxLeverage: 100, assets: [0, 1, 2, 3, 4, 5, 10107] };
+const LIMITS = {
+  notional: "1000000000",
+  maxLeverage: 100,
+  assets: [0, 1, 2, 3, 4, 5, 10107].map((asset) => ({ asset, size: "1000" })),
+};
+const FRESH_SPENT = { notional: "0", size: LIMITS.assets.map(() => "0") };
 
 const createParams = (
   walletId: string,
@@ -273,14 +279,8 @@ const allowListed = l1Cases.filter((c) => c.action["type"] !== "dummy");
 const dummies = l1Cases.filter((c) => c.action["type"] === "dummy");
 
 describe("sessions.sign against the oracle vectors", () => {
-  /* The oracle scheduleCancel vectors' `time` values are far in the past — under the window policy
-     the kernel refuses them, so the sign call substitutes the session's own validUntil (their
-     encoding stays pinned by the connectionId checks above and the window test's bounds). */
   const signArgs = (vector: L1Case) => ({
-    action:
-      vector.action["type"] === "scheduleCancel" && vector.action["time"] !== undefined
-        ? ({ ...vector.action, time: vector.nonce + DAY } as never)
-        : (vector.action as never),
+    action: vector.action as never,
     nonce: vector.nonce,
     ...(vector.vaultAddress === undefined ? {} : { vaultAddress: vector.vaultAddress }),
     expiresAfter: vector.expiresAfter ?? vector.nonce + 15_000,
@@ -454,8 +454,6 @@ describe("protocol: strict action validation", () => {
     { type: "modify", oid: 1, order },
     { type: "modify", oid: `0x${"00".repeat(16)}`, order, a: true },
     { type: "batchModify", modifies: [{ oid: 1, order }] },
-    { type: "scheduleCancel" },
-    { type: "scheduleCancel", time: T0 + 10_000 },
     { type: "updateLeverage", asset: 0, isCross: true, leverage: 5 },
     { type: "updateIsolatedMargin", asset: 0, isBuy: true, ntli: -100 },
     { type: "twapCancel", a: 0, t: 1 },
@@ -482,6 +480,8 @@ describe("protocol: strict action validation", () => {
     },
     { type: "twapOrder", twap: { a: 0, b: true, s: "1", r: false, m: 30, t: false } },
     { type: "createSubAccount", name: "x" },
+    { type: "scheduleCancel" },
+    { type: "scheduleCancel", time: T0 + 10_000 },
     { type: "noop" },
     { type: "reserveRequestWeight", weight: 1 },
     { type: "agentSendAsset" },
@@ -567,7 +567,7 @@ describe("session-key lifecycle", () => {
     const record = sessionRecord(image);
     expect(record?.id).toBe(address.toLowerCase());
     expect(record?.header).toBe(
-      `{"scheme":"${SCHEME}","walletId":"${walletId}","groupIndex":0,"owner":"${EVM_ADDRESS}","scope":"Testnet","name":"bot-2","validUntil":${T0 + 30 * DAY},"createdAt":${T0},"limits":${JSON.stringify(LIMITS)},"spent":"0"}`,
+      `{"scheme":"${SCHEME}","walletId":"${walletId}","groupIndex":0,"owner":"${EVM_ADDRESS}","scope":"Testnet","name":"bot-2","validUntil":${T0 + 30 * DAY},"createdAt":${T0},"limits":${JSON.stringify(LIMITS)},"spent":${JSON.stringify(FRESH_SPENT)}}`,
     );
 
     const list = ok(await h.call("sessions.list", null, session)) as unknown as Array<
@@ -586,7 +586,7 @@ describe("session-key lifecycle", () => {
         validUntil: T0 + 30 * DAY,
         createdAt: T0,
         limits: LIMITS,
-        spent: "0",
+        spent: FRESH_SPENT,
       },
     ]);
 
@@ -623,12 +623,23 @@ describe("session-key lifecycle", () => {
 
   it("caps live sessions of one scheme at 16", async () => {
     const { h, session, walletId } = await setup(T0);
+    /* The per-owner cap would refuse a third agent on one account long before 16, so the 16 live
+       sessions are spread across account groups — the scheme cap is what refuses the 17th. */
     for (let i = 0; i < 16; i++) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- creates run serially on the session
-      await createSession(h, session, walletId, { name: `bot-${i}` });
+      await createSession(h, session, walletId, {
+        name: `bot-${i}`,
+        owner: { walletId, groupIndex: i },
+      });
     }
     expect(
-      errCode(await h.call("sessions.create", createParams(walletId, { name: "bot-16" }), session)),
+      errCode(
+        await h.call(
+          "sessions.create",
+          createParams(walletId, { name: "bot-16", owner: { walletId, groupIndex: 16 } }),
+          session,
+        ),
+      ),
     ).toBe("conflict");
     const list = ok(await h.call("sessions.list", null, session)) as unknown as unknown[];
     expect(list).toHaveLength(16);
@@ -673,10 +684,19 @@ describe("session-key lifecycle", () => {
     }
     for (let i = 0; i < 15; i++) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- creates run serially on the session
-      await createSession(h, session, walletId, { name: `bot-${i}` });
+      await createSession(h, session, walletId, {
+        name: `bot-${i}`,
+        owner: { walletId, groupIndex: i },
+      });
     }
     expect(
-      errCode(await h.call("sessions.create", createParams(walletId, { name: "bot-15" }), session)),
+      errCode(
+        await h.call(
+          "sessions.create",
+          createParams(walletId, { name: "bot-15", owner: { walletId, groupIndex: 15 } }),
+          session,
+        ),
+      ),
     ).toBe("conflict");
     const list = ok(await h.call("sessions.list", null, session)) as unknown as unknown[];
     expect(list).toHaveLength(64);
@@ -915,8 +935,8 @@ describe("session defense-in-depth checks", () => {
         name: "bot-1",
         validUntil: T0 + DAY,
         createdAt: T0,
-        limits: { notional: "10", maxLeverage: 1, assets: [0] },
-        spent: "0",
+        limits: { notional: "10", maxLeverage: 1, assets: [{ asset: 0, size: "10" }] },
+        spent: { notional: "0", size: ["0"] },
       }),
       new Uint8Array(EVM_SECRET), // authentic seal — the key inside is not `wrongId`
     );
@@ -1196,7 +1216,7 @@ describe("unknown schemes stay inert", () => {
         validUntil: T0 + DAY,
         createdAt: T0,
         limits: null,
-        spent: "0",
+        spent: null,
       },
     ]);
 
@@ -1332,7 +1352,8 @@ describe("ApproveAgent binding", () => {
     walletId: string;
   }> {
     const fk = fakeKeystore();
-    const h = createHarness({ keystore: fk.keystore, start: T0 });
+    const input = fakeSecureInput({ approval: "correct" });
+    const h = createHarness({ keystore: fk.keystore, secureInput: input.secureInput, start: T0 });
     await h.settle();
     const res = ok(
       await h.call("wallet.importMnemonic", {

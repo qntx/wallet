@@ -82,6 +82,18 @@ bool validFor(SecureInputKind kind, const SecretBytes& value) {
     case SecureInputKind::backupPassword: {
       return value.size() >= 1 && value.size() <= 1024 && validUtf8(value);
     }
+    case SecureInputKind::sessionApproval: {
+      if (value.size() != 4) {
+        return false;
+      }
+      for (size_t i = 0; i < value.size(); i++) {
+        const uint8_t c = value.data()[i];
+        if (c < '0' || c > '9') {
+          return false;
+        }
+      }
+      return true;
+    }
   }
   return false;
 }

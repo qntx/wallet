@@ -603,7 +603,7 @@ describe("a Bitcoin replacement after a restart", () => {
 
 describe("a CPFP child of a legacy parent", () => {
   it.each(["btc.bip44", "btc.bip49"] as const)(
-    "builds and broadcasts a bip84 child of a %s send",
+    "builds and broadcasts a %s child of a %s send",
     async (template) => {
       const w = world({ template });
       w.fund(1, 200_000);
@@ -617,9 +617,9 @@ describe("a CPFP child of a legacy parent", () => {
       );
       const txB = await child.submit(VERIFY, () => undefined);
       expect(txB.state).toBe("submitted");
-      // The parent's change sits on the group's bip84 chain — the child is a bip84
-      // transaction, derived and signed under that template.
-      expect(btcRecord(txB).template).toBe("btc.bip84");
+      // The parent's change sits on its own template's change chain — the child is a
+      // transaction of that same template, derived and signed under it.
+      expect(btcRecord(txB).template).toBe(template);
       expect(inputTxidsOf(txB)).toStrictEqual([hashOf(txA)]);
     },
   );
@@ -627,11 +627,11 @@ describe("a CPFP child of a legacy parent", () => {
 
 describe("a Bitcoin replacement pays for its own size", () => {
   it.each([
-    { template: "btc.bip44" as const, inputVbytes: 148 },
-    { template: "btc.bip49" as const, inputVbytes: 91 },
+    { template: "btc.bip44" as const, inputVbytes: 148, changeVbytes: 34 },
+    { template: "btc.bip49" as const, inputVbytes: 91, changeVbytes: 32 },
   ])(
     "a $template replacement clears rule 4 on the replacement's own vsize",
-    async ({ template, inputVbytes }) => {
+    async ({ template, inputVbytes, changeVbytes }) => {
       const w = world({ template });
       w.fund(1, 200_000);
       const first = await w.boot();
@@ -646,8 +646,8 @@ describe("a Bitcoin replacement pays for its own size", () => {
         record.outputs.map((o) => o.address),
         NETWORK,
       );
-      // One legacy input, a p2wpkh payee and the bip84 change chain.
-      expect(vsize).toBe(Math.ceil(10.5 + inputVbytes + 31 + 31));
+      // One legacy input, a p2wpkh payee and the parent's own change chain.
+      expect(vsize).toBe(Math.ceil(10.5 + inputVbytes + 31 + changeVbytes));
       expect(record.vsize).toBe(vsize);
       // Rule 4 is priced on the replacement's vsize — the old code added only the
       // original's, which a 68 vB/input estimate understated by the whole template gap.

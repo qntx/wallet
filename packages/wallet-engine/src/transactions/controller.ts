@@ -25,6 +25,7 @@ import type {
   Options,
   PrepareParams,
   PreparedMessage,
+  PreparedQrSign,
   PreparedRequest,
   ChainRequestInput,
   RouteContext,
@@ -59,10 +60,12 @@ import {
 export type {
   AccountRef,
   PrepareParams,
+  PreparedQrSign,
   PreparedRequest,
   ChainRequestInput,
   ChainRequestMethod,
   SendParams,
+  SignedTransactionResult,
   TrackedTransaction,
   TxState,
 } from "./route.ts";
@@ -811,6 +814,26 @@ export class TransactionController extends Controller<TransactionControllerState
   }
 
   /**
+   * Internal entry for a scanned QR EVM transaction: normalized with the same rules, but the
+   * request's own nonce and fees are signed unchanged — a QR counterpart broadcasts the signed
+   * envelope itself, so nothing is tracked or sent here.
+   */
+  async prepareQrEvm(account: AccountRef, request: SignRequest): Promise<PreparedQrSign> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    const normalized = normalizeEvm(request);
+    if (normalized.kind !== "evm.transaction") {
+      throw new Error("a QR EVM request must be a transaction");
+    }
+    return this.evmRoute.prepareQr(this.routeCtx(), {
+      account,
+      network: normalized.network,
+      tx: normalized.tx,
+    });
+  }
+
+  /**
    * Internal entry for a dApp's TRON request: the transaction bytes are validated, proven fresh and
    * quoted but never re-encoded — the kernel signs exactly the bytes the dApp sent. Messages and
    * typed data decode and sign like the EVM path.
@@ -818,13 +841,22 @@ export class TransactionController extends Controller<TransactionControllerState
   async prepareDappTron(
     account: AccountRef,
     request: SignRequest,
-  ): Promise<PreparedRequest | PreparedMessage> {
+    options?: { readonly broadcast: false },
+  ): Promise<PreparedRequest | PreparedMessage | PreparedQrSign> {
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
     const normalized = normalizeTron(request);
     if (normalized.kind === "tron.transaction") {
-      return prepareDappTron(this.routeCtx(), account, normalized.network, normalized.rawData);
+      return options === undefined
+        ? prepareDappTron(this.routeCtx(), account, normalized.network, normalized.rawData)
+        : prepareDappTron(
+            this.routeCtx(),
+            account,
+            normalized.network,
+            normalized.rawData,
+            options,
+          );
     }
     if (normalized.kind !== "tron.message" && normalized.kind !== "tron.typed-data") {
       throw new Error(`unsupported dApp request ${normalized.kind}`);

@@ -8,9 +8,8 @@ import { BackupFactorInput } from '@qntx/wallet';
 import { BackupHeader } from '@qntx/wallet';
 import { BackupInfo } from '@qntx/wallet';
 import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
-import { CardStep } from '@qntx/wallet/card';
-import { ChainAccount } from '@qntx/wallet/protocol';
-import { ChainAccountsParams } from '@qntx/wallet/protocol';
+import { BitcoinOwn } from '@qntx/wallet-chains/bitcoin';
+import { BitcoinTemplate } from '@qntx/wallet-chains';
 import { ChainError } from '@qntx/wallet-chains';
 import { chains } from '@qntx/wallet/chains';
 import { ChainsApi } from '@qntx/wallet/chains';
@@ -21,8 +20,7 @@ import { DeviceIo } from '@qntx/wallet/hardware';
 import { DisplayExcerpt } from '@qntx/wallet-chains';
 import { Event as Event_2 } from '@qntx/nostr';
 import { Filter } from '@qntx/nostr';
-import { HardwareDevice } from '@qntx/wallet';
-import { HardwareStep } from '@qntx/wallet/hardware';
+import { HardwareWalletInfo } from '@qntx/wallet';
 import { InitialFactor } from '@qntx/wallet';
 import { KeyInfo } from '@qntx/wallet';
 import { KeysApi } from '@qntx/wallet';
@@ -74,7 +72,6 @@ export type AccountGroup = {
     readonly index: number;
     readonly used?: Readonly<Record<string, boolean>>;
     readonly errors?: Readonly<Record<string, string>>;
-    readonly signer?: Readonly<Record<string, "device-required">>;
     readonly name?: string;
     readonly hidden: boolean;
     readonly boundPubkey?: string;
@@ -110,7 +107,6 @@ export class AccountTreeController extends Controller<AccountTreeState> {
         changed: boolean;
         localNewer: boolean;
     };
-    recheckFamily(walletId: string, groupIndex: number, family: string): Promise<void>;
     reconcile(): void;
     refreshTotals(): Promise<void>;
     // (undocumented)
@@ -134,8 +130,13 @@ type AccountTreeControllerOptions = {
     readonly spark: SparkController;
     readonly sparkNetwork: SparkNetwork;
     readonly networks?: DiscoveryNetworks;
-    readonly chains: {
-        readonly account: (params: ChainAccountsParams) => Promise<{
+    readonly chains?: {
+        readonly account: (params: {
+            readonly walletId: string;
+            readonly groupIndex: number;
+            readonly template: string;
+            readonly network: string;
+        }) => Promise<{
             readonly address?: string;
             readonly xpub?: string;
         }>;
@@ -161,8 +162,6 @@ export type AccountTreeState = {
         readonly walletId: string;
         readonly name?: string;
         readonly updatedAt: number;
-        readonly custody: WalletInfo["custody"];
-        readonly state: "ready" | "incomplete";
     }>;
     readonly groups: Readonly<Record<string, ReadonlyArray<AccountGroup>>>;
     readonly selected: {
@@ -627,7 +626,7 @@ export type BitcoinPsbtInput = {
     readonly sign: ReadonlyArray<{
         readonly index: number;
         readonly sigHash: BitcoinSigHash;
-        readonly template: BitcoinAccount["template"];
+        readonly template: BitcoinTemplate;
     }>;
 };
 
@@ -659,7 +658,7 @@ export type BitcoinSignInput = {
     };
 } | {
     readonly method: "bitcoin-sign";
-    readonly origin: DappOrigin;
+    readonly origin: DappOrigin | QrOrigin;
     readonly account: BitcoinGroup;
     readonly network: string;
     readonly request: {
@@ -1118,6 +1117,9 @@ export type DelegationStatus = {
     readonly address?: string;
 };
 
+// @public
+export type DeviceTransport = (wallet: HardwareWalletInfo) => DeviceIo;
+
 // @public (undocumented)
 type DiscoveryNetworks = {
     readonly client: (network: string) => {
@@ -1240,10 +1242,10 @@ export type EngineOptions = {
     };
     readonly allowLocalhostOrigins?: boolean;
     readonly setTimer?: (ms: number, fn: () => void) => () => void;
+    readonly devices?: DeviceTransport;
     readonly metaSync?: MetaSyncConfig;
     readonly pushKeys?: PushKeyStore;
     readonly sparkApis?: SparkControllerOptions["spark"];
-    readonly deviceIo?: (device: HardwareDevice) => DeviceIo;
 };
 
 // @public (undocumented)
@@ -1303,7 +1305,7 @@ export type EvmRevokeTarget = {
 // @public
 export type EvmSignInput = {
     readonly method: "evm-sign";
-    readonly origin?: DappOrigin;
+    readonly origin?: DappOrigin | QrOrigin;
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;
@@ -2091,8 +2093,7 @@ type Options = {
     readonly now: () => number;
     readonly logger: EngineLogger;
     readonly pollMs?: number;
-    readonly chains: ReturnType<typeof chains>;
-    readonly isWalletIncomplete?: (walletId: string) => boolean;
+    readonly chains?: ReturnType<typeof chains>;
 };
 
 // @public (undocumented)
@@ -2321,12 +2322,12 @@ type PreparedBitcoinPsbt = {
     readonly request: Extract<SignRequest, {
         kind: "bitcoin.psbt";
     }>;
-    readonly ownScripts: ReadonlySet<string>;
+    readonly own: BitcoinOwn;
     readonly inputs: ReadonlyArray<{
         readonly index: number;
         readonly value: number;
         readonly sigHash: BitcoinSigHash;
-        readonly template: BitcoinAccount["template"];
+        readonly template: BitcoinTemplate;
         readonly frozen: boolean;
     }>;
 };
@@ -2335,6 +2336,12 @@ type PreparedBitcoinPsbt = {
 type PreparedMessage = Omit<PreparedRequest, "submit" | "txId"> & {
     readonly signer: string;
     readonly submit: (verify: SendParams["verify"]) => Promise<SignatureResult>;
+};
+
+// @public
+type PreparedQrSign = Omit<PreparedRequest, "submit" | "txId"> & {
+    readonly signer: string;
+    readonly submit: (verify: SendParams["verify"], commit: () => void) => Promise<SignedTransactionResult>;
 };
 
 // @public
@@ -2498,6 +2505,12 @@ export type PushKeyStore = {
 type PushPlatform = (typeof PUSH_PLATFORMS)[number];
 
 // @public
+export type QrOrigin = {
+    readonly kind: "qr";
+    readonly declared?: string;
+};
+
+// @public
 export const readJson: (bytes: Uint8Array) => unknown;
 
 // @public
@@ -2522,7 +2535,7 @@ export class RequestController extends Controller<RequestControllerState> {
     // (undocumented)
     approve(id: string, method: "pay" | "zap" | "spark-exit", options?: ApproveOptions): Promise<SparkResult>;
     // (undocumented)
-    approve(id: string, method: "evm-sign" | "tron-sign", options?: ApproveOptions): Promise<TrackedTransaction | SignatureResult>;
+    approve(id: string, method: "evm-sign" | "tron-sign", options?: ApproveOptions): Promise<TrackedTransaction | SignatureResult | SignedTransactionResult>;
     // (undocumented)
     approve(id: string, method: "nostr-sign", options?: ApproveOptions): Promise<NostrSignResult>;
     // (undocumented)
@@ -2607,10 +2620,10 @@ export type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "t
 // @public (undocumented)
 export type RequestOrigin = {
     readonly kind: "internal";
-} | AppOrigin | DappOrigin;
+} | AppOrigin | DappOrigin | QrOrigin;
 
 // @public
-export type RequestResult = TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult | TokenWatchResult | SolanaSignResult | BitcoinSignResult;
+export type RequestResult = TrackedTransaction | SparkResult | SignatureResult | SignedTransactionResult | NostrSignResult | WeblnInvoiceResult | TokenWatchResult | SolanaSignResult | BitcoinSignResult;
 
 // @public
 export type RequestStage = "awaiting-approval" | "signing" | "signed" | "submitted" | "rejected" | "failed" | "expired" | "invalidated";
@@ -2631,7 +2644,7 @@ export function resolvePayment(input: string, options: ResolveOptions): Promise<
 
 // @public
 export type RiskFinding = {
-    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-account-move" | "fiat24-account-burn";
+    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "bitcoin-unusual-output" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-account-move" | "fiat24-account-burn" | "qr-sign-in-unverified";
     readonly level: "warning" | "danger";
 };
 
@@ -2689,69 +2702,12 @@ export type SignatureResult = {
 };
 
 // @public
-export type SignerActivity = {
-    readonly id: string;
-    readonly walletId: string;
-    readonly custody: "card" | "hardware";
-    readonly operation: "sign" | "accounts" | "verify-address";
-    readonly step: {
-        readonly kind: "starting";
-    } | {
-        readonly kind: "card";
-        readonly step: CardStep;
-    } | {
-        readonly kind: "device";
-        readonly step: Extract<HardwareStep, {
-            kind: "exchange";
-        }>;
-    };
-};
-
-// @public (undocumented)
-export type SignerFamily = "evm" | "solana" | "bitcoin" | "tron";
-
-// @public
-export class SignersController extends Controller<SignersState> {
-    constructor(options: SignersControllerOptions);
-    readonly apis: ChainApis;
-    cancel(): Promise<void>;
-    // (undocumented)
-    destroy(): Promise<void>;
-    fetchAccounts(params: {
-        readonly walletId: string;
-        readonly groupIndex: number;
-        readonly family: SignerFamily;
-    }): Promise<ReadonlyArray<ChainAccount>>;
-    // (undocumented)
-    init(): Promise<void>;
-    lock(): void;
-    verifyAddress(params: {
-        readonly walletId: string;
-        readonly groupIndex: number;
-        readonly template: ChainTemplate;
-        readonly network: string;
-        readonly index?: number;
-    }): Promise<{
-        readonly address: string;
-        readonly method: string;
-    }>;
-}
-
-// @public (undocumented)
-type SignersControllerOptions = {
-    readonly wallet: Wallet;
-    readonly deviceIo?: ((device: HardwareDevice) => DeviceIo) | undefined;
-    readonly recheck: (walletId: string, groupIndex: number, family: SignerFamily) => Promise<void>;
-    readonly networks?: {
-        readonly enabled: (family: SignerFamily) => ReadonlyArray<string>;
-    };
-    readonly random: (length: number) => Uint8Array;
-    readonly logger: EngineLogger;
-};
-
-// @public (undocumented)
-export type SignersState = {
-    readonly active: SignerActivity | null;
+export type SignedTransactionResult = {
+    readonly kind: "evm.signed-transaction";
+    readonly signedTransaction: Uint8Array;
+} | {
+    readonly kind: "tron.signed-transaction";
+    readonly signature: Uint8Array;
 };
 
 // @public
@@ -2881,7 +2837,7 @@ export type SolanaRpc = {
 // @public
 export type SolanaSignInput = {
     readonly method: "solana-sign";
-    readonly origin: DappOrigin;
+    readonly origin: DappOrigin | QrOrigin;
     readonly account: SolanaAccount;
     readonly network: string;
     readonly request: {
@@ -3345,10 +3301,13 @@ export class TransactionController extends Controller<TransactionControllerState
     prepareDapp(account: AccountRef, request: SignRequest, options?: {
         readonly nonce?: number;
     }): Promise<PreparedRequest | PreparedMessage>;
-    prepareDappTron(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
+    prepareDappTron(account: AccountRef, request: SignRequest, options?: {
+        readonly broadcast: false;
+    }): Promise<PreparedRequest | PreparedMessage | PreparedQrSign>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
         method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-revoke" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
     }>, _requestId: string): Promise<PreparedRequest>;
+    prepareQrEvm(account: AccountRef, request: SignRequest): Promise<PreparedQrSign>;
     prepareReplacement(input: Extract<ChainRequestInput, {
         method: "speed-up" | "cancel" | "cpfp";
     }>, requestId: string): Promise<PreparedRequest>;
@@ -3879,7 +3838,7 @@ type TronRequests = Pick<RequestController, "prepare" | "outcome">;
 // @public
 type TronSignInput = {
     readonly method: "tron-sign";
-    readonly origin?: DappOrigin;
+    readonly origin?: DappOrigin | QrOrigin;
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;
@@ -3958,7 +3917,6 @@ export type WalletEngine = {
     };
     readonly transactions: HostController<TransactionController, "txById" | "nextReceiveAddress" | "setUtxosFrozen" | "frozenUtxos">;
     readonly requests: HostController<RequestController, "prepare" | "approve" | "reject" | "outcome" | "signLog" | "clearSignLog">;
-    readonly signers: HostController<SignersController, "cancel" | "verifyAddress" | "fetchAccounts">;
     readonly addressBook: HostController<AddressBookController, "add" | "rename" | "setNote" | "remove">;
     readonly history: HostController<HistoryController, "load" | "loadMore">;
     readonly approvals: HostController<ApprovalsController, "load" | "unload" | "refresh" | "setVisible" | "revoke" | "revokeBatch"> & {
@@ -4046,6 +4004,11 @@ export type WatchAccount = {
     readonly family: "evm" | "solana" | "bitcoin" | "tron";
     readonly address: string;
     readonly name?: string;
+    readonly qr?: {
+        readonly fingerprint: string;
+        readonly path: string;
+        readonly xpub?: string;
+    };
     readonly createdAt: number;
 };
 

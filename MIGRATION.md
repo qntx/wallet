@@ -2198,20 +2198,38 @@ it:
 
 - `sessions.create` takes `limits` (`HyperliquidAgentLimits`) — the cumulative `notional` budget
   as a positive decimal at most 1e15, the `maxLeverage` cap, and `assets`, an allow-list of 1–16
-  distinct ascending asset ids 0..99999 (builder-dex HIP-3 ids start at 100000 and stay out of
-  scope) — and a `verify` factor. The kernel's approval prompt states the budget, the cap and the
-  list.
+  `{ asset, size }` rows: ascending distinct asset ids 0..99999 (builder-dex HIP-3 ids start at
+  100000 and stay out of scope), each with a per-asset cumulative `size` cap that buys and sells
+  both charge — and a `verify` factor. The kernel's approval prompt states the budget, the cap and
+  the list, and it must fit the platform's dialog: create and open answer `invalid-input` when the
+  rendered approval cannot.
 - The new `sessions.open(address, verify)` re-approves the recorded session after a lock: the
   opened set lives only in kernel memory, so `sessions.sign` on an unopened session answers
   `approval-required`.
 - Every signed order charges its price × size against `spent` before the signature returns — a
-  reduce-only order counts, the kernel has no position state to prove it. Past the budget, over
-  the leverage cap or outside the allow-list the answer is `limit-exceeded`; the charge is
-  persisted in the session record and survives restarts. `SessionInfo` gains `limits` and `spent`
-  (in the `SESSION_SPENT` grammar).
+  reduce-only order counts, the kernel has no position state to prove it — and a sell charges its
+  `size` against the row's cap. Past the budget, over the leverage cap or outside the allow-list
+  the answer is `limit-exceeded`; the charge is persisted in the session record and survives
+  restarts. `SessionInfo` gains `limits` and `spent`, and `spent` is the scheme's
+  `HyperliquidAgentSpent` (`{ notional, size }`) carried as opaque `ProtocolValue` — there is no
+  `SESSION_SPENT` grammar on the protocol surface.
+- The actions the scheme admits are an explicit allow-list — `order`, `cancel`, `cancelByCloid`,
+  `modify`, `batchModify`, `updateLeverage`, `updateIsolatedMargin`, `twapCancel` — every other
+  `action.type` is `invalid-input`. `scheduleCancel` is not admitted (it cancels every open order
+  on every asset, so no allow-list could scope it), and the engine's `trade.scheduleCancel` /
+  `actions.scheduleCancel` are gone.
+- At most two live metered sessions may exist per owner and scope: a third `sessions.create` for
+  the same `{ walletId, groupIndex }` + scope answers `conflict` until one is deleted.
 - On React Native with the app lock off — the vault still holds its `device` factor — create,
   open and sign all answer `app-lock-required`: a metered session cannot exist without the
   lock-screen check.
+- On iOS the limits are confirmed on the kernel-controlled secure-input hub before the factor
+  ceremony (Face ID and WebAuthn show no kernel prompt text): `sessions.create`/`open` — and the
+  engine's Hyperliquid enable/renew/reopen/disable({ revoke: true }) that call them — ask
+  `secureInput` for the new `"session-approval"` kind, a kernel-chosen 4-digit code shown as the
+  last line of a label that carries the limits. The host must mount `SecureInput` while they run:
+  the request waits for it. A host without a secure-input surface answers `unsupported`; a wrong code or a dismissal answers `cancelled`. Android shows the
+  bounded kernel prompt inside BiometricPrompt instead.
 - `twapOrder` is not admitted (a TWAP's slices carry no price to meter); `trade.twap` and
   `actions.twap` are gone (§13), `trade.twapCancel` stays.
 
@@ -2228,9 +2246,14 @@ bound on loss, not a USDC figure.
 ```ts
 /**
  * Value-moving session keys are approved and metered (section 31): `sessions.create` and the new
- * `sessions.open` take a `verify` factor, `create` takes the scheme's `limits`, `SessionInfo`
- * reports `limits`/`spent`, and out-of-bounds or app-lock-less use answers `limit-exceeded` /
- * `app-lock-required`. The engine's Hyperliquid `enable`/`renew` take `{ limits, verify }` and
+ * `sessions.open` take a `verify` factor, `create` takes the scheme's `limits` (a notional budget,
+ * a leverage cap and per-asset `{ asset, size }` caps), `SessionInfo` reports `limits`/`spent` —
+ * `spent` is the scheme's `HyperliquidAgentSpent` as opaque `ProtocolValue`, there is no
+ * `SESSION_SPENT` grammar. Out-of-bounds use answers `limit-exceeded`, a third live metered session
+ * per owner and scope `conflict`, an approval text that cannot fit the dialog `invalid-input`, and
+ * app-lock-less use `app-lock-required`; on iOS the limits are confirmed by a 4-digit code on the
+ * secure-input hub (`cancelled` / `unsupported`). Only allow-listed actions sign — `scheduleCancel`
+ * is not among them. The engine's Hyperliquid `enable`/`renew` take `{ limits, verify }` and
  * `provider.reopen(group, verify)` re-approves the agent after a lock; `trade.twap` /
  * `actions.twap` are gone. Compiled only.
  */
@@ -2249,7 +2272,10 @@ import { sessions } from "@qntx/wallet/sessions";
 const LIMITS: HyperliquidAgentLimits = {
   notional: "1000",
   maxLeverage: 10,
-  assets: [0, 10_001],
+  assets: [
+    { asset: 0, size: "10" },
+    { asset: 10_001, size: "100" },
+  ],
 };
 
 /** Create approves the limits once; open re-approves the same limits after every lock. */
@@ -2271,7 +2297,7 @@ export async function agentSession(wallet: Wallet, walletId: string): Promise<Se
   if (info === undefined) {
     throw new Error("the session is gone");
   }
-  return info; // info.limits restates LIMITS; info.spent is the charged notional so far.
+  return info; // info.limits restates LIMITS; info.spent is the charged metering so far.
 }
 
 /** Map the metering refusals to UX. */
@@ -2294,6 +2320,34 @@ export async function signWithinBudget(
       if (error.code === "app-lock-required") {
         return "app-lock"; // a `device`-factor vault cannot hold a metered session
       }
+    }
+    throw error;
+  }
+}
+
+/**
+ * `spent` is opaque `ProtocolValue` — the scheme's `{ notional, size }` JSON — and `conflict` means
+ * a third live metered session for the same owner and scope; delete one, then retry.
+ */
+export async function createOrReuse(
+  wallet: Wallet,
+  input: Parameters<ReturnType<typeof sessions>["create"]>[0],
+): Promise<{ created: boolean; spent: SessionInfo["spent"] | undefined }> {
+  const api = sessions(wallet);
+  try {
+    await api.create(input);
+    return { created: true, spent: undefined };
+  } catch (error) {
+    if (error instanceof WalletError && error.code === "conflict") {
+      const all = await api.list();
+      const live = all.find(
+        (s) =>
+          s.supported &&
+          s.walletId === input.owner.walletId &&
+          s.groupIndex === input.owner.groupIndex &&
+          s.scope === input.scope,
+      );
+      return { created: false, spent: live?.spent };
     }
     throw error;
   }
@@ -2350,9 +2404,12 @@ engine drives the same signers for its own signing paths.
    running operation (`cancelSigner`).
 3. **Every engine signature runs through it.** Sends, dApp requests, revokes, NFT sends, app
    enables — the request wallet's custody decides: a vault wallet signs through `chains`, a card
-   wallet runs a card task, a hardware wallet a device operation. What the kernel already refuses
-   stays refused and lands before any activity publishes: `sessions.create`, Spark and Nostr
-   answer `unsupported`, a Fiat24 session grant `invalid-input`.
+   wallet runs a card task, a hardware wallet a device operation. That holds for every request
+   origin — sends, dApp requests, in-engine apps and scanned QR requests (§33) alike: there is
+   one seam, and hardware custody signs through `deviceIo` regardless of how the request
+   arrived. What the kernel already refuses stays refused and lands before any activity
+   publishes: `sessions.create`, Spark and Nostr answer `unsupported`, a Fiat24 session grant
+   `invalid-input`.
 4. **`fetchAccounts` and `AccountGroup.signer`.** A group on an external signer has no public
    material for a family until the signer exports it: the family's entry in the group's `signer`
    map is `device-required` — discovery neither counts it used nor errored, and a group whose
@@ -2527,4 +2584,273 @@ export async function checkAddressOnDevice(
   });
   return address;
 }
+```
+
+## 33. QR signer mode
+
+`@qntx/wallet-engine/qr` turns the wallet into the signing half of an air-gapped pair: a
+watch-only counterpart shows an animated UR request, the user scans it, approves it like any
+other request, and the wallet answers with animated frames. Compiled snippet:
+[`tests/migration/qr-signer.ts`](tests/migration/qr-signer.ts).
+
+1. **A new `RequestOrigin` kind.** A scanned request enters the pipeline with
+   `{ kind: "qr", declared? }` (`declared` is the counterpart's self-label, display-only and
+   untrusted). Every switch on `RequestOrigin["kind"]` must name it — `originBadge` in the
+   snippet. It uses the same prepare → approve → respond pipeline as every other origin: risk
+   findings, user verification and `RequestEndedError` semantics are unchanged.
+2. **`EngineOptions.deviceIo`.** Signatures for hardware-custody accounts — for every origin,
+   QR included — route through the host's per-device-kind transport (`engineOptions` in the
+   snippet), the same `DeviceIo` a `hardware(wallet)` call takes (§32). Leave it out and
+   hardware wallets can still be listed and watched, but every signature fails `unsupported`.
+3. **`BitcoinPsbtInput.sign[].template` widened** to all four account templates (`psbtTemplateLabel`
+   in the snippet): a QR counterpart may ask for `btc.bip44`/`btc.bip49` inputs where a dApp only
+   names `btc.bip84`/`btc.bip86`. Hosts that render or filter PSBT inputs by template need the
+   new members.
+4. **Wiring the signer.** The host drives the framing — `createQrScanner` folds scanned frames
+   into the payload, `readQrRequest` decodes and re-checks it, `qrSigner({ engine, wallet }).prepare`
+   binds it and opens the pending request, and after the user approves, `respond` returns the
+   answer payload for `qrFrames` to animate (`answerQrRequest`, `qrAnswerFrames`). `respond` must
+   run on the `qrSigner` instance that prepared the request — keep one signer for the session
+   (`openQrSigner`). Scanning and animation
+   progress belong to the host UI; the request's own stage is read from the pipeline like any
+   other origin. `exportAccount` produces the pairing QR for the counterpart (MetaMask/Rabby:
+   `crypto-hdkey`; BlueWallet/Sparrow: `crypto-account`; Keystone-compatible and the qntx Web
+   wallet: `crypto-multi-accounts`) — `discloses` says exactly which material leaves the device
+   and belongs in the prompt (`exportForWatch`).
+5. **A watch-only counterpart** needs no engine internals: `readQrExport` turns the export
+   payload into `QrLink`s, `engine.watch.add` persists one as a `WatchAccount.qr`, and
+   `qrSignRequest`/`readQrSignature` encode and verify the round trip. The counterpart never
+   learns which kind of signer backs the account.
+6. **A QR sign-in is a `danger` finding.** A scanned SIWE request can claim any domain — the
+   signer cannot verify it against a live dApp session — so `risk` reports
+   `qr-sign-in-unverified` at `danger` and `approve` refuses it until `acknowledged` names the
+   code (`qrSignApproval` in the snippet).
+7. **Inspection reports labelled displays.** `inspectQrRequest` returns `displays`, one decoded
+   `QrDisplay` per network encoding the frame can mean: a coin-type `1'` PSBT is ambiguous between
+   testnet/signet (`tb1…`) and regtest (`bcrt1…`) and yields both, labelled; mixed or missing coin
+   types are `network-ambiguous` rather than guessed. `shownBy` is set only where a device's
+   display has a primary source — the Ethereum hashes (app-ethereum CHANGELOG 1.14.0 / 1.18.0) and
+   the Solana message hash (app-solana `handle_sign_message.c`) — and is empty for digests no
+   sourced device shows. The account-export prompt the kernel shows is rendered from the requested
+   nodes, one row per key the QR will disclose (`exportForWatch` in the snippet).
+
+[`tests/migration/qr-signer.ts`](tests/migration/qr-signer.ts):
+
+```ts
+import type { Wallet } from "@qntx/wallet";
+import type {
+  BitcoinPsbtInput,
+  EngineOptions,
+  PendingRequest,
+  RequestOrigin,
+  WalletEngine,
+} from "@qntx/wallet-engine";
+import { requiredAcknowledgement } from "@qntx/wallet-engine";
+import {
+  createQrScanner,
+  inspectQrRequest,
+  qrFrames,
+  qrSigner,
+  readQrRequest,
+} from "@qntx/wallet-engine/qr";
+import type { QrExport, QrInspection, QrPayload } from "@qntx/wallet-engine/qr";
+import type { DeviceIo, HardwareDevice } from "@qntx/wallet/hardware";
+
+/**
+ * `RequestOrigin` gains `{ kind: "qr", declared? }` — a request that entered through a scanned UR
+ * frame. Every switch on `RequestOrigin["kind"]` must name it: a scanned request is attributed to
+ * the counterpart's self-declared `origin` (display-only, untrusted), never to a dApp session.
+ */
+// oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
+export function originBadge(origin: RequestOrigin): string {
+  switch (origin.kind) {
+    case "internal":
+      return "this app";
+    case "browser":
+      return origin.origin;
+    case "walletconnect":
+      return origin.name;
+    case "app":
+      return origin.id;
+    case "qr":
+      return origin.declared ?? "scanned QR request";
+  }
+}
+
+/**
+ * `BitcoinPsbtInput.sign[].template` widened from the two dApp-facing templates to all four — a QR
+ * counterpart may ask for `btc.bip44` or `btc.bip49` inputs too. A host that rendered or filtered
+ * PSBT inputs by template must expect every member.
+ */
+// oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
+export function psbtTemplateLabel(template: BitcoinPsbtInput["sign"][number]["template"]): string {
+  switch (template) {
+    case "btc.bip44":
+      return "legacy";
+    case "btc.bip49":
+      return "wrapped segwit";
+    case "btc.bip84":
+      return "native segwit";
+    case "btc.bip86":
+      return "taproot";
+  }
+}
+
+/**
+ * `EngineOptions.deviceIo` routes hardware-custody accounts' signatures — for every origin, QR
+ * included — through the host's per-device-kind transport, the same `DeviceIo` a
+ * `hardware(wallet)` call takes (§32). Without it, hardware wallets fail `unsupported`.
+ */
+export function engineOptions(
+  deviceIo: (device: HardwareDevice) => DeviceIo,
+): Pick<EngineOptions, "deviceIo"> {
+  return { deviceIo };
+}
+
+/**
+ * The phone side owns ONE `qrSigner` for the session: `prepare` records every request it bound, so
+ * `respond` must run on the instance that prepared it — a second `qrSigner({ engine, wallet })`
+ * answers "not prepared by this signer". The host creates one and passes it to every QR call.
+ */
+export type PhoneQrSigner = ReturnType<typeof qrSigner>;
+
+export function openQrSigner(engine: WalletEngine, wallet: Wallet): PhoneQrSigner {
+  return qrSigner({ engine, wallet });
+}
+
+/**
+ * Decode the counterpart's frames, prepare an ordinary engine request, let the user approve it,
+ * answer with the signature frames. Progress on the wire is the scanner's ratio; the request's
+ * stage moves `awaiting-approval` → `signed` on its own.
+ */
+export async function answerQrRequest(
+  signer: PhoneQrSigner,
+  account: { walletId: string; groupIndex: number },
+  readFrame: () => Promise<string>,
+): Promise<PendingRequest> {
+  const scanner = createQrScanner({ kind: "request", now: () => Date.now() });
+  for (;;) {
+    // oxlint-disable-next-line no-await-in-loop -- frames arrive one camera read at a time
+    const outcome = scanner.receive(await readFrame());
+    if (outcome.status === "complete") {
+      const { payload } = outcome;
+      return signer.prepare(readQrRequest(payload), account);
+    }
+  }
+}
+
+/**
+ * After the user approves `pending.id` through the usual pipeline, `respond` encodes the UR answer;
+ * the host animates `qrFrames` until the counterpart has every part.
+ */
+export async function qrAnswerFrames(
+  signer: PhoneQrSigner,
+  requestId: string,
+): Promise<() => string> {
+  const payload = await signer.respond(requestId);
+  return qrFrames(payload);
+}
+
+/** Show the account export QR: what it discloses belongs in the prompt. */
+export async function exportForWatch(
+  signer: PhoneQrSigner,
+  account: { walletId: string; groupIndex: number },
+  verify: { kind: "password"; password: string },
+): Promise<{ frames: () => string; discloses: QrExport["discloses"] }> {
+  const out = await signer.exportAccount({
+    account,
+    form: "crypto-multi-accounts",
+    families: ["evm", "solana", "tron"],
+    verify,
+  });
+  return { frames: qrFrames(out.payload), discloses: out.discloses };
+}
+
+/**
+ * A QR sign-in request's `risk` carries the `qr-sign-in-unverified` danger — `approve` refuses it
+ * until `acknowledged` names exactly the findings and checks the request carries.
+ */
+export async function qrSignApproval(
+  engine: WalletEngine,
+  pending: PendingRequest,
+  verify: { kind: "password"; password: string },
+): Promise<void> {
+  await engine.requests.approve(pending.id, "evm-sign", {
+    verify,
+    acknowledged: requiredAcknowledgement(pending),
+  });
+}
+
+/**
+ * `inspectQrRequest` decodes the frame without a wallet: `displays` lists one `QrDisplay` per
+ * network encoding — a coin-type `1'` PSBT yields a `tb1…` (testnet/signet) and a `bcrt1…`
+ * (regtest) display, labelled — and throws `network-ambiguous` on mixed or missing coin types.
+ */
+export function inspectDisplays(payload: QrPayload): QrInspection["displays"] {
+  return inspectQrRequest(readQrRequest(payload)).displays;
+}
+```
+
+## 34. Own-key Bitcoin outputs and prompt safety
+
+An own-key PSBT output is hidden as change only when the wallet can discover it: this group's key
+on the change chain at `i ≤ max(0, highest proven change index among the signed inputs of the same
+purpose) + BITCOIN_GAP_LIMIT` (20 — the BIP-44 address gap limit), with a script type at least one
+signed input shares. Every other own-key output is _shown_: `decodeBitcoinPsbt(request, own)` now
+takes a `BitcoinOwn` (`{ change, unusual }` — script hex sets/maps, `EMPTY_BITCOIN_OWN` when there
+is none) and reports such an output as a verified outflow whose `AssetFlow.ownPath` carries the
+`m/…` path text, plus an `unusual-own-output` `IntentWarning` (message = path) that the engine
+surfaces as the `bitcoin-unusual-output` warning finding. The engine's own change selection obeys
+the same rule: change goes on the spending template's own change chain — sends from `btc.bip44` /
+`btc.bip49` no longer migrate change to native segwit — at `min(first unused index, bound)`, where
+`bound = max(0, highest proven same-purpose change index among the selected inputs) +
+BITCOIN_GAP_LIMIT`; an index past the bound reuses index `bound` rather than hiding funds.
+
+Two cross-cutting hardenings land with it. Kernel prompts render every warning/danger row first
+and detail rows after: a bounded prompt drops only detail rows (with a "N more lines" tail), and
+when the warning rows alone do not fit the dialog the request is `unsupported` even with blind
+signing on — a bound can no longer truncate a warning out of view. And the React Native session
+policy gains a 15-minute idle lock counted on presence-bearing methods only (`idle:
+{ ms: 15 * 60_000, activity: "presence" }`): trading or background traffic cannot hold the vault
+open — the 24 h `maxSessionMs` is unchanged.
+
+[`tests/migration/own-outputs.ts`](tests/migration/own-outputs.ts):
+
+```ts
+import type { AssetFlow, IntentWarning } from "@qntx/wallet-chains";
+/**
+ * Own-key Bitcoin outputs (section 33): `decodeBitcoinPsbt` takes a `BitcoinOwn` — the script hexes
+ * of the group's own outputs split into discoverable `change` and `unusual` — and reports an
+ * unusual own output as a verified outflow with `AssetFlow.ownPath` plus an `unusual-own-output`
+ * `IntentWarning`, which the engine surfaces as `bitcoin-unusual-output`. `BITCOIN_GAP_LIMIT` (20)
+ * bounds what counts as discoverable change. Compiled only.
+ */
+import { EMPTY_BITCOIN_OWN } from "@qntx/wallet-chains/bitcoin";
+import type { BitcoinOwn } from "@qntx/wallet-chains/bitcoin";
+
+/** Build the `own` argument: script hexes that are change, and unusual ones with their paths. */
+export function ownOutputs(
+  change: ReadonlySet<string>,
+  unusual: ReadonlyMap<string, string>,
+): BitcoinOwn {
+  return { change, unusual };
+}
+
+/** No own-key outputs in the PSBT — the same decode as before. */
+export function noOwnOutputs(): BitcoinOwn {
+  return EMPTY_BITCOIN_OWN;
+}
+
+/** An unusual own output is a shown outflow with `ownPath`, never hidden change. */
+export function unusualRow(flow: AssetFlow): string {
+  return flow.ownPath === undefined ? "counterparty output" : `own output at ${flow.ownPath}`;
+}
+
+/** Map the warning to UX: the funds arrive but the wallet may not display them. */
+export function unusualWarning(warning: IntentWarning): string | undefined {
+  return warning.kind === "unusual-own-output" ? warning.message : undefined;
+}
+
+/** The bound the kernel hides change under, and the decoder's new two-argument shape. */
+export { BITCOIN_GAP_LIMIT, decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 ```

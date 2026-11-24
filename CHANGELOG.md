@@ -15,7 +15,9 @@ store cannot replay an old vault. The kernel signs what it can describe and refu
 cannot show unless the owner allows blind signing, broadcasts whose outcome is unknown are never
 failed, and the cloud-backup password is stretched with Argon2id. Hardware signers join software
 wallets — the Keystone 3 Pro pairs and signs over QR while `WalletInfo` becomes a `custody`
-union — and the engine gains an approvals inventory with revocation, an NFT inventory with
+union — the wallet gains a QR signer mode that answers a watch-only counterpart's animated UR
+requests through the ordinary approval pipeline — and the engine gains an approvals inventory
+with revocation, an NFT inventory with
 transfer requests, push notifications through the gateway, iCloud and Google Drive backup
 transports with versioned backup files, and a Fiat24 app on Arbitrum One. React Native gains a
 silent `device` factor and an optional app lock. TRON joins EVM, Solana and Bitcoin as a fourth
@@ -108,6 +110,19 @@ Signing and requests:
   verify; `SafeTransaction.refund` is `{ receiver?, gasPrice, amount }` (`gasToken` /
   `refundReceiver` are removed) and `SignInParse` `malformed` carries `claims`. (MIGRATION §13,
   §15, §18)
+- `@qntx/wallet-chains/bitcoin`: `decodeBitcoinPsbt` takes a `BitcoinOwn` (`{ change, unusual }`)
+  as its second argument — an own-key output is hidden as change only when the wallet can
+  discover it (the group's `/1/i` key, a script type a signed input shares, `i` within
+  `BITCOIN_GAP_LIMIT` of the highest proven same-purpose change index); every other own-key
+  output is a verified outflow whose `AssetFlow.ownPath` carries its `m/…` path, plus an
+  `unusual-own-output` `IntentWarning` surfaced to the user as the `bitcoin-unusual-output`
+  warning finding. The engine's own change selection obeys the same rule: change lands on the
+  spending template's own chain at `min(first unused, bound)` — `btc.bip44`/`btc.bip49` sends no
+  longer migrate change to native segwit. (MIGRATION §34)
+- Kernel prompts render every warning row before the detail rows, and a bounded prompt drops only
+  detail rows — a request whose warnings alone cannot fit the dialog is `unsupported` even with
+  blind signing on. `@qntx/wallet-native` locks the session after 15 idle minutes counted on
+  presence-bearing methods only. (MIGRATION §34)
 
 Transactions:
 
@@ -165,7 +180,7 @@ Engine options, facades and the in-app browser:
   removed). `engine.bridges.quote` requires `maxFeeBps`. (MIGRATION §2, §13)
 - `@qntx/wallet-engine`: `TransactionController`'s `Options.chains` is required — the controller
   signs through the injected apis so an external-custody request routes to its signer; what was a
-  test seam defaulting to `chains(wallet)` is a constructor requirement. (MIGRATION §31)
+  test seam defaulting to `chains(wallet)` is a constructor requirement. (MIGRATION §32)
 - `@qntx/wallet-engine`: `RequestEndedError`'s constructor takes a third `signed` argument; read
   `error.signed` to tell whether anything may have been broadcast. `EvmSignInput.nonce` pins the
   nonce of an app's `evm.transaction` (`NonceConflictError` at `prepare`). (MIGRATION §29)
@@ -187,17 +202,24 @@ Session keys, apps and native factors:
 
 - `@qntx/wallet/sessions`: a `hyperliquid-l1-agent` session is approved and metered.
   `sessions.create` takes the scheme's `limits` (`HyperliquidAgentLimits` — a notional budget, a
-  `maxLeverage` cap and an asset allow-list of ids 0..99999) and a `verify` factor, and the new
-  `sessions.open(address, verify)` re-approves it after every lock; `sessions.sign` on an
-  unopened session answers `approval-required`, an order outside the approved bounds
-  `limit-exceeded`, and create, open and sign all answer `app-lock-required` while a React Native
-  vault still holds its `device` factor (app lock off). `SessionInfo` gains `limits` and `spent`.
-  (MIGRATION §31)
+  `maxLeverage` cap and per-asset `{ asset, size }` caps over ids 0..99999 that buys and sells
+  both charge) and a `verify` factor, and the new `sessions.open(address, verify)` re-approves it
+  after every lock; `sessions.sign` on an unopened session answers `approval-required`, an order
+  outside the approved bounds `limit-exceeded`, and create, open and sign all answer
+  `app-lock-required` while a React Native vault still holds its `device` factor (app lock off).
+  `SessionInfo` gains `limits` and `spent` (the scheme's `HyperliquidAgentSpent` as opaque
+  `ProtocolValue` — no `SESSION_SPENT` grammar). The signable actions are an explicit allow-list —
+  `scheduleCancel` is not among it — at most two live metered sessions may exist per owner and
+  scope (`conflict`), and an approval text that cannot fit the platform dialog is `invalid-input`.
+  On iOS create/open confirm the limits with a kernel-chosen 4-digit code on the secure-input hub
+  before the factor ceremony — the new `SecureInputKind` `"session-approval"`, `cancelled` on a
+  wrong code, `unsupported` on a host without a secure-input surface. (MIGRATION §31)
 - `@qntx/wallet-engine/apps/hyperliquid`: `enable` and `renew` take `{ limits, verify }`
   (`HyperliquidEnableInput`), and `provider.reopen(group, verify)` re-opens the agent session in
   the kernel. `HyperliquidErrorCategory` gains `reopen-required`, `app-lock-required` and
   `limit-exceeded`. `trade.twap` and `actions.twap` are removed — a TWAP's slices carry no price
-  the kernel can meter (`trade.twapCancel` stays). (MIGRATION §13, §31)
+  the kernel can meter (`trade.twapCancel` stays) — and `trade.scheduleCancel` /
+  `actions.scheduleCancel` are removed with the kernel's allow-list. (MIGRATION §13, §31)
 - `@qntx/wallet`: `BackupFactorInput`'s password arm is `{ kind: "password"; password?: string }`
   — on React Native the kernel collects the entry through `SecureInput` and a `password` field is
   `unsupported`; on Web and Node it stays required. (MIGRATION §8, §30)
@@ -1191,13 +1213,37 @@ Gateway (operators):
   task, a hardware request a device operation — and the typed refusals (`unsupported` for
   sessions/Spark/Nostr, `invalid-input` for a Fiat24 session grant) land before any activity
   publishes. `SignersController`, `SignerActivity`, `SignerFamily` and `SignersState` are
-  exported. (MIGRATION §31)
+  exported. (MIGRATION §32)
 - `@qntx/wallet-engine`: the account tree knows external custody. Wallet entries carry
   `custody` and `state` — an `incomplete` card wallet (still waiting on a member card) holds no
   groups and no addresses: `nextReceiveAddress` and sends on it throw until it is `ready`.
   `AccountGroup.signer` marks a family only the signer can answer as `device-required` — neither
   used nor an error in discovery, and a group whose every chain family waits on the signer ends
-  the scan. (MIGRATION §31)
+  the scan. (MIGRATION §32)
+- `@qntx/wallet`: `chain.exportAccount` / `chains(wallet).exportAccount` — the selected account's
+  public keys (the EVM account node with its chain code, per-family leaf keys, the Bitcoin
+  account xpub), behind user verification, from derived (vault) or pinned (hardware) material.
+- `@qntx/wallet-engine`: `RequestOrigin` gains `{ kind: "qr", declared? }` — a request that
+  entered through a scanned UR frame, attributed to the counterpart's self-declared label
+  (display-only, untrusted). Every switch on `RequestOrigin["kind"]` must name it. (MIGRATION §33)
+- `@qntx/wallet-engine`: `EngineOptions.devices` (`DeviceTransport`) — called once per signature
+  for a hardware-custody account, whatever the request's origin; the host aborts through the
+  io's `signal`. Absent, hardware wallets cannot sign (`device-required`). (MIGRATION §33)
+- `@qntx/wallet-engine/qr`: QR signer mode — `createQrScanner` folds scanned UR frames into a
+  payload, `readQrRequest` decodes and re-checks it, `inspectQrRequest` decodes without binding,
+  `qrSigner({ engine, wallet }).prepare` binds it (per-family network binding, account match,
+  refuse-list) into an ordinary engine request (`prepare` → approve → `respond`) and `exportAccount`
+  produces the pairing QR (`crypto-hdkey`, `crypto-account`, `crypto-multi-accounts`) with a
+  `discloses` list for the prompt, `qrFrames` animates the answer. A scanned SIWE sign-in is the
+  `qr-sign-in-unverified` `danger` finding — `approve` needs it acknowledged. `inspectQrRequest`
+  reports `displays`, one `QrDisplay` per network encoding a frame can mean (a coin-type `1'` PSBT
+  yields `tb1…` testnet/signet and `bcrt1…` regtest displays; mixed or missing coin types are
+  `network-ambiguous`), and `shownBy` is set only where a device display has a primary source.
+  The export prompt is rendered from the requested nodes — one row per key the QR discloses.
+  The counterpart side:
+  `readQrExport`, `qrSignRequest`, `readQrSignature` and the `QrLink`/`QrSignInput`/
+  `QrSentRequest`/`QrSignature` types. `WatchAccount.qr` persists a phone link on a watch-only
+  account so a Web session can sign through it without holding keys. (MIGRATION §33)
 
 ### Changed
 
@@ -1381,6 +1427,11 @@ Gateway (operators):
   an upgrade never discards persisted user data from the first production release on. Fenced
   TypeScript blocks in README.md, MIGRATION.md and every package/app README compile under
   `bun run typecheck`.
+- `@qntx/ur` is pinned at 4.0.0 across the workspace; the kernel's Keystone driver encodes and
+  decodes through it — the hand-written CBOR and firmware-3.2.2 registry copies are gone.
+- `@qntx/wallet-engine`: `BitcoinPsbtInput.sign[].template` accepts all four account templates —
+  a QR counterpart may name `btc.bip44`/`btc.bip49` where a dApp only uses `btc.bip84`/`btc.bip86`.
+  Hosts switching on the template need the new members. (MIGRATION §33)
 
 ### Fixed
 
@@ -1605,6 +1656,9 @@ Gateway (operators):
   gets Simplified-Chinese verification prompts — the tag parses as BCP-47 (an explicit script
   maps Hans to zh-Hans and anything else to English; without one, TW/HK/MO map to English, else
   zh-Hans).
+- `@qntx/wallet`: pinned hardware-wallet material bytes are copied out of kernel replies — a
+  reply transfer detached the stored pin buffers, so a later answer (a QR account export) read
+  empty or invalid keys.
 
 ### Security
 

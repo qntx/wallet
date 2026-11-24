@@ -7,6 +7,8 @@
 import { AllMidsParameters } from '@nktkas/hyperliquid/api/info';
 import { AllMidsResponse } from '@nktkas/hyperliquid/api/info';
 import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
+import { BitcoinOwn } from '@qntx/wallet-chains/bitcoin';
+import { BitcoinTemplate } from '@qntx/wallet-chains';
 import { CandleParameters } from '@nktkas/hyperliquid/api/subscription';
 import { CandleSnapshotParameters } from '@nktkas/hyperliquid/api/info';
 import { CandleSnapshotResponse } from '@nktkas/hyperliquid/api/info';
@@ -362,7 +364,7 @@ type BitcoinAccount = {
 type BitcoinDisplay = {
     readonly kind: "bitcoin.sign";
     readonly message?: MessageContent;
-    readonly psbts?: ReadonlyArray<DisplayIntent>;
+    readonly psbts?: ReadonlyArray<DisplayIntent$1>;
     readonly send?: boolean;
 };
 
@@ -378,7 +380,7 @@ type BitcoinPsbtInput = {
     readonly sign: ReadonlyArray<{
         readonly index: number;
         readonly sigHash: BitcoinSigHash;
-        readonly template: BitcoinAccount["template"];
+        readonly template: BitcoinTemplate;
     }>;
 };
 
@@ -397,7 +399,7 @@ type BitcoinSignInput = {
     };
 } | {
     readonly method: "bitcoin-sign";
-    readonly origin: DappOrigin;
+    readonly origin: DappOrigin | QrOrigin;
     readonly account: BitcoinGroup;
     readonly network: string;
     readonly request: {
@@ -640,7 +642,7 @@ type DelegationStatus = {
 };
 
 // @public (undocumented)
-type DisplayIntent = ReturnType<typeof decodeEvm>;
+type DisplayIntent$1 = ReturnType<typeof decodeEvm>;
 
 // @public
 type EngineCollection = {
@@ -695,7 +697,7 @@ type EvmRevokeTarget = {
 // @public
 type EvmSignInput = {
     readonly method: "evm-sign";
-    readonly origin?: DappOrigin;
+    readonly origin?: DappOrigin | QrOrigin;
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;
@@ -1099,7 +1101,6 @@ export type HyperliquidTrade = {
         readonly cloid: string;
     }>) => Promise<ReadonlyArray<HyperliquidCancelOutcome>>;
     readonly cancelAll: (group: HyperliquidGroup) => Promise<ReadonlyArray<HyperliquidCancelOutcome>>;
-    readonly scheduleCancel: (group: HyperliquidGroup, time?: number) => Promise<HyperliquidActionOutcome>;
     readonly twapCancel: (group: HyperliquidGroup, params: {
         readonly coin: string;
         readonly twapId: number;
@@ -1363,7 +1364,7 @@ type PendingRequest = {
     readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount | BitcoinAccount | BitcoinGroup;
     readonly network: string;
     readonly stage: RequestStage;
-    readonly display: DisplayIntent | SparkDisplay | NostrDisplay | LightningInvoiceDisplay | TokenWatchDisplay | SolanaDisplay | BitcoinDisplay;
+    readonly display: DisplayIntent$1 | SparkDisplay | NostrDisplay | LightningInvoiceDisplay | TokenWatchDisplay | SolanaDisplay | BitcoinDisplay;
     readonly verification: "verified" | "unverifiable";
     readonly checks: ReadonlyArray<RequestCheckCode>;
     readonly risk: ReadonlyArray<RiskFinding>;
@@ -1432,12 +1433,12 @@ type PreparedBitcoinPsbt = {
     readonly request: Extract<SignRequest, {
         kind: "bitcoin.psbt";
     }>;
-    readonly ownScripts: ReadonlySet<string>;
+    readonly own: BitcoinOwn;
     readonly inputs: ReadonlyArray<{
         readonly index: number;
         readonly value: number;
         readonly sigHash: BitcoinSigHash;
-        readonly template: BitcoinAccount["template"];
+        readonly template: BitcoinTemplate;
         readonly frozen: boolean;
     }>;
 };
@@ -1449,12 +1450,18 @@ type PreparedMessage = Omit<PreparedRequest, "submit" | "txId"> & {
 };
 
 // @public
+type PreparedQrSign = Omit<PreparedRequest, "submit" | "txId"> & {
+    readonly signer: string;
+    readonly submit: (verify: SendParams["verify"], commit: () => void) => Promise<SignedTransactionResult>;
+};
+
+// @public
 type PreparedRequest = {
     readonly txId: string;
     readonly account: AccountRef;
     readonly network: string;
     readonly target?: string;
-    readonly intent: DisplayIntent;
+    readonly intent: DisplayIntent$1;
     readonly signer?: string;
     readonly checks: ReadonlyArray<RequestCheckCode>;
     readonly risk?: ReadonlyArray<RiskFinding>;
@@ -1489,6 +1496,12 @@ type PublicStore = {
     readonly put: (key: string, bytes: Uint8Array) => Promise<void>;
 };
 
+// @public
+type QrOrigin = {
+    readonly kind: "qr";
+    readonly declared?: string;
+};
+
 export { RecentTradesResponse }
 
 // @public
@@ -1507,7 +1520,7 @@ class RequestController extends Controller<RequestControllerState> {
     // (undocumented)
     approve(id: string, method: "pay" | "zap" | "spark-exit", options?: ApproveOptions): Promise<SparkResult>;
     // (undocumented)
-    approve(id: string, method: "evm-sign" | "tron-sign", options?: ApproveOptions): Promise<TrackedTransaction | SignatureResult>;
+    approve(id: string, method: "evm-sign" | "tron-sign", options?: ApproveOptions): Promise<TrackedTransaction | SignatureResult | SignedTransactionResult>;
     // (undocumented)
     approve(id: string, method: "nostr-sign", options?: ApproveOptions): Promise<NostrSignResult>;
     // (undocumented)
@@ -1584,17 +1597,17 @@ type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign" | "tron-sig
 // @public (undocumented)
 type RequestOrigin = {
     readonly kind: "internal";
-} | AppOrigin | DappOrigin;
+} | AppOrigin | DappOrigin | QrOrigin;
 
 // @public
-type RequestResult = TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult | TokenWatchResult | SolanaSignResult | BitcoinSignResult;
+type RequestResult = TrackedTransaction | SparkResult | SignatureResult | SignedTransactionResult | NostrSignResult | WeblnInvoiceResult | TokenWatchResult | SolanaSignResult | BitcoinSignResult;
 
 // @public
 type RequestStage = "awaiting-approval" | "signing" | "signed" | "submitted" | "rejected" | "failed" | "expired" | "invalidated";
 
 // @public
 type RiskFinding = {
-    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-account-move" | "fiat24-account-burn";
+    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "bitcoin-unusual-output" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-account-move" | "fiat24-account-burn" | "qr-sign-in-unverified";
     readonly level: "warning" | "danger";
 };
 
@@ -1621,6 +1634,15 @@ type SetTimer = (ms: number, fn: () => unknown) => () => void;
 // @public (undocumented)
 type SignatureResult = {
     readonly kind: "evm.personal-message" | "evm.fiat24-session" | "evm.typed-data" | "tron.message" | "tron.typed-data";
+    readonly signature: Uint8Array;
+};
+
+// @public
+type SignedTransactionResult = {
+    readonly kind: "evm.signed-transaction";
+    readonly signedTransaction: Uint8Array;
+} | {
+    readonly kind: "tron.signed-transaction";
     readonly signature: Uint8Array;
 };
 
@@ -1689,7 +1711,7 @@ type SolanaDisplay = {
     readonly kind: "solana.sign";
     readonly send: boolean;
     readonly count: number;
-    readonly transactions: ReadonlyArray<DisplayIntent>;
+    readonly transactions: ReadonlyArray<DisplayIntent$1>;
     readonly message?: MessageContent;
     readonly signIn?: SignInFields;
 };
@@ -1705,7 +1727,7 @@ type SolanaRpc = {
 // @public
 type SolanaSignInput = {
     readonly method: "solana-sign";
-    readonly origin: DappOrigin;
+    readonly origin: DappOrigin | QrOrigin;
     readonly account: SolanaAccount;
     readonly network: string;
     readonly request: {
@@ -2015,7 +2037,7 @@ type TrackedTransaction = {
     readonly account: string;
     readonly hash: string | undefined;
     readonly state: TxState;
-    readonly intent: DisplayIntent | undefined;
+    readonly intent: DisplayIntent$1 | undefined;
     readonly nonce: number;
     readonly block?: TxBlock | undefined;
     readonly final?: boolean | undefined;
@@ -2084,10 +2106,13 @@ class TransactionController extends Controller<TransactionControllerState> {
     prepareDapp(account: AccountRef, request: SignRequest, options?: {
         readonly nonce?: number;
     }): Promise<PreparedRequest | PreparedMessage>;
-    prepareDappTron(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
+    prepareDappTron(account: AccountRef, request: SignRequest, options?: {
+        readonly broadcast: false;
+    }): Promise<PreparedRequest | PreparedMessage | PreparedQrSign>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
         method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-revoke" | "evm-cctp" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
     }>, _requestId: string): Promise<PreparedRequest>;
+    prepareQrEvm(account: AccountRef, request: SignRequest): Promise<PreparedQrSign>;
     prepareReplacement(input: Extract<ChainRequestInput, {
         method: "speed-up" | "cancel" | "cpfp";
     }>, requestId: string): Promise<PreparedRequest>;
@@ -2118,7 +2143,7 @@ class TransactionController extends Controller<TransactionControllerState> {
         readonly groupIndex: number;
     }, network: string, outpoints: ReadonlyArray<string>, frozen: boolean): Promise<void>;
     submitDappBitcoin(network: string, walletId: string, prepared: PreparedBitcoinPsbt, result: SignResult): Promise<string>;
-    submitDappSolana(network: string, walletId: string, wire: Uint8Array, lastValidBlockHeight: bigint, intent: DisplayIntent): Promise<string>;
+    submitDappSolana(network: string, walletId: string, wire: Uint8Array, lastValidBlockHeight: bigint, intent: DisplayIntent$1): Promise<string>;
     submitDappTron(network: string, rawData: Uint8Array, signature: Uint8Array): Promise<TrackedTransaction>;
     txById(id: string): TrackedTransaction | undefined;
 }
@@ -2536,7 +2561,7 @@ type TronNodePath = keyof typeof TRON_NODE_PATHS;
 // @public
 type TronSignInput = {
     readonly method: "tron-sign";
-    readonly origin?: DappOrigin;
+    readonly origin?: DappOrigin | QrOrigin;
     readonly account: AccountRef;
     readonly network: string;
     readonly request: SignRequest;

@@ -851,7 +851,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       ),
     bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
       const { signedPsbts, txids, stopped } = await signDappPsbts(
-        chains(options.wallet),
+        signers.apis,
         prepared,
         send,
         verify,

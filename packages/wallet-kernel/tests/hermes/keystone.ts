@@ -1,54 +1,64 @@
 /**
- * Bare-Hermes smoke for the Keystone registry lane: encodes an eth-sign-request through `@qntx/ur`
- * and decodes a vendor `crypto-multi-accounts` answer from the vectors — no globals beyond ES
- * builtins, so this proves dcbor + the interop codecs run in the enclave runtime.
+ * Bare-Hermes smoke for the Keystone UR decode edge: bundled to a single classic script and run on
+ * the `hermes` CLI. No global shims at all — `print`/`quit` are the only host functions — so this
+ * proves the `@qntx/ur` typed layer (its module-load `TextDecoder` included) and dcbor run under
+ * the enclave global allow-list. The sync answer is the recorded firmware capture, decoded through
+ * `parseSync` exactly as the pairing exchange does.
  */
+import { hexToBytes } from "@noble/hashes/utils.js";
 
-import { hexToBytes, bytesToHex } from "@noble/hashes/utils.js";
+import { ethSignatureCodec } from "@qntx/ur/interop";
 
-import signVectors from "../../../../vectors/keystone/sign.json" with { type: "json" };
 import syncVectors from "../../../../vectors/keystone/sync.json" with { type: "json" };
-import { ethSignRequest, multiAccounts } from "../../src/modules/signers/keystone/registry.ts";
+import { KernelError } from "../../src/errors.ts";
+import { parseSync } from "../../src/modules/signers/keystone/sync.ts";
+import { decodeUr, encodeUr } from "../../src/modules/signers/keystone/ur.ts";
 
-declare function print(msg: string): void;
-declare function quit(code: number): never;
+declare function print(s: string): void;
+declare function quit(code: number): void;
 
-const HARDENED = 0x80000000;
-const path = (rendered: string): number[] =>
-  rendered
-    .replace(/^m\//, "")
-    .split("/")
-    .map((segment) => Number(segment.replace(/'$/, "")) + (segment.endsWith("'") ? HARDENED : 0));
+let checks = 0;
+const check = (ok: boolean, name: string): void => {
+  if (!ok) {
+    throw new Error(name);
+  }
+  checks += 1;
+};
 
-const ethCase = signVectors.cases.find((caze) => caze.name === "eth-legacy-transaction");
-if (ethCase === undefined || ethCase.path === undefined || ethCase.chainId === undefined) {
-  print("no eth case in vectors");
-  quit(1);
-}
-const cbor = ethSignRequest({
-  requestId: hexToBytes(signVectors.requestId),
-  signData: hexToBytes(signVectors.signData),
-  dataType: 1,
-  chainId: ethCase.chainId,
-  path: path(ethCase.path),
-  fingerprint: hexToBytes(signVectors.fingerprint),
-  origin: "qntx",
-});
-if (bytesToHex(cbor) !== ethCase.cbor) {
-  print("eth-sign-request bytes differ");
-  quit(1);
-}
+// oxlint-disable-next-line unicorn/prefer-top-level-await -- top-level await cannot appear in the iife classic-script bundle Hermes runs
+void (async (): Promise<void> => {
+  try {
+    const sync = parseSync({
+      kind: "qr",
+      ur: { type: "crypto-multi-accounts", cbor: hexToBytes(syncVectors.sync.cbor) },
+    });
+    check(sync.nodes.length === 6, "sync pins six secp256k1 nodes");
+    check(sync.ed25519.length === 2, "sync pins two ed25519 leaves");
 
-const accounts = multiAccounts(hexToBytes(syncVectors.sync.cbor));
-const [first] = accounts.keys;
-if (
-  accounts.masterFingerprint !== Number(`0x${syncVectors.sync.masterFingerprint}`) ||
-  first === undefined ||
-  first.curve !== "secp256k1" ||
-  first.key.keyData.length !== 33
-) {
-  print("crypto-multi-accounts decode failed");
-  quit(1);
-}
+    // The signature decode edge sign.ts runs: an eth-signature round-trips through the codec.
+    const requestId = new Uint8Array(16).fill(7);
+    const signature = new Uint8Array(65).fill(3);
+    const cbor = encodeUr({ requestId, signature }, ethSignatureCodec);
+    const answer = decodeUr("eth-signature", cbor, ethSignatureCodec);
+    check(answer.signature.length === 65, "eth-signature round-trips");
 
-print("HERMES_KEYSTONE_OK");
+    // A hostile answer ends in the typed KernelError, never an untyped throw.
+    let hostile: unknown;
+    try {
+      decodeUr("eth-signature", hexToBytes("a101"), ethSignatureCodec);
+    } catch (error) {
+      hostile = error;
+    }
+    check(
+      hostile instanceof KernelError && hostile.code === "integrity",
+      "malformed answer is integrity",
+    );
+    await Promise.resolve();
+    print(`HERMES_KEYSTONE_OK (${checks} checks)`);
+  } catch (error) {
+    print(
+      `HERMES_KEYSTONE_FAIL: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+    );
+    quit(1);
+  }
+})();

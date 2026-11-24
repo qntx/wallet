@@ -4,11 +4,12 @@ import { Address, OutScript, Transaction } from "@scure/btc-signer";
 
 import { ChainError } from "@qntx/wallet-chains";
 import {
+  BITCOIN_GAP_LIMIT,
   decodeBitcoinPsbt,
   bitcoinNetwork,
   bitcoinPubkeyFromXpub,
 } from "@qntx/wallet-chains/bitcoin";
-import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
+import type { BitcoinAccountTemplate, BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
 
 import {
   BitcoinScanStore,
@@ -72,10 +73,8 @@ type SpendContext = {
   readonly groupIndex: number;
   readonly network: string;
   readonly fp: number;
-  /** The send's next change address — the group's bip84 change chain for legacy templates. */
-  readonly changeAddr: string | undefined;
-  /** Unused addresses of the template's own change chain — the own-scripts set and bump change. */
-  readonly changeAddresses: ReadonlyArray<string>;
+  /** The template's own change chain scan — the change index is picked after selection. */
+  readonly changeChain: ReadonlyArray<ScanAddress>;
   /** The scan's account outputs — confirmed, or the wallet's own unconfirmed change. */
   readonly candidates: ReadonlyArray<BtcUtxo>;
   /** `candidates` minus user-frozen and inscription-protected outpoints — the automatic picks. */
@@ -314,28 +313,12 @@ const accountContext = async (
   );
   const byAddr = new Map(addresses.map((a) => [a.address, a]));
   const base = accountPath(path);
-  // bip49/bip44 are spend-only — a send's change goes on the group's bip84 chain.
-  let changeChain = change;
-  if (template === "btc.bip49" || template === "btc.bip44") {
-    const acct84 = await apis.account({
-      walletId: account.walletId,
-      groupIndex: account.groupIndex,
-      template: "btc.bip84",
-      network,
-    });
-    const xpub84 = "xpub" in acct84 ? acct84.xpub : undefined;
-    if (xpub84 === undefined) {
-      throw new Error("no bip84 account for the legacy-template change chain");
-    }
-    changeChain = await scanChain(es, xpub84, "btc.bip84", network, net.params, 1);
-  }
   return {
     template,
     groupIndex: account.groupIndex,
     network,
     fp,
-    changeAddr: changeChain.find((a) => !a.used)?.address,
-    changeAddresses: changeChain.filter((a) => !a.used).map((a) => a.address),
+    changeChain: change,
     candidates: utxos,
     spendable: selectableUtxos(utxos, net.params, frozen),
     pathOf: (u) => {
@@ -351,6 +334,75 @@ const accountContext = async (
     },
     scriptOf: (u) => scriptPubKey(u.address, net.params),
   };
+};
+
+/** The `change`/`index` tail of an account path — `undefined` when the path is not a leaf. */
+const pathTail = (path: ReadonlyArray<number>): BitcoinPathTail | undefined => {
+  if (path.length !== 5) {
+    return undefined;
+  }
+  const [purpose, change, index] = [path[0], path[3], path[4]];
+  return purpose !== undefined && change !== undefined && index !== undefined
+    ? { purpose, change, index }
+    : undefined;
+};
+
+/**
+ * The change address of a build, chosen after the inputs are known: `c` the first unused index on
+ * the template's own change chain — or, when `c` already lies past the bound the kernel's
+ * discoverability rule allows (the highest proven change index among the selected inputs plus the
+ * gap limit), the bound itself: a deliberate address reuse that keeps the change inside the window
+ * the wallet scans. `tails` come from the build's own inputs — all one template's, so all one
+ * purpose.
+ */
+export const changeAddressOf = (
+  changeChain: ReadonlyArray<ScanAddress>,
+  tails: ReadonlyArray<BitcoinPathTail>,
+): ScanAddress => {
+  let highest = -1;
+  for (const t of tails) {
+    if (t.change === 1 && t.index > highest) {
+      highest = t.index;
+    }
+  }
+  const bound = Math.max(0, highest) + BITCOIN_GAP_LIMIT;
+  const firstUnused = changeChain.find((a) => !a.used);
+  const index = firstUnused !== undefined && firstUnused.index <= bound ? firstUnused.index : bound;
+  const found = changeChain.find((a) => a.index === index);
+  if (found === undefined) {
+    throw new Error("no change address inside the gap window");
+  }
+  return found;
+};
+
+/**
+ * Bind the change output's derivation so the kernel verifies it as this account's and classifies it
+ * by the same rule the index pick already satisfies — a no-op when the address does not resolve on
+ * this account's chains.
+ */
+const bindChange = (psbt: Uint8Array, built: SpendContext, address: string): Uint8Array => {
+  const path = built.pathOf({ address });
+  if (path.length !== 5) {
+    return psbt;
+  }
+  const tx = Transaction.fromPSBT(psbt);
+  const script = hex.encode(built.scriptOf({ address }));
+  const pub = built.pubkeyOf({ address });
+  for (let i = 0; i < tx.outputsLength; i++) {
+    const output = tx.getOutput(i);
+    if (output.script === undefined || hex.encode(output.script) !== script) {
+      continue;
+    }
+    tx.updateOutput(
+      i,
+      built.template === "btc.bip86"
+        ? {
+            tapBip32Derivation: [[pub, { hashes: [], der: { fingerprint: built.fp, path } }]],
+          }
+        : { bip32Derivation: [[pub, { fingerprint: built.fp, path }]] },
+    );
+  }
+  return tx.toPSBT(0);
 };
 
 /** A confirmed transaction is final once this many blocks sit on top of its own. */
@@ -615,8 +667,8 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       template,
       template === "btc.bip44" ? rawTxOf : undefined,
     );
-    const { changeAddr } = built;
-    if (changeAddr === undefined) {
+    const firstUnused = built.changeChain.find((a) => !a.used);
+    if (firstUnused === undefined) {
       throw new Error("no unused change address");
     }
     const quotes = await feeTiers(es);
@@ -649,17 +701,34 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       }
     }
     // Selection and reservation run with no await between them, so concurrent prepares cannot
-    // pick the same output.
+    // pick the same output. Coin selection sees the change script type, not its index, so a probe
+    // build on the first unused change address fixes the input set; the change index is then
+    // picked inside the window the wallet can discover and the psbt rebuilt only if it moved.
     const free = inputs.filter((i) => !isHeld(`${String(i.txid ?? "")}:${String(i.index ?? 0)}`));
-    const { psbt: unsigned, inputs: selected } = bitcoin.buildPsbt(
+    const utxoPolicy = named === undefined ? "default" : "all";
+    const probe = bitcoin.buildPsbt(
       free,
       to,
       amount,
       BigInt(rate),
-      changeAddr,
+      firstUnused.address,
       net.params,
-      named === undefined ? "default" : "all",
+      utxoPolicy,
     );
+    const probeKeys = new Set(
+      probe.inputs.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
+    );
+    const tails = source
+      .filter((u) => probeKeys.has(`${u.txid}:${u.vout}`))
+      .flatMap((u) => {
+        const tail = pathTail(built.pathOf(u));
+        return tail === undefined ? [] : [tail];
+      });
+    const chosen = changeAddressOf(built.changeChain, tails);
+    const { psbt: unsigned, inputs: selected } =
+      chosen.index === firstUnused.index
+        ? probe
+        : bitcoin.buildPsbt(free, to, amount, BigInt(rate), chosen.address, net.params, utxoPolicy);
     const selectedKeys = new Set(
       selected.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
     );
@@ -695,10 +764,12 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         throw error;
       }
     }
+    psbt = bindChange(psbt, built, chosen.address);
     const txP = Transaction.fromPSBT(psbt);
-    const ownScripts = new Set(
-      built.changeAddresses.map((a) => hex.encode(scriptPubKey(a, net.params))),
-    );
+    const own = {
+      change: new Set([hex.encode(scriptPubKey(chosen.address, net.params))]),
+      unusual: new Map<string, string>(),
+    };
     const request = {
       kind: "bitcoin.psbt" as const,
       network,
@@ -710,7 +781,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       psbt,
       sign: Array.from({ length: txP.inputsLength }, (_, i) => ({ index: i, template })),
     };
-    const intent = decodeBitcoinPsbt(request, ownScripts);
+    const intent = decodeBitcoinPsbt(request, own);
     const outValues = Array.from({ length: txP.outputsLength }, (_, i) => {
       const o = txP.getOutput(i);
       const scriptHex =
@@ -720,7 +791,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       return { address, value: Number(o.amount ?? 0n), own: false };
     });
     for (const o of outValues) {
-      if (o.address !== "" && ownScripts.has(hex.encode(scriptPubKey(o.address, net.params)))) {
+      if (o.address === chosen.address) {
         (o as { own: boolean }).own = true;
       }
     }
@@ -851,12 +922,16 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         template: built.template,
       })),
     };
-    const ownScripts = new Set(
-      built.changeAddresses.map((a) =>
-        hex.encode(scriptPubKey(a, bitcoinNetwork(built.network).params)),
+    const net = bitcoinNetwork(built.network);
+    const own = {
+      change: new Set(
+        record.outputs
+          .filter((o) => o.own)
+          .map((o) => hex.encode(scriptPubKey(o.address, net.params))),
       ),
-    );
-    const intent = decodeBitcoinPsbt(request, ownScripts);
+      unusual: new Map<string, string>(),
+    };
+    const intent = decodeBitcoinPsbt(request, own);
     const txId = newId(ctx.options.random);
     for (const key of held) {
       reserved.set(key, requestId);
@@ -987,11 +1062,17 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       );
       return Math.max(btc.fee + vsize, Math.ceil(vsize * rate));
     };
-    // The bump's change goes where the original's went, when it had an own output.
-    const changeAddr = btc.outputs.find((o) => o.own)?.address ?? built.changeAddresses[0];
-    if (changeAddr === undefined) {
-      throw new Error("no unused change address");
-    }
+    // The replacement pays its change back to the parent's own output, or — a parent with none —
+    // to a fresh pick inside the window the parent's inputs prove discoverable.
+    const changeAddr =
+      btc.outputs.find((o) => o.own)?.address ??
+      changeAddressOf(
+        built.changeChain,
+        btc.inputs.flatMap((i) => {
+          const tail = pathTail(built.pathOf(i));
+          return tail === undefined ? [] : [tail];
+        }),
+      ).address;
     const inTotal = btc.inputs.reduce((a, i) => a + i.value, 0);
     const dust = 546;
     const payee = btc.outputs
@@ -1082,7 +1163,13 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       (u) => prevRaws.get(u.txid),
     );
     const allInputs = [...oldInputs, ...extraInputs];
-    const { psbt, vsize } = bitcoin.buildExactPsbt(allInputs, outputs, net.params, btc.template);
+    const { psbt: exact, vsize } = bitcoin.buildExactPsbt(
+      allInputs,
+      outputs,
+      net.params,
+      btc.template,
+    );
+    const psbt = bindChange(exact, built, changeAddr);
     const record = {
       inputs: [
         ...btc.inputs,
@@ -1139,15 +1226,11 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }
     const es = ctx.options.networks.esplora(old.network);
     const independent = ctx.options.networks.independentEsplora(old.network);
-    // A legacy parent's own outputs sit on the group's bip84 change chain, so the child is a
-    // bip84 transaction — derived, signed and sized under that template.
-    const childTemplate =
-      btc.template === "btc.bip44" || btc.template === "btc.bip49" ? "btc.bip84" : btc.template;
     const account = {
       kind: "hd" as const,
       walletId: old.account,
       groupIndex: btc.groupIndex,
-      template: childTemplate,
+      template: btc.template,
     };
     const frozen = new Set(
       bitcoinFrozen.frozenOf(`${old.account}:${String(btc.groupIndex)}:${old.network}`),
@@ -1191,7 +1274,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }
     const parentTxid = old.hash;
     const parentRaws =
-      childTemplate === "btc.bip86"
+      btc.template === "btc.bip86"
         ? new Map<string, Uint8Array>()
         : await fetchRawTxes(es, [{ txid: parentTxid }]);
     // The child spends the parent's own unconfirmed outputs — that is what CPFP is for.
@@ -1208,31 +1291,35 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       built.pathOf,
       built.pubkeyOf,
       built.scriptOf,
-      childTemplate,
+      btc.template,
       (u) => parentRaws.get(u.txid),
     );
-    const [changeAddr] = built.changeAddresses;
-    if (changeAddr === undefined) {
-      throw new Error("no unused change address");
-    }
+    const changeAddr = changeAddressOf(
+      built.changeChain,
+      bumpable.flatMap((o) => {
+        const tail = pathTail(built.pathOf(o));
+        return tail === undefined ? [] : [tail];
+      }),
+    ).address;
     const net = bitcoinNetwork(old.network);
     const inTotal = bumpable.reduce((a, o) => a + o.value, 0);
     const probe = bitcoin.buildExactPsbt(
       childInputs,
       [{ address: changeAddr, amount: BigInt(inTotal) }],
       net.params,
-      childTemplate,
+      btc.template,
     );
     const childFee = Math.max(
       Math.ceil(targetRate * (btc.vsize + probe.vsize)) - btc.fee,
       probe.vsize,
     );
-    const { psbt, vsize } = bitcoin.buildExactPsbt(
+    const { psbt: exact, vsize } = bitcoin.buildExactPsbt(
       childInputs,
       [{ address: changeAddr, amount: BigInt(inTotal - childFee) }],
       net.params,
-      childTemplate,
+      btc.template,
     );
+    const psbt = bindChange(exact, built, changeAddr);
     const record = {
       inputs: bumpable.map((o) => ({
         txid: old.hash ?? "",
@@ -1244,7 +1331,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       vsize,
       fee: childFee,
       feeRate: Math.ceil(childFee / vsize),
-      template: childTemplate,
+      template: btc.template,
       groupIndex: btc.groupIndex,
       tier: btc.tier,
     };
@@ -1305,7 +1392,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       account: walletId,
       hash: undefined,
       state: "signed",
-      intent: decodeBitcoinPsbt(prepared.request, prepared.ownScripts),
+      intent: decodeBitcoinPsbt(prepared.request, prepared.own),
       nonce: 0,
       submittedAt: ctx.options.now(),
       error: undefined,

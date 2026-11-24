@@ -9,16 +9,18 @@ import { hex } from "@scure/base";
 import { Transaction } from "@scure/btc-signer";
 
 import { ChainError } from "@qntx/wallet-chains";
+import type { BitcoinTemplate } from "@qntx/wallet-chains";
 import {
   bitcoinAddressFromXpub,
   bitcoinNetwork,
   bitcoinPubkeyFromXpub,
+  isDiscoverableChange,
   normalizeBitcoin,
 } from "@qntx/wallet-chains/bitcoin";
+import type { BitcoinOwn, BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
 import type { ChainsApi } from "@qntx/wallet/chains";
 
 import type {
-  BitcoinAccount,
   BitcoinGroup,
   BitcoinPsbtInput,
   BitcoinSigHash,
@@ -34,8 +36,84 @@ import type { Esplora } from "./bitcoin.ts";
 const SIGHASH_ALL = 1;
 const SIGHASH_DEFAULT = 0;
 const SIGHASH_SINGLE_ANYONECANPAY = 0x83;
+const HARDENED = 0x80_00_00_00;
+
+const PURPOSE_OF: Readonly<Record<BitcoinTemplate, number>> = {
+  "btc.bip44": 44,
+  "btc.bip49": 49,
+  "btc.bip84": 84,
+  "btc.bip86": 86,
+};
 
 const invalid = (message: string): ChainError => new ChainError("invalid-request", message);
+
+/** `m/…` notation of a derivation path — hardened indices print with `'`. */
+const pathText = (path: ReadonlyArray<number>): string =>
+  `m${path.map((i) => (i >= HARDENED ? `/${i - HARDENED}'` : `/${i}`)).join("")}`;
+
+const isPath = (path: unknown): path is number[] =>
+  Array.isArray(path) && path.every((p) => typeof p === "number");
+
+/**
+ * The path tail of an output carrying a derivation entry this group verifies: the entry claims the
+ * template's fingerprint and a path of the account-leaf shape, and the output's script is the
+ * key's. Mirrors the kernel's own-output check — tap entries only for bip86, bip32 for the rest —
+ * so the engine display agrees with the kernel prompt.
+ */
+const ownOutputTail = (
+  output: {
+    readonly script?: Uint8Array;
+    readonly bip32Derivation?: ReadonlyArray<
+      readonly [Uint8Array, { readonly fingerprint: number; readonly path: unknown }]
+    >;
+    readonly tapBip32Derivation?: ReadonlyArray<
+      readonly [
+        Uint8Array,
+        {
+          readonly hashes: unknown;
+          readonly der: { readonly fingerprint: number; readonly path: unknown };
+        },
+      ]
+    >;
+  },
+  derives: ReadonlyMap<BitcoinTemplate, TemplateDerive>,
+  network: string,
+  params: Parameters<typeof scriptPubKey>[1],
+): { readonly tail: BitcoinPathTail; readonly path: ReadonlyArray<number> } | undefined => {
+  if (output.script === undefined) {
+    return undefined;
+  }
+  const scriptHex = hex.encode(output.script);
+  for (const [template, d] of derives) {
+    const path =
+      template === "btc.bip86"
+        ? output.tapBip32Derivation?.find(([, v]) => v.der.fingerprint === d.fp)?.[1].der.path
+        : output.bip32Derivation?.find(([, v]) => v.fingerprint === d.fp)?.[1].path;
+    if (!isPath(path)) {
+      continue;
+    }
+    const [purpose, coin, group, change, index] = path;
+    if (
+      path.length !== 5 ||
+      purpose !== d.base[0] ||
+      coin !== d.base[1] ||
+      group !== d.base[2] ||
+      (change !== 0 && change !== 1) ||
+      index === undefined ||
+      index < 0 ||
+      index >= HARDENED
+    ) {
+      continue;
+    }
+    const script = hex.encode(
+      scriptPubKey(bitcoinAddressFromXpub(d.xpub, template, network, change, index), params),
+    );
+    if (script === scriptHex) {
+      return { tail: { purpose: PURPOSE_OF[template], change, index }, path };
+    }
+  }
+  return undefined;
+};
 
 /**
  * The sighash the input will be signed with: a PSBT that already names one must agree with the
@@ -70,10 +148,19 @@ type TemplateDerive = {
   readonly base: ReadonlyArray<number>;
 };
 
-const DAPP_TEMPLATES: ReadonlyArray<BitcoinAccount["template"]> = ["btc.bip84", "btc.bip86"];
+/**
+ * Every template of the group a PSBT input may be under — a QR counterpart may name bip44/49/86
+ * where a dApp only requests the two dApp-facing ones.
+ */
+const PSBT_TEMPLATES: ReadonlyArray<BitcoinTemplate> = [
+  "btc.bip44",
+  "btc.bip49",
+  "btc.bip84",
+  "btc.bip86",
+];
 
 /**
- * Enriches and normalizes each dApp PSBT for `group`: a sign entry's prevout script must be a
+ * Enriches and normalizes each dApp or QR PSBT for `group`: a sign entry's prevout script must be a
  * scanned address of the template the entry names (a template with no inputs to sign contributes
  * only its fixed 0/0 address), gets that address's derivation, and agrees on the sighash. Outputs
  * to any own script get the same derivation binding.
@@ -88,14 +175,11 @@ export const prepareDappPsbts = async (
 ): Promise<ReadonlyArray<PreparedBitcoinPsbt>> => {
   const net = bitcoinNetwork(network);
   const signing = new Set(psbts.flatMap((p) => p.sign.map((s) => s.template)));
-  const derives = new Map<BitcoinAccount["template"], TemplateDerive>();
+  const derives = new Map<BitcoinTemplate, TemplateDerive>();
   // script hex → owning template and its address path tail.
-  const own = new Map<
-    string,
-    { template: BitcoinAccount["template"]; chain: 0 | 1; index: number }
-  >();
+  const own = new Map<string, { template: BitcoinTemplate; chain: 0 | 1; index: number }>();
   await Promise.all(
-    DAPP_TEMPLATES.map(async (template) => {
+    PSBT_TEMPLATES.map(async (template) => {
       const derived = await apis.account({
         walletId: group.walletId,
         groupIndex: group.groupIndex,
@@ -134,10 +218,8 @@ export const prepareDappPsbts = async (
       }
     }),
   );
-  const ownScripts = new Set(own.keys());
-
   const derivation = (
-    template: BitcoinAccount["template"],
+    template: BitcoinTemplate,
     chain: 0 | 1,
     index: number,
   ): { pubkey: Uint8Array; der: { fingerprint: number; path: number[] } } => {
@@ -163,7 +245,7 @@ export const prepareDappPsbts = async (
         index: number;
         value: number;
         sigHash: BitcoinSigHash;
-        template: BitcoinAccount["template"];
+        template: BitcoinTemplate;
         frozen: boolean;
       }> = [];
       // Validate every sign entry first; the previous transactions are then fetched in one call.
@@ -182,6 +264,7 @@ export const prepareDappPsbts = async (
         es,
         [...new Set(signed.map((s) => s.txidHex))].map((txid) => ({ txid })),
       );
+      const signedTails: BitcoinPathTail[] = [];
       for (const { index, sigHash, template, input, txidHex, vout } of signed) {
         // The dApp's witnessUtxo is advisory: the prevout comes from the chain. bip84 signing
         // also carries the raw previous transaction so the kernel proves the amount.
@@ -216,7 +299,9 @@ export const prepareDappPsbts = async (
           index,
           {
             witnessUtxo: { script: prev.script, amount: prev.amount },
-            ...(template === "btc.bip84" ? { nonWitnessUtxo: raw } : {}),
+            /* Every non-taproot template carries the raw previous transaction so the kernel can
+               prove the amount it signs for. */
+            ...(template === "btc.bip86" ? {} : { nonWitnessUtxo: raw }),
             ...(sighashType === undefined ? {} : { sighashType }),
             ...(template === "btc.bip86"
               ? { tapInternalKey: pubkey, tapBip32Derivation: [[pubkey, { hashes: [], der }]] }
@@ -231,9 +316,14 @@ export const prepareDappPsbts = async (
           template,
           frozen: frozen.has(`${txidHex}:${String(vout)}`),
         });
+        signedTails.push({
+          purpose: PURPOSE_OF[template],
+          change: spend.chain,
+          index: spend.index,
+        });
       }
-      // Outputs to the group's own scripts are bound as change: the kernel prompt and the
-      // engine display agree they are not outflows.
+      // Outputs to the group's own scripts get their derivation bound so the kernel can verify
+      // and classify them — discoverable change is hidden, the rest shown with its path.
       for (let i = 0; i < tx.outputsLength; i++) {
         const output = tx.getOutput(i);
         const bound = output.script === undefined ? undefined : own.get(hex.encode(output.script));
@@ -259,7 +349,24 @@ export const prepareDappPsbts = async (
       if (request.kind !== "bitcoin.psbt") {
         throw invalid("unexpected request kind");
       }
-      return { request, ownScripts, inputs };
+      // The same classification the kernel applies to the request's verified own outputs: only
+      // change the wallet can reach is hidden — every other own-key output is shown with its path.
+      const change = new Set<string>();
+      const unusual = new Map<string, string>();
+      for (let i = 0; i < tx.outputsLength; i++) {
+        const output = tx.getOutput(i);
+        const found = ownOutputTail(output, derives, network, net.params);
+        if (found === undefined || output.script === undefined) {
+          continue;
+        }
+        if (isDiscoverableChange(found.tail, signedTails)) {
+          change.add(hex.encode(output.script));
+        } else {
+          unusual.set(hex.encode(output.script), pathText(found.path));
+        }
+      }
+      const classified: BitcoinOwn = { change, unusual };
+      return { request, own: classified, inputs };
     }),
   );
 };

@@ -12,12 +12,12 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { cryptoMultiAccountsCodec } from "@qntx/ur/interop";
 import type { KeyPath } from "@qntx/wallet-chains";
 
-import type { PinnedEd25519, PinnedNode } from "../../../derive/pinned.ts";
-import { pathToString, fingerprintBytes, samePath } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
+import type { PinnedEd25519, PinnedNode } from "../../../derive/pinned.ts";
+import { fingerprintBytes, pathToString, samePath } from "../../../derive/pinned.ts";
 import type { DeviceLink, PairingResult } from "../driver.ts";
-import { decodeRegistry, hardwareCall } from "./registry.ts";
 import { pathOf } from "./sync.ts";
+import { decodeUr, encodeUr, qrHardwareCallCodec, requestKeypath } from "./ur.ts";
 
 const HARDENED = 0x80000000;
 const ORIGIN = "qntx";
@@ -80,48 +80,69 @@ export const derive = async (
     kind: "qr",
     show: {
       type: "qr-hardware-call",
-      cbor: hardwareCall({ ...need, fingerprint: pin.fingerprint, origin: ORIGIN }),
+      cbor: encodeUr(
+        {
+          schemas: [
+            ...need.secp256k1.map((path) => ({
+              path: requestKeypath(path, pin.fingerprint),
+              curve: "secp256k1" as const,
+            })),
+            ...need.ed25519.map((path) => ({
+              path: requestKeypath(path, pin.fingerprint),
+              curve: "ed25519" as const,
+            })),
+          ],
+          origin: ORIGIN,
+        },
+        qrHardwareCallCodec,
+      ),
     },
     scan: ["crypto-multi-accounts"],
   });
   if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") {
     integrity();
   }
-  const accounts = decodeRegistry(response.ur.cbor, cryptoMultiAccountsCodec);
+  const accounts = decodeUr("crypto-multi-accounts", response.ur.cbor, cryptoMultiAccountsCodec);
   const nodes: PinnedNode[] = [];
   const ed25519: PinnedEd25519[] = [];
   const answered: KeyPath[] = [];
-  for (const entry of accounts.keys) {
-    const { key } = entry;
-    const path = key.origin === undefined ? undefined : pathOf(key.origin);
-    const source = key.origin?.sourceFingerprint;
-    if (source !== undefined && source !== accounts.masterFingerprint) {
+  for (const key of accounts.keys) {
+    const { origin } = key.key;
+    const path = origin === undefined ? undefined : pathOf(origin);
+    if (
+      origin?.sourceFingerprint !== undefined &&
+      origin.sourceFingerprint !== accounts.masterFingerprint
+    ) {
       integrity();
     }
     if (path === undefined) {
       integrity();
     }
     if (need.secp256k1.some((wanted) => samePath(path, wanted))) {
+      if (key.curve !== "secp256k1") {
+        integrity();
+      }
+      const node = key.key;
       if (
-        entry.curve !== "secp256k1" ||
-        key.chainCode === undefined ||
-        !secp256k1.utils.isValidPublicKey(key.keyData)
+        node.chainCode === undefined ||
+        node.chainCode.length !== 32 ||
+        !secp256k1.utils.isValidPublicKey(node.keyData)
       ) {
         integrity();
       }
       nodes.push({
         path,
-        publicKey: new Uint8Array(key.keyData),
-        chainCode: new Uint8Array(key.chainCode),
-        ...(key.parentFingerprint === undefined
+        publicKey: new Uint8Array(node.keyData),
+        chainCode: new Uint8Array(node.chainCode),
+        ...(node.parentFingerprint === undefined
           ? {}
-          : { parent: fingerprintBytes(key.parentFingerprint) }),
+          : { parent: fingerprintBytes(node.parentFingerprint) }),
       });
     } else if (need.ed25519.some((wanted) => samePath(path, wanted))) {
-      if (entry.curve !== "ed25519") {
+      if (key.curve !== "ed25519") {
         integrity();
       }
-      ed25519.push({ path, publicKey: new Uint8Array(key.keyData) });
+      ed25519.push({ path, publicKey: new Uint8Array(key.key.keyData) });
     }
     answered.push(path);
   }

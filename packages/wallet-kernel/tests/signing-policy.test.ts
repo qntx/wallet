@@ -617,7 +617,7 @@ describe("blind signing policy", () => {
       (walletId) => solanaCoreIx(walletId, tokenTransferIx()),
       () => ({
         title: "Confirm blind signing",
-        description: `Network: Solana\nProgram calls the wallet cannot decode: ${TOKEN_PROGRAM}\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL`,
+        description: `Program calls the wallet cannot decode: ${TOKEN_PROGRAM}\nThese programs can move assets from the accounts in this transaction\nNetwork: Solana\nMax fee 0.000005 SOL`,
       }),
     ],
     [
@@ -625,7 +625,7 @@ describe("blind signing policy", () => {
       (walletId) => solanaCoreIx(walletId, setAuthorityIx()),
       () => ({
         title: "Confirm blind signing",
-        description: `Network: Solana\nProgram calls the wallet cannot decode: ${TOKEN_PROGRAM}\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL`,
+        description: `Program calls the wallet cannot decode: ${TOKEN_PROGRAM}\nThese programs can move assets from the accounts in this transaction\nNetwork: Solana\nMax fee 0.000005 SOL`,
       }),
     ],
   ];
@@ -728,7 +728,7 @@ describe("described dApp requests on a fresh vault", () => {
       evmTx(walletId, { to: AAVE_V3, data: supplyData(address) }),
       {
         title: "Confirm contract call",
-        description: `Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract ${AAVE_V3}, function 0x617ba037\nMax fee 0.000196608 ETH`,
+        description: `The wallet cannot verify what this call does\nNetwork: Ethereum\nCall contract ${AAVE_V3}, function 0x617ba037\nMax fee 0.000196608 ETH`,
       },
     ],
     [
@@ -736,7 +736,7 @@ describe("described dApp requests on a fresh vault", () => {
       evmTx(walletId, { to: ROUTER, data: EXECUTE, value: "0x2386f26fc10000" }),
       {
         title: "Confirm contract call",
-        description: `Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract ${ROUTER}, function 0x3593564c\nSend 0.01 ETH to ${ROUTER}\nMax fee 0.000196608 ETH`,
+        description: `The wallet cannot verify what this call does\nNetwork: Ethereum\nCall contract ${ROUTER}, function 0x3593564c\nSend 0.01 ETH to ${ROUTER}\nMax fee 0.000196608 ETH`,
       },
     ],
   ];
@@ -847,7 +847,7 @@ describe("described dApp requests on a fresh vault", () => {
     const program = base58.encode(unknown);
     expect(prompts(fake.calls, "open").at(-1)).toStrictEqual({
       title: "Confirm transfer",
-      description: `Network: Solana\nProgram ${program} receives this account's signature: it can move ALL SOL in this account\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
+      description: `Program ${program} receives this account's signature: it can move ALL SOL in this account\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nNetwork: Solana\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
     });
     expect(verifySolanaSignature(message, bytesField(ok(response), "signature"), SOL_ADDRESS)).toBe(
       true,

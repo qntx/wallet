@@ -145,7 +145,7 @@ describe("decodeBitcoinPsbt conservation", () => {
           // dedicated invalid-request test below.
           fc.pre(outSum <= inSum);
           const psbt = psbtOf(inputs, outputs);
-          const own = new Set([hex(ownScript)]);
+          const own = { change: new Set([hex(ownScript)]), unusual: new Map() };
           const intent = decodeBitcoinPsbt(request(psbt, inputs.length), own);
           // Every non-change output is an outflow except a zero-value unspendable one, which moves
           // nothing; a burn is exactly an unspendable output with value.
@@ -180,7 +180,10 @@ describe("decodeBitcoinPsbt conservation", () => {
           { kind: "p2wpkh", amount: 20_000n, priv: sha256(new Uint8Array([8])) },
         ],
       );
-      return decodeBitcoinPsbt(request(psbt, 1), new Set([hex(ownScript)]));
+      return decodeBitcoinPsbt(request(psbt, 1), {
+        change: new Set([hex(ownScript)]),
+        unusual: new Map(),
+      });
     };
     expect(intent).toThrow(ChainError);
     expect(intent).toThrow("PSBT outputs exceed its inputs");
@@ -194,7 +197,7 @@ describe("decodeBitcoinPsbt conservation", () => {
         { kind: "opReturn", amount: 98_000_000n, data: Uint8Array.of(0xde, 0xad, 0xbe, 0xef) },
       ],
     );
-    const intent = decodeBitcoinPsbt(request(psbt, 1), new Set());
+    const intent = decodeBitcoinPsbt(request(psbt, 1));
     expect(intent.verifiability).toBe("full");
     const [send, burn] = intent.outflows;
     expect(intent.outflows).toHaveLength(2);
@@ -215,7 +218,7 @@ describe("decodeBitcoinPsbt conservation", () => {
         { kind: "opReturn", amount: 0n, data: new Uint8Array(0) },
       ],
     );
-    const intent = decodeBitcoinPsbt(request(psbt, 1), new Set());
+    const intent = decodeBitcoinPsbt(request(psbt, 1));
     expect(intent.outflows).toHaveLength(1);
     expect(intent.outflows[0]?.burn).toBeUndefined();
     expect(intent.fee?.max.amount).toBe("10000");

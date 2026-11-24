@@ -787,6 +787,7 @@ describe("method classification", () => {
       | "card.begin"
       | "nostr.exportKey"
       | "chain.sign"
+      | "chain.exportAccount"
       | "spark.approve"
       | "sessions.create"
       | "sessions.open"

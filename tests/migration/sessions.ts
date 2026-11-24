@@ -21,7 +21,7 @@ export async function sessionKeys(wallet: Wallet, walletId: string): Promise<Ses
     scope: "Mainnet",
     name: "bot-1",
     validUntil: Date.now() + 180 * 86_400_000,
-    limits: { notional: "1000", maxLeverage: 10, assets: [0] },
+    limits: { notional: "1000", maxLeverage: 10, assets: [{ asset: 0, size: "1000" }] },
     verify: { kind: "hardware" },
   });
   const listed = await api.list();
@@ -30,7 +30,7 @@ export async function sessionKeys(wallet: Wallet, walletId: string): Promise<Ses
     scheme: "hyperliquid-l1-agent",
     address,
     params: {
-      action: { type: "scheduleCancel" },
+      action: { type: "cancel", cancels: [{ a: 0, o: 1 }] },
       nonce: Date.now(),
       expiresAfter: Date.now() + 15_000,
     },
@@ -39,7 +39,7 @@ export async function sessionKeys(wallet: Wallet, walletId: string): Promise<Ses
   return agents;
 }
 
-/** `PendingRequest.origin` gained `{ kind: "app", id }` — a renderer covers all four shapes. */
+/** `PendingRequest.origin` gained `{ kind: "app", id }` — a renderer covers all five shapes. */
 export function requestOriginLabel(origin: PendingRequest["origin"]): string {
   if (origin.kind === "internal") {
     return "this app";
@@ -49,6 +49,9 @@ export function requestOriginLabel(origin: PendingRequest["origin"]): string {
   }
   if (origin.kind === "browser") {
     return origin.origin;
+  }
+  if (origin.kind === "qr") {
+    return origin.declared ?? "scanned request";
   }
   // kind === "walletconnect" — a future origin kind stops compiling here until it is rendered.
   return `${origin.name} <${origin.url}>`;

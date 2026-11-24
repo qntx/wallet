@@ -10,14 +10,13 @@ import type { NETWORK as BTC_NETWORK } from "@scure/btc-signer";
 
 import { ChainError } from "@qntx/wallet-chains";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
-import { bitcoinAddressFromXpub } from "@qntx/wallet-chains/bitcoin";
+import { BITCOIN_GAP_LIMIT, bitcoinAddressFromXpub } from "@qntx/wallet-chains/bitcoin";
 
 import type { EngineLogger } from "../events.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { Esplora } from "./bitcoin.ts";
 
-const GAP = 20;
 const COLL = "btc-scan";
 
 export type BtcChain = 0 | 1;
@@ -88,11 +87,11 @@ const scanChainWithHistory = async (
   chain: BtcChain,
 ): Promise<ReadonlyArray<ScannedAddress>> => {
   const scanned: ScannedAddress[] = [];
-  for (let start = 0; ; start += GAP) {
-    if (start + GAP > MAX_SCAN_ADDRESSES) {
+  for (let start = 0; ; start += BITCOIN_GAP_LIMIT) {
+    if (start + BITCOIN_GAP_LIMIT > MAX_SCAN_ADDRESSES) {
       throw new Error(`bitcoin address scan exceeded ${MAX_SCAN_ADDRESSES} addresses`);
     }
-    const batch: ScanAddress[] = Array.from({ length: GAP }, (_, i) => {
+    const batch: ScanAddress[] = Array.from({ length: BITCOIN_GAP_LIMIT }, (_, i) => {
       const index = start + i;
       return {
         chain,
@@ -159,7 +158,9 @@ export const scanUtxos = async (
   addresses: ReadonlyArray<ScanAddress>,
   params: typeof BTC_NETWORK,
 ): Promise<ReadonlyArray<ScanUtxo>> => {
-  const candidates = addresses.filter((a) => a.used || a.chain === 1 || a.index < GAP);
+  const candidates = addresses.filter(
+    (a) => a.used || a.chain === 1 || a.index < BITCOIN_GAP_LIMIT,
+  );
   return Promise.all(candidates.map(async (a) => scanAddressUtxos(es, a, params))).then((r) =>
     r.flat(),
   );
@@ -273,7 +274,7 @@ export const utxosFromHistory = async (
   scanned: ReadonlyArray<ScannedAddress>,
   params: typeof BTC_NETWORK,
 ): Promise<ReadonlyArray<ScanUtxo>> => {
-  const candidates = scanned.filter((a) => a.used || a.chain === 1 || a.index < GAP);
+  const candidates = scanned.filter((a) => a.used || a.chain === 1 || a.index < BITCOIN_GAP_LIMIT);
   return Promise.all(
     candidates.map(async (a): Promise<ReadonlyArray<ScanUtxo>> => {
       if (a.txs.length === 0) {

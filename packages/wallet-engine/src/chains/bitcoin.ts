@@ -18,8 +18,7 @@ import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import { timeoutSignal } from "../timer.ts";
 import type { SetTimer } from "../timer.ts";
 
-const GAP_LIMIT = 20;
-export { GAP_LIMIT };
+export { BITCOIN_GAP_LIMIT as GAP_LIMIT } from "@qntx/wallet-chains/bitcoin";
 const DUST: Record<string, number> = { p2wpkh: 294, p2tr: 330, p2pkh: 546 };
 
 export type BtcNetworkId = `bip122:${string}`;

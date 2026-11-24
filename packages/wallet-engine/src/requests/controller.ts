@@ -51,6 +51,7 @@ import type {
   PrepareParams,
   SendParams,
   SignatureResult,
+  SignedTransactionResult,
   TrackedTransaction,
 } from "../transactions/route.ts";
 import { newRequestId } from "../transactions/route.ts";
@@ -99,6 +100,7 @@ import type {
   ChainRequestMethod,
   DappOrigin,
   PreparedBitcoinPsbt,
+  QrOrigin,
   RequestMethod,
   RequestOrigin,
   SolanaAccount,
@@ -117,6 +119,7 @@ export type {
   BitcoinGroup,
   BrowserOrigin,
   DappOrigin,
+  QrOrigin,
   RequestMethod,
   RequestOrigin,
   SolanaAccount,
@@ -127,7 +130,7 @@ export type {
 export type { RequestCheckCode } from "./checks.ts";
 export type { RiskFinding } from "./risk.ts";
 export type { SignLogEntry, SignLogOutcome } from "./sign-log.ts";
-export type { SignatureResult } from "../transactions/route.ts";
+export type { SignatureResult, SignedTransactionResult } from "../transactions/route.ts";
 export type { SparkDisplay, SparkResult } from "../payments/action.ts";
 
 /** A Spark, Lightning (including LNURL-pay and lightning addresses) or cooperative-exit payment. */
@@ -147,8 +150,8 @@ export type ZapInput = {
  */
 export type EvmSignInput = {
   readonly method: "evm-sign";
-  /** A page asking for the signature; absent means the wallet itself. */
-  readonly origin?: DappOrigin;
+  /** A page asking for the signature; a QR request carries a QrOrigin; absent means the wallet. */
+  readonly origin?: DappOrigin | QrOrigin;
   readonly account: AccountRef;
   readonly network: string;
   readonly request: SignRequest;
@@ -167,8 +170,8 @@ export type EvmSignInput = {
  */
 export type TronSignInput = {
   readonly method: "tron-sign";
-  /** A page asking for the signature; absent means the wallet itself. */
-  readonly origin?: DappOrigin;
+  /** A page asking for the signature; a QR request carries a QrOrigin; absent means the wallet. */
+  readonly origin?: DappOrigin | QrOrigin;
   readonly account: AccountRef;
   readonly network: string;
   readonly request: SignRequest;
@@ -239,7 +242,7 @@ export type WatchAssetInput = {
  */
 export type SolanaSignInput = {
   readonly method: "solana-sign";
-  readonly origin: DappOrigin;
+  readonly origin: DappOrigin | QrOrigin;
   readonly account: SolanaAccount;
   readonly network: string;
   readonly request:
@@ -271,7 +274,7 @@ export type BitcoinSignInput =
     }
   | {
       readonly method: "bitcoin-sign";
-      readonly origin: DappOrigin;
+      readonly origin: DappOrigin | QrOrigin;
       readonly account: BitcoinGroup;
       readonly network: string;
       readonly request: {
@@ -613,7 +616,12 @@ type Run =
         verify: SendParams["verify"],
         commit: () => void,
       ) => Promise<
-        TrackedTransaction | SparkResult | SignatureResult | SolanaSignResult | BitcoinSignResult
+        | TrackedTransaction
+        | SparkResult
+        | SignatureResult
+        | SignedTransactionResult
+        | SolanaSignResult
+        | BitcoinSignResult
       >;
       readonly release: () => void;
     }
@@ -669,6 +677,7 @@ export type RequestResult =
   | TrackedTransaction
   | SparkResult
   | SignatureResult
+  | SignedTransactionResult
   | NostrSignResult
   | WeblnInvoiceResult
   | TokenWatchResult
@@ -688,6 +697,9 @@ type Entry = {
 };
 
 const originKey = (origin: DappOrigin): string => `origin:${origin.origin}`;
+
+/** The one busy key every QR request claims — a signer handles a single scanned request at once. */
+const QR_BUSY_KEY = "origin:qr";
 
 /**
  * The decoded intents a display carries: a solana batch's per-transaction decodes, a bitcoin
@@ -790,8 +802,8 @@ const withSimulation = (
   };
 };
 
-/** The input's dApp origin, when it carries one. */
-const dappOriginOf = (input: RequestInput): DappOrigin | undefined =>
+/** The input's external origin — a dApp's or a scanned QR request's — when it carries one. */
+const signOriginOf = (input: RequestInput): DappOrigin | QrOrigin | undefined =>
   "origin" in input ? input.origin : undefined;
 
 /** Terminal events and the stage and sign-log outcome each maps to. */
@@ -917,7 +929,7 @@ export class RequestController extends Controller<RequestControllerState> {
     // A transaction can have one unfinished replacement at a time; claimed synchronously so two
     // concurrent prepares cannot both pass.
     const target = "txId" in input ? input.txId : undefined;
-    const origin = dappOriginOf(input);
+    const origin = signOriginOf(input);
     if (app !== undefined && origin !== undefined) {
       throw new Error("an app request cannot carry a dApp origin");
     }
@@ -935,15 +947,20 @@ export class RequestController extends Controller<RequestControllerState> {
         throw new Error("a pinned nonce is only valid on an app request for an EVM transaction");
       }
     }
+    /* A QR origin is not a page — no phishing check applies to it. */
     const originStatus =
-      origin === undefined ? "clear" : this.options.phishing.check(dappUrl(origin));
+      origin === undefined || origin.kind === "qr"
+        ? "clear"
+        : this.options.phishing.check(dappUrl(origin));
     if (originStatus === "blocked") {
       throw new Error(PHISHING_BLOCKED_MESSAGE);
     }
     if (origin !== undefined) {
-      const key = originKey(origin);
+      /* A QR request claims the one shared qr busy key — only one scanned request may be in
+         flight; a dApp origin keys on its own origin so each page gets one request. */
+      const key = origin.kind === "qr" ? QR_BUSY_KEY : originKey(origin);
       if (this.targets.has(key)) {
-        throw new OriginBusyError(origin.origin);
+        throw new OriginBusyError(origin.kind === "qr" ? "qr" : origin.origin);
       }
       this.targets.set(key, id);
     }
@@ -953,7 +970,10 @@ export class RequestController extends Controller<RequestControllerState> {
       }
       this.targets.set(target, id);
     }
-    const preparing: Preparing = { origin, voided: false };
+    const preparing: Preparing = {
+      origin: origin !== undefined && origin.kind !== "qr" ? origin : undefined,
+      voided: false,
+    };
     this.preparing.set(id, preparing);
     let built: Built;
     try {
@@ -1185,11 +1205,16 @@ export class RequestController extends Controller<RequestControllerState> {
       } else if (input.origin === undefined && kind !== "evm.typed-data") {
         throw new Error("an internal request can only sign typed data");
       }
-      const prepared = await this.options.transactions.prepareDapp(
-        input.account,
-        input.request,
-        input.nonce === undefined ? undefined : { nonce: input.nonce },
-      );
+      /* A QR transaction keeps the counterpart's own nonce and fees and never broadcasts —
+         prepareQrEvm signs the bytes as-is; messages and typed data share the dApp path. */
+      const prepared =
+        input.origin?.kind === "qr" && input.request.kind === "evm.transaction"
+          ? await this.options.transactions.prepareQrEvm(input.account, input.request)
+          : await this.options.transactions.prepareDapp(
+              input.account,
+              input.request,
+              input.nonce === undefined ? undefined : { nonce: input.nonce },
+            );
       const isTransaction = input.request.kind === "evm.transaction";
       const signInRisk =
         input.origin !== undefined &&
@@ -1236,9 +1261,12 @@ export class RequestController extends Controller<RequestControllerState> {
       if (input.origin === undefined && input.request.kind !== "tron.typed-data") {
         throw new Error("an internal request can only sign typed data");
       }
+      /* A QR TRON transaction is signed for the counterpart to broadcast — the same validation
+         runs, only the tracked observation path is skipped. */
       const prepared = await this.options.transactions.prepareDappTron(
         input.account,
         input.request,
+        input.origin?.kind === "qr" ? { broadcast: false } : undefined,
       );
       const isTransaction = input.request.kind === "tron.transaction";
       const signInRisk =
@@ -1276,6 +1304,14 @@ export class RequestController extends Controller<RequestControllerState> {
         : built;
     }
     if (input.method === "solana-sign") {
+      /* A QR counterpart broadcasts the signed wire itself — send is not its option. */
+      if (
+        input.origin.kind === "qr" &&
+        input.request.kind === "transactions" &&
+        input.request.send
+      ) {
+        throw new Error("a QR request cannot ask the wallet to broadcast");
+      }
       const txs =
         input.request.kind === "transactions"
           ? input.request.transactions.map(
@@ -1359,10 +1395,12 @@ export class RequestController extends Controller<RequestControllerState> {
     }
     if (input.method === "bitcoin-sign" && input.request.kind === "psbt") {
       const { psbts, send } = input.request;
+      /* A QR counterpart broadcasts the finalized transaction itself — send is not its option. */
+      if (input.origin.kind === "qr" && send) {
+        throw new Error("a QR request cannot ask the wallet to broadcast");
+      }
       const prepared = await this.options.bitcoinPrepare(input.account, input.network, psbts);
-      const intents = prepared.map(({ request, ownScripts }) =>
-        decodeBitcoinPsbt(request, ownScripts),
-      );
+      const intents = prepared.map(({ request, own }) => decodeBitcoinPsbt(request, own));
       return {
         account: input.account,
         network: input.network,
@@ -1593,7 +1631,7 @@ export class RequestController extends Controller<RequestControllerState> {
     id: string,
     method: "evm-sign" | "tron-sign",
     options?: ApproveOptions,
-  ): Promise<TrackedTransaction | SignatureResult>;
+  ): Promise<TrackedTransaction | SignatureResult | SignedTransactionResult>;
   async approve(
     id: string,
     method: "nostr-sign",
@@ -1972,12 +2010,18 @@ export class RequestController extends Controller<RequestControllerState> {
   /** Risk of a Sign-In with X message; a message for another domain throws `SignInOriginError`. */
   private signInRisk(
     signIn: SignInParse | undefined,
-    origin: DappOrigin,
+    origin: DappOrigin | QrOrigin,
     signer: string,
     family: "evm" | "solana" | "tron",
   ): ReadonlyArray<RiskFinding> {
     if (signIn === undefined) {
       return [];
+    }
+    /* A QR request carries no verifiable page domain: the sign-in's domain claim is display-only,
+       so the domain check cannot run — the host must surface the unverifiable domain and the
+       user must acknowledge it, matching what a refused dApp origin would have cost. */
+    if (origin.kind === "qr") {
+      return [{ code: "qr-sign-in-unverified", level: "danger" }];
     }
     const assessed = assessSignIn({
       signIn,

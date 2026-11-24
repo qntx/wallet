@@ -51,6 +51,23 @@ export function seededRandom(seed: number): { random: Random; draws: Uint8Array[
   };
 }
 
+/**
+ * Random whose two-byte draws come from `draws` (shifted in order, as integers); every other draw
+ * gets a counter-prefixed fill whose first byte stays below 0x80 so scalar draws differ.
+ */
+export function scriptedRandom(draws: number[]): Random {
+  let counter = 0;
+  return (length: number) => {
+    if (length === 2 && draws.length > 0) {
+      const value = draws.shift() ?? 0;
+      return new Uint8Array([value >> 8, value & 0xff]);
+    }
+    const bytes = new Uint8Array(length).fill(1);
+    bytes[0] = 1 + (counter++ % 0x7f);
+    return bytes;
+  };
+}
+
 export type KernelResponse =
   | { readonly id: number; readonly ok: ProtocolValue }
   | {
@@ -146,7 +163,7 @@ export function createHarness(opts?: {
   maxSessionMs?: number;
   /** KernelPolicy.activity; defaults to "presence" (the browser policy). */
   activity?: "presence" | "request";
-  /** Omit the idle policy entirely (the native policy — no foreground idle lock). */
+  /** Omit the idle policy entirely (a host that never idle-locks in the foreground). */
   noIdle?: boolean;
   /** Share one store between harnesses (the raw store — each kernel still gets its own view). */
   store?: RecordStore;

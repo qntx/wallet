@@ -335,18 +335,18 @@ const main = async (): Promise<void> => {
         {
           title: "Confirm contract call",
           description:
-            `Network: Solana\nProgram ${DRAINER} receives this account's signature: it can move ALL SOL in this account\n` +
+            `Program ${DRAINER} receives this account's signature: it can move ALL SOL in this account\n` +
             `Program ${DRAINER} can act with this account's authority on: ${SRC} (may be yours); ${DEST} (may be yours)\n` +
             `Program calls the wallet cannot decode: ${DRAINER}\nThese programs can move assets from the accounts in this transaction\n` +
-            `Max fee 0.000005 SOL`,
+            `Network: Solana\nMax fee 0.000005 SOL`,
         },
         {
           title: "确认合约调用",
           description:
-            `网络：Solana\n程序 ${DRAINER} 获得本账户的签名：可以转走本账户的全部 SOL\n` +
+            `程序 ${DRAINER} 获得本账户的签名：可以转走本账户的全部 SOL\n` +
             `程序 ${DRAINER} 可以以本账户的权限操作：${SRC}（可能属于你）；${DEST}（可能属于你）\n` +
             `钱包无法解码的程序调用：${DRAINER}\n这些程序可以转移本交易涉及账户中的资产\n` +
-            `最高手续费 0.000005 SOL`,
+            `网络：Solana\n最高手续费 0.000005 SOL`,
         },
       ),
     }),
@@ -375,16 +375,16 @@ const main = async (): Promise<void> => {
         {
           title: "Confirm blind signing",
           description:
-            `Network: Solana\nProgram ${DRAINER} receives this account's signature and can reach accounts the wallet cannot list\n` +
+            `Program ${DRAINER} receives this account's signature and can reach accounts the wallet cannot list\n` +
             `Program calls the wallet cannot decode: ${DRAINER}\nThese programs can move assets from the accounts in this transaction\n` +
-            `Max fee 0.000005 SOL`,
+            `Network: Solana\nMax fee 0.000005 SOL`,
         },
         {
           title: "确认盲签",
           description:
-            `网络：Solana\n程序 ${DRAINER} 获得本账户的签名，并可操作钱包无法列出的账户\n` +
+            `程序 ${DRAINER} 获得本账户的签名，并可操作钱包无法列出的账户\n` +
             `钱包无法解码的程序调用：${DRAINER}\n这些程序可以转移本交易涉及账户中的资产\n` +
-            `最高手续费 0.000005 SOL`,
+            `网络：Solana\n最高手续费 0.000005 SOL`,
         },
       ),
     }),
@@ -451,16 +451,16 @@ const main = async (): Promise<void> => {
         {
           title: "Confirm transfer",
           description:
-            `Network: Solana\nProgram calls the wallet cannot decode: ${DATA_PROGRAM}\n` +
+            `Program calls the wallet cannot decode: ${DATA_PROGRAM}\n` +
             `These programs can move assets from the accounts in this transaction\n` +
-            `Send 0.000001 SOL to ${DEST}\nMax fee 0.000005 SOL`,
+            `Network: Solana\nSend 0.000001 SOL to ${DEST}\nMax fee 0.000005 SOL`,
         },
         {
           title: "确认转账",
           description:
-            `网络：Solana\n钱包无法解码的程序调用：${DATA_PROGRAM}\n` +
+            `钱包无法解码的程序调用：${DATA_PROGRAM}\n` +
             `这些程序可以转移本交易涉及账户中的资产\n` +
-            `发送 0.000001 SOL 到 ${DEST}\n最高手续费 0.000005 SOL`,
+            `网络：Solana\n发送 0.000001 SOL 到 ${DEST}\n最高手续费 0.000005 SOL`,
         },
       ),
     });

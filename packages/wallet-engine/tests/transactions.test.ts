@@ -67,7 +67,9 @@ const apis = (sign: Sign): ReturnType<typeof chains> => {
       network: "eip155:1",
       address: ADDR,
     });
-  return { account, sign };
+  const exportAccount: ReturnType<typeof chains>["exportAccount"] = async () =>
+    Promise.reject(new Error("not implemented"));
+  return { account, sign, exportAccount };
 };
 
 const nets = (fetchFn: typeof fetch) =>

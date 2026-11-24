@@ -69,8 +69,8 @@ const VERIFY = { kind: "password" as const, password: PASSWORD };
 export const HL_LIMITS = {
   notional: "1000000000000",
   maxLeverage: 100,
-  assets: [0, 1, 3, 4, 5, 7, 40, 42],
-} as const;
+  assets: [0, 1, 3, 4, 5, 7, 40, 42].map((asset) => ({ asset, size: "1000000" })),
+};
 /** The `enable`/`renew` input the Hyperliquid flows take. */
 export const HL_ENABLE = { limits: HL_LIMITS, verify: VERIFY } as const;
 const RANDOM = (length: number): Uint8Array => new Uint8Array(length).fill(7);

@@ -135,9 +135,6 @@ const equivalent = async (action: WireAction, actions: HyperliquidActions): Prom
         modifies.map((item) => ({ oid: item.oid, ...orderParams(item.order) })),
       );
     }
-    case "scheduleCancel":
-      return actions.scheduleCancel(action["time"] as number | undefined);
-
     case "updateLeverage":
       return actions.setLeverage({
         coin: `COIN${action["asset"] as number}`,

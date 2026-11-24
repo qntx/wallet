@@ -7,6 +7,7 @@ import { Transaction } from "@scure/btc-signer/transaction.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { IntentWarning, IntentWarningKind, SignRequest } from "@qntx/wallet-chains";
+import { EMPTY_BITCOIN_OWN } from "@qntx/wallet-chains/bitcoin";
 import { decodeEvm } from "@qntx/wallet-chains/evm";
 
 import {
@@ -157,7 +158,7 @@ describe("WARNING_RISK", () => {
     );
   });
 
-  it("maps exactly the seven fiat24 kinds — five warnings, two dangers", () => {
+  it("maps exactly the seven fiat24 kinds plus unusual-own-output", () => {
     const danger = ["fiat24-unlimited-approval", "fiat24-account-move"];
     const warning = [
       "fiat24-internal-account",
@@ -178,11 +179,16 @@ describe("WARNING_RISK", () => {
         level: "warning",
       });
     }
+    // An own-key output the wallet does not discover is a finding — the funds may never show.
+    expect(WARNING_RISK["unusual-own-output"]).toStrictEqual({
+      code: "bitcoin-unusual-output",
+      level: "warning",
+    });
     const mapped = Object.entries(WARNING_RISK)
       .filter(([, entry]) => entry !== undefined)
       .map(([kind]) => kind)
       .toSorted();
-    expect(mapped).toStrictEqual([...danger, ...warning].toSorted());
+    expect(mapped).toStrictEqual([...danger, ...warning, "unusual-own-output"].toSorted());
   });
 
   it("leaves sighash-single-anyonecanpay unmapped — assessBitcoinPsbts already covers it", () => {
@@ -495,7 +501,7 @@ describe("warning findings on PendingRequest.risk", () => {
                 psbt: input.psbt,
                 sign: input.sign,
               },
-              ownScripts: new Set(),
+              own: EMPTY_BITCOIN_OWN,
               inputs: input.sign.map((s) => ({
                 index: s.index,
                 value: 10_000,

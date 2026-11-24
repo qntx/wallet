@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { CborMap, Tag, cbor, encodeCbor, taggedValue } from "@blockchaincommons/dcbor";
-import type { Cbor, CborInput } from "@blockchaincommons/dcbor";
+import type { CborInput } from "@blockchaincommons/dcbor";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { HDKey } from "@scure/bip32";
@@ -23,12 +23,11 @@ import { describe, expect, it } from "vite-plus/test";
 import { cryptoMultiAccountsCodec } from "@qntx/ur/interop";
 import type { DeviceRequest, DeviceResponse, ProtocolValue } from "@qntx/wallet/protocol";
 
-import { fingerprintBytes } from "../src/derive/pinned.ts";
 import { KernelError } from "../src/errors.ts";
 import type { DeviceLink } from "../src/modules/signers/driver.ts";
 import { KEYSTONE_DRIVER } from "../src/modules/signers/keystone/driver.ts";
-import { decodeRegistry } from "../src/modules/signers/keystone/registry.ts";
 import { parseSync } from "../src/modules/signers/keystone/sync.ts";
+import { decodeUr, fingerprintBytes } from "../src/modules/signers/keystone/ur.ts";
 import { hardwareWalletId } from "../src/modules/signers/record.ts";
 import type { KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
@@ -83,6 +82,9 @@ const qrResponse = (cbor: Uint8Array, type = "crypto-multi-accounts"): DeviceRes
 const parse = (cbor: Uint8Array, type?: string): ReturnType<typeof parseSync> =>
   parseSync(qrResponse(cbor, type));
 
+const multiAccounts = (bytes: Uint8Array) =>
+  decodeUr("crypto-multi-accounts", bytes, cryptoMultiAccountsCodec);
+
 const code = (run: () => unknown): string => {
   try {
     run();
@@ -104,39 +106,31 @@ const pathNumbers = (path: string): number[] =>
       segment.endsWith("'") ? Number(segment.slice(0, -1)) + HARDENED : Number(segment),
     );
 
-const origin = (path: string): Cbor => {
+const origin = (path: string): ReturnType<typeof cbor> => {
   const map = new CborMap();
   map.set(
     1,
-    pathNumbers(path).flatMap((index): CborInput[] => [index % HARDENED, index >= HARDENED]),
+    pathNumbers(path).flatMap((index) => [index % HARDENED, index >= HARDENED]),
   );
   map.set(2, new DataView(MFP.buffer).getUint32(0));
-  return taggedValue(Tag.from(304, "crypto-keypath"), cbor(map));
+  return taggedValue(Tag.from(304), cbor(map));
 };
 
-const hdkey = (path: string, fields: ReadonlyArray<readonly [number, CborInput]>): Cbor => {
+const hdkey = (path: string, fields: ReadonlyArray<readonly [number, CborInput]>) => {
   const map = new CborMap();
   map.set(6, origin(path));
   for (const [n, value] of fields) {
     map.set(n, value);
   }
-  return taggedValue(Tag.from(303, "crypto-hdkey"), cbor(map));
+  return taggedValue(Tag.from(303), cbor(map));
 };
 
-const syncWith = (keys: ReadonlyArray<CborInput>): Uint8Array =>
-  encodeCbor(
-    cbor(
-      new CborMap(
-        new Map<number, CborInput>([
-          [1, new DataView(MFP.buffer).getUint32(0)],
-          [2, [...keys]],
-        ]),
-      ),
-    ),
-  );
-
-const accounts = (bytes: Uint8Array): ReturnType<typeof cryptoMultiAccountsCodec.decode> =>
-  decodeRegistry(bytes, cryptoMultiAccountsCodec);
+const syncWith = (keys: ReadonlyArray<ReturnType<typeof cbor>>): Uint8Array => {
+  const map = new CborMap();
+  map.set(1, new DataView(MFP.buffer).getUint32(0));
+  map.set(2, [...keys]);
+  return encodeCbor(cbor(map));
+};
 
 const derivedNode = (path: string): { key: Uint8Array; chainCode: Uint8Array } => {
   const node = HDKey.fromMasterSeed(SEED).derive(path);
@@ -172,14 +166,14 @@ const strField = (value: ProtocolValue, key: string): string => {
 
 describe("the generated sync vector", () => {
   it("parses as crypto-multi-accounts with the device metadata", () => {
-    const parsed = accounts(SYNC);
-    expect(bytesToHex(fingerprintBytes(parsed.masterFingerprint))).toBe(
+    const accounts = multiAccounts(SYNC);
+    expect(bytesToHex(fingerprintBytes(accounts.masterFingerprint))).toBe(
       vectors.sync.masterFingerprint,
     );
-    expect(parsed.device).toBe(vectors.sync.device);
-    expect(parsed.version).toBe(vectors.sync.deviceVersion);
-    expect(parsed.deviceId).toBe(vectors.sync.deviceId);
-    expect(parsed.keys).toHaveLength(17);
+    expect(accounts.device).toBe(vectors.sync.device);
+    expect(accounts.version).toBe(vectors.sync.deviceVersion);
+    expect(accounts.deviceId).toBe(vectors.sync.deviceId);
+    expect(accounts.keys).toHaveLength(17);
   });
 
   it("pins exactly the whitelisted nodes and ed25519 keys", () => {
@@ -210,17 +204,14 @@ describe("the firmware's own test URs", () => {
     if (vector === undefined) {
       throw new Error("missing firmware vector");
     }
-    const parsed = accounts(hexToBytes(vector.cbor));
-    const [first] = parsed.keys;
+    const accounts = multiAccounts(hexToBytes(vector.cbor));
+    const [first] = accounts.keys;
     if (first === undefined || first.key.origin === undefined) {
       throw new Error("first key has no origin");
     }
     const path = first.key.origin.components
-      .map(
-        (component) =>
-          `${component.kind === "index" ? component.index : ""}${
-            component.kind !== "pair" && component.hardened ? "'" : ""
-          }`,
+      .map((component) =>
+        component.kind === "index" ? `${component.index}${component.hardened ? "'" : ""}` : "",
       )
       .join("/");
     expect(`m/${path}`).toBe(vector.firstKey.path);
@@ -239,18 +230,15 @@ describe("the firmware's own test URs", () => {
     if (vector === undefined) {
       throw new Error("missing firmware vector");
     }
-    const parsed = accounts(hexToBytes(vector.cbor));
-    expect(parsed.keys).toHaveLength(6);
-    const [first] = parsed.keys;
+    const accounts = multiAccounts(hexToBytes(vector.cbor));
+    expect(accounts.keys).toHaveLength(6);
+    const [first] = accounts.keys;
     if (first === undefined || first.key.origin === undefined) {
       throw new Error("first key has no origin");
     }
     const path = first.key.origin.components
-      .map(
-        (component) =>
-          `${component.kind === "index" ? component.index : ""}${
-            component.kind !== "pair" && component.hardened ? "'" : ""
-          }`,
+      .map((component) =>
+        component.kind === "index" ? `${component.index}${component.hardened ? "'" : ""}` : "",
       )
       .join("/");
     expect(`m/${path}`).toBe(vector.firstKey.path);
@@ -262,11 +250,11 @@ describe("the firmware's own test URs", () => {
 
   it("parses the crate's encode-test shape but refuses to pin it", () => {
     const encode = vectors.registryEncode;
-    const parsed = accounts(hexToBytes(encode.cbor));
-    expect(bytesToHex(fingerprintBytes(parsed.masterFingerprint))).toBe(encode.masterFingerprint);
-    expect(parsed.device).toBe(encode.device);
-    expect(parsed.version).toBe(encode.deviceVersion);
-    expect(parsed.deviceId).toBe(encode.deviceId);
+    const accounts = multiAccounts(hexToBytes(encode.cbor));
+    expect(bytesToHex(fingerprintBytes(accounts.masterFingerprint))).toBe(encode.masterFingerprint);
+    expect(accounts.device).toBe(encode.device);
+    expect(accounts.version).toBe(encode.deviceVersion);
+    expect(accounts.deviceId).toBe(encode.deviceId);
     // A 33-byte secp256k1 key on an ed25519 path is a structural lie — integrity.
     integrity(hexToBytes(encode.cbor));
   });

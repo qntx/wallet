@@ -221,6 +221,23 @@ describe("bindNativeSecureInput", () => {
     expect(value.every((byte) => byte === 0)).toBe(true);
   });
 
+  it("returns the four digits a session approval carried", async () => {
+    const { raw } = nativeInput({ value: new TextEncoder().encode("0427") });
+    const result = await bindNativeSecureInput(raw).request("session-approval", "l");
+    expect(result).toStrictEqual({ ok: true, value: new TextEncoder().encode("0427") });
+  });
+
+  it.each([
+    ["012", "three digits"],
+    ["01234", "five digits"],
+    ["12a4", "a non-digit"],
+    ["", "empty"],
+  ] as const)("wipes and refuses %s as a session approval (%s)", async (text, _name) => {
+    const { raw } = nativeInput({ value: new TextEncoder().encode(text) });
+    const result = await bindNativeSecureInput(raw).request("session-approval", "l");
+    expect(result).toStrictEqual({ ok: false, failure: "unavailable" });
+  });
+
   it("resolves cancelled when the request was cancelled", async () => {
     const { raw } = nativeInput({ code: "cancelled" });
     const result = await bindNativeSecureInput(raw).request("access-code", "l");

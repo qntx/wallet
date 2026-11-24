@@ -1,15 +1,14 @@
 import {
   CborMap,
   Tag,
-  asMap,
-  asUnsigned,
   cbor,
   decodeCbor,
   encodeCbor,
+  expectMap,
   isBytes,
+  isUnsigned,
   taggedValue,
 } from "@blockchaincommons/dcbor";
-import type { CborInput } from "@blockchaincommons/dcbor";
 /**
  * Guard-level unit tests on the Keystone exchanges and the record id binding: a staged plan that no
  * longer matches the request about to be shown, a solana answer of the wrong length or a message
@@ -43,7 +42,6 @@ import { createSignersModule } from "../src/modules/signers/index.ts";
 import { derive } from "../src/modules/signers/keystone/derive.ts";
 import { KEYSTONE_DRIVER } from "../src/modules/signers/keystone/driver.ts";
 import { sign } from "../src/modules/signers/keystone/sign.ts";
-import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
 import { keystoneDevice } from "./signers-keystone-device.ts";
 
 const HARDENED = 0x80000000;
@@ -195,7 +193,6 @@ const psbt84Context = (): SignContext => {
     },
     stage: planBitcoinPsbt(bytes, [{ index: 0, key: { path: BTC84_PATH, publicKey: BTC84_PUB } }]),
     pin,
-    display: "clear" as const,
     random,
   };
 };
@@ -234,7 +231,6 @@ const psbt86Context = (): SignContext => {
     },
     stage: planBitcoinPsbt(bytes, [{ index: 0, key: { path: BTC86_PATH, publicKey: BTC86_PUB } }]),
     pin,
-    display: "clear" as const,
     random,
   };
 };
@@ -270,15 +266,15 @@ const indexOf = (haystack: Uint8Array, needle: Uint8Array): number => {
 
 /** Re-encodes a signature answer's map with byte field `n` replaced by `value`. */
 const replaceByteField = (bytes: Uint8Array, n: number, value: Uint8Array): Uint8Array => {
-  const map = asMap(decodeCbor(bytes));
-  if (map === undefined) {
-    throw new Error("not a map");
-  }
+  const map = expectMap(decodeCbor(bytes));
   const out = new CborMap();
-  for (const { key, value: item } of map.entriesArray) {
-    out.set(key, asUnsigned(key) === n && isBytes(item) ? value : item);
+  for (const [key, item] of map) {
+    out.set(
+      key,
+      isUnsigned(key) && key.value === n && isBytes(item) ? new Uint8Array(value) : item,
+    );
   }
-  return encodeCbor(out);
+  return encodeCbor(cbor(out));
 };
 
 /** Signs verbatim, then rewrites the signature field to an oversized 65 bytes. */
@@ -354,9 +350,9 @@ describe("keystone sign stage/request consistency", () => {
       },
     };
     const stage = planEvm({ ...request, tx: { ...request.tx, nonce: 1 } }, EVM_KEY);
-    await expect(
-      code(async () => sign(link(), { request, stage, pin, random, display: "clear" as const })),
-    ).resolves.toBe("integrity");
+    await expect(code(async () => sign(link(), { request, stage, pin, random }))).resolves.toBe(
+      "integrity",
+    );
   });
 
   it("refuses a mismatched stage on every secp256k1 family", async () => {
@@ -406,42 +402,36 @@ describe("keystone sign stage/request consistency", () => {
         request: personal,
         stage: planEvm({ ...personal, message: utf8ToBytes("bye") }, EVM_KEY),
         pin,
-        display: "clear" as const,
         random,
       },
       {
         request: fiat24,
         stage: planEvm({ ...fiat24, tokenId: "8" }, EVM_KEY),
         pin,
-        display: "clear" as const,
         random,
       },
       {
         request: typed,
         stage: planEvm({ ...typed, typedData: OTHER_TYPED_DATA }, EVM_KEY),
         pin,
-        display: "clear" as const,
         random,
       },
       {
         request: tronTx,
         stage: planTron({ ...tronTx, rawData: tronTransfer(2n) }, TRON_KEY),
         pin,
-        display: "clear" as const,
         random,
       },
       {
         request: tronMsg,
         stage: planTron({ ...tronMsg, message: utf8ToBytes("bye tron") }, TRON_KEY),
         pin,
-        display: "clear" as const,
         random,
       },
       {
         request: btcMsg,
         stage: planBitcoinMessage({ ...btcMsg, message: "sign that" }, BTC44_KEY),
         pin,
-        display: "clear" as const,
         random,
       },
     ];
@@ -460,9 +450,9 @@ describe("keystone sign stage/request consistency", () => {
       format: "raw",
     };
     const stage = planSolana({ ...request, message: utf8ToBytes("different") }, SOLANA_KEY);
-    await expect(
-      code(async () => sign(link(), { request, stage, pin, random, display: "clear" as const })),
-    ).resolves.toBe("integrity");
+    await expect(code(async () => sign(link(), { request, stage, pin, random }))).resolves.toBe(
+      "integrity",
+    );
   });
 
   it("refuses a solana signature that is not 64 bytes", async () => {
@@ -475,9 +465,7 @@ describe("keystone sign stage/request consistency", () => {
     };
     const stage = planSolana(request, SOLANA_KEY);
     await expect(
-      code(async () =>
-        sign(link(longSignature), { request, stage, pin, random, display: "clear" as const }),
-      ),
+      code(async () => sign(link(longSignature), { request, stage, pin, random })),
     ).resolves.toBe("integrity");
   });
 });
@@ -521,22 +509,22 @@ describe("keystone key-derivation answer", () => {
     const keypath = new CborMap();
     keypath.set(
       1,
-      path.flatMap((index): CborInput[] => [index % HARDENED, index >= HARDENED]),
+      path.flatMap((index) => [index % HARDENED, index >= HARDENED]),
     );
     keypath.set(2, MFP);
     const hdkey = new CborMap();
     hdkey.set(3, badKey);
     hdkey.set(4, new Uint8Array(32).fill(7));
-    hdkey.set(6, taggedValue(Tag.from(304, "crypto-keypath"), cbor(keypath)));
+    hdkey.set(6, taggedValue(Tag.from(304), cbor(keypath)));
     const accounts = new CborMap();
     accounts.set(1, MFP);
-    accounts.set(2, [taggedValue(Tag.from(303, "crypto-hdkey"), cbor(hdkey))]);
-    const payload = encodeCbor(cbor(accounts));
+    accounts.set(2, [taggedValue(Tag.from(303), cbor(hdkey))]);
+    const multiAccountsBytes = encodeCbor(cbor(accounts));
     const hostile: DeviceLink = {
       exchange: async () =>
         Promise.resolve({
           kind: "qr",
-          ur: { type: "crypto-multi-accounts", cbor: payload },
+          ur: { type: "crypto-multi-accounts", cbor: multiAccountsBytes },
         }),
     };
     await expect(
@@ -547,11 +535,7 @@ describe("keystone key-derivation answer", () => {
 
 describe("hardware-wallet record id binding", () => {
   it("a header that does not name its record id is integrity", () => {
-    const module = createSignersModule({
-      keystone: KEYSTONE_DRIVER,
-      ledger: KEYSTONE_DRIVER,
-      onekey: ONEKEY_DRIVER,
-    });
+    const module = createSignersModule({ keystone: KEYSTONE_DRIVER });
     const record = {
       kind: "hardware-wallet",
       id: "deadbeefdeadbeef",

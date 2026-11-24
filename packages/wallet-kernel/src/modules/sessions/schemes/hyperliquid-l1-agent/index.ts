@@ -6,51 +6,45 @@ import { KernelError } from "../../../../errors.ts";
 import type { SessionScheme } from "../../scheme.ts";
 import { defineSessionScheme } from "../../scheme.ts";
 import { meterHyperliquid } from "./meter.ts";
-import { hyperliquidL1Limits, hyperliquidL1Params, hyperliquidNetwork } from "./params.ts";
+import {
+  hyperliquidFreshSpent,
+  hyperliquidL1Limits,
+  hyperliquidL1Params,
+  hyperliquidL1Spent,
+  hyperliquidNetwork,
+  hyperliquidWorstSpent,
+} from "./params.ts";
 import { hyperliquidApproval } from "./prompt.ts";
 
-/* Hyperliquid caps an agent name's `valid_until` at 180 days out (docs exchange-endpoint §Approve
-   an API wallet) and allows at most 16 live agents per vault. */
-const AGENT_MAX_TTL_MS = 180 * 86_400_000;
-const MAX_AGENTS = 16;
 /* Hyperliquid rejects an action past its `expiresAfter` (docs §Expires After), so a signature is
    submit-able at most 60 s after it was made — the post-lock exposure. The nonce keeps the same
    60 s window so a compromised runtime cannot pre-sign far ahead. Both are on the device clock —
    the kernel has no trusted time: a clock S ahead makes it S + 60 s of real time (Hyperliquid
    takes nonces up to a day ahead; the engine's `assertClock()` is the mitigation). */
-const EXPIRES_AFTER_MS = 60_000;
-const NONCE_WINDOW_MS = 60_000;
-/* A scheduled cancel must land ≥ 5 s out (docs §Schedule cancel) and within the session's own
-   validUntil — the kernel signs no scheduled effect past the approved authorisation. */
-const SCHEDULE_CANCEL_MIN_MS = 5000;
+const WINDOW_MS = 60_000;
 
+/* Hyperliquid caps an agent name's `valid_until` at 180 days out (docs exchange-endpoint §Approve
+   an API wallet); 16 records per vault is this kernel's own cap. */
 export const hyperliquidL1Agent: SessionScheme = defineSessionScheme({
   id: "hyperliquid-l1-agent",
-  maxTtlMs: AGENT_MAX_TTL_MS,
-  maxPerVault: MAX_AGENTS,
+  maxTtlMs: 180 * 86_400_000,
+  maxPerVault: 16,
   parseScope: hyperliquidNetwork,
   params: hyperliquidL1Params,
-  document: (params, header, scope, now) => {
-    if (!(now < params.expiresAfter && params.expiresAfter <= now + EXPIRES_AFTER_MS)) {
+  document: (params, _header, scope, now) => {
+    if (!(now < params.expiresAfter && params.expiresAfter <= now + WINDOW_MS)) {
       throw new KernelError("invalid-input", "expiresAfter outside the signing window");
     }
-    if (Math.abs(params.nonce - now) > NONCE_WINDOW_MS) {
+    if (Math.abs(params.nonce - now) > WINDOW_MS) {
       throw new KernelError("invalid-input", "nonce outside the signing window");
-    }
-    if (
-      params.action.type === "scheduleCancel" &&
-      params.action.time !== undefined &&
-      !(
-        params.action.time >= now + SCHEDULE_CANCEL_MIN_MS &&
-        params.action.time <= header.validUntil
-      )
-    ) {
-      throw new KernelError("invalid-input", "schedule time outside the session");
     }
     return hyperliquidL1Document(params, scope);
   },
   metering: {
     limits: hyperliquidL1Limits,
+    spent: hyperliquidL1Spent,
+    fresh: hyperliquidFreshSpent,
+    worstSpent: hyperliquidWorstSpent,
     meter: meterHyperliquid,
     prompt: hyperliquidApproval,
   },

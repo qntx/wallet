@@ -205,6 +205,63 @@ export const cardPromptFor =
   (): KeystorePrompt =>
     cardPrompt(promptLocale(keystore?.locale ?? "en"), kind, cards());
 
+/**
+ * The `chain.exportAccount` prompt's per-locale text. The prompt is rendered from the requested
+ * nodes — one row each — so the verification names every scope the export discloses: the first row
+ * frames the share, `evmAccount` states the wallet-wide EVM disclosure, `leaf` and `btcAccount`
+ * name the account and template each xpub or public key covers.
+ */
+export type ExportAccountText = {
+  readonly title: string;
+  readonly share: (groupIndex: number) => string;
+  readonly evmAccount: (path: string) => string;
+  readonly leaf: (family: "EVM" | "TRON" | "Solana", groupIndex: number, path: string) => string;
+  readonly btcAccount: (
+    template: string,
+    network: string,
+    groupIndex: number,
+    path: string,
+  ) => string;
+  readonly btcTemplate: Readonly<
+    Record<"btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86", string>
+  >;
+};
+
+const EXPORT_ACCOUNT: Readonly<Record<PromptLocale, ExportAccountText>> = {
+  en: {
+    title: "Connect watch-only wallet",
+    share: (g) => `Share public keys of account ${g} — never a private key`,
+    evmAccount: (path) => `EVM: the addresses of every account of this wallet (${path})`,
+    leaf: (family, g, path) => `${family} address of account ${g} (${path})`,
+    btcAccount: (template, network, g, path) =>
+      `Bitcoin ${template} on ${network}: every address of account ${g} (${path})`,
+    btcTemplate: {
+      "btc.bip44": "Legacy (BIP-44)",
+      "btc.bip49": "Wrapped SegWit (BIP-49)",
+      "btc.bip84": "Native SegWit (BIP-84)",
+      "btc.bip86": "Taproot (BIP-86)",
+    },
+  },
+  "zh-Hans": {
+    title: "连接观察钱包",
+    share: (g) => `共享账户 ${g} 的公开密钥——绝不包含私钥`,
+    evmAccount: (path) => `EVM：本钱包所有账户的地址（${path}）`,
+    leaf: (family, g, path) => `${family} 账户 ${g} 的地址（${path}）`,
+    btcAccount: (template, network, g, path) =>
+      `${network} ${template}：账户 ${g} 的全部地址（${path}）`,
+    btcTemplate: {
+      "btc.bip44": "传统（BIP-44）",
+      "btc.bip49": "兼容隔离见证（BIP-49）",
+      "btc.bip84": "原生隔离见证（BIP-84）",
+      "btc.bip86": "Taproot（BIP-86）",
+    },
+  },
+};
+
+export function exportAccountText(locale: PromptLocale): ExportAccountText {
+  return EXPORT_ACCOUNT[locale];
+}
+
 export type BackupPasswordLabel = "choose" | "again" | "mismatch" | "short" | "enter";
 
 /**
@@ -246,6 +303,19 @@ const BACKUP_CREDENTIAL_NAME: Readonly<Record<PromptLocale, string>> = {
   "zh-Hans": "云备份密钥",
   en: "Cloud backup key",
 };
+
+const SESSION_APPROVAL_CODE: Readonly<Record<PromptLocale, (code: string) => string>> = {
+  "zh-Hans": (code) => `在下方输入 ${code} 以批准以上限额`,
+  en: (code) => `Type ${code} below to approve these limits`,
+};
+
+/**
+ * The last line of a `session-approval` label — always last, so a clipped label drops the code line
+ * first and a submitted code proves the lines above it were on screen.
+ */
+export function sessionApprovalCode(locale: PromptLocale, code: string): string {
+  return SESSION_APPROVAL_CODE[locale](code);
+}
 
 /** A prompt thunk for a core operation — the keystore locale is read only when it runs. */
 export const corePromptFor =

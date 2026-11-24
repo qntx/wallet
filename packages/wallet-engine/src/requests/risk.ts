@@ -23,7 +23,9 @@ import type { WalletConnectVerify } from "./types.ts";
  * Request risk, pure. A recipient the wallet has never paid or saved is a `warning`; one that looks
  * like a known address (same first and last four characters, different address) is a `danger` — the
  * shape of an address-poisoning lookalike. Both can apply to one recipient. A page the user trusts
- * despite the phishing list is a `danger`; one that could not be checked is a `warning`.
+ * despite the phishing list is a `danger`; one that could not be checked is a `warning`. A sign-in
+ * over QR carries no verifiable domain at all — a `danger` the user must acknowledge, since a dApp
+ * claiming a domain it does not own is refused outright.
  */
 export type RiskFinding = {
   readonly code:
@@ -53,6 +55,7 @@ export type RiskFinding = {
     | "bitcoin-sighash-single"
     | "bitcoin-inscription-input"
     | "bitcoin-frozen-input"
+    | "bitcoin-unusual-output"
     | "stake-authority"
     | "blind-signing"
     | "contract-recipient"
@@ -67,7 +70,8 @@ export type RiskFinding = {
     | "fiat24-exact-out-unbounded"
     | "fiat24-payee-offchain"
     | "fiat24-account-move"
-    | "fiat24-account-burn";
+    | "fiat24-account-burn"
+    | "qr-sign-in-unverified";
   readonly level: "warning" | "danger";
 };
 
@@ -147,6 +151,7 @@ export const WARNING_RISK: Readonly<
   "fiat24-account-link": undefined,
   "fiat24-account-move": { code: "fiat24-account-move", level: "danger" },
   "fiat24-account-burn": { code: "fiat24-account-burn", level: "warning" },
+  "unusual-own-output": { code: "bitcoin-unusual-output", level: "warning" },
 };
 
 /**
@@ -288,7 +293,7 @@ export function assessSafe(safe: SafeTransaction | undefined): ReadonlyArray<Ris
 export function assessBitcoinPsbts(
   inputs: ReadonlyArray<{
     readonly value: number;
-    readonly template: "btc.bip84" | "btc.bip86";
+    readonly template: "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
     readonly sigHash: "ALL" | "SINGLE|ANYONECANPAY";
     readonly frozen: boolean;
   }>,

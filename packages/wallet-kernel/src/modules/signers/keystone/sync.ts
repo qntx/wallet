@@ -12,11 +12,11 @@ import type { Keypath } from "@qntx/ur/interop";
 import type { KeyPath } from "@qntx/wallet-chains";
 import type { DeviceResponse } from "@qntx/wallet/protocol";
 
+import { KernelError } from "../../../errors.ts";
 import type { PinnedEd25519, PinnedNode } from "../../../derive/pinned.ts";
 import { fingerprintBytes, samePath } from "../../../derive/pinned.ts";
-import { KernelError } from "../../../errors.ts";
 import type { PairingResult } from "../driver.ts";
-import { decodeRegistry } from "./registry.ts";
+import { decodeUr } from "./ur.ts";
 
 const HARDENED = 0x80000000;
 
@@ -40,10 +40,13 @@ function fail(): never {
   throw new KernelError("integrity", "malformed crypto-multi-accounts sync");
 }
 
-/** The derivation path a keypath claims, or `undefined` when a non-index makes it unpinnable. */
-export const pathOf = (keyPath: Keypath): KeyPath | undefined => {
+/**
+ * The derivation path a keypath claims, or `undefined` when a non-index component (wildcard, range,
+ * pair) makes it unpinnable.
+ */
+export const pathOf = (keypath: Keypath): KeyPath | undefined => {
   const components: number[] = [];
-  for (const component of keyPath.components) {
+  for (const component of keypath.components) {
     if (component.kind !== "index" || component.index > 0x7fffffff) {
       return undefined;
     }
@@ -52,24 +55,25 @@ export const pathOf = (keyPath: Keypath): KeyPath | undefined => {
   return components;
 };
 
-/** A registry uint32 fingerprint as the four-byte big-endian form the kernel pins. */
 /** Parses the QR response: exactly a `crypto-multi-accounts` UR or `integrity`. */
 export const parseSync = (response: DeviceResponse): PairingResult => {
   if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") {
     fail();
   }
-  const accounts = decodeRegistry(response.ur.cbor, cryptoMultiAccountsCodec);
+  const accounts = decodeUr("crypto-multi-accounts", response.ur.cbor, cryptoMultiAccountsCodec);
   const nodes: PinnedNode[] = [];
   const ed25519: PinnedEd25519[] = [];
   const claimed: KeyPath[] = [];
-  for (const entry of accounts.keys) {
-    const { key } = entry;
-    const path = key.origin === undefined ? undefined : pathOf(key.origin);
-    // A key that cannot name its own path is not pinnable.
-    const source = key.origin?.sourceFingerprint;
-    if (source !== undefined && source !== accounts.masterFingerprint) {
+  for (const key of accounts.keys) {
+    const { origin } = key.key;
+    const path = origin === undefined ? undefined : pathOf(origin);
+    if (
+      origin?.sourceFingerprint !== undefined &&
+      origin.sourceFingerprint !== accounts.masterFingerprint
+    ) {
       fail();
     }
+    // A key that cannot name its own path is not pinnable.
     if (path === undefined) {
       continue;
     }
@@ -79,26 +83,30 @@ export const parseSync = (response: DeviceResponse): PairingResult => {
     }
     claimed.push(path);
     if (SECP256K1_PATHS.some((wanted) => samePath(path, wanted))) {
+      if (key.curve !== "secp256k1") {
+        fail();
+      }
+      const node = key.key;
       if (
-        entry.curve !== "secp256k1" ||
-        key.chainCode === undefined ||
-        !secp256k1.utils.isValidPublicKey(key.keyData)
+        node.chainCode === undefined ||
+        node.chainCode.length !== 32 ||
+        !secp256k1.utils.isValidPublicKey(node.keyData)
       ) {
         fail();
       }
       nodes.push({
         path,
-        publicKey: new Uint8Array(key.keyData),
-        chainCode: new Uint8Array(key.chainCode),
-        ...(key.parentFingerprint === undefined
+        publicKey: new Uint8Array(node.keyData),
+        chainCode: new Uint8Array(node.chainCode),
+        ...(node.parentFingerprint === undefined
           ? {}
-          : { parent: fingerprintBytes(key.parentFingerprint) }),
+          : { parent: fingerprintBytes(node.parentFingerprint) }),
       });
     } else if (ED25519_PATHS.some((wanted) => samePath(path, wanted))) {
-      if (entry.curve !== "ed25519") {
+      if (key.curve !== "ed25519") {
         fail();
       }
-      ed25519.push({ path, publicKey: new Uint8Array(key.keyData) });
+      ed25519.push({ path, publicKey: new Uint8Array(key.key.keyData) });
     }
   }
   if (nodes.length === 0 && ed25519.length === 0) {

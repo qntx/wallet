@@ -110,6 +110,7 @@ type AssetFlow = {
     } | {
         readonly payee: string;
     };
+    readonly ownPath?: string;
     readonly name?: string;
 };
 
@@ -121,6 +122,9 @@ type Bip340Task = {
     readonly message: Uint8Array;
     readonly tweak: Uint8Array;
 };
+
+// @public
+export const BITCOIN_GAP_LIMIT = 20;
 
 // @public (undocumented)
 export const BITCOIN_NETWORKS: Readonly<Record<string, BitcoinNetwork>>;
@@ -154,6 +158,19 @@ type BitcoinNetwork = {
 // @public (undocumented)
 export const bitcoinNetwork: (caip2: string) => BitcoinNetwork;
 
+// @public
+export type BitcoinOwn = {
+    readonly change: ReadonlySet<string>;
+    readonly unusual: ReadonlyMap<string, string>;
+};
+
+// @public
+export type BitcoinPathTail = {
+    readonly purpose: number;
+    readonly change: number;
+    readonly index: number;
+};
+
 // @public (undocumented)
 export type BitcoinPsbtPlan = {
     readonly kind: "bitcoin.psbt";
@@ -181,7 +198,7 @@ type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
 // @public
 export const decodeBitcoinPsbt: (request: Extract<SignRequest, {
     kind: "bitcoin.psbt";
-}>, ownScripts?: ReadonlySet<string>) => DisplayIntent;
+}>, own?: BitcoinOwn) => DisplayIntent;
 
 // @public
 export const decodeMessageTarget: (request: Extract<SignRequest, {
@@ -263,6 +280,9 @@ type EcdsaTask = {
     readonly publicKey: Uint8Array;
     readonly digest: Uint8Array;
 };
+
+// @public (undocumented)
+export const EMPTY_BITCOIN_OWN: BitcoinOwn;
 
 // @public (undocumented)
 type EvmAccessListEntry = {
@@ -410,7 +430,10 @@ type IntentWarning = {
 };
 
 // @public
-type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-issuer-rate" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-swap-quote" | "fiat24-account-link" | "fiat24-account-move" | "fiat24-account-burn";
+type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-issuer-rate" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-swap-quote" | "fiat24-account-link" | "fiat24-account-move" | "fiat24-account-burn" | "unusual-own-output";
+
+// @public
+export const isDiscoverableChange: (output: BitcoinPathTail, signed: ReadonlyArray<BitcoinPathTail>) => boolean;
 
 // @public
 type KeyPath = ReadonlyArray<number>;
@@ -805,7 +828,7 @@ type Verifiability = "full" | "partial" | "opaque";
 // @public (undocumented)
 export const verifiabilityBitcoin: (request: Extract<SignRequest, {
     kind: "bitcoin.psbt";
-}>, ownScripts?: ReadonlySet<string>) => Verifiability;
+}>, own?: BitcoinOwn) => Verifiability;
 
 // @public
 export const verifyBitcoinMessage: (address: string, message: string, signatureBase64: string, network: string) => boolean;

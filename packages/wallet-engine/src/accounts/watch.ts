@@ -1,10 +1,19 @@
 import { Address } from "@scure/btc-signer";
 
+import { bitcoinAddressFromXpub } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, isEvmAddress } from "@qntx/wallet-chains/evm";
 import { isSolanaAddress } from "@qntx/wallet-chains/solana";
 import { isTronAddress } from "@qntx/wallet-chains/tron";
 
 import { Controller } from "../controller.ts";
+import {
+  BITCOIN_MAINNET,
+  BITCOIN_TESTNET,
+  PURPOSE_TEMPLATE,
+  QR_FINGERPRINT,
+  pathComponents,
+  qrLinkPath,
+} from "../qr/link.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineCollection, EngineStore } from "../store/port.ts";
 
@@ -17,6 +26,12 @@ export type WatchAccount = {
   readonly family: "evm" | "solana" | "bitcoin" | "tron";
   readonly address: string;
   readonly name?: string;
+  /**
+   * The phone this watch account signs through: its master fingerprint, the signing key's path and
+   * — Bitcoin only — the account xpub. A qr-linked watch account signs only through the phone's
+   * frames; it still never reaches `AccountRef`.
+   */
+  readonly qr?: { readonly fingerprint: string; readonly path: string; readonly xpub?: string };
   readonly createdAt: number;
 };
 
@@ -60,18 +75,38 @@ const normalise = (family: WatchAccount["family"], address: string): string | un
   return decodeBtcAddress(address) ? address : undefined;
 };
 
+const isQrLink = (v: unknown, family: WatchAccount["family"]): boolean => {
+  if (typeof v !== "object" || v === null) {
+    return false;
+  }
+  const fingerprint: unknown = Reflect.get(v, "fingerprint");
+  const path: unknown = Reflect.get(v, "path");
+  const xpub: unknown = Reflect.get(v, "xpub");
+  return (
+    typeof fingerprint === "string" &&
+    QR_FINGERPRINT.test(fingerprint) &&
+    typeof path === "string" &&
+    qrLinkPath(family, path) &&
+    (family === "bitcoin" ? typeof xpub === "string" : xpub === undefined)
+  );
+};
+
 const isWatchRecord = (v: unknown): v is WatchAccount => {
   if (typeof v !== "object" || v === null) {
     return false;
   }
   const family: unknown = Reflect.get(v, "family");
   const name: unknown = Reflect.get(v, "name");
+  const qr: unknown = Reflect.get(v, "qr");
+  if (family !== "evm" && family !== "solana" && family !== "bitcoin" && family !== "tron") {
+    return false;
+  }
   return (
     typeof Reflect.get(v, "id") === "string" &&
-    (family === "evm" || family === "solana" || family === "bitcoin" || family === "tron") &&
     typeof Reflect.get(v, "address") === "string" &&
     isNonNegativeInt(Reflect.get(v, "createdAt")) &&
-    (name === undefined || typeof name === "string")
+    (name === undefined || typeof name === "string") &&
+    (qr === undefined || isQrLink(qr, family))
   );
 };
 
@@ -130,10 +165,41 @@ export class WatchController extends Controller<WatchState> {
     readonly family: WatchAccount["family"];
     readonly address: string;
     readonly name?: string;
+    readonly qr?: { readonly fingerprint: string; readonly path: string; readonly xpub?: string };
   }): Promise<WatchAccount> {
     const address = normalise(input.family, input.address.trim());
     if (address === undefined) {
       throw new Error(`not a valid ${input.family} address`);
+    }
+    const { qr } = input;
+    if (qr !== undefined) {
+      if (!QR_FINGERPRINT.test(qr.fingerprint)) {
+        throw new Error("a qr link fingerprint must be 8 lowercase hex digits");
+      }
+      if (!qrLinkPath(input.family, qr.path)) {
+        throw new Error(`path ${qr.path} is not a ${input.family} signing path`);
+      }
+      if (input.family === "bitcoin" && qr.xpub === undefined) {
+        throw new Error("a bitcoin qr link carries the account xpub");
+      }
+      if (input.family !== "bitcoin" && qr.xpub !== undefined) {
+        throw new Error("only a bitcoin qr link carries an xpub");
+      }
+      if (qr.xpub !== undefined) {
+        /* The stored address must be the account's first receive address — the link claims
+           exactly one account, and an xpub that derives a different 0/0 is not it. */
+        const steps = pathComponents(qr.path);
+        const purpose = steps?.[0]?.index;
+        const coin = steps?.[1]?.index;
+        const template = purpose === undefined ? undefined : PURPOSE_TEMPLATE[purpose];
+        if (template === undefined || (coin !== 0 && coin !== 1)) {
+          throw new Error(`bad bitcoin qr path ${qr.path}`);
+        }
+        const network = coin === 0 ? BITCOIN_MAINNET : BITCOIN_TESTNET;
+        if (bitcoinAddressFromXpub(qr.xpub, template, network, 0, 0) !== address) {
+          throw new Error("the xpub's first receive address is not the watched address");
+        }
+      }
     }
     if (Object.values(this.getState().accounts).some((a) => a.address === address)) {
       throw new Error("the address is already watched");
@@ -148,6 +214,7 @@ export class WatchController extends Controller<WatchState> {
       address,
       createdAt: this.options.now(),
       ...(input.name === undefined ? {} : { name: input.name }),
+      ...(qr === undefined ? {} : { qr }),
     };
     this.update((s) => ({ accounts: { ...s.accounts, [account.id]: account } }));
     await this.persist(account);

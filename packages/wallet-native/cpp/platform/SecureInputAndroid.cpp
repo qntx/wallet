@@ -34,13 +34,16 @@ void deliver(
     return;
   }
   jint kind = 0;
+  // The SecureInputField.kt KIND_* ordinals, shared with the C++ enum.
   // make_jstring handles all of UTF-8; NewStringUTF's modified UTF-8
   // rejects astral characters and aborts under CheckJNI.
   jni::local_ref<jstring> label;
   if (prompt.has_value()) {
     kind = prompt->kind == SecureInputKind::accessCode
                ? 0
-               : prompt->kind == SecureInputKind::shortId ? 1 : 2;
+               : prompt->kind == SecureInputKind::shortId
+                     ? 1
+                     : prompt->kind == SecureInputKind::backupPassword ? 2 : 3;
     label = jni::make_jstring(prompt->label);
   }
   env->CallVoidMethod(field.get(), g_deliver, kind, label.get());
