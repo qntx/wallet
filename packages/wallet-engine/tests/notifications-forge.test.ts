@@ -16,10 +16,16 @@ import { base64urlnopad } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
 import { verifyEvent } from "@qntx/nostr";
+import { chains } from "@qntx/wallet/chains";
+import type { Wallet } from "@qntx/wallet";
+import { hardware } from "@qntx/wallet/hardware";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 
 import vectors from "../../../vectors/push.json" with { type: "json" };
+import { ok, scriptedLedger, utf8Hex, xpubAt } from "../../wallet-kernel/tests/signers-ledger-fake.ts";
 import { createWalletEngine } from "../src/engine.ts";
+import { until } from "./apps-helpers.ts";
+import { pairKeystone } from "./keystone-io.ts";
 import { pushAad, PUSH_ID_DOMAIN, pushEventInput } from "../src/gateway/contract/push-message.ts";
 import type { PushEventKind } from "../src/gateway/contract/push-message.ts";
 import type { PushKeyStore } from "../src/notifications/controller.ts";
@@ -248,6 +254,156 @@ describe("createWalletEngine notifications forge", () => {
       ).resolves.toBeUndefined();
       await sleep(300);
       expect(historyQueries).toBe(beforeBadQueries);
+    } finally {
+      await wallet.vault.lock();
+    }
+  });
+
+  /**
+   * Pairing a Ledger answers the Bitcoin app's four group-0 account xpubs — the speculos seed's
+   * fingerprint plus `xpubAt` under the recorded seed script it exactly. Its evm/solana lanes stay
+   * device-only: nothing non-bitcoin is pinned.
+   */
+  const pairLedger = async (wallet: Wallet): Promise<string> => {
+    const HARD = 0x80_00_00_00;
+    const word = (index: number): string => (index + HARD).toString(16).padStart(8, "0");
+    const fake = scriptedLedger("bitcoin", [
+      { apdu: "e105000100", response: ok("f5acc2fd") },
+      ...[44, 49, 84, 86].map((purpose) => ({
+        apdu: `e10000010e0003${word(purpose)}${word(0)}${word(0)}`,
+        response: ok(utf8Hex(xpubAt([purpose + HARD, HARD, HARD]))),
+      })),
+    ]);
+    const result = await hardware(wallet).start(
+      { kind: "pair", device: "ledger" },
+      { io: fake.link },
+    ).result;
+    fake.done();
+    if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
+      throw new Error("pair did not return a hardware wallet");
+    }
+    return result.wallet.walletId;
+  };
+
+  it("a hardware family's unpinned group does not blind its pinned one", async () => {
+    const SOL = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+    const puts: Array<{ path: string; addresses: ReadonlyArray<string> }> = [];
+    const exported = new Map<string, Uint8Array>();
+    const keys: PushKeyStore = {
+      // oxlint-disable-next-line typescript/require-await -- the port returns a promise
+      put: async (id, key) => {
+        exported.set(id, key);
+      },
+      // oxlint-disable-next-line typescript/require-await -- the port returns a promise
+      delete: async (id) => {
+        exported.delete(id);
+      },
+      // oxlint-disable-next-line typescript/require-await -- the port returns a promise
+      ids: async () => [...exported.keys()],
+    };
+
+    // oxlint-disable-next-line typescript/require-await -- the fetch signature requires a promise
+    const fetchStub: typeof globalThis.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method ?? "GET";
+      const path = url.slice(GATEWAY.length);
+      if (method === "GET" && path === "/v1/push") {
+        return Response.json({ platforms: ["apns"], families: ["evm", "solana"] });
+      }
+      if (method === "GET" && path === "/v1/networks") {
+        return Response.json({ networks: [EVM, SOL] });
+      }
+      if (method === "PUT" && /^\/v1\/push\/(evm|solana)\/subscription$/.test(path)) {
+        const auth = new Headers(init?.headers).get("authorization") ?? "";
+        const secret = base64urlnopad.decode(auth.replace(/^Bearer /, ""));
+        const body = JSON.parse(String(init?.body)) as { addresses: string[]; networks: string[] };
+        puts.push({ path, addresses: body.addresses });
+        return Response.json({
+          id: subscriptionIdOf(secret),
+          networks: body.networks,
+          expiresAt: Date.now() + 30 * 86_400_000,
+        });
+      }
+      if (method === "DELETE" && /^\/v1\/push\/(evm|solana)\/subscription$/.test(path)) {
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({ error: "unsupported" }, { status: 404 });
+    };
+
+    const wallet = await createNodeWallet({
+      verifyEvent,
+      passkey: {
+        rpId: "qntx.test",
+        rpName: "qntx",
+        walletSalt: "qntx/wallet",
+        backupSalt: "qntx/backup",
+        vaultSalt: "qntx/vault",
+      },
+      autoLock: { platform: "web", idleMinutes: 15 },
+      authenticator: createSoftwarePasskey(randomBytes(32)),
+      kernelUrl: KERNEL_URL,
+    });
+    try {
+      const engine = createWalletEngine({
+        publicStore: createMemoryPublicStore(),
+        verifyEvent,
+        weblnAlias: "test",
+        lightningMaxFee: () => 0,
+        wallet,
+        sparkNetwork: "regtest",
+        fetch: fetchStub,
+        random: (n) => randomBytes(n),
+        now: () => Date.now(),
+        logger: { warn: () => undefined },
+        showCallsStatus: () => undefined,
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        gateway: { url: GATEWAY },
+        rpc: { [EVM]: [RPC] },
+        pushKeys: keys,
+      });
+      await wallet.wallets.importMnemonic({
+        mnemonic: MNEMONIC,
+        factor: { kind: "password", password: PASSWORD },
+      });
+
+      /* The Ledger pinned only its four bitcoin xpubs — every group of both push families
+         needs the device, so both lanes record `device-required` and PUT nothing. */
+      const ledgerId = await pairLedger(wallet);
+      await until(() => (engine.accounts.getState().groups[ledgerId]?.length ?? 0) === 1);
+      engine.accounts.addGroup(ledgerId);
+      await engine.notifications.setToken("apns", "device-token");
+      await engine.notifications.enable(ledgerId);
+      await until(
+        () =>
+          engine.notifications.getState().wallets[ledgerId]?.families["evm"] ===
+            "device-required" &&
+          engine.notifications.getState().wallets[ledgerId]?.families["solana"] ===
+            "device-required",
+      );
+      expect(puts).toHaveLength(0);
+
+      /* The Keystone pinned group 0 of every family — group 1's solana leaf stays on the
+         device. Its solana lane must still subscribe the group it can read. */
+      const hwId = await pairKeystone(wallet);
+      await until(() => (engine.accounts.getState().groups[hwId]?.length ?? 0) === 1);
+      engine.accounts.addGroup(hwId);
+      await engine.notifications.enable(hwId);
+      await until(() => puts.some((p) => p.path === "/v1/push/solana/subscription"));
+      const group0 = await chains(wallet).account({
+        walletId: hwId,
+        groupIndex: 0,
+        template: "solana.bip44-change",
+        network: SOL,
+      });
+      if (!("address" in group0)) {
+        throw new Error("expected a solana account");
+      }
+      /* One blind group must not sink the family: the subscription carries group 0's
+         address and the lane reports active. */
+      const solPut = puts.findLast((p) => p.path === "/v1/push/solana/subscription");
+      expect(solPut?.addresses).toStrictEqual([group0.address]);
+      expect(engine.notifications.getState().wallets[hwId]?.families["solana"]).toBe("active");
+      expect(engine.notifications.getState().wallets[hwId]?.families["evm"]).toBe("active");
     } finally {
       await wallet.vault.lock();
     }

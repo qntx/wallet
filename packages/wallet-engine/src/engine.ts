@@ -1026,14 +1026,27 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         return [];
       }
       const out: string[] = [];
+      let deviceNeeded = false;
       for (const group of accounts.getState().groups[walletId] ?? []) {
-        // oxlint-disable-next-line eslint/no-await-in-loop -- groups derive serially, like portfolio
-        for (const { address } of await groupAddresses(
-          { walletId, groupIndex: group.index },
-          family,
-        )) {
+        let derived: ReadonlyArray<{ readonly network: string; readonly address: string }>;
+        try {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- groups derive serially, like portfolio
+          derived = await groupAddresses({ walletId, groupIndex: group.index }, family);
+        } catch (error) {
+          /* One group waiting on its signer must not blind the family's readable groups —
+             the status stays `device-required` only when nothing can be watched. */
+          if (error instanceof WalletError && error.code === "device-required") {
+            deviceNeeded = true;
+            continue;
+          }
+          throw error;
+        }
+        for (const { address } of derived) {
           out.push(address);
         }
+      }
+      if (out.length === 0 && deviceNeeded) {
+        throw new WalletError("device-required", "every group's path lives on the device");
       }
       return out;
     },
