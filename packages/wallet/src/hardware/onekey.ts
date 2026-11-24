@@ -20,7 +20,7 @@
  *
  * `oneKeyAnswerLength` returns the total byte count to collect for one device answer from its first
  * chunk — USB report count times 64, or the BLE header-plus-payload size — and throws on a chunk
- * that is not a OneKey frame. Exported for tests; the exchange helpers below cover it.
+ * that is not a OneKey frame.
  */
 import type { DeviceIo, DeviceRequest, DeviceResponse } from "../protocol/hardware.ts";
 import { WalletError } from "../types.ts";
@@ -29,6 +29,7 @@ import type { BlePort, HidPort } from "./ports.ts";
 const REPORT_SIZE = 64;
 
 const input = (message: string): WalletError => new WalletError("invalid-input", message);
+const integrity = (message: string): WalletError => new WalletError("integrity", message);
 
 export const oneKeyAnswerLength = (firstChunk: Uint8Array, transport: "usb" | "ble"): number => {
   if (
@@ -47,17 +48,34 @@ export const oneKeyAnswerLength = (firstChunk: Uint8Array, transport: "usb" | "b
   return transport === "usb" ? 64 * Math.max(1, Math.ceil((8 + length) / 63)) : 9 + length;
 };
 
-/** Reads `port` until `answerLength(first chunk)` bytes have arrived; returns the whole sequence. */
+/**
+ * Reads `port` until `answerLength(first chunk)` bytes have arrived; returns the whole sequence.
+ * Over USB every report is exactly 64 bytes; over BLE a notification may be any size, but the stream
+ * must stop exactly at the announced length — a short or long transport read is `integrity`, like
+ * the Ledger assembler's violations.
+ */
 const collect = async (port: HidPort | BlePort, transport: "usb" | "ble"): Promise<Uint8Array> => {
   const first = await port.read();
+  if (transport === "usb" && first.length !== REPORT_SIZE) {
+    throw integrity("a HID answer report is not 64 bytes");
+  }
   const total = oneKeyAnswerLength(first, transport);
   const chunks = [first];
   let collected = first.length;
   while (collected < total) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- one chunk per transport read
     const chunk = await port.read();
+    if (chunk.length === 0) {
+      throw integrity("the device answer stalled on an empty read");
+    }
+    if (transport === "usb" && chunk.length !== REPORT_SIZE) {
+      throw integrity("a HID answer report is not 64 bytes");
+    }
     chunks.push(chunk);
     collected += chunk.length;
+  }
+  if (collected !== total) {
+    throw integrity("the device answer overshot its announced length");
   }
   const data = new Uint8Array(collected);
   let at = 0;

@@ -160,6 +160,36 @@ describe("onekey link", () => {
     const bleExchange = oneKeyBleExchange(ble, 20);
     await expect(code(bleExchange(new Uint8Array(64).fill(1)))).resolves.toBe("invalid-input");
   });
+
+  it("rejects a first HID report that is not 64 bytes as integrity", async () => {
+    const { port } = hidQueue([report(3).subarray(0, 63)]);
+    const exchange = oneKeyHidExchange(port);
+    await expect(code(exchange(new Uint8Array(64).fill(1)))).resolves.toBe("integrity");
+  });
+
+  it("rejects a continuation HID report that is not 64 bytes as integrity", async () => {
+    const { port } = hidQueue([report(118), new Uint8Array(32)]);
+    const exchange = oneKeyHidExchange(port);
+    await expect(code(exchange(new Uint8Array(64).fill(1)))).resolves.toBe("integrity");
+  });
+
+  it("rejects a BLE stream that runs past the announced length as integrity", async () => {
+    const first = new Uint8Array(20);
+    first.set([0x3f, 0x23, 0x23, 0, 0]);
+    new DataView(first.buffer).setUint32(5, 20); // announces 29 bytes
+    const { port } = bleQueue([first, new Uint8Array(20).fill(0x22)]);
+    const exchange = oneKeyBleExchange(port, 20);
+    await expect(code(exchange(new Uint8Array(64).fill(1)))).resolves.toBe("integrity");
+  });
+
+  it("rejects an empty BLE notification as integrity", async () => {
+    const first = new Uint8Array(20);
+    first.set([0x3f, 0x23, 0x23, 0, 0]);
+    new DataView(first.buffer).setUint32(5, 20); // announces 29 bytes
+    const { port } = bleQueue([first, new Uint8Array(0)]);
+    const exchange = oneKeyBleExchange(port, 20);
+    await expect(code(exchange(new Uint8Array(64).fill(1)))).resolves.toBe("integrity");
+  });
 });
 
 describe("oneKeyAnswerLength", () => {
