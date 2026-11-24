@@ -31,7 +31,8 @@ const isValidUtf8 = (value: Uint8Array): boolean => {
 /**
  * The hub's contract for `kind`, rechecked here: an access code is 1..64 printable-ASCII bytes, a
  * short id is exactly 8 upper-case hex characters, a backup password is 1..1024 bytes of valid
- * UTF-8. A platform that hands over out-of-shape bytes gets them wiped, not forwarded.
+ * UTF-8, a session approval is exactly 4 ASCII digits. A platform that hands over out-of-shape
+ * bytes gets them wiped, not forwarded.
  */
 function validFor(kind: SecureInputKind, value: Uint8Array): boolean {
   if (kind === "access-code") {
@@ -44,6 +45,9 @@ function validFor(kind: SecureInputKind, value: Uint8Array): boolean {
       value.length === 8 &&
       value.every((byte) => (byte >= 0x30 && byte <= 0x39) || (byte >= 0x41 && byte <= 0x46))
     );
+  }
+  if (kind === "session-approval") {
+    return value.length === 4 && value.every((byte) => byte >= 0x30 && byte <= 0x39);
   }
   return value.length > 0 && value.length <= 1024 && isValidUtf8(value);
 }

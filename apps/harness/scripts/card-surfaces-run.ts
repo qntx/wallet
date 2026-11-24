@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import {
   ACCESS_CODE,
   DECOY,
+  SESSION_APPROVAL_CODE,
   SHORT_ID_TYPED,
 } from "../probes/card-surfaces-fixture.ts";
 
@@ -141,6 +142,9 @@ const android = (): void => {
     waitFor("CARD_STEP type-short-id", 60_000);
     spawnSync("sleep", ["1.5"]);
     typeText(SHORT_ID_TYPED);
+    waitFor("CARD_STEP type-approval", 60_000);
+    spawnSync("sleep", ["1.5"]);
+    typeText(SESSION_APPROVAL_CODE);
     waitFor("CARD_SURFACES_DONE", 240_000);
     log("done — run card-leak-check.ts on the capture");
   } finally {
@@ -194,6 +198,10 @@ const ios = (): void => {
       waitFor("CARD_STEP type-short-id", 60_000);
       spawnSync("sleep", ["1.5"]);
       spawnSync("idb", ["ui", "text", SHORT_ID_TYPED]);
+      spawnSync("idb", ["ui", "key", "40"]);
+      waitFor("CARD_STEP type-approval", 60_000);
+      spawnSync("sleep", ["1.5"]);
+      spawnSync("idb", ["ui", "text", SESSION_APPROVAL_CODE]);
       spawnSync("idb", ["ui", "key", "40"]);
       waitFor("CARD_SURFACES_DONE", 240_000);
     } else {

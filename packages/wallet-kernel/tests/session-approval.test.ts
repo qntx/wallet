@@ -26,6 +26,7 @@ import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
 import type { KeystoreCall } from "./keystore.ts";
+import { fakeSecureInput } from "./secure-input.ts";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -172,7 +173,8 @@ const spentOf = async (
 describe("app-lock gate", () => {
   it("a device-factor vault answers app-lock-required on create, open and sign", async () => {
     const fk = fakeKeystore();
-    const h = createHarness({ keystore: fk.keystore, start: T0 });
+    const input = fakeSecureInput({ approval: "correct" });
+    const h = createHarness({ keystore: fk.keystore, secureInput: input.secureInput, start: T0 });
     await h.settle();
     const res = ok(
       await h.call("wallet.importMnemonic", {
@@ -231,7 +233,8 @@ describe("app-lock gate", () => {
 describe("approval ceremony", () => {
   it("create shows the limits prompt and the new session signs immediately", async () => {
     const fk = fakeKeystore();
-    const h = createHarness({ keystore: fk.keystore, start: T0 });
+    const input = fakeSecureInput({ approval: "correct" });
+    const h = createHarness({ keystore: fk.keystore, secureInput: input.secureInput, start: T0 });
     await h.settle();
     const res = ok(
       await h.call("wallet.importMnemonic", {
@@ -274,7 +277,8 @@ describe("approval ceremony", () => {
 
   it("after lock+unlock sign answers approval-required until sessions.open verifies", async () => {
     const fk = fakeKeystore();
-    const h = createHarness({ keystore: fk.keystore, start: T0 });
+    const input = fakeSecureInput({ approval: "correct" });
+    const h = createHarness({ keystore: fk.keystore, secureInput: input.secureInput, start: T0 });
     await h.settle();
     const res = ok(
       await h.call("wallet.importMnemonic", {
@@ -971,8 +975,14 @@ describe("F-02 regression: the prod-audit PoC", () => {
      sign is past the approved cap. */
   it("a device-factor relaunch cannot sign — and the capped actions refuse typed", async () => {
     const fk = fakeKeystore();
+    const input = fakeSecureInput({ approval: "correct" });
     const store = createMemoryStore();
-    const h1 = createHarness({ keystore: fk.keystore, store, start: T0 });
+    const h1 = createHarness({
+      keystore: fk.keystore,
+      secureInput: input.secureInput,
+      store,
+      start: T0,
+    });
     await h1.settle();
     const imported = ok(
       await h1.call("wallet.importMnemonic", { mnemonic: utf8ToBytes(MNEMONIC), factor: DEVICE }),
@@ -1006,7 +1016,12 @@ describe("F-02 regression: the prod-audit PoC", () => {
 
     /* Relaunch on the same store: the vault reopens only through a hardware verify, and the
        session's opened mark is gone — sign answers approval-required until open verifies. */
-    const h2 = createHarness({ keystore: fk.keystore, store, start: T0 + 5000 });
+    const h2 = createHarness({
+      keystore: fk.keystore,
+      secureInput: input.secureInput,
+      store,
+      start: T0 + 5000,
+    });
     await h2.settle();
     const session2 = strField(ok(await h2.call("vault.unlock", { factor: HARDWARE })), "session");
     const spotSell = {

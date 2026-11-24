@@ -25,7 +25,7 @@ import type { Handler } from "../../commands/context.ts";
 import { withWalletSeed } from "../../commands/vault.ts";
 import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt, KernelPlatform } from "../../platform.ts";
-import { PROMPT_BOUNDS, promptFits, promptLocale } from "../../prompts.ts";
+import { PROMPT_BOUNDS, promptFits, promptLocale, sessionApprovalCode } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import type { StoredRecord, VaultImage } from "../../vault/store.ts";
 import {
@@ -113,6 +113,53 @@ const approvalPrompt =
   ) =>
   (): KeystorePrompt =>
     metering.prompt(session, open, promptLocale(platform.keystore?.locale ?? "en"));
+
+/* On iOS the factor ceremony (Face ID) never displays the prompt text, so the limits are proven
+   seen on the secure-input view instead: the label is the same kernel prompt plus a 4-digit
+   confirmation code as its last line — a clipped label drops the code first, and without it the
+   user cannot confirm. The main runtime sees only idle/empty/filled/submitted and cannot know the
+   code, so a submitted code proves the user read the kernel-rendered limits; a compromised main
+   runtime can still draw over part of the view, so the code is the last line and the factor
+   verification itself still runs. Android's BiometricPrompt shows the bounded text and keystore-
+   less hosts show no system dialog, so neither requests the code. */
+const confirmLimits = async (
+  platform: KernelPlatform,
+  prompt: () => KeystorePrompt,
+): Promise<void> => {
+  const { keystore } = platform;
+  if (keystore?.platform !== "ios") {
+    return;
+  }
+  const { secureInput } = platform;
+  if (secureInput === undefined) {
+    throw new KernelError("unsupported", "this host cannot display the session limits");
+  }
+  /* Uniform 0..9999 by rejection: a 16-bit draw under 60000 wraps the code space exactly six
+     times. */
+  let code = "";
+  while (code === "") {
+    const draw = platform.random(2);
+    const value = (draw[0] ?? 0) * 256 + (draw[1] ?? 0);
+    wipe(draw);
+    if (value < 60_000) {
+      code = String(value % 10_000).padStart(4, "0");
+    }
+  }
+  const { title, description } = prompt();
+  const label = `${title}\n${description}\n${sessionApprovalCode(promptLocale(keystore.locale), code)}`;
+  const result = await secureInput.request("session-approval", label);
+  if (!result.ok) {
+    throw new KernelError(result.failure, `session approval input: ${result.failure}`);
+  }
+  const entered = result.value;
+  try {
+    if (entered.length !== 4 || !entered.every((byte, index) => byte === code.codePointAt(index))) {
+      throw new KernelError("cancelled", "the confirmation code did not match");
+    }
+  } finally {
+    wipe(entered);
+  }
+};
 
 /** The public snapshot of one stored session — the record id is the lowercase address. */
 export function sessionInfo(record: StoredRecord): SessionInfo {
@@ -232,19 +279,14 @@ export const createSession: (opened: Set<string>) => Handler<"sessions.create"> 
           );
         }
       }
-      await verifyFactor(
+      const prompt = approvalPrompt(
         ctx.platform,
-        ctx.image,
-        params.verify,
-        dek,
-        ctx.commit,
-        approvalPrompt(
-          ctx.platform,
-          metering,
-          { ...approval, spent: metering.fresh(limits) },
-          false,
-        ),
+        metering,
+        { ...approval, spent: metering.fresh(limits) },
+        false,
       );
+      await confirmLimits(ctx.platform, prompt);
+      await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, prompt);
     }
     const entropy = findSeedWallet(ctx.image, params.owner.walletId);
     const owner = await withWalletSeed(ctx.platform.pbkdf2, dek, entropy, (seed) => {
@@ -353,25 +395,20 @@ export const openSession: (opened: Set<string>) => Handler<"sessions.open"> =
     ) {
       throw new KernelError("invalid-input", "the session limits do not fit the approval dialog");
     }
-    await verifyFactor(
+    const prompt = approvalPrompt(
       ctx.platform,
-      ctx.image,
-      params.verify,
-      dek,
-      ctx.commit,
-      approvalPrompt(
-        ctx.platform,
-        metering,
-        {
-          scope: header.scope,
-          name: header.name,
-          validUntil: header.validUntil,
-          limits,
-          spent,
-        },
-        true,
-      ),
+      metering,
+      {
+        scope: header.scope,
+        name: header.name,
+        validUntil: header.validUntil,
+        limits,
+        spent,
+      },
+      true,
     );
+    await confirmLimits(ctx.platform, prompt);
+    await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, prompt);
     opened.add(record.id);
     return null;
   };

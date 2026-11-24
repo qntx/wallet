@@ -36,6 +36,7 @@ import type { Harness, KernelResponse } from "./harness.ts";
 import { loadVectors } from "./helpers.ts";
 import { fakeKeystore } from "./keystore.ts";
 import type { KeystoreCall } from "./keystore.ts";
+import { fakeSecureInput } from "./secure-input.ts";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -1341,7 +1342,8 @@ describe("ApproveAgent binding", () => {
     walletId: string;
   }> {
     const fk = fakeKeystore();
-    const h = createHarness({ keystore: fk.keystore, start: T0 });
+    const input = fakeSecureInput({ approval: "correct" });
+    const h = createHarness({ keystore: fk.keystore, secureInput: input.secureInput, start: T0 });
     await h.settle();
     const res = ok(
       await h.call("wallet.importMnemonic", {

@@ -15,12 +15,16 @@ export const SHORT_ID_TYPED = "1a2b-3c4d";
 /** The bytes the kernel expects after the field normalises. */
 export const SHORT_ID_NORMALIZED = "1A2B3C4D";
 
+/** What the driver types into the secure field for `session-approval`. */
+export const SESSION_APPROVAL_CODE = "0427";
+
 /** Typed into the plain TextInput — the checker's positive control. */
 export const DECOY = "decoyMainRuntime91";
 
 /** Kernel-built labels/prompts; the main runtime never supplies these. */
 export const ACCESS_CODE_LABEL = `Enter the access code for card ${SHORT_ID_PRINTED}`;
 export const SHORT_ID_LABEL = "Type the 8-character ID printed on the card";
+export const SESSION_APPROVAL_LABEL = `Approve agent "bot-1" on Mainnet\nBuy budget: 100\nType ${SESSION_APPROVAL_CODE} below to approve these limits`;
 export const TAP_PROMPT = "Tap to sign on Ethereum: send 0.5 ETH to 0xAbC1…9F3e (harness)";
 export const DEVICE_TAP_PROMPT = "Tap the qntx card to read its ID (harness)";
 

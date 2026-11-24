@@ -52,7 +52,7 @@ Summary, per platform — details in the sections below:
 | Attacker                   | Web                                                                                                                              | React Native                                                                                                                                   | Node                                                     |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | Compromised main runtime   | page-level attacker — the Web wallet is a hot wallet; in scope only where it defeats the Worker boundary                         | deception and phished fields possible; no secrets, no unverified gated signature; open sessions bounded by limits                              | same as RN minus keystore prompts; dev host              |
-| Malicious dApp or caller   | deceptive requests; nothing the decoder cannot display or bound                                                                  | same — and no kernel text on Face ID, so approval is presence-only                                                                             | same                                                     |
+| Malicious dApp or caller   | deceptive requests; nothing the decoder cannot display or bound                                                                  | same — on iOS session limits still appear on the kernel secure-input view; other prompts are presence-only under Face ID                       | same                                                     |
 | Storage writer             | whole-vault rollback caught only if the anchor store (Cache Storage) is untouched                                                | whole-vault rollback caught (anchor outside the app container); record-level tamper impossible                                                 | store and anchor are process memory; neither outlives it |
 | Compromised gateway / RPC  | wrong display data, withheld broadcasts; cannot change signed bytes where a second endpoint exists                               | same                                                                                                                                           | same                                                     |
 | Stolen unlocked device     | unlocked session scope: social actions, DMs, open sessions within limits — nothing verification-gated                            | app lock off: social/DMs only — value-moving sessions refuse `app-lock-required`; app lock on: open sessions within limits until the next lock | unlocked session scope, as Web                           |
@@ -106,7 +106,19 @@ Summary, per platform — details in the sections below:
     positions it never touched, and at most two live metered sessions may
     share one account and network, so the aggregate exposure is the sum of
     at most two approvals. TWAP orders cannot be metered and are
-    refused. Each agent
+    refused. **Where the limits are shown:** on RN iOS — where Face
+    ID/Touch ID renders no prompt text — create and open first show them
+    on the kernel's secure-input view, as the label above a kernel-drawn
+    4-digit confirmation code the user re-enters; a submitted code proves
+    the kernel-rendered text was on screen, then the factor ceremony
+    still runs. On Android the bounded kernel text is what
+    BiometricPrompt shows, so no code step is needed. On the Web there is
+    no such surface: the limits are whatever the page asked for — the
+    Web wallet is a hot wallet. The revoke flow's throwaway agent stays
+    (Hyperliquid has no revoke action without a new agent —
+    nonces-and-api-wallets §API wallet pruning) and goes through the same
+    approval, so a full-limit `create` cannot masquerade as a revoke:
+    the limits differ on the kernel-rendered text. Each agent
     signature also stays inside a 60 s document window (`expiresAfter`,
     nonce, device clock — the kernel has no trusted time; a clock running
     S ahead stretches post-lock exposure to S + 60 s, and the engine's

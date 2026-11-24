@@ -1448,7 +1448,11 @@ function text(v) {
 throws("noArgs", function () { si.request(); });
 throws("badKind", function () { si.request("pin", "l", function () {}); });
 throws("emptyLabel", function () { si.request("access-code", "", function () {}); });
-throws("longLabel", function () { si.request("access-code", new Array(514).join("x"), function () {}); });
+throws("longLabel", function () { si.request("access-code", new Array(2050).join("x"), function () {}); });
+throws("label2048", function () {
+  si.request("access-code", new Array(2049).join("x"), function () {});
+  si.cancel();
+});
 throws("noCb", function () { si.request("access-code", "l"); });
 si.request("access-code", "输入访问码", function (v, c) {
   r.push("req1=" + text(v));
@@ -1511,7 +1515,8 @@ __qntx.secureInput.request("access-code", "r2", function (v, c) {
   CHECK(box.posts.size() == 5 &&
             box.posts[4] ==
                 "frozen=true names=cancel,request "
-                "noArgs=ok badKind=ok emptyLabel=ok longLabel=ok noCb=ok double=ok "
+                "noArgs=ok badKind=ok emptyLabel=ok longLabel=ok label2048=nothrow noCb=ok "
+                "double=ok "
                 "req1=S3cr3t cancelled=cancelled code=abc123 sid=A1B2C3D4 afterBad=xyz789",
       "secure-input-binding: bridge behaviour drifted");
   {
@@ -1625,17 +1630,27 @@ int secureInputHubCase() {
       "secure-input-hub: UTF-8 backup password refused");
   CHECK(calls == 3 && !lastFailure.has_value() && lastValue.size() == 10,
       "secure-input-hub: a valid backup password did not complete");
+  CHECK(arm(ownerA, qntx::SecureInputKind::sessionApproval) == qntx::SecureInputArm::armed,
+      "secure-input-hub: session-approval request not armed");
+  CHECK(!trySubmit({}), "secure-input-hub: empty approval code accepted");
+  CHECK(!trySubmit({'0', '1', '2'}), "secure-input-hub: 3-digit approval code accepted");
+  CHECK(!trySubmit({'0', '1', '2', '3', '4'}),
+      "secure-input-hub: 5-digit approval code accepted");
+  CHECK(!trySubmit({'1', '2', 'a', '4'}), "secure-input-hub: non-digit approval code accepted");
+  CHECK(trySubmit({'0', '4', '2', '7'}), "secure-input-hub: valid approval code refused");
+  CHECK(calls == 4 && !lastFailure.has_value() && lastValue.size() == 4,
+      "secure-input-hub: a valid approval code did not complete");
   CHECK(arm(ownerA, qntx::SecureInputKind::accessCode) == qntx::SecureInputArm::armed,
       "secure-input-hub: third request not armed");
   hub.cancel(ownerB);
-  CHECK(calls == 3, "secure-input-hub: a foreign cancel completed the request");
+  CHECK(calls == 4, "secure-input-hub: a foreign cancel completed the request");
   hub.cancel(ownerA);
-  CHECK(calls == 4 && lastFailure == qntx::SecureInputFailure::cancelled,
+  CHECK(calls == 5 && lastFailure == qntx::SecureInputFailure::cancelled,
       "secure-input-hub: cancel did not complete cancelled");
   CHECK(arm(ownerA, qntx::SecureInputKind::accessCode) == qntx::SecureInputArm::armed,
       "secure-input-hub: fourth request not armed");
   hub.release(ownerA);
-  CHECK(calls == 4, "secure-input-hub: release ran the completion");
+  CHECK(calls == 5, "secure-input-hub: release ran the completion");
   CHECK(!trySubmit({'a'}), "secure-input-hub: submit after release");
   hub.detach(view);
   CHECK(seen.size() >= 5 && seen[2].has_value() && seen[2]->label == "label" &&

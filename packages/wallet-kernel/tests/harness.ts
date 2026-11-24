@@ -49,6 +49,23 @@ export function seededRandom(seed: number): { random: Random; draws: Uint8Array[
   };
 }
 
+/**
+ * Random whose two-byte draws come from `draws` (shifted in order, as integers); every other draw
+ * gets a counter-prefixed fill whose first byte stays below 0x80 so scalar draws differ.
+ */
+export function scriptedRandom(draws: number[]): Random {
+  let counter = 0;
+  return (length: number) => {
+    if (length === 2 && draws.length > 0) {
+      const value = draws.shift() ?? 0;
+      return new Uint8Array([value >> 8, value & 0xff]);
+    }
+    const bytes = new Uint8Array(length).fill(1);
+    bytes[0] = 1 + (counter++ % 0x7f);
+    return bytes;
+  };
+}
+
 export type KernelResponse =
   | { readonly id: number; readonly ok: ProtocolValue }
   | {

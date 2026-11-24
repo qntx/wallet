@@ -173,6 +173,19 @@ const BACKUP_CREDENTIAL_NAME: Readonly<Record<PromptLocale, string>> = {
   en: "Cloud backup key",
 };
 
+const SESSION_APPROVAL_CODE: Readonly<Record<PromptLocale, (code: string) => string>> = {
+  "zh-Hans": (code) => `在下方输入 ${code} 以批准以上限额`,
+  en: (code) => `Type ${code} below to approve these limits`,
+};
+
+/**
+ * The last line of a `session-approval` label — always last, so a clipped label drops the code line
+ * first and a submitted code proves the lines above it were on screen.
+ */
+export function sessionApprovalCode(locale: PromptLocale, code: string): string {
+  return SESSION_APPROVAL_CODE[locale](code);
+}
+
 /** A prompt thunk for a core operation — the keystore locale is read only when it runs. */
 export const corePromptFor =
   (keystore: { readonly locale: string } | undefined, kind: CorePromptKind) => (): KeystorePrompt =>

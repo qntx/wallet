@@ -27,6 +27,7 @@ import com.facebook.proguard.annotations.DoNotStrip
 private const val KIND_ACCESS_CODE = 0
 private const val KIND_SHORT_ID = 1
 private const val KIND_BACKUP_PASSWORD = 2
+private const val KIND_SESSION_APPROVAL = 3
 
 /**
  * The Android half of the trusted input surface: a label the kernel sets
@@ -112,26 +113,38 @@ class SecureInputField(context: Context) : LinearLayout(context) {
     label.visibility = VISIBLE
     field.isEnabled = true
     field.inputType =
-      InputType.TYPE_CLASS_TEXT or
-        if (kind == KIND_SHORT_ID) {
-          InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
+      when (kind) {
+        KIND_SESSION_APPROVAL -> InputType.TYPE_CLASS_NUMBER
+        KIND_SHORT_ID ->
+          InputType.TYPE_CLASS_TEXT or
+            InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
             InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-        } else {
-          InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
+        else -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+      }
     // Never reveal characters: PasswordTransformationMethod shows the last
     // typed char when the system setting is on — mask every char ourselves.
+    // The readable kinds (short id, approval code) carry no secret: the label
+    // itself shows the approval code.
     field.transformationMethod =
-      if (kind == KIND_SHORT_ID) null else MaskTransformation
+      if (kind == KIND_SHORT_ID || kind == KIND_SESSION_APPROVAL) {
+        null
+      } else {
+        MaskTransformation
+      }
     field.filters =
       when (kind) {
         KIND_ACCESS_CODE -> arrayOf(accessCodeFilter)
         KIND_BACKUP_PASSWORD -> arrayOf(backupPasswordFilter)
+        KIND_SESSION_APPROVAL -> arrayOf(sessionApprovalFilter)
         else -> arrayOf(shortIdFilter)
       }
     field.typeface =
-      if (kind == KIND_SHORT_ID) Typeface.MONOSPACE else Typeface.DEFAULT
-    if (kind != KIND_SHORT_ID && !secureSet) {
+      if (kind == KIND_SHORT_ID || kind == KIND_SESSION_APPROVAL) {
+        Typeface.MONOSPACE
+      } else {
+        Typeface.DEFAULT
+      }
+    if (kind != KIND_SHORT_ID && kind != KIND_SESSION_APPROVAL && !secureSet) {
       activityWindow()?.let { window ->
         hadSecureFlag =
           window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
@@ -197,9 +210,14 @@ class SecureInputField(context: Context) : LinearLayout(context) {
 
   private fun submit() {
     val text = field.text
-    val ready = if (kind == KIND_SHORT_ID) text.length == 8 else text.isNotEmpty()
+    val ready =
+      when (kind) {
+        KIND_SHORT_ID -> text.length == 8
+        KIND_SESSION_APPROVAL -> text.length == 4
+        else -> text.isNotEmpty()
+      }
     if (!ready) return
-    // The card kinds are ASCII-only, one char per byte; a backup password is
+    // The ASCII-only kinds are one char per byte; a backup password is
     // arbitrary Unicode, handed over as real UTF-8.
     val bytes =
       if (kind == KIND_BACKUP_PASSWORD) {
@@ -358,6 +376,22 @@ class SecureInputField(context: Context) : LinearLayout(context) {
         } else {
           refuse(dest, dstart, dend)
         }
+      }
+
+    // Decimal digits only, four at most.
+    val sessionApprovalFilter =
+      InputFilter { source, start, end, dest, dstart, dend ->
+        val next = dest.length - (dend - dstart) + (end - start)
+        var allowed = next <= 4
+        if (allowed) {
+          for (i in start until end) {
+            if (source[i] !in '0'..'9') {
+              allowed = false
+              break
+            }
+          }
+        }
+        if (allowed) null else refuse(dest, dstart, dend)
       }
 
     val shortIdFilter =

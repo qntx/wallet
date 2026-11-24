@@ -372,10 +372,11 @@ export type CardReader = {
 };
 
 /**
- * What the secure input view collects: the qntx card's access code, its printed short ID, or the
- * cloud-backup password — 1..1024 bytes of valid UTF-8, masked.
+ * What the secure input view collects: the qntx card's access code, its printed short ID, the
+ * cloud-backup password — 1..1024 bytes of valid UTF-8, masked — or `session-approval`, a
+ * kernel-chosen 4-digit confirmation code the label displays; the value is exactly 4 ASCII digits.
  */
-export type SecureInputKind = "access-code" | "short-id" | "backup-password";
+export type SecureInputKind = "access-code" | "short-id" | "backup-password" | "session-approval";
 
 /** The outcome of a secure-input request; `value` is the confirmed bytes the user entered. */
 export type SecureInputResult =

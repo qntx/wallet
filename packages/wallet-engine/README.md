@@ -508,6 +508,11 @@ answer is `ready` and reports the app `available` — an unanswered or malformed
 (abort a running flow) are never gated. Call `apps.controller.refreshEligibility()` on foreground;
 unlock already refreshes.
 
+On iOS the agent's limits are approved on the kernel's secure-input view — Face ID shows no text —
+so the host must mount `SecureInput` (`@qntx/wallet-native/secure-input`) wherever `enable`,
+`renew`, a `sessions.open` reopen or `disable({ revoke: true })` can run; without one the calls
+answer `unsupported`.
+
 **Eligibility is display-only — it is not a security boundary.** The platforms enforce their own
 restrictions; the gateway answer only decides what the UI offers.
 
