@@ -83,7 +83,8 @@ import {
   udpExchange,
 } from "../../packages/wallet-kernel/tests/onekey-emulator/index.ts";
 import type { ChainTemplate } from "../../packages/wallet/src/protocol/chains.ts";
-import type { DeviceRequest } from "../../packages/wallet/src/protocol/hardware.ts";
+import type { DeviceIo, DeviceRequest } from "../../packages/wallet/src/protocol/hardware.ts";
+import type { Wallet } from "../../packages/wallet/src/types.ts";
 
 function arg(name: string, fallback: string): string {
   const at = process.argv.indexOf(`--${name}`);
@@ -290,13 +291,61 @@ const recordDriverSessions = async (): Promise<void> => {
  * harness builds the real engine over its hermetic stub upstreams, so every request byte the kernel
  * produces is deterministic: fixed clock, fill-7 platform random, fixed stub answers.
  */
+type EngineSendParams = {
+  readonly account: {
+    readonly kind: "hd";
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly template: ChainTemplate;
+  };
+  readonly network: string;
+  readonly to: string;
+  readonly amount: bigint;
+  readonly fee: "normal";
+};
+
+/* The slice of tests/signers-e2e/harness.ts the recorder uses. It is typed structurally here
+ * because the harness is engine test code: imported statically it would pull the engine's src —
+ * exempt from isolatedDeclarations — into this tsconfig's compile. */
+type EngineHarness = {
+  readonly BTC_NETWORK: string;
+  readonly BTC_TO: string;
+  readonly EVM_NETWORK: string;
+  readonly EVM_TO: string;
+  readonly SOL_NETWORK: string;
+  readonly SOL_TO: string;
+  readonly TRON_NETWORK: string;
+  readonly TRON_TO: string;
+  readonly btcAddressFromXpub: (xpub: string) => string;
+  readonly e2eWorld: (options: { readonly deviceIo: () => DeviceIo }) => Promise<{
+    readonly w: {
+      readonly wallet: Wallet;
+      readonly destroy: () => Promise<void>;
+    };
+    readonly fund: (
+      address: string,
+      sats: number,
+    ) => {
+      readonly txid: string;
+      readonly vout: number;
+      readonly value: number;
+      readonly address: string;
+    };
+  }>;
+  readonly sendOnce: (
+    w: { readonly wallet: Wallet },
+    params: EngineSendParams,
+  ) => Promise<{ readonly state: string }>;
+};
+
 const recordEngineSessions = async (): Promise<void> => {
-  const harness = await import("../../packages/wallet-engine/tests/signers-e2e/harness.ts");
+  const harness = (await import(
+    new URL("../../packages/wallet-engine/tests/signers-e2e/harness.ts", import.meta.url).href
+  )) as EngineHarness;
   /* Same dist modules the engine resolves — a second instance would split the Wallet internals
      WeakMap ("not a Wallet from @qntx/wallet"). */
   const { chains } = await import("../../packages/wallet/dist/chains.mjs");
   const { hardware } = await import("../../packages/wallet/dist/hardware.mjs");
-  type EngineSendParams = Parameters<typeof harness.sendOnce>[1];
 
   let session = { name: "engine-pair", exchanges: [] as Step[] };
   sessions.push(session);
