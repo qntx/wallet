@@ -35,13 +35,23 @@ factor can open the vault for everyday use but proves no presence — it can
 never verify (`packages/wallet-kernel/src/vault/vault.ts:401`).
 
 Verification prompts are rendered by the kernel and bound to
-`PROMPT_BOUNDS` (`packages/wallet-kernel/src/prompts.ts:184`): text that does
-not fit the platform bound signs blind (or fails `blind-signing-disabled`)
-instead of letting the OS clip it — see `docs/device-checklist.md` for how
-the bounds are confirmed on real devices. Face ID and WebAuthn ceremonies
-show no kernel text at all — the OS dialog is all the user sees — so on
-those flows approval proves presence only; the signed content is bound by
-the decoder and policy, not by text the user read.
+`PROMPT_BOUNDS` (`packages/wallet-kernel/src/prompts.ts:254`). The bounds
+are policy values, not platform facts — neither OS documents a limit — and
+are still to be confirmed on real devices (`docs/device-checklist.md`). A
+`chain.sign`, `hardware.begin` or `spark.approve` prompt that does not fit
+signs blind (or fails `blind-signing-disabled`) instead of letting the OS
+clip it: every warning and caveat row is rendered first and is never cut —
+only detail rows give way to a closing "N more lines" row — and a prompt
+whose warnings alone do not fit is refused `unsupported` whatever the blind
+policy (`packages/wallet-kernel/src/modules/chains/prompt.ts:1888`).
+Session-approval and watch-only export prompts are never cut: limits or a
+node list whose text does not fit are refused `invalid-input` before any
+verification. The core prompts are fixed strings whose fit the prompt-bound
+tests pin. Face ID and WebAuthn ceremonies show no kernel text at all — the
+OS dialog is all the user sees — so on those flows approval proves presence
+only; the signed content is bound by the decoder and policy, not by text
+the user read. The one exception is a value-moving session's limits, which
+React Native shows on a kernel surface on every platform (below).
 
 **Blind signing** is a kernel-enforced vault setting, off by default: a
 request the chain decoder can neither display nor bound fails
@@ -49,15 +59,16 @@ request the chain decoder can neither display nor bound fails
 
 Summary, per platform — details in the sections below:
 
-| Attacker                   | Web                                                                                                                              | React Native                                                                                                                                   | Node                                                     |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Compromised main runtime   | page-level attacker — the Web wallet is a hot wallet; in scope only where it defeats the Worker boundary                         | deception and phished fields possible; no secrets, no unverified gated signature; open sessions bounded by limits                              | same as RN minus keystore prompts; dev host              |
-| Malicious dApp or caller   | deceptive requests; nothing the decoder cannot display or bound                                                                  | same — on iOS session limits still appear on the kernel secure-input view; other prompts are presence-only under Face ID                       | same                                                     |
-| Storage writer             | whole-vault rollback caught only if the anchor store (Cache Storage) is untouched                                                | whole-vault rollback caught (anchor outside the app container); record-level tamper impossible                                                 | store and anchor are process memory; neither outlives it |
-| Compromised gateway / RPC  | wrong display data, withheld broadcasts; cannot change signed bytes where a second endpoint exists                               | same                                                                                                                                           | same                                                     |
-| Stolen unlocked device     | unlocked session scope: social actions, DMs, open sessions within limits — nothing verification-gated                            | app lock off: social/DMs only — value-moving sessions refuse `app-lock-required`; app lock on: open sessions within limits until the next lock | unlocked session scope, as Web                           |
-| Stolen locked device       | offline attack on vault/backup at PBKDF2 / Argon2id cost                                                                         | same, plus keystore wrapping                                                                                                                   | same                                                     |
-| Malicious upstream package | versions pinned, `abiVersion` checked at kernel start; release controls are defined in the repo and must be applied by the owner | same                                                                                                                                           | same                                                     |
+| Attacker                   | Web                                                                                                                                                                         | React Native                                                                                                                                                                            | Node                                                     |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Compromised main runtime   | page-level attacker — the Web wallet is a hot wallet (session limits are whatever the page asked for); in scope only where it defeats the Worker boundary                   | deception and phished fields possible; no secrets, no unverified gated signature; open sessions bounded by limits shown on a kernel surface                                             | same as RN minus keystore prompts; dev host              |
+| Malicious dApp or caller   | deceptive requests; nothing the decoder cannot display or bound                                                                                                             | same — on iOS session limits still appear on the kernel secure-input view; other prompts are presence-only under Face ID                                                                | same                                                     |
+| QR counterpart             | chooses every signed byte (EVM nonce and fees included); sign-in domains are unverifiable and need an explicit acknowledgement; nothing the decoder cannot display or bound | same                                                                                                                                                                                    | same                                                     |
+| Storage writer             | whole-vault rollback caught only if the anchor store (Cache Storage) is untouched                                                                                           | whole-vault rollback caught (anchor outside the app container); record-level tamper impossible                                                                                          | store and anchor are process memory; neither outlives it |
+| Compromised gateway / RPC  | wrong display data, withheld broadcasts; cannot change signed bytes where a second endpoint exists                                                                          | same                                                                                                                                                                                    | same                                                     |
+| Stolen unlocked device     | unlocked session scope: social actions, DMs, open sessions within limits — nothing verification-gated                                                                       | app lock off: social/DMs only — value-moving sessions refuse `app-lock-required`; app lock on: open sessions within limits until the next lock (15 min presence idle, 24 h, background) | unlocked session scope, as Web                           |
+| Stolen locked device       | offline attack on vault/backup at PBKDF2 / Argon2id cost                                                                                                                    | same, plus keystore wrapping                                                                                                                                                            | same                                                     |
+| Malicious upstream package | versions pinned, `abiVersion` checked at kernel start; release controls are defined in the repo and must be applied by the owner                                            | same                                                                                                                                                                                    | same                                                     |
 
 ## Per attacker
 
@@ -75,7 +86,8 @@ Summary, per platform — details in the sections below:
   export verifies, `modules/nostr/keys.ts:119-126`).
 - **Can** present its own UI and get approved whatever the user is willing
   to confirm — on Face ID and WebAuthn there is no kernel text to compare
-  against (presence is proven; content is not shown).
+  against (presence is proven; content is not shown). Value-moving session
+  limits are the exception on React Native (see below).
 - **Can** draw a look-alike input field and phish secrets the user types
   into it — the same residual as any prompt the kernel does not render.
   The kernel secure input
@@ -89,7 +101,7 @@ Summary, per platform — details in the sections below:
   keystore host whose vault holds a `device` factor (app lock off), create
   and open answer `app-lock-required`, so a session cannot be silently
   re-armed
-  (`packages/wallet-kernel/src/modules/sessions/sessions.ts:61-76`). While
+  (`packages/wallet-kernel/src/modules/sessions/sessions.ts:66-86`). While
   a session _is_ open, `sessions.sign` still signs — but bounded:
   - `hyperliquid-l1-agent` enforces the approved `limits` — a notional
     budget buys charge (sum of max(price, triggerPx) × size in each
@@ -109,9 +121,12 @@ Summary, per platform — details in the sections below:
     refused. **Where the limits are shown:** on RN iOS — where Face
     ID/Touch ID renders no prompt text — create and open first show them
     on the kernel's secure-input view, as the label above a kernel-drawn
-    4-digit confirmation code the user re-enters; a submitted code proves
-    the kernel-rendered text was on screen, then the factor ceremony
-    still runs. On Android the bounded kernel text is what
+    4-digit confirmation code the user re-enters; the main runtime never
+    learns the code, so a submitted code shows the kernel-rendered label
+    was on screen, then the factor ceremony still runs. Residual: the main
+    runtime sizes the view and can draw over part of it — the code is the
+    label's last line, so clipping hides it first, but an overlay of the
+    rows above it is not prevented. On Android the bounded kernel text is what
     BiometricPrompt shows, so no code step is needed. On the Web there is
     no such surface: the limits are whatever the page asked for — the
     Web wallet is a hot wallet. The revoke flow's throwaway agent stays
@@ -164,13 +179,47 @@ Summary, per platform — details in the sections below:
   with `chainId = 0` signed — refused before the prompt
   (`packages/wallet-chains/src/evm/transaction.ts:206`); **cannot** order
   or cancel through a session scheme outside its approved limits.
+- **Cannot** hide a Bitcoin output as change unless the wallet can find it
+  again: an output to this group's own key is hidden only on the change
+  chain, under a purpose a signed input shares, at an index no further than
+  the gap limit (20) past the highest change index the signed inputs prove
+  (`packages/wallet-chains/src/bitcoin/own.ts:37-55`). Every other own-key
+  output is shown as a send to the user's own address at its unusual path,
+  with a warning that the wallet may not display those funds.
 - **Can** craft deceptive requests. Solana named accounts loaded through
   address lookup tables cannot be verified on-device — there are no state
   proofs for table contents — so a prompt that would name one is handled
   under the blind rule
-  (`packages/wallet-kernel/src/modules/chains/prompt.ts:632,1221`).
+  (`packages/wallet-kernel/src/modules/chains/prompt.ts:634,1254`).
   On Face ID / WebAuthn flows the user sees no kernel text at all, so
   approval there proves presence only.
+
+### QR counterpart (desktop coordinator or watch-only wallet)
+
+A scanned request is one more request origin (`{ kind: "qr" }`): it goes
+through the same pipeline, decoder, blind-signing policy and per-request
+verification as a dApp request (`packages/wallet-engine/src/qr/bind.ts`),
+and the kernel cannot tell the two apart.
+
+- **Can** choose every byte it asks the wallet to sign: an EVM transaction
+  is signed exactly as scanned, nonce and fees included (they are shown as
+  checks, never rebuilt), because the counterpart broadcasts it — the
+  wallet never broadcasts a QR request.
+- **Cannot** get a domain verified: a sign-in message from a QR origin has
+  no page origin to check, so it carries the `danger` finding
+  `qr-sign-in-unverified`, which the user must acknowledge before approval
+  (`packages/wallet-engine/src/requests/controller.ts:2024`).
+- Hardware-wallet accounts sign QR, dApp and internal requests through the
+  same signing seam; the device shows its own rendering on top of the
+  kernel's.
+- **Watch-only side:** the scanned export is the trust root — a malicious
+  export replaces every address, so the user verifies the first receive
+  address on the phone. The export itself is verified on the phone with a
+  prompt that names every exported node; `evm.account` discloses the EVM
+  addresses of every account of the wallet. Inspect-only mode shows the
+  digests a device can display, labelled with a device only where a
+  primary source says the device shows that digest; it cannot prove the
+  desktop sent the device the bytes it shows.
 
 ### Storage writer (file-level, not kernel compromise)
 
@@ -222,13 +271,16 @@ Summary, per platform — details in the sections below:
   opens without presence — the holder can act socially and read sealed
   DMs. Value-moving sessions refuse outright: `sessions.create`, `open`
   and `sign` all answer `app-lock-required` on a device-factor vault
-  (`sessions.ts:61-76,180,280,334`), and every verification-gated action
+  (`sessions.ts:66-86,251,377,446`), and every verification-gated action
   still needs a presence verification.
 - With the app lock **on**: every unlock verifies, and an open session
   signs within its approved limits only until the next lock — an explicit
-  `vault.lock`, the idle timeout, the max-session deadline, or background
-  under the auto-lock policy
-  (`packages/wallet-kernel/src/session/session.ts:122-137,235-237`).
+  `vault.lock`; the idle timeout (Web 5, 15 or 60 minutes as the host
+  configures, native 15 minutes — both count only presence-bearing methods,
+  so trading through a session or background traffic cannot hold the vault
+  open, `packages/wallet-native/kernel/policy.ts`); the max-session deadline
+  (Web and Node 12 h, native 24 h); or background under the auto-lock
+  policy (`packages/wallet-kernel/src/session/session.ts:122-137,235-238`).
 
 ### Stolen locked device
 
@@ -277,7 +329,7 @@ and publish. The response to a compromised release is in
   wallet holding value-moving sessions should require the app lock.
 - **Backup passwords** must be entered into the kernel secure input
   (masked, no autofill/suggestions/IME learning on both platforms —
-  `SecureInputIos.mm:133-143`, `SecureInputField.kt:114-294`); never into
+  `SecureInputIos.mm:136-151`, `SecureInputField.kt:115-311`); never into
   a runtime-drawn field.
 - **Secret buffers:** every secret field of a kernel request must own its
   memory — a request whose secret shares bytes with another field is
