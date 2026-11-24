@@ -494,8 +494,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm contract call",
       "确认合约调用",
-      `${net}\n${caveat}\nCall contract ${AAVE_V3}, function 0x617ba037\n${fee}`,
-      `${netZh}\n${caveatZh}\n调用合约 ${AAVE_V3}，函数 0x617ba037\n${feeZh}`,
+      `${caveat}\n${net}\nCall contract ${AAVE_V3}, function 0x617ba037\n${fee}`,
+      `${caveatZh}\n${netZh}\n调用合约 ${AAVE_V3}，函数 0x617ba037\n${feeZh}`,
     ),
   },
   {
@@ -513,8 +513,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm contract call",
       "确认合约调用",
-      `${net}\n${caveat}\nCall contract ${ROUTER}, function 0x3593564c\nSend 0.01 ETH to ${ROUTER}\n${fee}`,
-      `${netZh}\n${caveatZh}\n调用合约 ${ROUTER}，函数 0x3593564c\n发送 0.01 ETH 到 ${ROUTER}\n${feeZh}`,
+      `${caveat}\n${net}\nCall contract ${ROUTER}, function 0x3593564c\nSend 0.01 ETH to ${ROUTER}\n${fee}`,
+      `${caveatZh}\n${netZh}\n调用合约 ${ROUTER}，函数 0x3593564c\n发送 0.01 ETH 到 ${ROUTER}\n${feeZh}`,
     ),
   },
   {
@@ -588,8 +588,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm contract call",
       "确认合约调用",
-      `${net}\n${caveat}\nCall contract ${AAVE_V3}, function 0x69328dec\n${fee}`,
-      `${netZh}\n${caveatZh}\n调用合约 ${AAVE_V3}，函数 0x69328dec\n${feeZh}`,
+      `${caveat}\n${net}\nCall contract ${AAVE_V3}, function 0x69328dec\n${fee}`,
+      `${caveatZh}\n${netZh}\n调用合约 ${AAVE_V3}，函数 0x69328dec\n${feeZh}`,
     ),
   },
   {
@@ -636,8 +636,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm approval",
       "确认授权",
-      `${net}\nThere may be other outflows\nClear the approval on ${CRYPTO_KITTIES} #42\n${fee}`,
-      `${netZh}\n可能还有其他转出\n清除 ${CRYPTO_KITTIES} #42 的单个授权\n${feeZh}`,
+      `There may be other outflows\n${net}\nClear the approval on ${CRYPTO_KITTIES} #42\n${fee}`,
+      `可能还有其他转出\n${netZh}\n清除 ${CRYPTO_KITTIES} #42 的单个授权\n${feeZh}`,
     ),
   },
   {
@@ -654,8 +654,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm approval",
       "确认授权",
-      `${net}\nThere may be other outflows\nRevoke ${TO}'s allowance for USDC\n${fee}`,
-      `${netZh}\n可能还有其他转出\n撤销 ${TO} 对 USDC 的授权\n${feeZh}`,
+      `There may be other outflows\n${net}\nRevoke ${TO}'s allowance for USDC\n${fee}`,
+      `可能还有其他转出\n${netZh}\n撤销 ${TO} 对 USDC 的授权\n${feeZh}`,
     ),
   },
   {
@@ -672,8 +672,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm approval",
       "确认授权",
-      `${net}\nThere may be other outflows\nRevoke ${TO}'s access to all tokens of ${CRYPTO_KITTIES}\n${fee}`,
-      `${netZh}\n可能还有其他转出\n撤销 ${TO} 对 ${CRYPTO_KITTIES} 全部代币的授权\n${feeZh}`,
+      `There may be other outflows\n${net}\nRevoke ${TO}'s access to all tokens of ${CRYPTO_KITTIES}\n${fee}`,
+      `可能还有其他转出\n${netZh}\n撤销 ${TO} 对 ${CRYPTO_KITTIES} 全部代币的授权\n${feeZh}`,
     ),
   },
   {
@@ -690,8 +690,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm approval",
       "确认授权",
-      `${net}\nThere may be other outflows\nRevoke ${TO}'s allowance for USDC via Permit2\n${fee}`,
-      `${netZh}\n可能还有其他转出\n撤销 ${TO} 对 USDC 的授权 经 Permit2\n${feeZh}`,
+      `There may be other outflows\n${net}\nRevoke ${TO}'s allowance for USDC via Permit2\n${fee}`,
+      `可能还有其他转出\n${netZh}\n撤销 ${TO} 对 USDC 的授权 经 Permit2\n${feeZh}`,
     ),
   },
   {
@@ -710,8 +710,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm transfer",
       "确认转账",
-      `${net}\nThere may be other outflows\nSend ${OS_1155} #42 to ${TO}\n${fee}`,
-      `${netZh}\n可能还有其他转出\n发送 ${OS_1155} #42 到 ${TO}\n${feeZh}`,
+      `There may be other outflows\n${net}\nSend ${OS_1155} #42 to ${TO}\n${fee}`,
+      `可能还有其他转出\n${netZh}\n发送 ${OS_1155} #42 到 ${TO}\n${feeZh}`,
     ),
   },
   {
@@ -730,8 +730,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm transfer",
       "确认转账",
-      `${net}\nThere may be other outflows\nSend ${OS_1155} #42 to ${TO}\nSend ${OS_1155} #7 ×2 to ${TO}\n${fee}`,
-      `${netZh}\n可能还有其他转出\n发送 ${OS_1155} #42 到 ${TO}\n发送 ${OS_1155} #7 ×2 到 ${TO}\n${feeZh}`,
+      `There may be other outflows\n${net}\nSend ${OS_1155} #42 to ${TO}\nSend ${OS_1155} #7 ×2 to ${TO}\n${fee}`,
+      `可能还有其他转出\n${netZh}\n发送 ${OS_1155} #42 到 ${TO}\n发送 ${OS_1155} #7 ×2 到 ${TO}\n${feeZh}`,
     ),
   },
   {
@@ -754,8 +754,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm contract call",
       "确认合约调用",
-      `${net}\n${caveat}\nDeploy contract ${DEPLOYED}\n${fee}`,
-      `${netZh}\n${caveatZh}\n部署合约 ${DEPLOYED}\n${feeZh}`,
+      `${caveat}\n${net}\nDeploy contract ${DEPLOYED}\n${fee}`,
+      `${caveatZh}\n${netZh}\n部署合约 ${DEPLOYED}\n${feeZh}`,
     ),
   },
   {
@@ -2146,8 +2146,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm transfer",
       "确认转账",
-      `Network: Solana\nThere may be other outflows\nSend 5 base units of the token in account ${SOL_SRC} to ${SOL_DEST}\nMax fee 0.000005 SOL`,
-      `网络：Solana\n可能还有其他转出\n从代币账户 ${SOL_SRC} 发送 5 个最小单位到 ${SOL_DEST}\n最高手续费 0.000005 SOL`,
+      `There may be other outflows\nNetwork: Solana\nSend 5 base units of the token in account ${SOL_SRC} to ${SOL_DEST}\nMax fee 0.000005 SOL`,
+      `可能还有其他转出\n网络：Solana\n从代币账户 ${SOL_SRC} 发送 5 个最小单位到 ${SOL_DEST}\n最高手续费 0.000005 SOL`,
     ),
   },
   {
@@ -2166,8 +2166,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm transfer",
       "确认转账",
-      `Network: Solana\nThere may be other outflows\nBurn 5 base units of unverified token ${SOL_MINT} from token account ${SOL_SRC}; it is destroyed\nMax fee 0.000005 SOL`,
-      `网络：Solana\n可能还有其他转出\n从代币账户 ${SOL_SRC} 销毁 5 个最小单位（未验证代币 ${SOL_MINT}），永久消失\n最高手续费 0.000005 SOL`,
+      `There may be other outflows\nNetwork: Solana\nBurn 5 base units of unverified token ${SOL_MINT} from token account ${SOL_SRC}; it is destroyed\nMax fee 0.000005 SOL`,
+      `可能还有其他转出\n网络：Solana\n从代币账户 ${SOL_SRC} 销毁 5 个最小单位（未验证代币 ${SOL_MINT}），永久消失\n最高手续费 0.000005 SOL`,
     ),
   },
   {
@@ -2248,8 +2248,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm contract call",
       "确认合约调用",
-      `Network: Solana\nProgram ${SOL_DRAINER} receives this account's signature: it can move ALL SOL in this account\nProgram ${SOL_DRAINER} can act with this account's authority on: ${SOL_SRC} (may be yours); ${SOL_DEST} (may be yours)\nProgram calls the wallet cannot decode: ${SOL_DRAINER}\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL`,
-      `网络：Solana\n程序 ${SOL_DRAINER} 获得本账户的签名：可以转走本账户的全部 SOL\n程序 ${SOL_DRAINER} 可以以本账户的权限操作：${SOL_SRC}（可能属于你）；${SOL_DEST}（可能属于你）\n钱包无法解码的程序调用：${SOL_DRAINER}\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL`,
+      `Program ${SOL_DRAINER} receives this account's signature: it can move ALL SOL in this account\nProgram ${SOL_DRAINER} can act with this account's authority on: ${SOL_SRC} (may be yours); ${SOL_DEST} (may be yours)\nProgram calls the wallet cannot decode: ${SOL_DRAINER}\nThese programs can move assets from the accounts in this transaction\nNetwork: Solana\nMax fee 0.000005 SOL`,
+      `程序 ${SOL_DRAINER} 获得本账户的签名：可以转走本账户的全部 SOL\n程序 ${SOL_DRAINER} 可以以本账户的权限操作：${SOL_SRC}（可能属于你）；${SOL_DEST}（可能属于你）\n钱包无法解码的程序调用：${SOL_DRAINER}\n这些程序可以转移本交易涉及账户中的资产\n网络：Solana\n最高手续费 0.000005 SOL`,
     ),
   },
   {
@@ -2274,8 +2274,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `Network: Solana\nProgram ${SOL_DRAINER} receives this account's signature and can reach accounts the wallet cannot list\nProgram calls the wallet cannot decode: ${SOL_DRAINER}\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL`,
-      `网络：Solana\n程序 ${SOL_DRAINER} 获得本账户的签名，并可操作钱包无法列出的账户\n钱包无法解码的程序调用：${SOL_DRAINER}\n这些程序可以转移本交易涉及账户中的资产\n最高手续费 0.000005 SOL`,
+      `Program ${SOL_DRAINER} receives this account's signature and can reach accounts the wallet cannot list\nProgram calls the wallet cannot decode: ${SOL_DRAINER}\nThese programs can move assets from the accounts in this transaction\nNetwork: Solana\nMax fee 0.000005 SOL`,
+      `程序 ${SOL_DRAINER} 获得本账户的签名，并可操作钱包无法列出的账户\n钱包无法解码的程序调用：${SOL_DRAINER}\n这些程序可以转移本交易涉及账户中的资产\n网络：Solana\n最高手续费 0.000005 SOL`,
     ),
   },
   {
@@ -2344,8 +2344,8 @@ const cases: VectorCase[] = [
     prompt: p(
       "Confirm transfer",
       "确认转账",
-      `${netArb}\nThere may be other outflows\nSend 5 USDC to ${CCTP_MESSENGER}\nDeposit 5 USDC to your Hyperliquid perps account ${SIGNER}\nCircle fee at most 0.2 USDC\n${fee}`,
-      `${netArbZh}\n可能还有其他转出\n发送 5 USDC 到 ${CCTP_MESSENGER}\n向你的 Hyperliquid 合约账户 ${SIGNER} 存入 5 USDC\nCircle 手续费至多 0.2 USDC\n${feeZh}`,
+      `There may be other outflows\n${netArb}\nSend 5 USDC to ${CCTP_MESSENGER}\nDeposit 5 USDC to your Hyperliquid perps account ${SIGNER}\nCircle fee at most 0.2 USDC\n${fee}`,
+      `可能还有其他转出\n${netArbZh}\n发送 5 USDC 到 ${CCTP_MESSENGER}\n向你的 Hyperliquid 合约账户 ${SIGNER} 存入 5 USDC\nCircle 手续费至多 0.2 USDC\n${feeZh}`,
     ),
   },
   {
@@ -2473,12 +2473,12 @@ const TRON_TX_EXPECTED: Readonly<
       en: {
         title: "Confirm approval",
         description:
-          "Network: TRON\nThere may be other outflows\nAllow THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 to spend 5 USDT\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition",
+          "There may be other outflows\nNetwork: TRON\nAllow THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 to spend 5 USDT\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition",
       },
       "zh-Hans": {
         title: "确认授权",
         description:
-          "网络：TRON\n可能还有其他转出\n授权 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 使用 5 USDT\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费",
+          "可能还有其他转出\n网络：TRON\n授权 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 使用 5 USDT\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费",
       },
     },
   },
@@ -2489,12 +2489,12 @@ const TRON_TX_EXPECTED: Readonly<
       en: {
         title: "Confirm approval",
         description:
-          "Network: TRON\nThere may be other outflows\nAllow THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 to spend unlimited USDT\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition",
+          "There may be other outflows\nNetwork: TRON\nAllow THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 to spend unlimited USDT\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition",
       },
       "zh-Hans": {
         title: "确认授权",
         description:
-          "网络：TRON\n可能还有其他转出\n授权 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 使用 全部 USDT\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费",
+          "可能还有其他转出\n网络：TRON\n授权 THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3 使用 全部 USDT\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费",
       },
     },
   },
@@ -2505,12 +2505,12 @@ const TRON_TX_EXPECTED: Readonly<
       en: {
         title: "Confirm approval",
         description:
-          "Network: TRON\nThere may be other outflows\nClear the approval on TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 #42\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition",
+          "There may be other outflows\nNetwork: TRON\nClear the approval on TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 #42\nExpires 2026-01-01 00:01 (UTC)\nMax fee 30 TRX for energy; bandwidth fees may be charged in addition",
       },
       "zh-Hans": {
         title: "确认授权",
         description:
-          "网络：TRON\n可能还有其他转出\n清除 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 #42 的单个授权\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费",
+          "可能还有其他转出\n网络：TRON\n清除 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 #42 的单个授权\n2026-01-01 00:01（UTC）后失效\n能量费上限 30 TRX；另可能扣除带宽费",
       },
     },
   },
@@ -2521,12 +2521,12 @@ const TRON_TX_EXPECTED: Readonly<
       en: {
         title: "Confirm transfer",
         description:
-          "Network: TRON\nThere may be other outflows\nSend 500 base units of unverified token trc10:1002000 to TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+          "There may be other outflows\nNetwork: TRON\nSend 500 base units of unverified token trc10:1002000 to TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
       },
       "zh-Hans": {
         title: "确认转账",
         description:
-          "网络：TRON\n可能还有其他转出\n发送 500 个最小单位（未验证代币 trc10:1002000） 到 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+          "可能还有其他转出\n网络：TRON\n发送 500 个最小单位（未验证代币 trc10:1002000） 到 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
       },
     },
   },
@@ -2713,12 +2713,12 @@ const TRON_TX_EXPECTED: Readonly<
       en: {
         title: "Confirm contract call",
         description:
-          "Network: TRON\nThe wallet cannot verify what this call does\nCall contract TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6, function 0x2fbebd38\nSend 1 TRX to TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6\nExpires 2026-01-01 00:01 (UTC)\nMax fee 10 TRX for energy; bandwidth fees may be charged in addition",
+          "The wallet cannot verify what this call does\nNetwork: TRON\nCall contract TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6, function 0x2fbebd38\nSend 1 TRX to TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6\nExpires 2026-01-01 00:01 (UTC)\nMax fee 10 TRX for energy; bandwidth fees may be charged in addition",
       },
       "zh-Hans": {
         title: "确认合约调用",
         description:
-          "网络：TRON\n钱包无法核实此调用会做什么\n调用合约 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6，函数 0x2fbebd38\n发送 1 TRX 到 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6\n2026-01-01 00:01（UTC）后失效\n能量费上限 10 TRX；另可能扣除带宽费",
+          "钱包无法核实此调用会做什么\n网络：TRON\n调用合约 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6，函数 0x2fbebd38\n发送 1 TRX 到 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6\n2026-01-01 00:01（UTC）后失效\n能量费上限 10 TRX；另可能扣除带宽费",
       },
     },
   },
@@ -2745,12 +2745,12 @@ const TRON_TX_EXPECTED: Readonly<
       en: {
         title: "Confirm blind signing",
         description:
-          "Network: TRON\nThe wallet does not support the TRON contract AccountUpdateContract and cannot show what it does\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
+          "The wallet does not support the TRON contract AccountUpdateContract and cannot show what it does\nNetwork: TRON\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged",
       },
       "zh-Hans": {
         title: "确认盲签",
         description:
-          "网络：TRON\n钱包不支持 TRON 合约类型 AccountUpdateContract，无法显示它的作用\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
+          "钱包不支持 TRON 合约类型 AccountUpdateContract，无法显示它的作用\n网络：TRON\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费",
       },
     },
   },

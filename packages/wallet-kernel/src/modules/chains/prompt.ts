@@ -1199,7 +1199,31 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
   ];
 }
 
-function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystorePrompt {
+/**
+ * A rendered prompt as its two row classes: `lead` holds every warning and caveat row the bounded
+ * render must keep — TRON takeover, program authorities, verifiability caveats and decoder
+ * warnings; `detail` holds everything else — the network, the effects and the fee. A prompt the
+ * platform dialog cannot fit keeps the lead whole and counts down the detail rows.
+ */
+export type RenderedPrompt = {
+  readonly title: string;
+  readonly lead: ReadonlyArray<string>;
+  readonly detail: ReadonlyArray<string>;
+};
+
+/** A prompt with no warning rows — its whole description truncates as detail. */
+export const rowsOf = (prompt: KeystorePrompt): RenderedPrompt => ({
+  title: prompt.title,
+  lead: [],
+  detail: prompt.description.split("\n"),
+});
+
+const flatten = (rendered: RenderedPrompt): KeystorePrompt => ({
+  title: rendered.title,
+  description: joinLines([...rendered.lead, ...rendered.detail]),
+});
+
+function transactionPrompt(catalog: Catalog, intent: PromptIntent): RenderedPrompt {
   const { tron } = intent;
   const network =
     intent.network === undefined
@@ -1257,13 +1281,16 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
           : [catalog.tronMemoLength((tron.memo.hex.length - "0x".length) / 2)];
   return {
     title: intent.blind === undefined ? catalog.titles[intent.summary] : catalog.blindTitle,
-    description: joinLines([
+    lead: [
       ...(tron?.permissionUpdate === undefined
         ? []
         : [catalog.tronTakeover(tronNewKeyAddresses(tron.permissionUpdate))]),
-      ...network,
       ...programAuthorityLines(catalog, intent),
       ...caveat,
+      ...warningLines(catalog, warnings),
+    ],
+    detail: [
+      ...network,
       ...effectLines(catalog, intent),
       ...permissions,
       ...(tron?.permissionId === undefined ? [] : [catalog.tronPermissionId(tron.permissionId)]),
@@ -1278,8 +1305,7 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
         : intent.fee === undefined
           ? catalog.feeUnknown
           : catalog.maxFee(formatAmount(catalog, intent.fee.max)),
-      ...warningLines(catalog, warnings),
-    ]),
+    ],
   };
 }
 
@@ -1701,28 +1727,33 @@ function polymarketLines(
   }
 }
 
-function typedDataLines(
+function typedDataRows(
   catalog: Catalog,
   intent: PromptIntent,
   message: Extract<MessageContent, { kind: "typed-data" }>,
-): ReadonlyArray<string> {
+): Pick<RenderedPrompt, "lead" | "detail"> {
   const { name, chainId, verifyingContract } = message.domain;
   /* A document blind because a string leaf carries hidden characters gets the same hazard line
-     a hazardous text message does — ahead of every family branch. */
-  const hazard = intent.blind === "message-bytes" ? [catalog.textHazard["hidden-characters"]] : [];
+     a hazardous text message does — a lead row ahead of every family branch. */
+  const lead = [
+    ...(intent.blind === "message-bytes" ? [catalog.textHazard["hidden-characters"]] : []),
+    ...warningLines(catalog, intent.warnings),
+  ];
   if (message.hyperliquid !== undefined) {
     /* The domain's chain id is only the wallet's signing chain; the environment the action
        targets is `hyperliquidChain`, so it replaces the App/Network/Verifying contract lines. */
-    return [
-      ...hazard,
-      catalog.hlChain[message.hyperliquid.chain],
-      ...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld),
-    ];
+    return {
+      lead,
+      detail: [
+        catalog.hlChain[message.hyperliquid.chain],
+        ...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld),
+      ],
+    };
   }
   /* A Polymarket document is its own description — before the generic branches, because a
      deposit-wallet batch also carries approvals and outflows. */
   if (message.polymarket !== undefined) {
-    return [...hazard, ...polymarketLines(catalog, intent, message.polymarket)];
+    return { lead, detail: polymarketLines(catalog, intent, message.polymarket) };
   }
   /* For TRON the domain chainId is the network's CAIP-2 reference — already checked against
      `intent.network` at normalize — so the network line is the network itself, not eip155. */
@@ -1732,30 +1763,32 @@ function typedDataLines(
       : chainId === undefined
         ? intent.network
         : `eip155:${chainId}`;
-  return [
-    ...hazard,
-    ...(name === undefined ? [] : [catalog.typedApp(field(name))]),
-    ...(network === undefined ? [] : [catalog.networkLine(networkLabel(catalog, network))]),
-    ...(verifyingContract === undefined ? [] : [catalog.typedContract(verifyingContract)]),
-    catalog.typedType(field(message.primaryType)),
-    ...typedContentLines(catalog, intent, message),
-    ...warningLines(catalog, intent.warnings),
-  ];
+  return {
+    lead,
+    detail: [
+      ...(name === undefined ? [] : [catalog.typedApp(field(name))]),
+      ...(network === undefined ? [] : [catalog.networkLine(networkLabel(catalog, network))]),
+      ...(verifyingContract === undefined ? [] : [catalog.typedContract(verifyingContract)]),
+      catalog.typedType(field(message.primaryType)),
+      ...typedContentLines(catalog, intent, message),
+    ],
+  };
 }
 
 function messagePrompt(
   catalog: Catalog,
   intent: PromptIntent,
   message: MessageContent,
-): KeystorePrompt {
+): RenderedPrompt {
   if (message.kind === "bytes") {
     const bytes = (message.hex.length - "0x".length) / 2;
     return {
       title: catalog.blindTitle,
-      description: joinLines([
+      lead: [],
+      detail: [
         catalog.blindBytes,
         bytes <= 64 ? catalog.bytesData(message.hex) : catalog.bytesLength(bytes),
-      ]),
+      ],
     };
   }
   if (message.kind === "typed-data") {
@@ -1767,10 +1800,7 @@ function messagePrompt(
             ? catalog.signInTitle
             : catalog.titles[intent.summary]
         : catalog.blindTitle;
-    return {
-      title,
-      description: joinLines(typedDataLines(catalog, intent, message)),
-    };
+    return { title, ...typedDataRows(catalog, intent, message) };
   }
   if (message.kind === "text" && intent.fiat24?.kind === "session-grant") {
     /* The wallet built this grant from structured fields, so the prompt describes the session
@@ -1780,17 +1810,19 @@ function messagePrompt(
     const grant = intent.fiat24;
     return {
       title: catalog.fiat24SessionTitle,
-      description: joinLines([
+      lead: [],
+      detail: [
         catalog.fiat24SessionBearer(utcDateTime(grant.deadline)),
         catalog.fiat24SessionPower,
         catalog.fiat24SessionSigns(message.text),
-      ]),
+      ],
     };
   }
   if (intent.blind === undefined && message.signIn?.status === "valid") {
     return {
       title: catalog.signInTitle,
-      description: joinLines(signInLines(catalog, message.signIn)),
+      lead: [],
+      detail: signInLines(catalog, message.signIn),
     };
   }
   const hazard = intent.blind === undefined ? undefined : messageTextHazard(message.text);
@@ -1801,45 +1833,52 @@ function messagePrompt(
     hazard === "digest-length" ? `0x${bytesToHex(utf8ToBytes(message.text))}` : undefined;
   return {
     title: intent.blind === undefined ? catalog.titles.message : catalog.blindTitle,
-    description: joinLines([
-      /* Blind text still shows its sanitised excerpt under the hazard line — never a sign-in
-         rendering, whose chrome would present the request as legitimate. */
-      ...(intent.blind === undefined
-        ? message.signIn === undefined
-          ? []
-          : signInLines(catalog, message.signIn)
+    /* Blind text still shows its sanitised excerpt under the hazard line — never a sign-in
+       rendering, whose chrome would present the request as legitimate. */
+    lead:
+      intent.blind === undefined
+        ? []
         : intent.blind === "fiat24-session-grant"
           ? [catalog.fiat24Grant, ...(hazard === undefined ? [] : [catalog.textHazard[hazard]])]
           : hazard === undefined
             ? []
-            : [catalog.textHazard[hazard]]),
+            : [catalog.textHazard[hazard]],
+    detail: [
+      ...(intent.blind === undefined && message.signIn !== undefined
+        ? signInLines(catalog, message.signIn)
+        : []),
       ...(digest === undefined ? [] : [catalog.bytesData(digest)]),
       ...(digest !== undefined && !isPlainText(message.text)
         ? []
         : textLines(catalog, message.text)),
-    ]),
+    ],
   };
 }
 
-export function chainPrompt(locale: PromptLocale, intent: PromptIntent): KeystorePrompt {
+const renderPrompt = (locale: PromptLocale, intent: PromptIntent): RenderedPrompt => {
   const catalog = CATALOGS[locale];
   return intent.message === undefined
     ? transactionPrompt(catalog, intent)
     : messagePrompt(catalog, intent, intent.message);
+};
+
+export function chainPrompt(locale: PromptLocale, intent: PromptIntent): KeystorePrompt {
+  return flatten(renderPrompt(locale, intent));
 }
 
 /**
  * The rendered prompt bounded to what the platform's verification dialog can show. An over-long
  * prompt counts as blind — the caller gates `oversize` like a decoder blind reason — and the
- * returned prompt shows the blind title with the longest whole-line prefix that leaves room for one
- * closing "more lines not shown" line: the kernel truncates, never the OS.
+ * returned prompt shows the blind title with every lead row whole, the longest detail prefix that
+ * leaves room for one closing "more lines not shown" line: the kernel truncates, never the OS. A
+ * prompt whose warnings alone cannot fit is refused, whatever the blind policy.
  */
 export function boundChainPrompt(
   locale: PromptLocale,
   intent: PromptIntent,
   bound: PromptBound,
 ): { readonly prompt: KeystorePrompt; readonly oversize: boolean } {
-  return boundPrompt(locale, chainPrompt(locale, intent), bound);
+  return boundPrompt(locale, renderPrompt(locale, intent), bound);
 }
 
 /**
@@ -1848,20 +1887,31 @@ export function boundChainPrompt(
  */
 export function boundPrompt(
   locale: PromptLocale,
-  rendered: KeystorePrompt,
+  rendered: RenderedPrompt,
   bound: PromptBound,
 ): { readonly prompt: KeystorePrompt; readonly oversize: boolean } {
   const catalog = CATALOGS[locale];
-  if (promptFits(rendered, bound)) {
-    return { prompt: rendered, oversize: false };
+  const flat = flatten(rendered);
+  if (promptFits(flat, bound)) {
+    return { prompt: flat, oversize: false };
   }
-  const lines = rendered.description.split("\n");
-  /* At least one line is withheld, so the closing line always counts down from a nonzero
-     remainder; a single over-long line leaves the closing line alone. */
-  let keep = Math.min(lines.length - 1, bound.lines - 1);
+  if (bound.title !== undefined && codePoints(catalog.blindTitle) > bound.title) {
+    throw new KernelError("unsupported", "the prompt's warnings do not fit the dialog");
+  }
+  /* Lead rows are never dropped — at least one detail line is withheld, so the closing line always
+     counts down from a nonzero remainder. When the lead rows and the closing line alone cannot
+     fit the signature is refused rather than shown without its warnings. */
+  let keep = Math.min(rendered.detail.length - 1, bound.lines - rendered.lead.length - 1);
   for (;;) {
-    const candidate = joinLines([...lines.slice(0, keep), catalog.moreLines(lines.length - keep)]);
-    if (keep === 0 || codePoints(candidate) <= bound.characters) {
+    if (keep < 0) {
+      throw new KernelError("unsupported", "the prompt's warnings do not fit the dialog");
+    }
+    const candidate = joinLines([
+      ...rendered.lead,
+      ...rendered.detail.slice(0, keep),
+      catalog.moreLines(rendered.detail.length - keep),
+    ]);
+    if (codePoints(candidate) <= bound.characters) {
       return { prompt: { title: catalog.blindTitle, description: candidate }, oversize: true };
     }
     keep -= 1;
