@@ -556,6 +556,7 @@ export async function main(): Promise<void> {
     // reaches a factor ceremony, so only the shape is needed.
     keystore: {
       locale: "en",
+      platform: "ios",
       seal: () => undefined,
       open: () => undefined,
       authenticate: () => undefined,
