@@ -1017,6 +1017,11 @@ the link).
 `readQrSignature` verifies the answer cryptographically — sender recovery for EVM/TRON, ed25519
 for Solana, same-content plus a new under-link signature for a PSBT — before handing it back.
 
+The scanned export is the trust root of the whole exchange: a malicious export replaces every
+address the watch wallet will ever show, so the user must compare the first receive address the
+watch wallet derives against the phone's own account screen before trusting anything it signs
+for.
+
 ### Counterparts
 
 | Counterpart                    | Export                       | Request               | Response            | Verified                                                                                      |

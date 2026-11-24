@@ -22,7 +22,7 @@ import { Secret } from "../src/secret/secret.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
 import type { RecordStore, StoreOp, VaultImage } from "../src/vault/store.ts";
 import { sealRecord } from "../src/vault/vault.ts";
-import { createHarness } from "./harness.ts";
+import { createHarness, seededRandom } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
 import type { KeystoreCall } from "./keystore.ts";
@@ -1348,5 +1348,112 @@ describe("spent decimal extremes", () => {
         }),
       ),
     ).toBe("limit-exceeded");
+  });
+});
+
+/** The session-key draw of a just-run `sessions.create` — the first 32-byte draw it makes. */
+const sessionKeyDraw = (draws: ReadonlyArray<Uint8Array>): Uint8Array => {
+  const draw = draws.find((d) => d.length === 32);
+  if (draw === undefined) {
+    throw new Error("sessions.create drew no session key");
+  }
+  return draw;
+};
+
+/** A Random whose first 32-byte draw replays `key` — what `sessions.create` consumes first. */
+const replayKeyRandom = (key: Uint8Array): ((n: number) => Uint8Array) => {
+  const fallback = seededRandom(0x5eed).random;
+  let replayed = false;
+  return (n) => {
+    if (!replayed && n === 32) {
+      replayed = true;
+      return new Uint8Array(key);
+    }
+    return fallback(n);
+  };
+};
+
+describe("approval follows the record, not the kernel's memory", () => {
+  it("an opened record another writer deletes and re-creates signs only after re-approval", async () => {
+    /* `opened` is in-memory, so an approval could outlive the record it approved. A second kernel
+       over the same store deletes the session record, then re-creates a session with the same
+       secret key — the identical record id returns, manifest-consistent. The reload's `forget`
+       drops the stale approval, so signing needs sessions.open again; without it the dead id's
+       approval would silently transfer to the new record. */
+    const { h, session, walletId } = await webSetup();
+    const drawsBefore = h.draws.length;
+    const created = ok(
+      await h.call("sessions.create", createParams(walletId, { limits: LIMITS }), session),
+    );
+    const address = strField(created, "address");
+    const keyDraw = sessionKeyDraw(h.draws.slice(drawsBefore));
+    ok(await h.call("sessions.open", { address, verify: PASSKEY() }, session));
+    ok(await sign(h, session, address, { type: "twapCancel", a: 0, t: 1 }));
+
+    /* A second kernel over the same store: its first 32-byte draw replays the session key, so
+       its sessions.create seals a record under the very id the first kernel approved. */
+    const h2 = createHarness({
+      store: h.store,
+      anchor: h.anchor,
+      random: replayKeyRandom(keyDraw),
+      start: T0,
+    });
+    await h2.settle();
+    const session2 = strField(ok(await h2.call("vault.unlock", { factor: PASSKEY() })), "session");
+    ok(await h2.call("sessions.delete", { address }, session2));
+    await h.settle(); // the reload observes the removal — forget drops the approval
+    const recreated = ok(
+      await h2.call(
+        "sessions.create",
+        createParams(walletId, { limits: LIMITS, name: "bot-2" }),
+        session2,
+      ),
+    );
+    expect(strField(recreated, "address").toLowerCase()).toBe(address.toLowerCase());
+    await h.settle(); // the reload claims the re-created record — without its stale approval
+
+    expect(errCode(await sign(h, session, address, { type: "twapCancel", a: 0, t: 1 }))).toBe(
+      "approval-required",
+    );
+    /* Re-approving the new record works — the record is whole, only the approval was lost. */
+    ok(await h.call("sessions.open", { address, verify: PASSKEY() }, session));
+    ok(await sign(h, session, address, { type: "twapCancel", a: 0, t: 1 }));
+  });
+});
+
+describe("expired sessions", () => {
+  it("open of an expired session refuses before any secure-input request or keystore verify", async () => {
+    /* An expired session cannot be re-approved — the open prompt would verify the user for
+       nothing. The refusal precedes the iOS confirmation code and the factor ceremony alike. */
+    const fk = fakeKeystore();
+    const input = fakeSecureInput({ approval: "correct" });
+    const h = createHarness({ keystore: fk.keystore, secureInput: input.secureInput, start: T0 });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: DEVICE,
+      }),
+    );
+    const session = strField(res, "session");
+    const walletId = strField(field(res, "wallet"), "walletId");
+    ok(await h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, session));
+    const created = ok(
+      await h.call("sessions.create", createParams(walletId, { verify: HARDWARE }), session),
+    );
+    const address = strField(created, "address");
+
+    h.advanceWall(DAY + 1);
+    const keystoreCalls = fk.calls.length;
+    const inputCalls = input.requests.length;
+    expect(errCode(await h.call("sessions.open", { address, verify: HARDWARE }, session))).toBe(
+      "invalid-input",
+    );
+    expect(fk.calls.slice(keystoreCalls)).toStrictEqual([]);
+    expect(input.requests.slice(inputCalls)).toStrictEqual([]);
+    /* And sign refuses the same way — expiry is checked before metering or approval. */
+    expect(errCode(await sign(h, session, address, { type: "twapCancel", a: 0, t: 1 }))).toBe(
+      "invalid-input",
+    );
   });
 });

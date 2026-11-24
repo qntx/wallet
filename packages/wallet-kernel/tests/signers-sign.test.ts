@@ -20,6 +20,7 @@ import { EVM_DELEGATOR, normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { devicePromptLine } from "../src/modules/signers/prompt.ts";
+import { promptFits, PROMPT_BOUNDS } from "../src/prompts.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
@@ -569,6 +570,60 @@ describe("hardware sign refusals", () => {
     expect(descriptions.some((d) => d.includes(devicePromptLine("en", "clear", "keystone")))).toBe(
       true,
     );
+  });
+
+  it("an oversize prompt fits the bound once the device line is appended", async () => {
+    /* The phone dialog gets the chain bound shrunk by the device line's cost, so the verification
+       prompt — body plus device line — still fits where the unshrunk body alone would overflow. */
+    const fake = fakeKeystore();
+    const device = fakeDevice(SEED);
+    const h = createHarness({ keystore: fake.keystore, drivers: { keystone: device.driver } });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(res, "session");
+    ok(
+      await h.call(
+        "vault.setBlindSigning",
+        { enabled: true, verify: { kind: "hardware" } },
+        session,
+      ),
+    );
+    const begin = ok(
+      await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+    );
+    ok(
+      await h.call(
+        "hardware.step",
+        {
+          opId: strField(begin, "opId"),
+          response: { kind: "qr", ur: { type: "t", cbor: new Uint8Array([7]) } },
+        },
+        session,
+      ),
+    );
+    const status = ok(await h.call("status", undefined, session));
+    const wallets = field(status, "wallets") as ReadonlyArray<Record<string, ProtocolValue>>;
+    const hwWallet = wallets.find((w) => w["custody"] === "hardware")!;
+    const signRes = await signOnDevice(
+      h,
+      session,
+      {
+        kind: "evm.personal-message",
+        network: EVM_NETWORK,
+        account: hd(hwWallet["walletId"] as string, "evm.bip44"),
+        message: utf8ToBytes(Array.from({ length: 40 }, (_, i) => `message line ${i}`).join("\n")),
+      },
+      { kind: "hardware" },
+    );
+    expect("err" in signRes).toBe(false);
+    const prompt = opens(fake.calls).at(-1);
+    expect(prompt?.description.endsWith(devicePromptLine("en", "clear", "keystone"))).toBe(true);
+    expect(promptFits(prompt!, PROMPT_BOUNDS.ios)).toBe(true);
   });
 });
 

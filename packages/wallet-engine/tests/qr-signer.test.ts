@@ -526,4 +526,20 @@ describe("qrSigner", () => {
       await expect(w.signer.respond(pending.id)).rejects.toThrow(RequestEndedError);
     },
   );
+
+  it(
+    "a second respond for the same request fails — the bound entry is consumed",
+    { timeout: 60_000 },
+    async () => {
+      /* `outcome` still resolves for a finished request, so only the deleted bound entry stops
+         a second respond from re-encoding the same answer under a spent binding. */
+      const w = await world();
+      const pending = await w.signer.prepare(loadRequest("evm-1559-transfer"), w.account);
+      await w.requests.approve(pending.id, "evm-sign", approval(pending, VERIFY));
+      await w.signer.respond(pending.id);
+      await expect(w.signer.respond(pending.id)).rejects.toMatchObject({
+        code: "result-mismatch",
+      });
+    },
+  );
 });

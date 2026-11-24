@@ -9,6 +9,9 @@ import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { base58 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
+import { NETWORK } from "@scure/btc-signer";
+import { p2wpkh } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
 /**
  * QR codec tests: vendor-built request payloads round through `readQrRequest`, signatures built
  * in-test round through `qrResponse` into vendor decoders, and `qrExport` output reads under the
@@ -18,6 +21,7 @@ import * as fc from "fast-check";
 import { toHex, toRlp } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
+import { assembleEvm, planEvm } from "@qntx/wallet-chains/evm";
 import { qrParts } from "@qntx/wallet/hardware";
 import type { QrPayload } from "@qntx/wallet/hardware";
 import type { ChainExportResult } from "@qntx/wallet/protocol";
@@ -88,7 +92,8 @@ const otherLeaf = HDKey.fromMasterSeed(mnemonicToSeedSync(wallet.mnemonic)).deri
   "m/44'/60'/0'/0/1",
 );
 const otherPrivate = otherLeaf.privateKey;
-if (otherPrivate === null) {
+const otherPublic = otherLeaf.publicKey;
+if (otherPrivate === null || otherPublic === null) {
   throw new Error("vector derivation failed");
 }
 
@@ -265,6 +270,62 @@ describe("readQrRequest", () => {
     expect(bytesToHex(tx.data)).toBe(bytesToHex(LEGACY_SD));
   });
 
+  it("a legacy transaction without an EIP-155 chain id is unsupported, not malformed", () => {
+    /* Pre-EIP-155 envelopes carry no chain id and are replayable across networks — the refusal
+       keeps the `unsupported` code the caller uses to distinguish "will never sign" from
+       "could not parse". */
+    const noChainId = hexToBytes(
+      toRlp([
+        "0x",
+        toHex(20_000_000_000n),
+        toHex(21_000n),
+        "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        toHex(10n ** 15n),
+        "0x",
+      ]).slice(2),
+    );
+    expect(
+      qrError(() =>
+        readQrRequest(
+          payload(
+            EthSignRequest.constructETHRequest(
+              Buffer.from(noChainId),
+              DataType.transaction,
+              PATH,
+              fingerprint,
+              undefined,
+              1,
+            ).toUR(),
+          ),
+        ),
+      ),
+    ).toBe("unsupported");
+  });
+
+  it("a transaction that does not re-serialize to its signed bytes is malformed", () => {
+    /* The counterpart signs exactly the bytes it parsed: a non-canonical encoding — here a
+       gasPrice with a leading zero byte — parses to the same transaction but re-serializes
+       differently, so the request is refused instead of signing bytes it cannot reproduce. */
+    const hex = bytesToHex(LEGACY_SD);
+    const nonCanonical = hexToBytes(`ec${hex.slice(2).replace("8504a817c800", "860004a817c800")}`);
+    expect(
+      qrError(() =>
+        readQrRequest(
+          payload(
+            EthSignRequest.constructETHRequest(
+              Buffer.from(nonCanonical),
+              DataType.transaction,
+              PATH,
+              fingerprint,
+              undefined,
+              1,
+            ).toUR(),
+          ),
+        ),
+      ),
+    ).toBe("malformed");
+  });
+
   it("decodes a vendor personal message with address and no chainId", () => {
     const message = evmPersonalRequest(readQrRequest(ethPersonalRequest()));
     expect(message.address).toBe(leafAddress);
@@ -354,6 +415,34 @@ describe("readQrRequest", () => {
   });
 });
 
+/** The signed envelope of `request`'s transaction, signed by `key` — the kernel's plan path. */
+const evmTxArtefact = (
+  request: Extract<QrRequest, { family: "evm"; kind: "transaction" }>,
+  privateKey: Uint8Array,
+  publicKey: Uint8Array,
+): Uint8Array => {
+  const chainId = request.chainId ?? request.tx.chainId;
+  const plan = planEvm(
+    {
+      kind: "evm.transaction",
+      network: `eip155:${chainId}`,
+      account: { kind: "hd", walletId: "", groupIndex: 0, template: "evm.bip44" },
+      tx: request.tx,
+    },
+    { path: request.path, publicKey },
+  );
+  const digest = plan.tasks[0]?.digest;
+  if (digest === undefined) {
+    throw new Error("plan produced no task");
+  }
+  const compact = secp256k1.sign(digest, privateKey, { lowS: true, prehash: false });
+  const assembled = assembleEvm(plan, [compact]);
+  if (assembled.kind !== "signed") {
+    throw new Error("unexpected next-stage plan");
+  }
+  return assembled.artefact;
+};
+
 describe("qrResponse", () => {
   it("encodes an eth-signature a vendor decodes", () => {
     const request = readQrRequest(ethPersonalRequest()) as Extract<QrRequest, { family: "evm" }>;
@@ -373,6 +462,72 @@ describe("qrResponse", () => {
     expect(
       qrError(() =>
         qrResponse(request, { kind: "evm.personal-message", signature }, { address: leafAddress }),
+      ),
+    ).toBe("result-mismatch");
+  });
+
+  it("refuses a signed transaction that recovers to a different signer", () => {
+    /* The same check on the transaction path: a correctly formed signed envelope whose signer
+       is not the bound account is refused, not returned to the counterpart. */
+    const request = evmTxRequest(
+      readQrRequest(
+        payload(
+          EthSignRequest.constructETHRequest(
+            Buffer.from(LEGACY_SD),
+            DataType.transaction,
+            PATH,
+            fingerprint,
+            undefined,
+            1,
+          ).toUR(),
+        ),
+      ),
+    );
+    const signedTransaction = evmTxArtefact(request, otherPrivate, otherPublic);
+    expect(
+      qrError(() =>
+        qrResponse(
+          request,
+          { kind: "evm.transaction", signedTransaction },
+          { address: leafAddress },
+        ),
+      ),
+    ).toBe("result-mismatch");
+  });
+
+  it("refuses a signed PSBT whose content differs from the request's", () => {
+    /* A signed PSBT must be the transaction the counterpart asked to sign, over the same
+       prevouts — a signature over anything else never reaches the response, even though it
+       parses and carries a fresh signature. */
+    const pubkey = secp256k1.getPublicKey(leafPrivate, true);
+    const { script } = p2wpkh(pubkey, NETWORK);
+    const funding = new Transaction({ version: 2 });
+    funding.addInput({ txid: new Uint8Array(32).fill(7), index: 1 });
+    funding.addOutput({ script, amount: 100_000n });
+    const spend = new Transaction({ version: 2 });
+    spend.addInput({
+      txid: funding.id,
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script, amount: 100_000n },
+      nonWitnessUtxo: funding.toBytes(true),
+    });
+    spend.addOutput({ script, amount: 90_000n });
+    const request = bitcoinRequest(
+      readQrRequest(payload(new CryptoPSBT(Buffer.from(spend.toPSBT(0))).toUR())),
+    );
+    /* The signed variant appends an output — a different unsigned transaction — while still
+       carrying a well-formed partial signature on the input. */
+    const signed = Transaction.fromPSBT(request.psbt);
+    signed.addOutput({ script, amount: 1000n });
+    signed.updateInput(0, { partialSig: [[pubkey, new Uint8Array(64).fill(1)]] });
+    expect(
+      qrError(() =>
+        qrResponse(
+          request,
+          { kind: "bitcoin.psbt", signedPsbt: signed.toPSBT(0) },
+          { address: "bc1qexample" },
+        ),
       ),
     ).toBe("result-mismatch");
   });
