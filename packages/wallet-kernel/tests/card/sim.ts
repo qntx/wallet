@@ -95,9 +95,13 @@ export async function startSimulator(
       cut = buffer.indexOf("\n");
     }
   });
+  /* Once the child is gone every pending AND every later read fails with the exit cause — a
+     request written after exit must not queue a waiter nothing will ever answer. */
+  let dead: Error | undefined;
   const fail = (error: Error): void => {
+    dead ??= error;
     for (const waiter of waiters.splice(0)) {
-      waiter.reject(error);
+      waiter.reject(dead);
     }
   };
   proc.on("error", (error) => fail(error));
@@ -108,6 +112,8 @@ export async function startSimulator(
       ),
     ),
   );
+  // Writes after the child died raise EPIPE on stdin — the exit error already tells the story.
+  proc.stdin?.on("error", () => undefined);
   // Eager so close() cannot miss an exit emitted between kill() and awaiting it.
   const exited = new Promise<void>((resolve) => {
     proc.once("exit", () => {
@@ -116,6 +122,9 @@ export async function startSimulator(
   });
 
   const readLine = async (): Promise<string> => {
+    if (dead !== undefined) {
+      throw dead;
+    }
     const queued = lines.shift();
     return queued === undefined
       ? new Promise((resolve, reject) => {

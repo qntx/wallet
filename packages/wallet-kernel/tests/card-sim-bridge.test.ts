@@ -6,9 +6,13 @@
  * is under test.
  */
 import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import type { Socket } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 import { bytesToHex } from "@noble/hashes/utils.js";
@@ -48,8 +52,17 @@ const status = async (card: SimCard, session: Session): Promise<unknown> => {
 };
 
 /** Polls until the bridge's TCP listener accepts — the JVM needs a moment to bind. */
-const waitForListener = async (port: number): Promise<Socket> => {
+const waitForListener = async (
+  port: number,
+  proc: ChildProcess,
+  stderr: ReadonlyArray<string>,
+): Promise<Socket> => {
   for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (proc.exitCode !== null || proc.killed) {
+      throw new Error(
+        `card-sim bridge exited before listening (code ${String(proc.exitCode)}): ${stderr.join("").trim()}`,
+      );
+    }
     const socket: Socket = createConnection({ host: "127.0.0.1", port });
     const opened = await new Promise<boolean>((resolve) => {
       socket.once("connect", () => resolve(true));
@@ -142,9 +155,13 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card sim bridge", () => {
     const proc = spawn(SIM_LAUNCHER!, ["--tcp", String(port)], {
       stdio: ["ignore", "ignore", "pipe"],
     });
+    const stderr: string[] = [];
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      stderr.push(chunk.toString("utf8"));
+    });
     let socket: Socket | undefined;
     try {
-      socket = await waitForListener(port);
+      socket = await waitForListener(port, proc, stderr);
       const lines = createInterface({ input: socket });
       const reader = lines[Symbol.asyncIterator]();
       const ask = async (line: string): Promise<string> => {
@@ -168,4 +185,26 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card sim bridge", () => {
       proc.kill();
     }
   }, 120_000);
+});
+
+/* The client contract needs no simulator: a launcher that dies after READY — like a restored
+   cache whose classpath lost its jars — must fail the pending request with the child's stderr,
+   not leave it queued for the test timeout. */
+describe("card sim bridge client", () => {
+  it("rejects a request whose bridge died after READY with the child's stderr", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "card-sim-stub-"));
+    const stub = join(dir, "card-sim");
+    writeFileSync(
+      stub,
+      '#!/usr/bin/env bash\nprintf "READY\\n"\necho "boom: missing classpath" >&2\nexit 1\n',
+    );
+    chmodSync(stub, 0o755);
+    try {
+      const sim = await startSimulator(stub);
+      await expect(sim.newCard()).rejects.toThrow(/exited.*boom: missing classpath/s);
+      await sim.close();
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
 });
