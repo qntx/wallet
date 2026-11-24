@@ -24,6 +24,8 @@ import { serializeCeremonies } from "../src/platform.ts";
 import { corePrompt } from "../src/prompts.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
 import type { RecordStore } from "../src/vault/store.ts";
+import { createFakeCard } from "./card/fake-card.ts";
+import { testCardReader } from "./card/reader.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { subtlePbkdf2 } from "./helpers.ts";
@@ -741,4 +743,35 @@ describe("serializeCeremonies", () => {
     expect(events).toStrictEqual([true, false, true, false]);
     expect(input.requests).toStrictEqual([{ kind: "backup-password", label: "l" }]);
   });
+
+  it("a secure-input request inside an open reader session runs in the slot, not the queue", async () => {
+    const events: boolean[] = [];
+    const input = fakeSecureInput();
+    const field = testCardReader();
+    const platform = serializeCeremonies(
+      {
+        keystore: undefined,
+        passkey: undefined,
+        card: { reader: field.reader, anchors: [] },
+        secureInput: input.secureInput,
+      } as KernelPlatform,
+      (active) => events.push(active),
+    );
+    // A card present at open: the session holds the ceremony slot until close.
+    field.present(createFakeCard());
+    const opened = await platform.card!.reader.open("hold the card");
+    expect(opened.ok).toBe(true);
+    expect(events).toStrictEqual([true]);
+    input.answer(new Uint8Array([9, 9]));
+    /* Without the in-slot rule this request queues behind the session it is part of — the
+       await never resolves and the test fails on its timeout. */
+    await expect(
+      platform.secureInput!.request("access-code", "enter the code"),
+    ).resolves.toStrictEqual({ ok: true, value: new Uint8Array([9, 9]) });
+    // Running inside the slot fires no extra ceremony pair.
+    expect(events).toStrictEqual([true]);
+    platform.card!.reader.close("success", "done");
+    expect(events).toStrictEqual([true, false]);
+    expect(input.requests).toStrictEqual([{ kind: "access-code", label: "enter the code" }]);
+  }, 5_000);
 });

@@ -14,7 +14,12 @@ import { Transaction } from "@scure/btc-signer/transaction.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { normalizeBitcoin, verifyBitcoinPsbtSignatures } from "@qntx/wallet-chains/bitcoin";
-import { evmAddressFromPublicKey, normalizeEvm, recoverEvmSigner } from "@qntx/wallet-chains/evm";
+import {
+  encodeBatchExecute,
+  evmAddressFromPublicKey,
+  normalizeEvm,
+  recoverEvmSigner,
+} from "@qntx/wallet-chains/evm";
 import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import type { WalletInfo } from "@qntx/wallet/types";
 
@@ -2342,6 +2347,49 @@ describe("card sign (fake card)", () => {
     expect(field(result, "kind")).toBe("sign");
     return field(result, "result") as Record<string, unknown>;
   };
+
+  it("an over-long prompt refuses as blind before any input, tap or keystore call", async () => {
+    const r = await keystoreRig();
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    /* A 12-call batch renders well over the platform bound — the same oversize→blind rule
+       chain.sign gets, before the reader session or the secure input ever opens. */
+    const calls = Array.from({ length: 12 }, (_, i) => ({
+      to: `0x00000000000000000000000000000000000000${10 + i}` as `0x${string}`,
+      value: 1n,
+      data: "0x" as `0x${string}`,
+    }));
+    /* The batch renders only as a self-call to the account's own address. */
+    const own = evmAddressFromPublicKey(
+      HDKey.fromMasterSeed(seed2).derive("m/44'/60'/0'/0/0").publicKey ?? new Uint8Array(),
+    );
+    const request = normalizeEvm({
+      kind: "evm.transaction",
+      network: "eip155:1",
+      account: signAccount(walletId, "evm.bip44"),
+      tx: {
+        type: "eip1559",
+        chainId: 1,
+        nonce: 0,
+        gas: "0x5208",
+        value: "0x0",
+        data: encodeBatchExecute(calls),
+        to: own,
+        maxFeePerGas: "0x59682f00",
+        maxPriorityFeePerGas: "0x1",
+        accessList: [],
+      },
+    });
+    const before = r.fake.calls.length;
+    const asks = r.input.requests.length;
+    await expect(
+      errCode(
+        r.h.call("card.begin", { op: { kind: "sign", request }, verify: HARDWARE }, r.session),
+      ),
+    ).resolves.toBe("blind-signing-disabled");
+    expect(r.fake.calls.slice(before)).toStrictEqual([]);
+    expect(r.input.requests.length).toBe(asks);
+  });
 
   it("sign requires a verify factor and a card wallet account", async () => {
     const r = await rig();

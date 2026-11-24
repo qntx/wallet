@@ -22,6 +22,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import { encodeBatchExecute, normalizeEvm } from "@qntx/wallet-chains/evm";
+
 import { KernelError } from "../src/errors.ts";
 import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
 import { createOperationExecutor } from "../src/modules/signers/operation.ts";
@@ -29,6 +31,7 @@ import { hardwareWalletId } from "../src/modules/signers/record.ts";
 import type { KernelPlatform } from "../src/platform.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
+import { fakeKeystore } from "./keystore.ts";
 import { loadTranscript, replayExchange, transcriptSession } from "./onekey-emulator/index.ts";
 import { ACCOUNT_NODES, fakeDevice, masterFingerprint } from "./signers-fake.ts";
 import type { FakeDevice, FakeDeviceOptions } from "./signers-fake.ts";
@@ -677,6 +680,65 @@ describe("hardware wallet refusals", () => {
     for (const res of results) {
       expect(errCode(res)).toBe("unsupported");
     }
+  });
+
+  it("an over-long prompt refuses a hardware sign as blind before any device exchange", async () => {
+    /* The same oversize→blind rule chain.sign gets: prepareApproval measures the rendered
+       prompt against the platform bound and refuses while blind signing is off — before the
+       presence ceremony and before the first device exchange. */
+    const fake = fakeKeystore();
+    const device = fakeDevice(SEED);
+    const h = createHarness({
+      keystore: fake.keystore,
+      drivers: { keystone: device.driver },
+    });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(res, "session");
+    const hwId = await pairDevice(h, session);
+    /* The batch renders only as a self-call to the account's own address. */
+    const ownPub = HDKey.fromMasterSeed(SEED).derive("m/44'/60'/0'/0/0").publicKey;
+    if (ownPub === null) {
+      throw new Error("no public key");
+    }
+    const own = publicKeyToAddress(
+      `0x${bytesToHex(secp256k1.Point.fromBytes(ownPub).toBytes(false))}`,
+    );
+    const calls = Array.from({ length: 12 }, (_, i) => ({
+      to: `0x00000000000000000000000000000000000000${10 + i}` as `0x${string}`,
+      value: 1n,
+      data: "0x" as `0x${string}`,
+    }));
+    const request = normalizeEvm({
+      kind: "evm.transaction",
+      network: EVM_NETWORK,
+      account: { kind: "hd", walletId: hwId, groupIndex: 0, template: "evm.bip44" },
+      tx: {
+        type: "eip1559",
+        chainId: 1,
+        nonce: 0,
+        gas: "0x5208",
+        value: "0x0",
+        data: encodeBatchExecute(calls),
+        to: own,
+        maxFeePerGas: "0x59682f00",
+        maxPriorityFeePerGas: "0x1",
+        accessList: [],
+      },
+    });
+    const keystoreCalls = fake.calls.length;
+    const begin = await h.call(
+      "hardware.begin",
+      { op: { kind: "sign", request }, verify: { kind: "hardware" } },
+      session,
+    );
+    expect(errCode(begin)).toBe("blind-signing-disabled");
+    expect(fake.calls.length).toBe(keystoreCalls);
   });
 
   it("chain.sign refuses a hardware account with device-required", async () => {
