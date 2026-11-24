@@ -567,6 +567,8 @@ export const world = async (
     random?: (length: number) => Uint8Array;
     /** The host's transport for paired devices — the world's signing path runs through signers. */
     deviceIo?: EngineOptions["deviceIo"];
+    /** A caller-provided wallet (the card rig's) — the shared node wallet otherwise. */
+    wallet?: { wallet: Wallet; walletId: string };
     /**
      * Wraps the real `requests` handed to `createApps` — a capture shim for the typed-data
      * documents the flows prepare (approvals still go through `w.requests`).
@@ -576,7 +578,7 @@ export const world = async (
     ) => Pick<RequestController, "prepare" | "outcome" | "reject">;
   } = {},
 ): Promise<World> => {
-  const { wallet, walletId } = await nodeWallet();
+  const { wallet, walletId } = options.wallet ?? (await nodeWallet());
   // A previous test may have locked the shared wallet — restore the unlocked precondition.
   await wallet.vault.unlock(VERIFY).catch(() => undefined);
   const posted: Posted[] = [];
