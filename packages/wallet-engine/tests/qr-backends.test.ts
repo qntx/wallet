@@ -38,7 +38,11 @@ import { Ur, fromUr } from "@qntx/ur/typed";
 import { WalletError } from "@qntx/wallet";
 import type { Wallet } from "@qntx/wallet";
 import type { SignRequest } from "@qntx/wallet-chains";
-import { bitcoinPubkeyFromXpub, normalizeBitcoin } from "@qntx/wallet-chains/bitcoin";
+import {
+  EMPTY_BITCOIN_OWN,
+  bitcoinPubkeyFromXpub,
+  normalizeBitcoin,
+} from "@qntx/wallet-chains/bitcoin";
 import { normalizeEvm, recoverEvmSigner } from "@qntx/wallet-chains/evm";
 import { parseCompiledMessage } from "@qntx/wallet-chains/solana";
 import { normalizeTron, tronAddressToHex, tronRawDataFromJson } from "@qntx/wallet-chains/tron";
@@ -532,7 +536,7 @@ const world = async (devices: DeviceTransport | undefined): Promise<World> => {
             psbt: input.psbt,
             sign: input.sign.map(({ index, template }) => ({ index, template })),
           },
-          ownScripts: new Set<string>(),
+          own: EMPTY_BITCOIN_OWN,
           inputs: [],
         })),
       ),

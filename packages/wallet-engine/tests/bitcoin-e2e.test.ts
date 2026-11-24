@@ -661,7 +661,6 @@ const legacyFlow = async (): Promise<void> => {
     };
     const xpub49 = await acct("btc.bip49");
     const xpub44 = await acct("btc.bip44");
-    const xpub84 = await acct("btc.bip84");
     const addr49 = bitcoinAddressFromXpub(xpub49, "btc.bip49", NETWORK, 0, 0);
     const addr44 = bitcoinAddressFromXpub(xpub44, "btc.bip44", NETWORK, 0, 0);
     const walletAddr = rpc(`${NAME}-legacy`, "getnewaddress") as string;
@@ -745,7 +744,8 @@ const legacyFlow = async (): Promise<void> => {
     expect(found).toContain(0);
     const g0 = ctl.getState().groups[walletId]?.find((g) => g.index === 0);
     expect(g0?.used?.["bitcoin"]).toBe(true);
-    // Send from each legacy template through engine.transactions — change lands on bip84.
+    // Send from each legacy template through engine.transactions — change lands on each
+    // template's own change chain.
     const txCtl = new TransactionController({
       wallet,
       networks: new NetworkController({
@@ -806,27 +806,24 @@ const legacyFlow = async (): Promise<void> => {
         ),
       );
     }
-    // The bip84 change chain received the change outputs.
-    const changeChain = await scanChain(
-      es,
-      xpub84,
-      "btc.bip84",
-      NETWORK,
-      bitcoinNetwork(NETWORK).params,
-      1,
-    );
-    expect(changeChain.some((a) => a.used)).toBe(true);
-    // History-derived UTXOs must equal the /utxo read on the same spent wallet — bip84's
-    // change chain is scanned even though its receive chain is empty.
+    // Each send's change landed on its own template's change chain — bip84's is untouched.
+    const [change49, change44] = await Promise.all([
+      scanChain(es, xpub49, "btc.bip49", NETWORK, bitcoinNetwork(NETWORK).params, 1),
+      scanChain(es, xpub44, "btc.bip44", NETWORK, bitcoinNetwork(NETWORK).params, 1),
+    ]);
+    expect(change49.some((a) => a.used)).toBe(true);
+    expect(change44.some((a) => a.used)).toBe(true);
+    // History-derived UTXOs must equal the /utxo read on the same spent wallet — a legacy
+    // template's change chain is scanned like any other.
     await step("utxosFromHistory matches /utxo", async () => {
-      const scanned84 = await scanSourceWithHistory(
+      const scanned44 = await scanSourceWithHistory(
         es,
-        { kind: "xpub", template: "btc.bip84", xpub: xpub84 },
+        { kind: "xpub", template: "btc.bip44", xpub: xpub44 },
         NETWORK,
         bitcoinNetwork(NETWORK).params,
       );
-      const derived = await utxosFromHistory(es, scanned84, bitcoinNetwork(NETWORK).params);
-      const direct = await scanUtxos(es, scanned84, bitcoinNetwork(NETWORK).params);
+      const derived = await utxosFromHistory(es, scanned44, bitcoinNetwork(NETWORK).params);
+      const direct = await scanUtxos(es, scanned44, bitcoinNetwork(NETWORK).params);
       console.log(`utxosFromHistory=${String(derived.length)} scanUtxos=${String(direct.length)}`);
       expect(derived.length).toBeGreaterThan(0);
       expect(derived).toStrictEqual(direct);

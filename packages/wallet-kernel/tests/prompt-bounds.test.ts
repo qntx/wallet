@@ -425,16 +425,13 @@ describe("a transaction prompt leads with its outflow line", () => {
       script: new Uint8Array([0x00, 0x14, ...new Uint8Array(20).fill(0xab)]),
       amount: 90_000n,
     });
-    const intent = decodeBitcoinPsbt(
-      {
-        kind: "bitcoin.psbt",
-        network: BTC_NET,
-        account: { kind: "hd", walletId: "w", groupIndex: 0 },
-        psbt: tx.toPSBT(0),
-        sign: [{ index: 0, template: "btc.bip84" }],
-      } as never,
-      new Set(),
-    );
+    const intent = decodeBitcoinPsbt({
+      kind: "bitcoin.psbt",
+      network: BTC_NET,
+      account: { kind: "hd", walletId: "w", groupIndex: 0 },
+      psbt: tx.toPSBT(0),
+      sign: [{ index: 0, template: "btc.bip84" }],
+    } as never);
     expect(firstContentLine(chainPrompt("en", intent).description)).toMatch(/^Send .* to /);
   });
 });

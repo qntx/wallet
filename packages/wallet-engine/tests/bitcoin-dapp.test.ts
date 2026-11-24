@@ -130,9 +130,10 @@ describe("prepareDappPsbts", () => {
       );
       const outDer = tx.getOutput(1).tapBip32Derivation;
       expect(outDer).toBeDefined();
-      // The ordinals output is the group's own: it stays out of the outflow set.
-      expect(prepared!.ownScripts.has(Buffer.from(scriptOf("btc.bip86")).toString("hex"))).toBe(
-        true,
+      // The ordinals output is the group's own receive key: not discoverable change, so it is
+      // shown at its path rather than hidden.
+      expect(prepared!.own.unusual.get(Buffer.from(scriptOf("btc.bip86")).toString("hex"))).toBe(
+        "m/86'/0'/0'/0/0",
       );
       expect(prepared!.request.account).toStrictEqual({
         kind: "hd",

@@ -1667,6 +1667,255 @@ describe("chain.sign", () => {
       expect(asHex(signer)).not.toBe(asHex(btcChild("btc.bip84", 0, 0).publicKey!));
     });
   });
+
+  describe("bitcoin own-output classification", () => {
+    const seed = mnemonicToSeedSync(vectors.mnemonic);
+    const rng = () => new Uint8Array(32);
+    const account = { kind: "hd" as const, walletId: "w", groupIndex: 0 };
+
+    const scriptFor = (purpose: number, pub: Uint8Array): Uint8Array =>
+      purpose === 86
+        ? p2tr(pub.slice(1)).script
+        : purpose === 49
+          ? p2sh(p2wpkh(pub)).script
+          : purpose === 44
+            ? p2pkh(pub).script
+            : p2wpkh(pub).script;
+    const childOf = (purpose: number, change: number, index: number): HDKey =>
+      HDKey.fromMasterSeed(seed).derive(`m/${purpose}'/0'/0'/${change}/${index}`);
+    const addrOf = (purpose: number, change: number, index: number): string =>
+      Address(bitcoinNetwork(BTC_NETWORK).params).encode(
+        OutScript.decode(scriptFor(purpose, childOf(purpose, change, index).publicKey!)),
+      );
+
+    /**
+     * A PSBT spending one own key per input spec (each bound by its own derivation entry) to a
+     * payee plus each listed own output — the outputs bound by a derivation entry claiming the
+     * group, exactly the binding a crafted change output carries.
+     */
+    const ownPsbt = (
+      inputs: ReadonlyArray<{
+        readonly template: string;
+        readonly change?: number;
+        readonly index?: number;
+      }>,
+      outputs: ReadonlyArray<{
+        readonly purpose: number;
+        readonly change: number;
+        readonly index: number;
+        readonly amount?: bigint;
+      }>,
+    ): Uint8Array => {
+      const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+      for (const [i, spec] of inputs.entries()) {
+        const purpose = BTC_PURPOSE_T[spec.template] ?? 84;
+        const change = spec.change ?? 0;
+        const index = spec.index ?? 0;
+        const pub = btcChild(spec.template, change, index).publicKey!;
+        const script = scriptFor(purpose, pub);
+        const path = [purpose + HARDENED, HARDENED, HARDENED, change, index];
+        const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+        prev.addInput({
+          txid: hex((i + 16).toString(16).padStart(4, "0").repeat(16)),
+          index: 0,
+          sequence: 0xffffffff,
+        });
+        prev.addOutput({ script, amount: 100_000n });
+        if (purpose === 86) {
+          tx.addInput({
+            txid: prev.id,
+            index: 0,
+            sequence: 0xfffffffd,
+            witnessUtxo: { script, amount: 100_000n },
+            tapInternalKey: pub.slice(1),
+            tapBip32Derivation: [
+              [pub.slice(1), { hashes: [], der: { fingerprint: MASTER_FP, path } }],
+            ],
+          });
+        } else {
+          const entry: Record<string, unknown> = {
+            txid: prev.id,
+            index: 0,
+            sequence: 0xfffffffd,
+            witnessUtxo: { script, amount: 100_000n },
+            nonWitnessUtxo: prev.toBytes(true, false),
+            bip32Derivation: [[pub, { fingerprint: MASTER_FP, path }]],
+          };
+          if (purpose === 49) {
+            entry["redeemScript"] = p2wpkh(pub).script;
+          }
+          if (purpose === 44) {
+            delete entry["witnessUtxo"];
+          }
+          tx.addInput(entry);
+        }
+      }
+      tx.addOutput({ script: PAYEE_SCRIPT, amount: 90_000n });
+      for (const spec of outputs) {
+        const pub = childOf(spec.purpose, spec.change, spec.index).publicKey!;
+        const path = [spec.purpose + HARDENED, HARDENED, HARDENED, spec.change, spec.index];
+        tx.addOutput({ script: scriptFor(spec.purpose, pub), amount: spec.amount ?? 1000n });
+        tx.updateOutput(
+          tx.outputsLength - 1,
+          spec.purpose === 86
+            ? {
+                tapBip32Derivation: [
+                  [pub.slice(1), { hashes: [], der: { fingerprint: MASTER_FP, path } }],
+                ],
+              }
+            : { bip32Derivation: [[pub, { fingerprint: MASTER_FP, path }]] },
+        );
+      }
+      return tx.toPSBT(0);
+    };
+
+    /** Prepare the built PSBT under the vector seed, then sign its plan. */
+    const prepare = async (
+      inputs: Parameters<typeof ownPsbt>[0],
+      outputs: Parameters<typeof ownPsbt>[1],
+    ) => {
+      const keys = seedKeys(seed, rng);
+      try {
+        const request = asPsbt(
+          normalizeBitcoin({
+            kind: "bitcoin.psbt",
+            network: BTC_NETWORK,
+            account,
+            psbt: ownPsbt(inputs, outputs),
+            sign: inputs.map((i, index) => ({ index, template: i.template })),
+          }),
+        );
+        const prepared = await prepareBitcoin(request, account, keys.material);
+        const result = await signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan)));
+        return { prompt: prepared.prompt, result };
+      } finally {
+        keys.wipe();
+      }
+    };
+
+    it("shows change at an index beyond the scan's reach — with its path — and still signs", async () => {
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 2_147_483_646 }],
+      );
+      const path = "m/84'/0'/0'/1/2147483646";
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe(path);
+      expect(flow?.to).toBe(addrOf(84, 1, 2_147_483_646));
+      expect(prompt.warnings).toContainEqual({ kind: "unusual-own-output", message: path });
+      const text = chainPrompt("en", prompt).description;
+      expect(text).toContain(`at unusual path ${path}`);
+      expect(text).toContain("may not appear in this wallet");
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("shows the group's bip44 key under a bip84 spend — a purpose no input signs", async () => {
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }],
+        [{ purpose: 44, change: 0, index: 5 }],
+      );
+      const path = "m/44'/0'/0'/0/5";
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe(path);
+      expect(flow?.to).toBe(addrOf(44, 0, 5));
+      expect(prompt.warnings).toContainEqual({ kind: "unusual-own-output", message: path });
+      expect(chainPrompt("en", prompt).description).toContain(`at unusual path ${path}`);
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("hides change exactly at the bound and shows the index past it", async () => {
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }],
+        [
+          { purpose: 84, change: 1, index: 20 },
+          { purpose: 84, change: 1, index: 21 },
+        ],
+      );
+      expect(prompt.outflows.filter((o) => o.ownPath !== undefined)).toHaveLength(1);
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe("m/84'/0'/0'/1/21");
+      expect(prompt.warnings).toContainEqual({
+        kind: "unusual-own-output",
+        message: "m/84'/0'/0'/1/21",
+      });
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("shows an own receive-chain output rather than hiding it as change", async () => {
+      const { prompt } = await prepare(
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 0, index: 5 }],
+      );
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe("m/84'/0'/0'/0/5");
+      expect(flow?.to).toBe(addrOf(84, 0, 5));
+      expect(prompt.warnings).toContainEqual({
+        kind: "unusual-own-output",
+        message: "m/84'/0'/0'/0/5",
+      });
+    });
+
+    it("shows change on the group's other-purpose key under a bip84 spend", async () => {
+      const { prompt } = await prepare(
+        [{ template: "btc.bip84" }],
+        [{ purpose: 44, change: 1, index: 0 }],
+      );
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe("m/44'/0'/0'/1/0");
+      expect(prompt.warnings).toContainEqual({
+        kind: "unusual-own-output",
+        message: "m/44'/0'/0'/1/0",
+      });
+    });
+
+    it("hides a bip44 change output under a bip44 spend", async () => {
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip44" }],
+        [{ purpose: 44, change: 1, index: 0 }],
+      );
+      expect(prompt.outflows.filter((o) => o.ownPath !== undefined)).toHaveLength(0);
+      expect(prompt.warnings?.filter((w) => w.kind === "unusual-own-output")).toHaveLength(0);
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("a signed far change input raises the hidden-change bound", async () => {
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }, { template: "btc.bip84", change: 1, index: 30 }],
+        [{ purpose: 84, change: 1, index: 50 }],
+      );
+      expect(prompt.outflows.filter((o) => o.ownPath !== undefined)).toHaveLength(0);
+      expect(prompt.warnings?.filter((w) => w.kind === "unusual-own-output")).toHaveLength(0);
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("shows a change-chain output whose purpose no signed input shares", async () => {
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }],
+        [{ purpose: 44, change: 1, index: 0 }],
+      );
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe("m/44'/0'/0'/1/0");
+      expect(prompt.warnings).toContainEqual({
+        kind: "unusual-own-output",
+        message: "m/44'/0'/0'/1/0",
+      });
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("a change input of another purpose does not raise the bound", async () => {
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }, { template: "btc.bip44", change: 1, index: 30 }],
+        [{ purpose: 84, change: 1, index: 25 }],
+      );
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe("m/84'/0'/0'/1/25");
+      expect(prompt.warnings).toContainEqual({
+        kind: "unusual-own-output",
+        message: "m/84'/0'/0'/1/25",
+      });
+      expect("signedPsbt" in result).toBe(true);
+    });
+  });
 });
 
 /** The byte offset of the field-11 (contract) tag in a raw_data buffer, or -1. */

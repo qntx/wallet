@@ -374,10 +374,10 @@ describe("AssetsController bitcoin group", () => {
     expect(asked.slice(before)).toContain(scripthash(receive, NETWORK));
   });
 
-  it("scans bip84's change chain even when its receive chain is empty — legacy change lives there", async () => {
+  it("scans bip84's change chain even when its receive chain is empty", async () => {
     const funded: Funded = {};
-    // A receipt only on bip44 receive 0; its spend's change landed on bip84 change 0 —
-    // the send path's change destination for legacy templates.
+    // A receipt only on bip44 receive 0 and a utxo on bip84 change 0 — the group's bip84
+    // scan must find the used change address even with an untouched receive chain.
     fund(funded, addressOf("btc.bip44", 0, 0), [utxo("aa".repeat(32), 100_000, 800_000)]);
     fund(funded, addressOf("btc.bip84", 1, 0), [utxo("bb".repeat(32), 80_000, 800_000)]);
     const asked: string[] = [];

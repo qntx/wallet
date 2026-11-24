@@ -10,6 +10,8 @@ export { BITCOIN_NETWORKS, bitcoinNetwork } from "./networks.ts";
 export type { BitcoinAccountTemplate } from "./account.ts";
 export { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "./account.ts";
 export { decodeBitcoinPsbt, verifiabilityBitcoin } from "./decode.ts";
+export { BITCOIN_GAP_LIMIT, EMPTY_BITCOIN_OWN, isDiscoverableChange } from "./own.ts";
+export type { BitcoinOwn, BitcoinPathTail } from "./own.ts";
 export {
   samePsbtContent,
   verifyBitcoinMessage,

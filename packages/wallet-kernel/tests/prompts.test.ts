@@ -841,7 +841,7 @@ describe("chain prompts via the real decoders", () => {
     }) as never;
 
   it("a Bitcoin send shows BTC amounts and the max fee", () => {
-    const intent = decodeBitcoinPsbt(btcReq(btcPsbt(undefined)), new Set());
+    const intent = decodeBitcoinPsbt(btcReq(btcPsbt(undefined)));
     const text = chainPrompt("en", intent).description;
     expect(text).toContain("Network: Bitcoin");
     expect(text).toContain("Send 0.0009 BTC to bc1q");
@@ -872,7 +872,7 @@ describe("chain prompts via the real decoders", () => {
       script: new Uint8Array([0x6a, 0x04, 0xde, 0xad, 0xbe, 0xef]),
       amount: 98_000_000n,
     });
-    const intent = decodeBitcoinPsbt(btcReq(tx.toPSBT(0)), new Set());
+    const intent = decodeBitcoinPsbt(btcReq(tx.toPSBT(0)));
     expect(chainPrompt("en", intent).description).toBe(
       "Network: Bitcoin\nSend 0.01 BTC to bc1q4w46h2at4w46h2at4w46h2at4w46h2at25y74s\nBurn 0.98 BTC: it goes to an unspendable output and is lost\nMax fee 0.01 BTC",
     );
@@ -882,7 +882,7 @@ describe("chain prompts via the real decoders", () => {
   });
 
   it("a SIGHASH_SINGLE listing shows the fee-unknown line and the warning", () => {
-    const intent = decodeBitcoinPsbt(btcReq(btcPsbt(0x83)), new Set());
+    const intent = decodeBitcoinPsbt(btcReq(btcPsbt(0x83)));
     expect(intent.verifiability).toBe("partial");
     expect(chainPrompt("en", intent).description).toContain("Fee unknown");
     expect(chainPrompt("en", intent).description).toContain(
@@ -1090,7 +1090,7 @@ describe("chain prompts via the real decoders", () => {
       script: new Uint8Array([0x00, 0x14, ...new Uint8Array(20).fill(0xab)]),
       amount: 140_000n,
     });
-    const intent = decodeBitcoinPsbt(btcReq(tx.toPSBT(0)), new Set());
+    const intent = decodeBitcoinPsbt(btcReq(tx.toPSBT(0)));
     expect(intent.blind).toBeUndefined();
     expect(chainPrompt("en", intent).description).toContain(
       "Includes inputs from other signers; the fee cannot be verified",
@@ -3826,6 +3826,7 @@ describe("requester text lines cannot imitate kernel lines", () => {
     safeDelegatecall: ["t"],
     safeRefund: ["r", "1", "1"],
     send: ["1", "to"],
+    sendOwnUnusual: ["1", "to", "m/84'/0'/0'/1/999"],
     sendTokenAccount: ["1", "ta", "to"],
     burn: ["1"],
     burnTokenAccount: ["1", "a"],

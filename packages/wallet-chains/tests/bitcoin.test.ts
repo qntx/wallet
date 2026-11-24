@@ -577,26 +577,41 @@ describe("decode + verifiability", () => {
   const psbtReq = (): PsbtRequest => asPsbt(normalizeBitcoin(req(buildPsbt({}))));
 
   it("decodes the outflow and fee (100000 - 90000 = 10000 sats)", () => {
-    const intent = decodeBitcoinPsbt(psbtReq(), new Set());
+    const intent = decodeBitcoinPsbt(psbtReq());
     expect(intent.verifiability).toBe("full");
     expect(intent.outflows[0]?.to).toBe(PAYEE);
     expect(intent.outflows[0]?.amount.amount).toBe("90000");
     expect(intent.fee?.max.amount).toBe("10000");
   });
 
-  it("ownScripts suppresses the output", () => {
+  it("an own change script suppresses the output", () => {
     const payeeScript = OutScript.encode(Address(NETWORK).decode(PAYEE));
-    const intent = decodeBitcoinPsbt(
-      psbtReq(),
-      new Set([Buffer.from(payeeScript).toString("hex")]),
-    );
+    const intent = decodeBitcoinPsbt(psbtReq(), {
+      change: new Set([Buffer.from(payeeScript).toString("hex")]),
+      unusual: new Map(),
+    });
     expect(intent.outflows).toHaveLength(0);
+  });
+
+  it("an unusual own output shows with its path and a warning", () => {
+    const payeeScript = OutScript.encode(Address(NETWORK).decode(PAYEE));
+    const intent = decodeBitcoinPsbt(psbtReq(), {
+      change: new Set(),
+      unusual: new Map([[Buffer.from(payeeScript).toString("hex"), "m/84'/0'/0'/1/999"]]),
+    });
+    expect(intent.outflows).toHaveLength(1);
+    expect(intent.outflows[0]?.to).toBe(PAYEE);
+    expect(intent.outflows[0]?.ownPath).toBe("m/84'/0'/0'/1/999");
+    expect(intent.outflows[0]?.verified).toBe(true);
+    expect(intent.warnings).toContainEqual({
+      kind: "unusual-own-output",
+      message: "m/84'/0'/0'/1/999",
+    });
   });
 
   it("external input → opaque; a witnessUtxo-only prevout leaves the fee unknown", () => {
     const intent = decodeBitcoinPsbt(
       asPsbt(normalizeBitcoin(req(buildPsbt({ extraInput: true })))),
-      new Set(),
     );
     expect(intent.verifiability).toBe("opaque");
     expect(intent.fee).toBeUndefined();
@@ -619,7 +634,6 @@ describe("decode + verifiability", () => {
     tx.addOutput({ script: OutScript.encode(Address(NETWORK).decode(PAYEE)), amount: 1_000_000n });
     const intent = decodeBitcoinPsbt(
       asPsbt(normalizeBitcoin(req(tx.toPSBT(0), [{ index: 0, template: "btc.bip44" }]))),
-      new Set(),
     );
     expect(intent.verifiability).toBe("full");
     expect(intent.fee?.max.amount).toBe("99000000");
@@ -665,7 +679,6 @@ describe("decode + verifiability", () => {
           ]),
         ),
       ),
-      new Set(),
     );
     expect(intent.verifiability).toBe("full");
     expect(intent.fee?.max.amount).toBe("10000");
@@ -697,40 +710,29 @@ describe("decode + verifiability", () => {
     };
     const full = decodeBitcoinPsbt(
       asPsbt(normalizeBitcoin(req(tr(0x01), [{ index: 0, template: "btc.bip86" }]))),
-      new Set(),
     );
     expect(full.verifiability).toBe("full");
     expect(full.fee?.max.amount).toBe("10000");
     const listing = decodeBitcoinPsbt(
       asPsbt(normalizeBitcoin(req(tr(0x83), [{ index: 0, template: "btc.bip86" }]))),
-      new Set(),
     );
     expect(listing.verifiability).toBe("partial");
     expect(listing.fee).toBeUndefined();
   });
 
   it("a script over MAX_SCRIPT_SIZE is a burn; exactly the limit is not", () => {
-    const over = decodeBitcoinPsbt(
-      asPsbt(normalizeBitcoin(req(buildPsbt({ scriptLen: 10_001 })))),
-      new Set(),
-    );
+    const over = decodeBitcoinPsbt(asPsbt(normalizeBitcoin(req(buildPsbt({ scriptLen: 10_001 })))));
     expect(over.outflows).toContainEqual(expect.objectContaining({ burn: true, verified: true }));
 
-    const at = decodeBitcoinPsbt(
-      asPsbt(normalizeBitcoin(req(buildPsbt({ scriptLen: 10_000 })))),
-      new Set(),
-    );
+    const at = decodeBitcoinPsbt(asPsbt(normalizeBitcoin(req(buildPsbt({ scriptLen: 10_000 })))));
     expect(at.outflows.every((o) => o.burn !== true)).toBe(true);
   });
 
   it("OP_RETURN row keeps full class; undecodable output → partial", () => {
-    const intent = decodeBitcoinPsbt(
-      asPsbt(normalizeBitcoin(req(buildPsbt({ opReturn: true })))),
-      new Set(),
-    );
+    const intent = decodeBitcoinPsbt(asPsbt(normalizeBitcoin(req(buildPsbt({ opReturn: true })))));
     expect(intent.verifiability).toBe("full");
     expect(
-      decodeBitcoinPsbt(asPsbt(normalizeBitcoin(req(buildPsbt({ weirdScript: true })))), new Set())
+      decodeBitcoinPsbt(asPsbt(normalizeBitcoin(req(buildPsbt({ weirdScript: true })))))
         .verifiability,
     ).toBe("partial");
   });

@@ -5,6 +5,7 @@
  * importing the controller either.
  */
 import type { BitcoinTemplate, SignRequest } from "@qntx/wallet-chains";
+import type { BitcoinOwn } from "@qntx/wallet-chains/bitcoin";
 
 import { APP_ID } from "../gateway/contract/eligibility.ts";
 
@@ -186,12 +187,12 @@ export type BitcoinPsbtInput = {
 
 /**
  * A dApp PSBT after the engine enriched the requested inputs with this account's derivation data:
- * `request` is what the kernel signs, `ownScripts` the scripts verified as the account's, `inputs`
- * the signed inputs' prevout values and sighash (for risk).
+ * `request` is what the kernel signs, `own` the verified own-key outputs split into discoverable
+ * change and unusual paths, `inputs` the signed inputs' prevout values and sighash (for risk).
  */
 export type PreparedBitcoinPsbt = {
   readonly request: Extract<SignRequest, { kind: "bitcoin.psbt" }>;
-  readonly ownScripts: ReadonlySet<string>;
+  readonly own: BitcoinOwn;
   readonly inputs: ReadonlyArray<{
     readonly index: number;
     readonly value: number;

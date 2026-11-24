@@ -316,7 +316,7 @@ describe("hardware factor: chain.sign", () => {
     expect(prompts(fake.calls, "open")[0]?.title).toBe("Confirm transfer");
   });
 
-  it("binds own outputs across templates in the prompt; a forged derivation stays an outflow", async () => {
+  it("binds own outputs across templates as unusual-path rows; a forged derivation stays an outflow", async () => {
     const fake = fakeKeystore();
     const h = createHarness({ keystore: fake.keystore });
     const { session, walletId } = await importHardware(h);
@@ -365,7 +365,9 @@ describe("hardware factor: chain.sign", () => {
         sign: [{ index: 0, template: "btc.bip84" }],
       });
 
-    // The correct tap derivation at the group's own index binds the ordinals output as ours.
+    /* The correct tap derivation at the group's own index binds the ordinals output as ours —
+       a receive-chain path under another purpose is not discoverable change, so the prompt shows
+       it as a send to the wallet's own address at an unusual path. */
     ok(
       await h.call(
         "chain.sign",
@@ -377,7 +379,8 @@ describe("hardware factor: chain.sign", () => {
       ),
     );
     const bound = prompts(fake.calls, "open").at(-1);
-    expect(bound?.description).not.toContain(ordAddress);
+    expect(bound?.description).toContain(`your own address ${ordAddress}`);
+    expect(bound?.description).toContain("m/86'/0'/0'/0/0");
     expect(bound?.description).toContain("bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g");
 
     // A derivation naming another index cannot bind the output: it stays a prompt outflow.
@@ -393,6 +396,7 @@ describe("hardware factor: chain.sign", () => {
     );
     const forged = prompts(fake.calls, "open").at(-1);
     expect(forged?.description).toContain(ordAddress);
+    expect(forged?.description).not.toContain("unusual path");
   });
 
   const evmRequest = (walletId: string) =>

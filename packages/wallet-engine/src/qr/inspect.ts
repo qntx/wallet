@@ -221,7 +221,7 @@ const display = (request: QrRequest): DisplayIntent | undefined => {
         return decodeTron(probe(request), request.address);
 
       case "bitcoin":
-        return decodeBitcoinPsbt(bitcoinProbe(request), new Set());
+        return decodeBitcoinPsbt(bitcoinProbe(request));
     }
   } catch {
     return undefined;

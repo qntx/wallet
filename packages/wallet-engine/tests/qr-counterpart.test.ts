@@ -38,6 +38,7 @@ import { Ur, fromUr, toUr } from "@qntx/ur/typed";
 import type { Wallet } from "@qntx/wallet";
 import type { EvmTransaction } from "@qntx/wallet-chains";
 import {
+  EMPTY_BITCOIN_OWN,
   bitcoinPubkeyFromXpub,
   normalizeBitcoin,
   verifyBitcoinPsbtSignatures,
@@ -411,7 +412,7 @@ const world = async (): Promise<World> => {
             psbt: input.psbt,
             sign: input.sign.map(({ index, template }) => ({ index, template })),
           },
-          ownScripts: new Set<string>(),
+          own: EMPTY_BITCOIN_OWN,
           inputs: [],
         })),
       ),

@@ -1400,9 +1400,7 @@ export class RequestController extends Controller<RequestControllerState> {
         throw new Error("a QR request cannot ask the wallet to broadcast");
       }
       const prepared = await this.options.bitcoinPrepare(input.account, input.network, psbts);
-      const intents = prepared.map(({ request, ownScripts }) =>
-        decodeBitcoinPsbt(request, ownScripts),
-      );
+      const intents = prepared.map(({ request, own }) => decodeBitcoinPsbt(request, own));
       return {
         account: input.account,
         network: input.network,

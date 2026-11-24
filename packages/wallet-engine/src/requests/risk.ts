@@ -53,6 +53,7 @@ export type RiskFinding = {
     | "bitcoin-sighash-single"
     | "bitcoin-inscription-input"
     | "bitcoin-frozen-input"
+    | "bitcoin-unusual-output"
     | "stake-authority"
     | "blind-signing"
     | "contract-recipient"
@@ -148,6 +149,7 @@ export const WARNING_RISK: Readonly<
   "fiat24-account-link": undefined,
   "fiat24-account-move": { code: "fiat24-account-move", level: "danger" },
   "fiat24-account-burn": { code: "fiat24-account-burn", level: "warning" },
+  "unusual-own-output": { code: "bitcoin-unusual-output", level: "warning" },
 };
 
 /**
