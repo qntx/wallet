@@ -25,6 +25,7 @@ import vectors from "../../../vectors/push.json" with { type: "json" };
 import { ok, scriptedLedger, utf8Hex, xpubAt } from "../../wallet-kernel/tests/signers-ledger-fake.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import { until } from "./apps-helpers.ts";
+import { cardRig } from "./card-rig.ts";
 import { pairKeystone } from "./keystone-io.ts";
 import { pushAad, PUSH_ID_DOMAIN, pushEventInput } from "../src/gateway/contract/push-message.ts";
 import type { PushEventKind } from "../src/gateway/contract/push-message.ts";
@@ -406,6 +407,83 @@ describe("createWalletEngine notifications forge", () => {
       expect(engine.notifications.getState().wallets[hwId]?.families["evm"]).toBe("active");
     } finally {
       await wallet.vault.lock();
+    }
+  });
+
+  it("a card family's group past the registered set does not blind the registered ones", async () => {
+    const SOL = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+    const puts: Array<{ path: string; addresses: ReadonlyArray<string> }> = [];
+
+    // oxlint-disable-next-line typescript/require-await -- the fetch signature requires a promise
+    const fetchStub: typeof globalThis.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method ?? "GET";
+      const path = url.slice(GATEWAY.length);
+      if (method === "GET" && path === "/v1/push") {
+        return Response.json({ platforms: ["apns"], families: ["evm", "solana"] });
+      }
+      if (method === "GET" && path === "/v1/networks") {
+        return Response.json({ networks: [EVM, SOL] });
+      }
+      if (method === "PUT" && /^\/v1\/push\/(evm|solana)\/subscription$/.test(path)) {
+        const auth = new Headers(init?.headers).get("authorization") ?? "";
+        const secret = base64urlnopad.decode(auth.replace(/^Bearer /, ""));
+        const body = JSON.parse(String(init?.body)) as { addresses: string[]; networks: string[] };
+        puts.push({ path, addresses: body.addresses });
+        return Response.json({
+          id: subscriptionIdOf(secret),
+          networks: body.networks,
+          expiresAt: Date.now() + 30 * 86_400_000,
+        });
+      }
+      if (method === "DELETE" && /^\/v1\/push\/(evm|solana)\/subscription$/.test(path)) {
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({ error: "unsupported" }, { status: 404 });
+    };
+
+    const rig = await cardRig();
+    try {
+      const engine = createWalletEngine({
+        publicStore: createMemoryPublicStore(),
+        verifyEvent,
+        weblnAlias: "test",
+        lightningMaxFee: () => 0,
+        wallet: rig.wallet,
+        sparkNetwork: "regtest",
+        fetch: fetchStub,
+        random: (n) => randomBytes(n),
+        now: () => Date.now(),
+        logger: { warn: () => undefined },
+        showCallsStatus: () => undefined,
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        gateway: { url: GATEWAY },
+        rpc: { [EVM]: [RPC] },
+      });
+      const walletId = rig.cardWalletId;
+      await until(() => (engine.accounts.getState().groups[walletId]?.length ?? 0) === 1);
+      /* Create registered solana leaves for groups 0–2 only — group 3's stays on the card. */
+      engine.accounts.addGroups(walletId, [3]);
+      await engine.notifications.setToken("apns", "device-token");
+      await engine.notifications.enable(walletId);
+      await until(() => puts.some((p) => p.path === "/v1/push/solana/subscription"));
+      const group0 = await chains(rig.wallet).account({
+        walletId,
+        groupIndex: 0,
+        template: "solana.bip44-change",
+        network: SOL,
+      });
+      if (!("address" in group0)) {
+        throw new Error("expected a solana account");
+      }
+      const solPut = puts.findLast((p) => p.path === "/v1/push/solana/subscription");
+      expect(solPut?.addresses).toStrictEqual([group0.address]);
+      expect(engine.notifications.getState().wallets[walletId]?.families["solana"]).toBe(
+        "active",
+      );
+      expect(engine.notifications.getState().wallets[walletId]?.families["evm"]).toBe("active");
+    } finally {
+      await rig.wallet.vault.lock();
     }
   });
 });
