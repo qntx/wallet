@@ -41,6 +41,8 @@ import type { DeviceLink, SignContext } from "../src/modules/signers/driver.ts";
 import { createSignersModule } from "../src/modules/signers/index.ts";
 import { derive } from "../src/modules/signers/keystone/derive.ts";
 import { KEYSTONE_DRIVER } from "../src/modules/signers/keystone/driver.ts";
+import { LEDGER_DRIVER } from "../src/modules/signers/ledger/driver.ts";
+import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
 import { sign } from "../src/modules/signers/keystone/sign.ts";
 import { keystoneDevice } from "./signers-keystone-device.ts";
 
@@ -193,6 +195,7 @@ const psbt84Context = (): SignContext => {
     },
     stage: planBitcoinPsbt(bytes, [{ index: 0, key: { path: BTC84_PATH, publicKey: BTC84_PUB } }]),
     pin,
+    display: "clear",
     random,
   };
 };
@@ -231,6 +234,7 @@ const psbt86Context = (): SignContext => {
     },
     stage: planBitcoinPsbt(bytes, [{ index: 0, key: { path: BTC86_PATH, publicKey: BTC86_PUB } }]),
     pin,
+    display: "clear",
     random,
   };
 };
@@ -350,7 +354,7 @@ describe("keystone sign stage/request consistency", () => {
       },
     };
     const stage = planEvm({ ...request, tx: { ...request.tx, nonce: 1 } }, EVM_KEY);
-    await expect(code(async () => sign(link(), { request, stage, pin, random }))).resolves.toBe(
+    await expect(code(async () => sign(link(), { request, stage, pin, display: "clear", random }))).resolves.toBe(
       "integrity",
     );
   });
@@ -402,36 +406,42 @@ describe("keystone sign stage/request consistency", () => {
         request: personal,
         stage: planEvm({ ...personal, message: utf8ToBytes("bye") }, EVM_KEY),
         pin,
+        display: "clear",
         random,
       },
       {
         request: fiat24,
         stage: planEvm({ ...fiat24, tokenId: "8" }, EVM_KEY),
         pin,
+        display: "clear",
         random,
       },
       {
         request: typed,
         stage: planEvm({ ...typed, typedData: OTHER_TYPED_DATA }, EVM_KEY),
         pin,
+        display: "clear",
         random,
       },
       {
         request: tronTx,
         stage: planTron({ ...tronTx, rawData: tronTransfer(2n) }, TRON_KEY),
         pin,
+        display: "clear",
         random,
       },
       {
         request: tronMsg,
         stage: planTron({ ...tronMsg, message: utf8ToBytes("bye tron") }, TRON_KEY),
         pin,
+        display: "clear",
         random,
       },
       {
         request: btcMsg,
         stage: planBitcoinMessage({ ...btcMsg, message: "sign that" }, BTC44_KEY),
         pin,
+        display: "clear",
         random,
       },
     ];
@@ -450,7 +460,7 @@ describe("keystone sign stage/request consistency", () => {
       format: "raw",
     };
     const stage = planSolana({ ...request, message: utf8ToBytes("different") }, SOLANA_KEY);
-    await expect(code(async () => sign(link(), { request, stage, pin, random }))).resolves.toBe(
+    await expect(code(async () => sign(link(), { request, stage, pin, display: "clear", random }))).resolves.toBe(
       "integrity",
     );
   });
@@ -465,7 +475,7 @@ describe("keystone sign stage/request consistency", () => {
     };
     const stage = planSolana(request, SOLANA_KEY);
     await expect(
-      code(async () => sign(link(longSignature), { request, stage, pin, random })),
+      code(async () => sign(link(longSignature), { request, stage, pin, display: "clear", random })),
     ).resolves.toBe("integrity");
   });
 });
@@ -535,7 +545,7 @@ describe("keystone key-derivation answer", () => {
 
 describe("hardware-wallet record id binding", () => {
   it("a header that does not name its record id is integrity", () => {
-    const module = createSignersModule({ keystone: KEYSTONE_DRIVER });
+    const module = createSignersModule({ keystone: KEYSTONE_DRIVER, ledger: LEDGER_DRIVER, onekey: ONEKEY_DRIVER });
     const record = {
       kind: "hardware-wallet",
       id: "deadbeefdeadbeef",

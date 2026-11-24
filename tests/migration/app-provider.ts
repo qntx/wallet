@@ -17,6 +17,7 @@ import type {
   CreateAppsOptions,
 } from "@qntx/wallet-engine/apps";
 import { createApps } from "@qntx/wallet-engine/apps";
+import { chains } from "@qntx/wallet/chains";
 
 const ID = "example-notes";
 
@@ -157,6 +158,7 @@ export async function createExampleApps(params: {
   const { wallet, group } = params;
   const apps = createApps({
     wallet,
+    account: chains(wallet).account,
     requests: params.requests,
     networks: params.networks,
     fetch: globalThis.fetch.bind(globalThis),

@@ -583,7 +583,7 @@ describe("hardware sign refusals", () => {
        prompt — body plus device line — still fits where the unshrunk body alone would overflow. */
     const fake = fakeKeystore();
     const device = fakeDevice(SEED);
-    const h = createHarness({ keystore: fake.keystore, drivers: { keystone: device.driver } });
+    const h = createHarness({ keystore: fake.keystore, drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER } });
     await h.settle();
     const res = ok(
       await h.call("wallet.importMnemonic", {

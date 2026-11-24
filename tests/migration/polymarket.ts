@@ -83,6 +83,7 @@ export function createHost(params: {
   });
   const apps = createApps({
     wallet,
+    account: engine.signers.apis.account,
     requests: engine.requests,
     networks: engine.networks,
     fetch: globalThis.fetch.bind(globalThis),
