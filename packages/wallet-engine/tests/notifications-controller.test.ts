@@ -322,6 +322,34 @@ describe("NotificationsController", () => {
     expect(puts(h)).toHaveLength(3);
   });
 
+  it("a card wallet's uncached family is device-required while its cached one subscribes", async () => {
+    const h = harness({
+      walletIds: ["seed", "card"],
+      families: ["evm", "solana"],
+      served: [EVM, SOL],
+      // oxlint-disable-next-line typescript/require-await -- the function throws for one lane
+      addresses: async (walletId, family) => {
+        if (walletId === "card" && family === "solana") {
+          throw new WalletError("device-required", "the path lives on the card");
+        }
+        return [ADDRESS];
+      },
+    });
+    await h.controller.init();
+    await h.controller.enable("seed");
+    await h.controller.enable("card");
+    await h.controller.setToken("apns", TOKEN);
+    await h.flush();
+    const { wallets } = h.controller.getState();
+    /* The card wallet's uncached solana lane is typed; its evm lane and both of the seed
+       wallet's lanes still subscribed — the reconcile ran to completion. */
+    expect(wallets["card"]?.families["solana"]).toBe("device-required");
+    expect(wallets["card"]?.families["evm"]).toBe("active");
+    expect(wallets["seed"]?.families["evm"]).toBe("active");
+    expect(wallets["seed"]?.families["solana"]).toBe("active");
+    expect(puts(h)).toHaveLength(3);
+  });
+
   it("a non-device address failure marks the family failed and reconciles on", async () => {
     const h = harness({
       walletIds: ["seed", "hw"],
