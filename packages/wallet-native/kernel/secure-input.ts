@@ -35,6 +35,7 @@ const isValidUtf8 = (value: Uint8Array): boolean => {
  * bytes gets them wiped, not forwarded.
  */
 function validFor(kind: SecureInputKind, value: Uint8Array): boolean {
+  // The closed kind set, in the shared enum order — the structure test reads it off this chain.
   if (kind === "access-code") {
     return (
       value.length > 0 && value.length <= 64 && value.every((byte) => byte >= 0x20 && byte <= 0x7e)
@@ -46,10 +47,13 @@ function validFor(kind: SecureInputKind, value: Uint8Array): boolean {
       value.every((byte) => (byte >= 0x30 && byte <= 0x39) || (byte >= 0x41 && byte <= 0x46))
     );
   }
+  if (kind === "backup-password") {
+    return value.length > 0 && value.length <= 1024 && isValidUtf8(value);
+  }
   if (kind === "session-approval") {
     return value.length === 4 && value.every((byte) => byte >= 0x30 && byte <= 0x39);
   }
-  return value.length > 0 && value.length <= 1024 && isValidUtf8(value);
+  return false;
 }
 
 export function bindNativeSecureInput(raw: KernelSecureInputNative): SecureInput {
