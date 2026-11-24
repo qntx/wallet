@@ -1475,9 +1475,7 @@ const DEVICE = { kind: "device" } as const;
 type KeystoreRig = Rig & { fake: ReturnType<typeof fakeKeystore> };
 
 /** A React-Native-style kernel: keystore factors plus the card platform. */
-const keystoreRig = async (
-  platform: "ios" | "android" = "ios",
-): Promise<KeystoreRig> => {
+const keystoreRig = async (platform: "ios" | "android" = "ios"): Promise<KeystoreRig> => {
   const reader = testCardReader();
   const input = testSecureInput();
   const fake = fakeKeystore("en-US", platform);
@@ -2491,7 +2489,9 @@ describe("card sign (fake card)", () => {
     const asks = r.input.requests.length;
     const opens = r.reader.prompts.length;
     await expect(
-      errCode(r.h.call("card.begin", { op: { kind: "sign", request }, verify: HARDWARE }, r.session)),
+      errCode(
+        r.h.call("card.begin", { op: { kind: "sign", request }, verify: HARDWARE }, r.session),
+      ),
     ).resolves.toBe("blind-signing-disabled");
     // The refusal precedes the presence ceremony, the code ask and the first tap alike.
     expect(r.fake.calls.slice(before)).toStrictEqual([]);
@@ -3181,7 +3181,7 @@ describe("card sign (fake card)", () => {
     const r = await keystoreRig("android");
     const card = await loadedCard(CODE, seed2);
     const walletId = await addWallet(r, card);
-    const create = () =>
+    const create = async () =>
       r.h.call(
         "sessions.create",
         {

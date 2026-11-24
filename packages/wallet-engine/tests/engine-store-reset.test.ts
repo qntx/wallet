@@ -250,7 +250,7 @@ describe("engine collections across lock, unlock and reset", () => {
       deviceIo: () => keystoneIo(async () => gate),
       openStore: async () => {
         opens += 1;
-        return persistentStore(backing);
+        return Promise.resolve(persistentStore(backing));
       },
       rpc: { [SOL_NET]: ["https://solana.invalid"] },
     });
@@ -262,15 +262,19 @@ describe("engine collections across lock, unlock and reset", () => {
       await until(() => opens === 1);
       const hwId = await pairKeystone(wallet);
       // Group 1 solana is unpinned — the accounts op parks on the device exchange.
-      const fetch = engine.signers.fetchAccounts({ walletId: hwId, groupIndex: 1, family: "solana" });
-      const settled = expect(fetch).rejects.toMatchObject({ code: "cancelled" });
+      const fetch = engine.signers.fetchAccounts({
+        walletId: hwId,
+        groupIndex: 1,
+        family: "solana",
+      });
+      const rejection = fetch.catch((error: unknown) => error);
       await until(() => engine.signers.getState().active?.step.kind === "device");
       await wallet.vault.reset();
       /* The lock hook cancels the task; the parked transport still has to return before the
          coroutine sees the flag and unwinds — a real device answers or errors here. */
       release();
       await until(() => engine.signers.getState().active === null);
-      await settled;
+      await expect(rejection).resolves.toMatchObject({ code: "cancelled" });
       // Same respawn-window retry as the collection test above.
       const deadline = Date.now() + 20_000;
       for (;;) {

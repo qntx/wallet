@@ -49,12 +49,14 @@ import { normalizeTron, tronAddressToHex, tronRawDataFromJson } from "@qntx/wall
 import { chains } from "@qntx/wallet/chains";
 import { hardware } from "@qntx/wallet/hardware";
 import type { DeviceIo } from "@qntx/wallet/hardware";
-import type { ChainSignRequest, ChainSignResult, ChainTemplate } from "@qntx/wallet/protocol";
-
-import type { HardwareDevice } from "@qntx/wallet/protocol";
+import type {
+  ChainSignRequest,
+  ChainSignResult,
+  ChainTemplate,
+  HardwareDevice,
+} from "@qntx/wallet/protocol";
 
 import type { WalletEngine } from "../src/engine.ts";
-import { SignersController } from "../src/signers/controller.ts";
 import { QrError } from "../src/qr/index.ts";
 import type { QrRequest } from "../src/qr/request.ts";
 import { qrSigner } from "../src/qr/signer.ts";
@@ -62,6 +64,7 @@ import { RequestController } from "../src/requests/controller.ts";
 import type { SolanaSignResult } from "../src/requests/controller.ts";
 import { RequestEndedError } from "../src/requests/types.ts";
 import type { BitcoinPsbtInput, PreparedBitcoinPsbt } from "../src/requests/types.ts";
+import { SignersController } from "../src/signers/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
 import type {
@@ -172,9 +175,10 @@ const backends = async (): Promise<Backends> => {
   await wallet.vault.unlock(VERIFY).catch(() => undefined);
   const passkey = await wallet.wallets.createWithPasskey({ name: "qr backends passkey" });
   const device = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
-  const pairResult = await hardware(wallet)
-    .start({ kind: "pair", device: "keystone" }, { io: device.io })
-    .result;
+  const pairResult = await hardware(wallet).start(
+    { kind: "pair", device: "keystone" },
+    { io: device.io },
+  ).result;
   if (pairResult.kind !== "pair") {
     throw new Error("expected a pair result");
   }
@@ -398,9 +402,9 @@ const signersOf = (wallet: Wallet, deviceIo?: (device: HardwareDevice) => Device
   });
 
 /**
- * The QR world with real signing: every option the pipeline calls signs through `signers.apis`,
- * the seam an engine builds from `options.deviceIo` — the kernel for vault wallets, the device
- * for hardware custody.
+ * The QR world with real signing: every option the pipeline calls signs through `signers.apis`, the
+ * seam an engine builds from `options.deviceIo` — the kernel for vault wallets, the device for
+ * hardware custody.
  */
 const worldOver = async (
   wallet: Wallet,
@@ -1294,9 +1298,10 @@ describe("qr account facts — partial pins and card custody", () => {
       const pairIo = keystoneSimIo(DEVICE_SEED, deviceFingerprint, {
         sync: { secp256k1: ["m/44'/60'/0'"], ed25519: [] },
       });
-      const pairResult = await hardware(wallet)
-        .start({ kind: "pair", device: "keystone" }, { io: pairIo.io })
-        .result;
+      const pairResult = await hardware(wallet).start(
+        { kind: "pair", device: "keystone" },
+        { io: pairIo.io },
+      ).result;
       if (pairResult.kind !== "pair") {
         throw new Error("expected a pair result");
       }
@@ -1392,7 +1397,7 @@ describe("qr account facts — partial pins and card custody", () => {
         verify: CARD_VERIFY,
       });
       expect(exported.payload.type).toBe("crypto-multi-accounts");
-      expect(rig.reader.sent.length).toBe(sentBefore);
+      expect(rig.reader.sent).toHaveLength(sentBefore);
     },
   );
 });

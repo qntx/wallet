@@ -12,8 +12,8 @@ import { networkMeta } from "@qntx/wallet-chains/networks";
 import type { ChainExportedKey, ChainExportNode, ChainExportResult } from "@qntx/wallet/protocol";
 
 import type { Handler } from "../../commands/context.ts";
-import type { PublicMaterial } from "../../derive/material.ts";
 import { withWalletSeed } from "../../commands/vault.ts";
+import type { PublicMaterial } from "../../derive/material.ts";
 import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt } from "../../platform.ts";
 import type { PromptLocale } from "../../prompts.ts";
@@ -137,51 +137,49 @@ const exportPrompt = (locale: PromptLocale, params: Params): KeystorePrompt => {
   };
 };
 
-export const exportAccount =
-  (): Handler<"chain.exportAccount"> =>
-  async (ctx, params, session) => {
-    const { dek } = ctx.session.require(session);
-    const record = findWalletRecord(ctx.image, params.walletId);
-    if (record === undefined) {
-      if (ctx.image.records.some((r) => r.kind === "key" && r.id === params.walletId)) {
-        throw new KernelError("invalid-input", "an imported key has no account material");
-      }
-      throw new KernelError("not-found", "no such wallet");
+export const exportAccount = (): Handler<"chain.exportAccount"> => async (ctx, params, session) => {
+  const { dek } = ctx.session.require(session);
+  const record = findWalletRecord(ctx.image, params.walletId);
+  if (record === undefined) {
+    if (ctx.image.records.some((r) => r.kind === "key" && r.id === params.walletId)) {
+      throw new KernelError("invalid-input", "an imported key has no account material");
     }
-    const seen = new Set<string>();
-    for (const node of params.nodes) {
-      if (node.kind === "btc.account") {
-        checkNetwork(node.template, node.network);
-      }
-      if (seen.has(nodeId(node))) {
-        throw new KernelError("invalid-input", "duplicate export node");
-      }
-      seen.add(nodeId(node));
+    throw new KernelError("not-found", "no such wallet");
+  }
+  const seen = new Set<string>();
+  for (const node of params.nodes) {
+    if (node.kind === "btc.account") {
+      checkNetwork(node.template, node.network);
     }
-    const prompt = exportPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), params);
-    const host = ctx.platform.keystore?.platform;
-    /* The verification dialog is the only thing standing between the call and the disclosure:
+    if (seen.has(nodeId(node))) {
+      throw new KernelError("invalid-input", "duplicate export node");
+    }
+    seen.add(nodeId(node));
+  }
+  const prompt = exportPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), params);
+  const host = ctx.platform.keystore?.platform;
+  /* The verification dialog is the only thing standing between the call and the disclosure:
        a prompt the dialog cannot show whole would hide rows of the share — refuse before any
        verification rather than ask for a clipped approval (the same fit the bound chain prompt
        enforces, as refusal rather than truncation). */
-    if ((host === "ios" || host === "android") && !promptFits(prompt, PROMPT_BOUNDS[host])) {
-      throw new KernelError(
-        "invalid-input",
-        "the export prompt does not fit the verification dialog",
-      );
+  if ((host === "ios" || host === "android") && !promptFits(prompt, PROMPT_BOUNDS[host])) {
+    throw new KernelError(
+      "invalid-input",
+      "the export prompt does not fit the verification dialog",
+    );
+  }
+  await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => prompt);
+  // The session may have ended while the prompt was up, exactly as in chain.sign.
+  ctx.session.require(session);
+  if (record.kind !== "entropy") {
+    return result(ctx.externalMaterial(record), params);
+  }
+  return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+    const keys = seedKeys(seed, ctx.platform.random);
+    try {
+      return await result(keys.material, params);
+    } finally {
+      keys.wipe();
     }
-    await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => prompt);
-    // The session may have ended while the prompt was up, exactly as in chain.sign.
-    ctx.session.require(session);
-    if (record.kind !== "entropy") {
-      return result(ctx.externalMaterial(record), params);
-    }
-    return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
-      const keys = seedKeys(seed, ctx.platform.random);
-      try {
-        return await result(keys.material, params);
-      } finally {
-        keys.wipe();
-      }
-    });
-  };
+  });
+};

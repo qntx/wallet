@@ -12,9 +12,9 @@ import type { Keypath } from "@qntx/ur/interop";
 import type { KeyPath } from "@qntx/wallet-chains";
 import type { DeviceResponse } from "@qntx/wallet/protocol";
 
-import { KernelError } from "../../../errors.ts";
 import type { PinnedEd25519, PinnedNode } from "../../../derive/pinned.ts";
 import { fingerprintBytes, samePath } from "../../../derive/pinned.ts";
+import { KernelError } from "../../../errors.ts";
 import type { PairingResult } from "../driver.ts";
 import { decodeUr } from "./ur.ts";
 

@@ -445,6 +445,7 @@ declare const myBuilderEndpoint: PolymarketBuilder["sign"];
 const dataKey = await wallet.dataKeys.get("app-apps");
 const apps = await createApps({
   wallet, // the same Wallet the engine was built on
+  account: engine.signers.apis.account, // the one signing seam — every custody answers it
   requests: engine.requests, // user-signed actions open approval requests here
   networks: engine.networks, // chain reads (the Hyperliquid CCTP deposit's allowance/burn limit)
   fetch: globalThis.fetch.bind(globalThis),

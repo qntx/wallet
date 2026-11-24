@@ -213,11 +213,21 @@ describe("local codecs", () => {
     // Closed map: a foreign key or a missing field. The request id is
     // optional on the wire — the kernel's request-id check refuses it instead.
     expect(
-      codeOf("btc-signature", mapBytes([idField, sigField, keyField, [4, new Uint8Array(0)]]), btcSignatureCodec),
+      codeOf(
+        "btc-signature",
+        mapBytes([idField, sigField, keyField, [4, new Uint8Array(0)]]),
+        btcSignatureCodec,
+      ),
     ).toBe("integrity");
-    expect(codeOf("btc-signature", mapBytes([idField, keyField]), btcSignatureCodec)).toBe("integrity");
-    expect(codeOf("btc-signature", mapBytes([idField, sigField]), btcSignatureCodec)).toBe("integrity");
-    expect(codeOf("btc-signature", mapBytes([sigField, keyField]), btcSignatureCodec)).toBe("no-error");
+    expect(codeOf("btc-signature", mapBytes([idField, keyField]), btcSignatureCodec)).toBe(
+      "integrity",
+    );
+    expect(codeOf("btc-signature", mapBytes([idField, sigField]), btcSignatureCodec)).toBe(
+      "integrity",
+    );
+    expect(codeOf("btc-signature", mapBytes([sigField, keyField]), btcSignatureCodec)).toBe(
+      "no-error",
+    );
     // The request id must be 16 bytes under tag 37 — a foreign tag or a bare value is not one.
     expect(
       codeOf(

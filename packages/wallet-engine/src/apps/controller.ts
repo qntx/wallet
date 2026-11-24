@@ -68,8 +68,8 @@ type StoredGroup = {
 export type CreateAppsOptions = {
   readonly wallet: Wallet;
   /**
-   * The account derivation seam every app shares — the engine's `signers.apis.account` (or
-   * the `chains` account api for a host composing apps without the engine).
+   * The account derivation seam every app shares — the engine's `signers.apis.account` (or the
+   * `chains` account api for a host composing apps without the engine).
    */
   readonly account: ChainsApi["account"];
   readonly requests: Pick<RequestController, "prepare" | "outcome" | "reject">;

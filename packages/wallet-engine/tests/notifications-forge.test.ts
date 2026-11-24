@@ -16,21 +16,26 @@ import { base64urlnopad } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
 import { verifyEvent } from "@qntx/nostr";
-import { chains } from "@qntx/wallet/chains";
 import type { Wallet } from "@qntx/wallet";
-import { hardware } from "@qntx/wallet/hardware";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
+import { chains } from "@qntx/wallet/chains";
+import { hardware } from "@qntx/wallet/hardware";
 
 import vectors from "../../../vectors/push.json" with { type: "json" };
-import { ok, scriptedLedger, utf8Hex, xpubAt } from "../../wallet-kernel/tests/signers-ledger-fake.ts";
+import {
+  ok,
+  scriptedLedger,
+  utf8Hex,
+  xpubAt,
+} from "../../wallet-kernel/tests/signers-ledger-fake.ts";
 import { createWalletEngine } from "../src/engine.ts";
-import { until } from "./apps-helpers.ts";
-import { cardRig } from "./card-rig.ts";
-import { pairKeystone } from "./keystone-io.ts";
 import { pushAad, PUSH_ID_DOMAIN, pushEventInput } from "../src/gateway/contract/push-message.ts";
 import type { PushEventKind } from "../src/gateway/contract/push-message.ts";
 import type { PushKeyStore } from "../src/notifications/controller.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
+import { until } from "./apps-helpers.ts";
+import { cardRig } from "./card-rig.ts";
+import { pairKeystone } from "./keystone-io.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const PASSWORD = "correct horse battery staple";
@@ -478,9 +483,7 @@ describe("createWalletEngine notifications forge", () => {
       }
       const solPut = puts.findLast((p) => p.path === "/v1/push/solana/subscription");
       expect(solPut?.addresses).toStrictEqual([group0.address]);
-      expect(engine.notifications.getState().wallets[walletId]?.families["solana"]).toBe(
-        "active",
-      );
+      expect(engine.notifications.getState().wallets[walletId]?.families["solana"]).toBe("active");
       expect(engine.notifications.getState().wallets[walletId]?.families["evm"]).toBe("active");
     } finally {
       await rig.wallet.vault.lock();

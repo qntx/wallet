@@ -11,7 +11,6 @@ import type { DeviceRequest, DeviceResponse, ProtocolValue } from "@qntx/wallet/
 
 import { LEDGER_DRIVER } from "../src/modules/signers/ledger/driver.ts";
 import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
-
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
@@ -186,8 +185,8 @@ const pumpDeviceOp = async (
 
 /**
  * A keystore host with a scripted Ledger and a transcript OneKey paired: the Ledger pairs on its
- * Bitcoin app (the only one that reveals the fingerprint) and then trust-fetches its group-0
- * solana leaf; the OneKey transcript pins the leaf in pair. Both wallets can serve group-0 solana.
+ * Bitcoin app (the only one that reveals the fingerprint) and then trust-fetches its group-0 solana
+ * leaf; the OneKey transcript pins the leaf in pair. Both wallets can serve group-0 solana.
  */
 const bootDevices = async () => {
   const H4 = 0x80000000;
@@ -259,7 +258,15 @@ const bootDevices = async () => {
       ),
       "address",
     );
-  return { fake, h, session, ledgerId, onekeyId, ledgerOwn: await own(ledgerId), onekeyOwn: await own(onekeyId) };
+  return {
+    fake,
+    h,
+    session,
+    ledgerId,
+    onekeyId,
+    ledgerOwn: await own(ledgerId),
+    onekeyOwn: await own(onekeyId),
+  };
 };
 
 describe("a lookup-table sign on a paired device", () => {
@@ -277,15 +284,13 @@ describe("a lookup-table sign on a paired device", () => {
       );
       /* A refused begin answers an error — never an exchange step — so the device sees no
          bytes; the refusal also precedes the presence ceremony. */
-      expect(
-        errCode(
-          await h.call(
-            "hardware.begin",
-            { op: { kind: "sign", request }, verify: HARDWARE },
-            session,
-          ),
-        ),
-      ).toBe("blind-signing-disabled");
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one device op at a time
+      const reply = await h.call(
+        "hardware.begin",
+        { op: { kind: "sign", request }, verify: HARDWARE },
+        session,
+      );
+      expect(errCode(reply)).toBe("blind-signing-disabled");
       expect(fake.calls).toHaveLength(keystoreCalls);
     }
   });
@@ -304,7 +309,12 @@ describe("a lookup-table sign on a paired device", () => {
         MALLORY,
       );
       const begin = ok(
-        await h.call("hardware.begin", { op: { kind: "sign", request }, verify: HARDWARE }, session),
+        // oxlint-disable-next-line eslint/no-await-in-loop -- one device op at a time
+        await h.call(
+          "hardware.begin",
+          { op: { kind: "sign", request }, verify: HARDWARE },
+          session,
+        ),
       );
       const step = field(begin, "step");
       expect(str(step, "kind")).toBe("exchange");
@@ -313,6 +323,7 @@ describe("a lookup-table sign on a paired device", () => {
       expect(text).toContain(
         `${device}: the device cannot show this request in full — signing is blind`,
       );
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one device op at a time
       ok(await h.call("hardware.cancel", { opId: str(begin, "opId") }, session));
     }
   });

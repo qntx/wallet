@@ -38,8 +38,8 @@ export type QrEngineSurface = {
   readonly requests: Pick<RequestController, "prepare" | "outcome">;
   readonly networks: Pick<NetworkController, "enabled">;
   /**
-   * The one account seam — the engine's `signers.apis`: vault material derives in the kernel,
-   * card and hardware wallets read their pinned material.
+   * The one account seam — the engine's `signers.apis`: vault material derives in the kernel, card
+   * and hardware wallets read their pinned material.
    */
   readonly signers: { readonly apis: Pick<ChainsApi, "account" | "exportAccount"> };
 };
@@ -94,7 +94,7 @@ const accountFacts = async (
       "a QR signer must be a vault, card or hardware wallet — imported keys cannot sign",
     );
   }
-  const apis = deps.engine.signers.apis;
+  const { apis } = deps.engine.signers;
   const { walletId, groupIndex } = account;
   const [chain, bitcoin] = await Promise.all([
     family === "bitcoin"
@@ -270,7 +270,7 @@ export const qrSigner = (deps: {
       return qrResponse(entry.request, toChainResult(result, entry.signer), entry.signer);
     },
     exportAccount: async (params) => {
-      const apis = deps.engine.signers.apis;
+      const { apis } = deps.engine.signers;
       const nodes: ChainExportNode[] = exportNodes(params);
       const result = await apis.exportAccount({
         walletId: params.account.walletId,

@@ -58,7 +58,6 @@ import type { QrPayload } from "@qntx/wallet/hardware";
 import type { ChainSignRequest, ChainSignResult } from "@qntx/wallet/protocol";
 
 import { WatchController } from "../src/accounts/watch.ts";
-import { SignersController } from "../src/signers/controller.ts";
 import type { WalletEngine } from "../src/engine.ts";
 import {
   createQrScanner,
@@ -72,6 +71,7 @@ import type { QrLink, QrSentRequest } from "../src/qr/index.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SolanaSignResult } from "../src/requests/controller.ts";
 import type { BitcoinPsbtInput, PreparedBitcoinPsbt } from "../src/requests/types.ts";
+import { SignersController } from "../src/signers/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";

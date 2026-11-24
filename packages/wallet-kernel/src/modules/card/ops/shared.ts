@@ -184,9 +184,9 @@ export const walletOf = (
 };
 
 /**
- * The remembered access hashes, live only while the app lock guards them — a `device` factor
- * means the lock is off and a saved hash would VERIFY with no presence at all, so the op asks
- * for the code instead. The map itself stays: turning the lock back on re-arms it.
+ * The remembered access hashes, live only while the app lock guards them — a `device` factor means
+ * the lock is off and a saved hash would VERIFY with no presence at all, so the op asks for the
+ * code instead. The map itself stays: turning the lock back on re-arms it.
  */
 export const savedAccess = (env: OpEnv, walletId: string): Readonly<Record<string, string>> =>
   env.ctx.image.factors.some((f) => f.kind === "device")

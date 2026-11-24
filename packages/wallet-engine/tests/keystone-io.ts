@@ -45,10 +45,9 @@ export const keystoneIo = (hang?: () => Promise<unknown>): DeviceIo => {
 
 /**
  * A `DeviceIo` over a device with its own seed — `exchange` feeds the kernel's request to the
- * oracle and counts each call (the "device asked only after approval" property is the count
- * staying zero until `submit` runs); `fail` makes the exchanges reject until cleared (a lost
- * device). Pairing through this io answers the scan with the device's own
- * `crypto-multi-accounts`.
+ * oracle and counts each call (the "device asked only after approval" property is the count staying
+ * zero until `submit` runs); `fail` makes the exchanges reject until cleared (a lost device).
+ * Pairing through this io answers the scan with the device's own `crypto-multi-accounts`.
  */
 export const keystoneSimIo = (
   seed: Uint8Array,

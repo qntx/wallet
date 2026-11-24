@@ -551,9 +551,9 @@ describe("operation lifecycle", () => {
     ok(await h.call("vault.reset", null, session));
     // The parked exchange rejects and the session died with the vault — the op resolves nothing.
     await expect(rejection).resolves.toBe("cancelled");
-    expect(
-      errCode(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session)),
-    ).toBe("locked");
+    expect(errCode(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session))).toBe(
+      "locked",
+    );
     // A freshly established vault lists no hardware wallets.
     const res = ok(
       await h.call("wallet.importMnemonic", {
@@ -814,7 +814,7 @@ describe("hardware wallet refusals", () => {
     );
     expect(strField(field(begun, "step"), "kind")).toBe("exchange");
     ok(await h.call("hardware.cancel", { opId: strField(begun, "opId") }, session));
-    const create = () =>
+    const create = async () =>
       h.call(
         "sessions.create",
         {
@@ -835,9 +835,7 @@ describe("hardware wallet refusals", () => {
     // App lock off: the metered scheme refuses before any factor verification.
     expect(errCode(await create())).toBe("app-lock-required");
     // App lock on: presence passes, but a hardware wallet owns no seed account.
-    ok(
-      await h.call("vault.setAppLock", { enabled: true, verify: { kind: "hardware" } }, session),
-    );
+    ok(await h.call("vault.setAppLock", { enabled: true, verify: { kind: "hardware" } }, session));
     expect(errCode(await create())).toBe("unsupported");
   });
 

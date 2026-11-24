@@ -2698,8 +2698,8 @@ export function psbtTemplateLabel(template: BitcoinPsbtInput["sign"][number]["te
 
 /**
  * `EngineOptions.deviceIo` routes hardware-custody accounts' signatures — for every origin, QR
- * included — through the host's per-device-kind transport, the same `DeviceIo` a
- * `hardware(wallet)` call takes (MIGRATION §32). Without it, hardware wallets fail `unsupported`.
+ * included — through the host's per-device-kind transport, the same `DeviceIo` a `hardware(wallet)`
+ * call takes (MIGRATION §32). Without it, hardware wallets fail `unsupported`.
  */
 export function engineOptions(
   deviceIo: (device: HardwareDevice) => DeviceIo,
