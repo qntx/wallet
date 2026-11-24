@@ -440,6 +440,9 @@ const recordEngineSessions = async (): Promise<void> => {
     }
   } finally {
     await w.destroy();
+    /* The engine's destroy unwinds its controllers; the node wallet's kernel worker would keep
+       this process alive — a recorder must exit when the transcript is written. */
+    await w.wallet.destroy();
   }
 };
 
