@@ -29,6 +29,7 @@ wallet.
 | Engine data: address book, account-group names, custom tokens, custom RPC endpoints, watch accounts, dApp connections, sign log, tracked transactions | engine IndexedDB / engine store, keyed by the vault's data key                                | Rebuilt empty (the format changed and the new vault has a new data key). Address-book entries and wallet/group names come back through `metaSync` when the host configures it; everything else is gone. |
 | Transactions in flight at upgrade time                                                                                                                | tracked transactions                                                                          | They still land on chain and appear in `engine.history`, but they can no longer be sped up, cancelled or bumped with CPFP.                                                                              |
 | Spark                                                                                                                                                 | balance held by the Spark operators; exit-chain records and payment notes in the engine store | The balance comes back with the wallet; the locally stored exit-chain records and payment notes do not.                                                                                                 |
+| Session keys (e.g. the Hyperliquid agent)                                                                                                             | vault (`session-key` records, never backed up)                                                | Lost with the vault — enable the app again.                                                                                                                                                             |
 | Blind-signing permission, app lock                                                                                                                    | engine account groups / —                                                                     | Off on the new vault.                                                                                                                                                                                   |
 
 ## 1. Vault format and data reset
@@ -221,6 +222,11 @@ export async function quoteBridge(
   the DEK; other sessions lock with `invalidated`) or off.
 - `createNativeWallet` returns a `NativeWallet`; `setAutoLock` changes the background lock of the
   live kernel without recreating the wallet.
+- The keystore contract gains the required `platform: "ios" | "android"` — `bindNativeKeystore`
+  rejects any other value. The kernel bounds every verification prompt to the platform's dialog
+  (`PROMPT_BOUNDS`: iOS 8 lines / 400 code points, Android a 60-code-point title and 12 lines /
+  640 code points); a prompt that cannot fit shows the blind title and a line that counts what it
+  withheld — never clipped text.
 - Only one native kernel may be live per process: `destroy()` the previous wallet before creating
   another, or creation fails `integrity`.
 - On every platform, `WalletSnapshot` / `StatusPayload` gain the required fields `appLock`,
@@ -508,6 +514,9 @@ engine rebroadcasts the same bytes until the outcome is known — after a restar
 pending and never offer to send again. Only a definitive refusal rejects (`failed`). The signed
 bytes moved from `TrackedTransaction.evm.raw` to `TrackedTransaction.raw` for every family.
 Bitcoin dApp `signAndSendTransaction` broadcasts are tracked the same way.
+A refusal check that itself fails —
+the follow-up lookup of whether the network already holds the bytes — resolves `unknown`, not
+`failed`: the row stays `submitted`.
 
 `confirmed` is no longer terminal: a transaction records the block it landed in
 (`TrackedTransaction.block`) and stays tracked at a low frequency until `final` — EVM `finalized`
@@ -570,6 +579,14 @@ export function signedBytes(tx: TrackedTransaction): string | undefined {
   refuses a guessable one with `BackupControllerError` category `weak-password` before any
   verification; rate drafts with `backupPasswordStrength(password)` (`acceptable` = zxcvbn score
   4). The vault password factor is unchanged.
+- On React Native the backup password never reaches the main runtime: enable and restore pass
+  `{ kind: "password" }` with no `password` field and the kernel collects the entry through the
+  native secure input (`SecureInput`, §30) — twice on enable, re-asking on a mismatch or a
+  sub-12-code-point entry. A `password` string is refused `unsupported` there, and omitting it on
+  Web or Node is refused the same way (no secure input exists). `BackupFactorInput`'s password
+  arm is `{ kind: "password"; password?: string }`; `backupPasswordStrength` runs only where a
+  password is present, so on React Native nothing is rated — the kernel's minimum applies and its
+  re-ask labels show as-is.
 - Backup envelope version 3: 0.13.0 backup files are not read. Ask every user with backup on to
   enable it again after the upgrade.
 - `backup.disable(verify)` re-verifies.
@@ -1016,36 +1033,37 @@ export function sparkStateLabel(state: SparkPaymentState): string {
 
 ## 13. Removed APIs
 
-| Removed                                                                                                                | Use instead                                                                          |
-| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `InitialFactor` `{ kind: "hardware" }`, `factor` on React Native create/import/restore                                 | nothing — React Native chooses its factors                                           |
-| `UnlockFactor` as a `verify` type                                                                                      | `VerifyFactor`                                                                       |
-| `WalletErrorCode` `no-device-credential`                                                                               | `verification-unavailable`                                                           |
-| `backup.disable()`                                                                                                     | `backup.disable(verify)`                                                             |
-| `requests.approve(id, method, verify)`                                                                                 | `requests.approve(id, method, { verify, acknowledged })`                             |
-| `AccountTreeController.setBlindSigning` / `blindSigning`, `AccountGroup.blindSigning`                                  | `wallet.vault.setBlindSigning`, `snapshot.blindSigning`                              |
-| `AssetsController.refreshBitcoin(xpub, network)`                                                                       | `refreshBitcoinGroup(group, network)`                                                |
-| `WalletEngine.transactions.prepare*`                                                                                   | `engine.requests.prepare`                                                            |
-| `engine.transactions.batchById`, `delegationState`                                                                     | `engine.transactions.txById` per transaction, `engine.delegation`                    |
-| `engine.spark.setAccounts`, `inspect`, `claimDeposit`, `lockAll`                                                       | `engine.accounts.select` / `discoverSpark`; deposits are claimed by the engine       |
-| controller `init`, `lock`, `destroy`, `setStore`, `reconcile`, `trigger`, `store.setState` on engine members           | nothing — the engine owns controller lifecycle and state                             |
-| `engine.requests.invalidateOrigin`                                                                                     | `engine.connections.invalidateOrigin` (what `createBrowserBridge` calls)             |
-| `engine.connections.request`, `authorize`, `touch`                                                                     | nothing — dApp-side steps run inside the provider handlers                           |
-| `engine.accounts.exportMeta` / `mergeMeta`, `engine.addressBook.merge` / `syncEntries`                                 | `engine.metaSync`                                                                    |
-| `engine.networks.ensClient`, `independentClient`, `independentEnsClient`, `independentSolanaRpc`, `independentEsplora` | `engine.names.resolve`; cross-checks run inside the engine                           |
-| `AccountBalances.frozen` (Bitcoin)                                                                                     | `protected`                                                                          |
-| `TrackedTransaction.evm.raw`                                                                                           | `TrackedTransaction.raw`                                                             |
-| `EngineOptions.gateway.installId`                                                                                      | nothing                                                                              |
-| `ConnectionController.setActiveGroup`, `activeGroup`, `accounts`, `solanaAccount`, `bitcoinAccounts`, `nostrAccount`   | `engine.accounts.select`, `connections.sessionAccounts`, `connections.nostrIdentity` |
-| `SolanaWalletHandler.solanaAccountsChanged`, `BitcoinWalletHandler.bitcoinAccountsChanged`                             | the handlers' own `change` events                                                    |
-| `ProviderInfo.uuid`                                                                                                    | nothing                                                                              |
-| `SparkControllerOptions.random`                                                                                        | nothing                                                                              |
-| `EngineErrorCode` `integrity`                                                                                          | an unreadable row reads as absent                                                    |
-| gateway contract `INSTALL_ID_HEADER`, `installId`, `InstallId`                                                         | `CLIENT_ID_HEADER`, `clientId`, `ClientId`                                           |
-| `ChainErrorCode` `fee-payer-mismatch`                                                                                  | nothing — any required signer may sign                                               |
-| `SafeTransaction.gasToken`, `refundReceiver`                                                                           | `SafeTransaction.refund` `{ receiver?, gasPrice, amount }`                           |
-| `solana-core-send` request method                                                                                      | `solana-nft-send`                                                                    |
-| `CloudStore.available()`                                                                                               | `CloudStoreError` from `list()`                                                      |
+| Removed                                                                                                                | Use instead                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `InitialFactor` `{ kind: "hardware" }`, `factor` on React Native create/import/restore                                 | nothing — React Native chooses its factors                                              |
+| `UnlockFactor` as a `verify` type                                                                                      | `VerifyFactor`                                                                          |
+| `WalletErrorCode` `no-device-credential`                                                                               | `verification-unavailable`                                                              |
+| `backup.disable()`                                                                                                     | `backup.disable(verify)`                                                                |
+| `requests.approve(id, method, verify)`                                                                                 | `requests.approve(id, method, { verify, acknowledged })`                                |
+| `AccountTreeController.setBlindSigning` / `blindSigning`, `AccountGroup.blindSigning`                                  | `wallet.vault.setBlindSigning`, `snapshot.blindSigning`                                 |
+| `AssetsController.refreshBitcoin(xpub, network)`                                                                       | `refreshBitcoinGroup(group, network)`                                                   |
+| `WalletEngine.transactions.prepare*`                                                                                   | `engine.requests.prepare`                                                               |
+| `engine.transactions.batchById`, `delegationState`                                                                     | `engine.transactions.txById` per transaction, `engine.delegation`                       |
+| `engine.spark.setAccounts`, `inspect`, `claimDeposit`, `lockAll`                                                       | `engine.accounts.select` / `discoverSpark`; deposits are claimed by the engine          |
+| controller `init`, `lock`, `destroy`, `setStore`, `reconcile`, `trigger`, `store.setState` on engine members           | nothing — the engine owns controller lifecycle and state                                |
+| `engine.requests.invalidateOrigin`                                                                                     | `engine.connections.invalidateOrigin` (what `createBrowserBridge` calls)                |
+| `engine.connections.request`, `authorize`, `touch`                                                                     | nothing — dApp-side steps run inside the provider handlers                              |
+| `engine.accounts.exportMeta` / `mergeMeta`, `engine.addressBook.merge` / `syncEntries`                                 | `engine.metaSync`                                                                       |
+| `engine.networks.ensClient`, `independentClient`, `independentEnsClient`, `independentSolanaRpc`, `independentEsplora` | `engine.names.resolve`; cross-checks run inside the engine                              |
+| `AccountBalances.frozen` (Bitcoin)                                                                                     | `protected`                                                                             |
+| `TrackedTransaction.evm.raw`                                                                                           | `TrackedTransaction.raw`                                                                |
+| `EngineOptions.gateway.installId`                                                                                      | nothing                                                                                 |
+| `ConnectionController.setActiveGroup`, `activeGroup`, `accounts`, `solanaAccount`, `bitcoinAccounts`, `nostrAccount`   | `engine.accounts.select`, `connections.sessionAccounts`, `connections.nostrIdentity`    |
+| `SolanaWalletHandler.solanaAccountsChanged`, `BitcoinWalletHandler.bitcoinAccountsChanged`                             | the handlers' own `change` events                                                       |
+| `ProviderInfo.uuid`                                                                                                    | nothing                                                                                 |
+| `SparkControllerOptions.random`                                                                                        | nothing                                                                                 |
+| `EngineErrorCode` `integrity`                                                                                          | an unreadable row reads as absent                                                       |
+| gateway contract `INSTALL_ID_HEADER`, `installId`, `InstallId`                                                         | `CLIENT_ID_HEADER`, `clientId`, `ClientId`                                              |
+| `ChainErrorCode` `fee-payer-mismatch`                                                                                  | nothing — any required signer may sign                                                  |
+| `SafeTransaction.gasToken`, `refundReceiver`                                                                           | `SafeTransaction.refund` `{ receiver?, gasPrice, amount }`                              |
+| `solana-core-send` request method                                                                                      | `solana-nft-send`                                                                       |
+| `CloudStore.available()`                                                                                               | `CloudStoreError` from `list()`                                                         |
+| `trade.twap` (Hyperliquid TWAP order placement)                                                                        | nothing — a TWAP's slices carry no price the kernel can meter; `trade.twapCancel` stays |
 
 ## 14. New error codes
 
@@ -1146,6 +1164,9 @@ export const ENGINE_INTEGRITY: EngineErrorCode = "integrity";
   `@qntx/wallet` already sends every secret in a fresh buffer; a host that posts kernel requests
   through its own transport copies them the same way
   ([`tests/migration/secret-buffers.ts`](tests/migration/secret-buffers.ts)).
+- An `eip7702` authorization with `chainId` 0 — the chain-universal form that replays on every
+  chain — is refused before any prompt, and `eip155` ids parse only in canonical form
+  (`eip155:0`, `eip155:01` are refused).
 
 ## 16. Built-in networks and fee model
 
@@ -1455,6 +1476,17 @@ else fails with `SolanaClusterBindingError` (`ChainError` `invalid-request`, `re
 SolanaBindingReason`); show the reason and never offer to sign anyway. A devnet session no longer
 signs transactions that are valid on mainnet.
 
+### Accounts named through lookup tables are blind
+
+An account the prompt names — a recipient, token destination, owner, authority, delegate or mint
+— that resolves through an address lookup table cannot be verified against the signature: a v0
+signature binds only the compiled message bytes, and the table contents a loaded index resolves
+through are caller-supplied. Any recorded table substitution makes the intent blind with the new
+reason `lookup-table-account`, and the prompt leads with a warning in both locales. Engine-built
+transactions stay described: `compile()` asks the decoder which named accounts resolve through
+tables, rewrites their lookup metas back to static ones, recompiles and asserts none remain —
+other loaded accounts keep their table indexes.
+
 ### Endpoints and drop proofs
 
 - Behind the gateway alone, Solana mainnet sends and bindings carry `reads-unverified`; devnet
@@ -1562,20 +1594,20 @@ together with the apps (§2): the engine and gateway contracts are strict on bot
 Nothing to migrate: these did not exist in 0.13.0 and a host that does not import them bundles
 nothing new. Each has a compiled example and a README section.
 
-| Surface                                                                                                                          | Example                                                                                                                                                                                                                                            | Notes                                                                                                                                                                                                                                                                                                                           |
-| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@qntx/wallet-engine/walletconnect`                                                                                              | [`walletconnect.ts`](tests/migration/walletconnect.ts)                                                                                                                                                                                             | WalletConnect Community License: check the commercial terms before shipping it.                                                                                                                                                                                                                                                 |
-| `@qntx/wallet-engine/apps`, `/apps/hyperliquid`, `/apps/polymarket`                                                              | [`hyperliquid.ts`](tests/migration/hyperliquid.ts), [`hyperliquid-corrections.ts`](tests/migration/hyperliquid-corrections.ts), [`polymarket.ts`](tests/migration/polymarket.ts), [`polymarket-outcome.ts`](tests/migration/polymarket-outcome.ts) | `createApps({ …, apps: [hyperliquid(…), polymarket(…)] })` needs the gateway's `/v1/eligibility`. Order outcomes can be `unknown`: never re-place, wait for `trade.corrections`; a Polymarket `canceled` carries `making` (filled before the cancel). The Polymarket builder secret stays on your server behind `builder.sign`. |
-| App providers (`AppDefinition`)                                                                                                  | [`app-provider.ts`](tests/migration/app-provider.ts)                                                                                                                                                                                               | Engine README "Writing an app provider".                                                                                                                                                                                                                                                                                        |
-| `@qntx/wallet/sessions`                                                                                                          | [`sessions.ts`](tests/migration/sessions.ts)                                                                                                                                                                                                       | Kernel-held session keys (`session-key` vault records), never in a backup. Once one exists, a 0.13.0 build reports the vault `unsupported`: delete sessions before downgrading. `sessions(wallet).sign` rejects `integrity` unless the signature is the session key's. `EligibilityResponse["apps"]`: an absent app is unknown. |
-| Fiat24 session grants (`evm.fiat24-session`)                                                                                     | [`fiat24.ts`](tests/migration/fiat24.ts)                                                                                                                                                                                                           | Build the grant as this structured request; never sign the text yourself. Arbitrum One only, `0 < deadline − now ≤ 1200` s. The engine's dApp path refuses this kind.                                                                                                                                                           |
-| `@qntx/wallet/hardware` (`hardware(wallet)`), `WalletInfo` `custody` union                                                       | [`hardware-wallets.ts`](tests/migration/hardware-wallets.ts)                                                                                                                                                                                       | Hardware signers (§24): Keystone 3 Pro over QR — `pair`, `accounts`, `sign`, `verifyAddress` through a host `DeviceIo`. `WalletInfo.custody` is breaking for every host.                                                                                                                                                        |
-| `engine.approvals`                                                                                                               | [`approvals.ts`](tests/migration/approvals.ts)                                                                                                                                                                                                     | Approval inventory and revocation (§25): cross-checked on-chain rows, one request per revocation. Gateway operators deploy `POST /v1/approvals/:caip2`.                                                                                                                                                                         |
-| `engine.nfts`                                                                                                                    | [`nfts.ts`](tests/migration/nfts.ts)                                                                                                                                                                                                               | NFT inventory and transfers (§26): display-only gateway data, `evm-nft-send` `items` and `solana-nft-send` through requests. Gateway operators deploy the four `/v1/nfts/*` routes.                                                                                                                                             |
-| `engine.notifications`, `@qntx/wallet-engine/push`                                                                               | [`push-notifications.ts`](tests/migration/push-notifications.ts)                                                                                                                                                                                   | Push notifications (§27): per-wallet subscriptions, `openPush` for the notification extension; gateway PushObject deploy is non-rollbackable.                                                                                                                                                                                   |
-| `@qntx/wallet-native/cloud` (`createICloudStore`, `createGoogleDriveStore`), `@qntx/wallet-engine` `createGoogleDriveCloudStore` | [`cloud-store.ts`](tests/migration/cloud-store.ts)                                                                                                                                                                                                 | Cloud backup transports and versioned backup files (§28); `CloudStore` drops `available()` — failures are typed `CloudStoreError`s.                                                                                                                                                                                             |
-| `@qntx/wallet-engine/apps/fiat24`                                                                                                | [`fiat24-app.ts`](tests/migration/fiat24-app.ts)                                                                                                                                                                                                   | The Fiat24 app (§29): resumable flows, session and API reads; every write is one app-attributed request. Its REST API needs an injected `fetch` (no CORS).                                                                                                                                                                      |
-| Signing plans (`plan*` / `assemble*`, `*/sign` task signers)                                                                     | [`signing-plans.ts`](tests/migration/signing-plans.ts)                                                                                                                                                                                             | For hosts driving an external digest signer. Software-wallet signatures are byte-identical.                                                                                                                                                                                                                                     |
+| Surface                                                                                                                          | Example                                                                                                                                                                                                                                            | Notes                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@qntx/wallet-engine/walletconnect`                                                                                              | [`walletconnect.ts`](tests/migration/walletconnect.ts)                                                                                                                                                                                             | WalletConnect Community License: check the commercial terms before shipping it.                                                                                                                                                                                                                                                                                                                               |
+| `@qntx/wallet-engine/apps`, `/apps/hyperliquid`, `/apps/polymarket`                                                              | [`hyperliquid.ts`](tests/migration/hyperliquid.ts), [`hyperliquid-corrections.ts`](tests/migration/hyperliquid-corrections.ts), [`polymarket.ts`](tests/migration/polymarket.ts), [`polymarket-outcome.ts`](tests/migration/polymarket-outcome.ts) | `createApps({ …, apps: [hyperliquid(…), polymarket(…)] })` needs the gateway's `/v1/eligibility`. Order outcomes can be `unknown`: never re-place, wait for `trade.corrections`; a Polymarket `canceled` carries `making` (filled before the cancel). The Polymarket builder secret stays on your server behind `builder.sign`.                                                                               |
+| App providers (`AppDefinition`)                                                                                                  | [`app-provider.ts`](tests/migration/app-provider.ts)                                                                                                                                                                                               | Engine README "Writing an app provider".                                                                                                                                                                                                                                                                                                                                                                      |
+| `@qntx/wallet/sessions`                                                                                                          | [`sessions.ts`](tests/migration/sessions.ts)                                                                                                                                                                                                       | Kernel-held session keys (`session-key` vault records), never in a backup. Once one exists, a 0.13.0 build reports the vault `unsupported`: delete sessions before downgrading. `sessions(wallet).sign` rejects `integrity` unless the signature is the session key's. `EligibilityResponse["apps"]`: an absent app is unknown. `create`/`open` verify and the scheme's `limits` bound every signature (§31). |
+| Fiat24 session grants (`evm.fiat24-session`)                                                                                     | [`fiat24.ts`](tests/migration/fiat24.ts)                                                                                                                                                                                                           | Build the grant as this structured request; never sign the text yourself. Arbitrum One only, `0 < deadline − now ≤ 1200` s. The engine's dApp path refuses this kind.                                                                                                                                                                                                                                         |
+| `@qntx/wallet/hardware` (`hardware(wallet)`), `WalletInfo` `custody` union                                                       | [`hardware-wallets.ts`](tests/migration/hardware-wallets.ts)                                                                                                                                                                                       | Hardware signers (§24): Keystone 3 Pro over QR — `pair`, `accounts`, `sign`, `verifyAddress` through a host `DeviceIo`. `WalletInfo.custody` is breaking for every host.                                                                                                                                                                                                                                      |
+| `engine.approvals`                                                                                                               | [`approvals.ts`](tests/migration/approvals.ts)                                                                                                                                                                                                     | Approval inventory and revocation (§25): cross-checked on-chain rows, one request per revocation. Gateway operators deploy `POST /v1/approvals/:caip2`.                                                                                                                                                                                                                                                       |
+| `engine.nfts`                                                                                                                    | [`nfts.ts`](tests/migration/nfts.ts)                                                                                                                                                                                                               | NFT inventory and transfers (§26): display-only gateway data, `evm-nft-send` `items` and `solana-nft-send` through requests. Gateway operators deploy the four `/v1/nfts/*` routes.                                                                                                                                                                                                                           |
+| `engine.notifications`, `@qntx/wallet-engine/push`                                                                               | [`push-notifications.ts`](tests/migration/push-notifications.ts)                                                                                                                                                                                   | Push notifications (§27): per-wallet subscriptions, `openPush` for the notification extension; gateway PushObject deploy is non-rollbackable.                                                                                                                                                                                                                                                                 |
+| `@qntx/wallet-native/cloud` (`createICloudStore`, `createGoogleDriveStore`), `@qntx/wallet-engine` `createGoogleDriveCloudStore` | [`cloud-store.ts`](tests/migration/cloud-store.ts)                                                                                                                                                                                                 | Cloud backup transports and versioned backup files (§28); `CloudStore` drops `available()` — failures are typed `CloudStoreError`s.                                                                                                                                                                                                                                                                           |
+| `@qntx/wallet-engine/apps/fiat24`                                                                                                | [`fiat24-app.ts`](tests/migration/fiat24-app.ts)                                                                                                                                                                                                   | The Fiat24 app (§29): resumable flows, session and API reads; every write is one app-attributed request. Its REST API needs an injected `fetch` (no CORS).                                                                                                                                                                                                                                                    |
+| Signing plans (`plan*` / `assemble*`, `*/sign` task signers)                                                                     | [`signing-plans.ts`](tests/migration/signing-plans.ts)                                                                                                                                                                                             | For hosts driving an external digest signer. Software-wallet signatures are byte-identical.                                                                                                                                                                                                                                                                                                                   |
 
 ## 24. Hardware signers (Keystone 3 Pro over QR)
 
@@ -2061,5 +2093,140 @@ native groundwork, which a host app may still notice. Compiled snippet:
 2. **iOS**: CoreNFC is weak-linked, so apps without NFC keep loading. The NFC entitlement and
    `Info.plist` keys in the package README are needed only once card wallets ship.
 3. **`@qntx/wallet-native/secure-input`** (`SecureInput`) is experimental: its props and states may
-   change before card wallets ship. Never collect a card access code or short ID in a JS
-   `TextInput`.
+   change before card wallets ship. Never collect a card access code, a short ID or the backup password in a JS
+   `TextInput` — the kernel asks for the password through the same view (§8).
+
+## 31. Value-moving session keys are approved and metered
+
+A `hyperliquid-l1-agent` session key moves value without a per-order prompt, so the kernel bounds
+it:
+
+- `sessions.create` takes `limits` (`HyperliquidAgentLimits`) — the cumulative `notional` budget
+  as a positive decimal at most 1e15, the `maxLeverage` cap, and `assets`, an allow-list of 1–16
+  distinct ascending asset ids 0..99999 (builder-dex HIP-3 ids start at 100000 and stay out of
+  scope) — and a `verify` factor. The kernel's approval prompt states the budget, the cap and the
+  list.
+- The new `sessions.open(address, verify)` re-approves the recorded session after a lock: the
+  opened set lives only in kernel memory, so `sessions.sign` on an unopened session answers
+  `approval-required`.
+- Every signed order charges its price × size against `spent` before the signature returns — a
+  reduce-only order counts, the kernel has no position state to prove it. Past the budget, over
+  the leverage cap or outside the allow-list the answer is `limit-exceeded`; the charge is
+  persisted in the session record and survives restarts. `SessionInfo` gains `limits` and `spent`
+  (in the `SESSION_SPENT` grammar).
+- On React Native with the app lock off — the vault still holds its `device` factor — create,
+  open and sign all answer `app-lock-required`: a metered session cannot exist without the
+  lock-screen check.
+- `twapOrder` is not admitted (a TWAP's slices carry no price to meter); `trade.twap` and
+  `actions.twap` are gone (§13), `trade.twapCancel` stays.
+
+The engine path carries the same shape: `apps.controller.enable(group, "hyperliquid", input)` and
+renew take `{ limits, verify }` (`HyperliquidEnableInput`), and `HyperliquidProvider.reopen(group,
+verify)` runs `sessions.open` — the kernel prompt restates the limits and the remaining budget.
+Trading answers `reopen-required` while the session is unopened, and `app-lock-required` /
+`limit-exceeded` reach the host as the same-named `HyperliquidError` categories. The budget sums
+price × size in each market's own quote currency — spot ids are not quoted in USDC — so it is a
+bound on loss, not a USDC figure.
+
+[`tests/migration/session-metering.ts`](tests/migration/session-metering.ts):
+
+```ts
+/**
+ * Value-moving session keys are approved and metered (section 31): `sessions.create` and the new
+ * `sessions.open` take a `verify` factor, `create` takes the scheme's `limits`, `SessionInfo`
+ * reports `limits`/`spent`, and out-of-bounds or app-lock-less use answers `limit-exceeded` /
+ * `app-lock-required`. The engine's Hyperliquid `enable`/`renew` take `{ limits, verify }` and
+ * `provider.reopen(group, verify)` re-approves the agent after a lock; `trade.twap` /
+ * `actions.twap` are gone. Compiled only.
+ */
+import type { VerifyFactor, Wallet } from "@qntx/wallet";
+import { WalletError } from "@qntx/wallet";
+import type { AppsController } from "@qntx/wallet-engine/apps";
+import type {
+  HyperliquidGroup,
+  HyperliquidGroupState,
+  HyperliquidProvider,
+} from "@qntx/wallet-engine/apps/hyperliquid";
+import { HyperliquidError } from "@qntx/wallet-engine/apps/hyperliquid";
+import type { HyperliquidAgentLimits, SessionInfo } from "@qntx/wallet/sessions";
+import { sessions } from "@qntx/wallet/sessions";
+
+const LIMITS: HyperliquidAgentLimits = {
+  notional: "1000",
+  maxLeverage: 10,
+  assets: [0, 10_001],
+};
+
+/** Create approves the limits once; open re-approves the same limits after every lock. */
+export async function agentSession(wallet: Wallet, walletId: string): Promise<SessionInfo> {
+  const api = sessions(wallet);
+  const address = await api.create({
+    scheme: "hyperliquid-l1-agent",
+    owner: { walletId, groupIndex: 0 },
+    scope: "Mainnet",
+    name: "bot-1",
+    validUntil: Date.now() + 180 * 86_400_000,
+    limits: LIMITS,
+    verify: { kind: "hardware" },
+  });
+  // After a lock the opened set is empty: sign answers `approval-required` until `open`.
+  await api.open(address, { kind: "hardware" });
+  const all = await api.list();
+  const info = all.find((s) => s.supported && s.address === address);
+  if (info === undefined) {
+    throw new Error("the session is gone");
+  }
+  return info; // info.limits restates LIMITS; info.spent is the charged notional so far.
+}
+
+/** Map the metering refusals to UX. */
+export async function signWithinBudget(
+  wallet: Wallet,
+  address: string,
+  params: Parameters<ReturnType<typeof sessions>["sign"]>[0]["params"],
+): Promise<"signed" | "reopen" | "over" | "app-lock"> {
+  try {
+    await sessions(wallet).sign({ scheme: "hyperliquid-l1-agent", address, params });
+    return "signed";
+  } catch (error) {
+    if (error instanceof WalletError) {
+      if (error.code === "approval-required") {
+        return "reopen";
+      }
+      if (error.code === "limit-exceeded") {
+        return "over"; // renew with higher limits — never silently retry
+      }
+      if (error.code === "app-lock-required") {
+        return "app-lock"; // a `device`-factor vault cannot hold a metered session
+      }
+    }
+    throw error;
+  }
+}
+
+/**
+ * The engine path: `enable`/`renew` take the same `{ limits, verify }`, and `reopen` re-approves
+ * the agent in the kernel — the kernel's prompt restates the limits and the remaining budget.
+ */
+export async function enableAndReopen(
+  apps: AppsController<{ readonly hyperliquid: HyperliquidGroupState }>,
+  provider: HyperliquidProvider,
+  group: HyperliquidGroup,
+  verify: VerifyFactor,
+): Promise<void> {
+  await apps.enable(group, "hyperliquid", { limits: LIMITS, verify });
+  try {
+    await provider.reopen(group, verify);
+  } catch (error) {
+    if (error instanceof HyperliquidError && error.category === "app-lock-required") {
+      throw new Error("turn the app lock on first", { cause: error });
+    }
+    throw error;
+  }
+}
+
+/** Trading answers `reopen-required` while the session is unopened — call `reopen`, not enable. */
+export function isReopen(error: unknown): boolean {
+  return error instanceof HyperliquidError && error.category === "reopen-required";
+}
+```
