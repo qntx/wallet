@@ -19,6 +19,8 @@ type Completion = (
 /** The `__qntx.keystore` surface the native host injects. */
 export type KernelKeystoreNative = {
   readonly locale: string;
+  /** The OS the keystore's system prompt renders on. */
+  readonly platform: string;
   readonly seal: (
     id: string,
     secret: Uint8Array,
@@ -97,8 +99,12 @@ async function probeOf(start: (done: Completion) => void): Promise<boolean> {
 }
 
 export function bindNativeKeystore(raw: KernelKeystoreNative): Keystore {
+  if (raw.platform !== "ios" && raw.platform !== "android") {
+    throw new KernelError("integrity", `the platform keystore reported platform ${raw.platform}`);
+  }
   return {
     locale: raw.locale,
+    platform: raw.platform,
     seal: async (id, secret, use) =>
       bytesOf((done) => {
         if (use.protection === "presence") {

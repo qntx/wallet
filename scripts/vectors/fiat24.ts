@@ -257,7 +257,7 @@ const GRANT_EN =
 const GRANT_ZH =
   "这是一条 Fiat24 账户访问授权：过期前，任何持有此签名的人都能读取你的资料和卡信息，并修改卡、收款人和你的邮箱。钱包只对自行构造的授权签名。";
 const SES_POWER_EN =
-  "Until then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords";
+  "Until then, the holder can read your Fiat24 profile, contact data and card details, and create or change cards, payees and your email — the card one-time-password channel";
 const SES_POWER_ZH =
   "在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道";
 

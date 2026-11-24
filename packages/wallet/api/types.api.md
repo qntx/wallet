@@ -17,13 +17,13 @@ export type AutoLockPolicy = {
 export type BackupApi = {
     readonly enable: (options: {
         readonly verify: VerifyFactor;
-        readonly factors: ReadonlyArray<UnlockFactor>;
+        readonly factors: ReadonlyArray<BackupFactorInput>;
     }) => Promise<void>;
     readonly update: () => Promise<string>;
     readonly disable: (verify: VerifyFactor) => Promise<void>;
     readonly restore: (options: {
         readonly envelope: string;
-        readonly backupFactor: UnlockFactor;
+        readonly backupFactor: BackupFactorInput;
         readonly passphrases?: ReadonlyArray<{
             readonly walletId: string;
             readonly passphrase: string;
@@ -33,6 +33,14 @@ export type BackupApi = {
         readonly wallets: ReadonlyArray<VaultWalletInfo>;
         readonly passphraseRequired: ReadonlyArray<string>;
     }>;
+};
+
+// @public
+export type BackupFactorInput = {
+    readonly kind: "passkey";
+} | {
+    readonly kind: "password";
+    readonly password?: string;
 };
 
 // @public
@@ -250,7 +258,7 @@ export class WalletError extends Error {
 }
 
 // @public (undocumented)
-export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "crashed" | "device-required" | "device-locked" | "device-app-closed" | "device-rejected" | "wrong-device";
+export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "app-lock-required" | "limit-exceeded" | "crashed" | "device-required" | "device-locked" | "device-app-closed" | "device-rejected" | "wrong-device";
 
 // @public (undocumented)
 export type WalletInfo = VaultWalletInfo | HardwareWalletInfo;

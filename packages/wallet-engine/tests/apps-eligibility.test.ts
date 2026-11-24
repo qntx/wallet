@@ -5,7 +5,16 @@
  * refuse too (fail closed). `disable`/`cancel`/trading stay ungated: this is a UI boundary only.
  */
 import type { EligibilityResponse } from "../src/gateway/contract/eligibility.ts";
-import { describe, expect, finishFlow, it, swallow, until, world } from "./apps-helpers.ts";
+import {
+  describe,
+  expect,
+  finishFlow,
+  HL_ENABLE,
+  it,
+  swallow,
+  until,
+  world,
+} from "./apps-helpers.ts";
 
 const BLOCKED = (): EligibilityResponse => ({
   country: "US",
@@ -33,10 +42,10 @@ describe("apps eligibility", () => {
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
     /* A would-be "disabled" write under a ready-blocked jurisdiction reads `unavailable`. */
     expect(w.state()?.status).toBe("unavailable");
-    await expect(w.apps.enable(w.group, "hyperliquid")).rejects.toMatchObject({
+    await expect(w.apps.enable(w.group, "hyperliquid", HL_ENABLE)).rejects.toMatchObject({
       category: "unavailable",
     });
-    await expect(w.apps.renew(w.group, "hyperliquid")).rejects.toMatchObject({
+    await expect(w.apps.renew(w.group, "hyperliquid", HL_ENABLE)).rejects.toMatchObject({
       category: "unavailable",
     });
     await w.destroy();
@@ -54,7 +63,7 @@ describe("apps eligibility", () => {
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
     /* The overlay only applies under a ready answer — the group stays `disabled`. */
     expect(w.state()?.status).toBe("disabled");
-    await expect(w.apps.enable(w.group, "hyperliquid")).rejects.toMatchObject({
+    await expect(w.apps.enable(w.group, "hyperliquid", HL_ENABLE)).rejects.toMatchObject({
       category: "unavailable",
     });
     await w.destroy();
@@ -75,10 +84,10 @@ describe("apps eligibility", () => {
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
     /* An absent app is not `blocked` — the overlay does not apply, the group stays disabled. */
     expect(w.state()?.status).toBe("disabled");
-    await expect(w.apps.enable(w.group, "hyperliquid")).rejects.toMatchObject({
+    await expect(w.apps.enable(w.group, "hyperliquid", HL_ENABLE)).rejects.toMatchObject({
       category: "unavailable",
     });
-    await expect(w.apps.renew(w.group, "hyperliquid")).rejects.toMatchObject({
+    await expect(w.apps.renew(w.group, "hyperliquid", HL_ENABLE)).rejects.toMatchObject({
       category: "unavailable",
     });
     await w.destroy();
@@ -92,7 +101,7 @@ describe("apps eligibility", () => {
       },
     });
     expect(w.apps.getState().eligibility.status).toBe("error");
-    await expect(w.apps.enable(w.group, "hyperliquid")).rejects.toMatchObject({
+    await expect(w.apps.enable(w.group, "hyperliquid", HL_ENABLE)).rejects.toMatchObject({
       category: "unavailable",
     });
     await w.destroy();
@@ -116,7 +125,7 @@ describe("apps eligibility", () => {
   it("never overlays enabled groups — the user can still disable under blocked", async () => {
     const w = await world(0, { hl: { eligibility: AVAILABLE } });
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     await finishFlow(w, done, "enabled");
     /* The jurisdiction turns blocked afterwards: status stays enabled, disable still runs. */
     w.hl.eligibility = BLOCKED;
@@ -179,7 +188,7 @@ describe("apps eligibility", () => {
     eligibility = AVAILABLE;
     await w.apps.refreshEligibility();
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const started = w.apps.enable(w.group, "hyperliquid");
+    const started = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     void swallow(started);
     await until(() => w.state()?.requestId !== undefined);
     await w.apps.cancel(w.group, "hyperliquid");
@@ -191,7 +200,7 @@ describe("apps eligibility", () => {
   it("a running flow isolates per group+app — the sibling is neither busy nor staled", async () => {
     const w = await world(0, { polymarket: {}, hl: { eligibility: AVAILABLE } });
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const started = w.apps.enable(w.group, "hyperliquid");
+    const started = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     void swallow(started);
     /* Parked at the approval request — a group-keyed `busy` would refuse the other app's flow. */
     await until(() => w.state()?.requestId !== undefined);

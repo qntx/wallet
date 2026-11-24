@@ -15,6 +15,7 @@ npm install @qntx/wallet @qntx/wallet-worker
 ## Usage
 
 ```ts
+import { verifyEvent } from "@qntx/nostr";
 import { createWebWallet } from "@qntx/wallet-worker/browser";
 
 const wallet = await createWebWallet({
@@ -76,7 +77,7 @@ prompts. `@qntx/ur` is an optional peer required only by this subpath.
 
 `getSnapshot` and `subscribe` are bound properties, safe to pass unbound:
 
-```tsx
+```jsx
 import { useSyncExternalStore } from "react";
 
 const snapshot = useSyncExternalStore(wallet.subscribe, wallet.getSnapshot);
@@ -174,9 +175,11 @@ React Native the device owner proves presence before anything is erased.
   `nostr(wallet).removeKey` drops one. `nostr.exportKey` re-verifies on every call, and the
   `ncryptsec` export always carries NIP-49 key-security byte `0x02` at scrypt logN 16.
 - Cloud-backup envelopes leave the device, so the backup password is stretched with Argon2id
-  (64 MiB, 3 passes, 4 lanes) and must be at least 12 characters. `backup.restore` adopts the
-  file's backup key only when the restore establishes the vault through a kernel-run passkey
-  ceremony (React Native); every other restore leaves backup off until it is enabled again.
+  (64 MiB, 3 passes, 4 lanes) and must be at least 12 characters. On React Native the kernel
+  collects the backup password through its own secure input — the main runtime never holds it.
+  `backup.restore` adopts the file's backup key when the restore establishes the vault through a
+  kernel-run ceremony (React Native passkey or kernel-entered password); every other restore
+  leaves backup off until it is enabled again.
 - Requests are capped at 1 MiB on both sides of the channel; larger calls fail `invalid-input`
   without reaching the kernel.
 - `dist/kernel.manifest.json` in `@qntx/wallet-worker` records the protocol version, vault

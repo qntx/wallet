@@ -304,6 +304,30 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
     },
   },
   {
+    name: "backup.enable-kernel-password",
+    message: {
+      v: 3,
+      id: 14,
+      method: "backup.enable",
+      params: {
+        verify: hardwareFactor,
+        factors: [{ kind: "password", ceremony: "kernel" }],
+      },
+    },
+  },
+  {
+    name: "backup.restore-kernel-password",
+    message: {
+      v: 3,
+      id: 15,
+      method: "backup.restore",
+      params: {
+        envelope: "{}",
+        backupFactor: { kind: "password", ceremony: "kernel" },
+      },
+    },
+  },
+  {
     name: "wallet.importMnemonic",
     message: {
       v: 3,

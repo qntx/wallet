@@ -79,6 +79,9 @@ describe("jupiter decode", () => {
     const intent = decode();
     expect(intent.summary).toBe(vector.expected.summary);
     expect(intent.verifiability).toBe(vector.expected.verifiability);
+    /* The recorded /build message resolves the route's mints through the declared table — named
+       accounts are unverifiable, so the whole intent is blind. */
+    expect(intent.blind).toBe("lookup-table-account");
     expect(intent.outflows).toStrictEqual(vector.expected.outflows);
     expect(intent.minimumReceived).toStrictEqual(vector.expected.minimumReceived);
     expect(intent.warnings).toStrictEqual([]);

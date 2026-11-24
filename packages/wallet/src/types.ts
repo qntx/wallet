@@ -94,6 +94,8 @@ export type WalletErrorCode =
   | "integrity"
   | "blind-signing-disabled"
   | "approval-required"
+  | "app-lock-required"
+  | "limit-exceeded"
   | "crashed"
   | "device-required"
   | "device-locked"
@@ -103,8 +105,11 @@ export type WalletErrorCode =
 
 /**
  * The vault half of the status payload: `corrupted` means authentication or structural data failed
- * to verify, `unsupported` means a newer build wrote it (data untouched, update the app),
- * `unavailable` means a transient store I/O failure (retried on the next request or change).
+ * to verify, `unsupported` means a different build wrote it — a newer one, or (before 1.0) an older
+ * one whose format this build never read; the data is left untouched either way — a newer build's
+ * vault reads again once the app is updated, while a pre-1.0 older format has no reader here and
+ * the only way out is the explicit `vault.reset`. `unavailable` means a transient store I/O failure
+ * (retried on the next request or change).
  */
 export type VaultState =
   | "uninitialized"
@@ -181,6 +186,15 @@ export type UnlockFactor =
  * user presence.
  */
 export type VerifyFactor = Exclude<UnlockFactor, { readonly kind: "device" }>;
+
+/**
+ * A cloud-backup factor. On React Native the kernel collects the backup password through its own
+ * secure input — pass `{ kind: "password" }` there and the user types it into the trusted field; a
+ * `password` string is `unsupported`. On the web the password is required.
+ */
+export type BackupFactorInput =
+  | { readonly kind: "passkey" }
+  | { readonly kind: "password"; readonly password?: string };
 
 /**
  * A factor being created; `name` is the passkey credential's display name — the host validates it
@@ -343,13 +357,14 @@ export type DataKeyApi = {
  * Cloud-backup entry points. `enable` re-verifies and retains a fresh BEK in the vault; `update`
  * rewrites the sealed envelope JSON with the retained BEK (no factor ceremony, so an auto-sync can
  * run silently); `disable` re-verifies and drops the retained BEK; `restore` merges an envelope
- * into the vault. Factor inputs reuse `UnlockFactor` — passkey assertions evaluate the PRF over
- * `backupSalt`.
+ * into the vault. Factor inputs are `BackupFactorInput` — passkey assertions evaluate the PRF over
+ * `backupSalt`; on React Native a password factor carries no string, the kernel collects it through
+ * its secure input.
  */
 export type BackupApi = {
   readonly enable: (options: {
     readonly verify: VerifyFactor;
-    readonly factors: ReadonlyArray<UnlockFactor>;
+    readonly factors: ReadonlyArray<BackupFactorInput>;
   }) => Promise<void>;
   readonly update: () => Promise<string>;
   readonly disable: (verify: VerifyFactor) => Promise<void>;
@@ -359,7 +374,7 @@ export type BackupApi = {
    */
   readonly restore: (options: {
     readonly envelope: string;
-    readonly backupFactor: UnlockFactor;
+    readonly backupFactor: BackupFactorInput;
     readonly passphrases?: ReadonlyArray<{
       readonly walletId: string;
       readonly passphrase: string;

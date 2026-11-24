@@ -3,7 +3,7 @@
  * their own module so provider modules and `apps/controller.ts` do not import each other. See
  * design.md §公开类型 / §启用状态机.
  */
-import type { Wallet } from "@qntx/wallet";
+import type { VerifyFactor, Wallet } from "@qntx/wallet";
 
 import type { EngineLogger } from "../events.ts";
 import type { AppAvailability, EligibilityResponse } from "../gateway/contract/eligibility.ts";
@@ -160,17 +160,22 @@ export type AppProvider<D extends AppDetail = Record<never, never>> = {
   readonly groups: () => Promise<ReadonlyArray<AppGroup>>;
   /** Re-derive the group's app state from kernel state and the app's own reads. */
   readonly reconcile: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
-  /** Run or resume the enable flow to `enabled`, or leave a resumable `enabling`/error state. */
-  readonly enable: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
+  /**
+   * Run or resume the enable flow to `enabled`, or leave a resumable `enabling`/error state.
+   * `input` is the app's enable input the host passed to `AppsController.enable` — each app
+   * validates it strictly (a session-scheme app takes the session limits and a verify factor).
+   */
+  readonly enable: (group: AppGroup, flow: AppFlow<D>, input: unknown) => Promise<void>;
   /** Enable a fresh credential/agent, then drop the old one — the old stays usable until then. */
-  readonly renew: (group: AppGroup, flow: AppFlow<D>) => Promise<void>;
+  readonly renew: (group: AppGroup, flow: AppFlow<D>, input: unknown) => Promise<void>;
   /**
    * Stop trading (the app's credentials deleted first); `revoke` also asks the app to invalidate
-   * them server-side.
+   * them server-side. An app whose revoke ceremony creates a kernel credential reads `verify` — the
+   * same factor `enable` takes.
    */
   readonly disable: (
     group: AppGroup,
-    options: { readonly revoke: boolean },
+    options: { readonly revoke: boolean; readonly verify?: VerifyFactor },
     flow: AppFlow<D>,
   ) => Promise<void>;
   /** Abandon an in-flight flow: reject its request, clean orphans, back to `disabled`. */

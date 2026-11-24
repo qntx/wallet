@@ -20,6 +20,7 @@ import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
 import type { KeystoreCall } from "./keystore.ts";
+import { fakeSecureInput } from "./secure-input.ts";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -219,13 +220,7 @@ describe("no verifying factor", () => {
       ["keys.export", { verify: HARDWARE, keyId }],
       ["keys.remove", { verify: HARDWARE, keyId }],
       ["nostr.exportKey", { verify: HARDWARE, publicKey, format: { kind: "nsec" } }],
-      [
-        "backup.enable",
-        {
-          verify: HARDWARE,
-          factors: [{ kind: "password", password: utf8ToBytes("backup password") }],
-        },
-      ],
+      ["backup.enable", { verify: HARDWARE, factors: [{ kind: "password", ceremony: "kernel" }] }],
       ["backup.disable", { verify: HARDWARE }],
       ["vault.setAppLock", { enabled: true, verify: HARDWARE }],
     ];
@@ -241,15 +236,15 @@ describe("no verifying factor", () => {
 describe("backup.disable", () => {
   it("re-verifies with hardware and drops the retained backup key in one ceremony", async () => {
     const fake = fakeKeystore();
-    const h = createHarness({ keystore: fake.keystore });
+    const input = fakeSecureInput();
+    const h = createHarness({ keystore: fake.keystore, secureInput: input.secureInput });
     const { session } = await establish(h);
+    input.answer(utf8ToBytes("backup password for the kernel ceremony"));
+    input.answer(utf8ToBytes("backup password for the kernel ceremony"));
     ok(
       await h.call(
         "backup.enable",
-        {
-          verify: HARDWARE,
-          factors: [{ kind: "password", password: utf8ToBytes("backup password") }],
-        },
+        { verify: HARDWARE, factors: [{ kind: "password", ceremony: "kernel" }] },
         session,
       ),
     );

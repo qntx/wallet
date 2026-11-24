@@ -261,6 +261,12 @@ describe("sessions parser fuzz", () => {
           scope: "Mainnet",
           name: "fuzz",
           validUntil: h.wallNow() + 86_400_000,
+          limits: { notional: "1000000000", maxLeverage: 100, assets: [0, 1] },
+          verify: {
+            kind: "passkey",
+            credentialId: new TextEncoder().encode("fuzz-credential"),
+            prf: new Uint8Array(32).fill(1),
+          },
         },
         session,
       );

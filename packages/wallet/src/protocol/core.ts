@@ -99,12 +99,21 @@ type HostBackupPasskey = {
 };
 
 /**
+ * The backup password arm: the wire carries the bytes only on hosts without a keystore — on React
+ * Native the kernel collects the password through its secure input (`kernel`), so the main runtime
+ * never holds it.
+ */
+export type BackupPasswordFactor =
+  | { readonly kind: "password"; readonly password: Uint8Array }
+  | { readonly kind: "password"; readonly ceremony: "kernel" };
+
+/**
  * A factor that seals a new backup key. On React Native the kernel registers a protection
  * credential (`kernel`) itself and names it; on the web the host hands over its ceremony's
  * evidence.
  */
 export type BackupFactor =
-  | { readonly kind: "password"; readonly password: Uint8Array }
+  | BackupPasswordFactor
   | HostBackupPasskey
   | {
       readonly kind: "passkey";
@@ -119,7 +128,7 @@ export type BackupFactor =
  * credentials.
  */
 export type BackupUnlockFactor =
-  | { readonly kind: "password"; readonly password: Uint8Array }
+  | BackupPasswordFactor
   | HostBackupPasskey
   | {
       readonly kind: "passkey";
@@ -219,7 +228,10 @@ const hostBackupPasskey = obj({
   credentialId: bytes(1, 1023),
   prfBackup: bytes(32),
 });
-const backupPassword = obj({ kind: literal("password"), password: bytes(1, 1024) });
+const backupPassword = union(
+  obj({ kind: literal("password"), password: bytes(1, 1024) }),
+  obj({ kind: literal("password"), ceremony: literal("kernel") }),
+);
 
 export const backupFactor: Validator<BackupFactor> = union(
   backupPassword,
@@ -296,6 +308,8 @@ export const walletErrorCode: Validator<WalletErrorCode> = union(
   literal("unavailable"),
   literal("integrity"),
   literal("approval-required"),
+  literal("app-lock-required"),
+  literal("limit-exceeded"),
   literal("crashed"),
   literal("device-required"),
   literal("device-locked"),

@@ -93,6 +93,8 @@ describe("sessions subpath on the node host", () => {
       scope: "Mainnet",
       name: "bot-1",
       validUntil,
+      limits: { notional: "1000000000", maxLeverage: 100, assets: [1] },
+      verify: { kind: "password", password: PASSWORD },
     });
     expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
 

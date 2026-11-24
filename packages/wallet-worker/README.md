@@ -17,6 +17,7 @@ npm install @qntx/wallet-worker @qntx/wallet
 `@qntx/wallet-worker/browser`:
 
 ```ts
+import { verifyEvent } from "@qntx/nostr";
 import { createWebWallet } from "@qntx/wallet-worker/browser";
 
 const wallet = await createWebWallet({
@@ -47,7 +48,11 @@ in-memory vault store. `createSoftwarePasskey(seed)` is a **test-only** WebAuthn
 deterministic, no authenticator, anyone holding the seed owns the wallet:
 
 ```ts
+import { verifyEvent } from "@qntx/nostr";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
+
+// The deterministic seed behind the software passkey — test/dev hosts only.
+declare const seed: Uint8Array;
 
 const wallet = await createNodeWallet({
   passkey: {

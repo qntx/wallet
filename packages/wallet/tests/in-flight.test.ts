@@ -131,6 +131,8 @@ describe("sessions methods ride the channel", () => {
     name: "bot-1",
     validUntil: 1_812_902_400_000,
     createdAt: 1_812_902_400_000,
+    limits: { notional: "10000", maxLeverage: 25, assets: [0, 1] },
+    spent: "0",
   };
 
   it("posts sessions.list as a plain method and validates the result", async () => {

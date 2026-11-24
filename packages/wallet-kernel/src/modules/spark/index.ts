@@ -14,8 +14,9 @@ import type {
 import type { Handler, KernelContext, VaultHooks } from "../../commands/context.ts";
 import { withWalletSeed } from "../../commands/vault.ts";
 import { KernelError } from "../../errors.ts";
-import { promptLocale } from "../../prompts.ts";
+import { PROMPT_BOUNDS, promptLocale } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
+import { BLIND_SIGNING, policyEnabled } from "../../vault/policy.ts";
 import type { StoredRecord } from "../../vault/store.ts";
 import { findSeedWallet, verifyFactor } from "../../vault/vault.ts";
 /**
@@ -25,6 +26,7 @@ import { findSeedWallet, verifyFactor } from "../../vault/vault.ts";
  * loaded on first use only, so a nostr-only session never touches wasm; a WasmPoisonedError drops
  * the instance and every signer built on it, and the next call reloads.
  */
+import { boundPrompt } from "../chains/prompt.ts";
 import { sparkPrompt } from "./prompt.ts";
 import { loadSparkRuntime } from "./runtime.ts";
 import type { SparkRuntime } from "./runtime.ts";
@@ -553,8 +555,24 @@ const sparkApprove = async (
     params.account,
     params.intent,
   );
+  /* A keystore host shows this prompt, so it is rendered and bounded before the factor check: an
+     approval with enough receivers to overflow the dialog counts as blind. Hosts without a
+     keystore show no kernel text and keep the lazy render. */
+  const { keystore } = ctx.platform;
+  const shown =
+    keystore === undefined
+      ? undefined
+      : boundPrompt(
+          promptLocale(keystore.locale),
+          sparkPrompt(promptLocale(keystore.locale), summary),
+          PROMPT_BOUNDS[keystore.platform],
+        );
+  if (shown?.oversize === true && !policyEnabled(ctx.image, dek, BLIND_SIGNING)) {
+    throw new KernelError("blind-signing-disabled", "blind signing is turned off for this vault");
+  }
+  const locale = promptLocale(ctx.platform.keystore?.locale ?? "en");
   await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () =>
-    sparkPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), summary),
+    shown === undefined ? sparkPrompt(locale, summary) : shown.prompt,
   );
   // Re-check after the prompt: the session may have ended and approvals may have expired or
   // been added meanwhile.

@@ -119,7 +119,7 @@ export const associatedTokenAddress: (owner: string, mint: string, tokenProgram:
 type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
-type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination" | "fiat24-function" | "fiat24-session-grant";
+type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction" | "program-authority" | "lookup-table-account" | "tron-contract" | "tron-field" | "tron-permission-update" | "cctp-destination" | "fiat24-function" | "fiat24-session-grant";
 
 // @public (undocumented)
 type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
@@ -139,13 +139,10 @@ type CoreTransfer = {
 };
 
 // @public
-export const decodeCoreIx: (parsed: ParsedSolanaMessage, ix: {
+export const decodeCoreIx: (ix: {
     readonly accountIndices: ReadonlyArray<number>;
     readonly data: Uint8Array;
-}, lookups: ReadonlyArray<{
-    address: string;
-    addresses: ReadonlyArray<string>;
-}> | undefined) => CoreTransfer | undefined;
+}, named: NamedAccounts) => CoreTransfer | undefined;
 
 // @public (undocumented)
 export const decodeSolana: (request: Extract<SignRequest, {
@@ -457,6 +454,18 @@ export type MintExtensionSummary = {
 
 // @public
 export const MPL_CORE_PROGRAM = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d";
+
+// @public
+export type NamedAccounts = {
+    readonly at: (index: number) => string | undefined;
+    readonly fromTable: ReadonlySet<string>;
+};
+
+// @public
+export const namedTableAccounts: (parsed: ParsedSolanaMessage, lookups: ReadonlyArray<{
+    address: string;
+    addresses: ReadonlyArray<string>;
+}> | undefined) => ReadonlyArray<string>;
 
 // @public
 export const netAfterTransferFee: (amount: bigint, bps: number, max: bigint) => bigint;

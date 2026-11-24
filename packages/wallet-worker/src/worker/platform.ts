@@ -6,7 +6,15 @@ import { subtlePbkdf2 } from "./subtle.ts";
 
 export const basePlatform = (): Pick<
   KernelPlatform,
-  "random" | "now" | "elapsed" | "setTimer" | "pbkdf2" | "argon2id" | "keystore" | "passkey"
+  | "random"
+  | "now"
+  | "elapsed"
+  | "setTimer"
+  | "pbkdf2"
+  | "argon2id"
+  | "keystore"
+  | "passkey"
+  | "secureInput"
 > => ({
   random: (length) => crypto.getRandomValues(new Uint8Array(length)),
   now: () => Date.now(),
@@ -21,4 +29,5 @@ export const basePlatform = (): Pick<
   argon2id: nobleArgon2id,
   keystore: undefined,
   passkey: undefined,
+  secureInput: undefined,
 });

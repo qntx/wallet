@@ -13,13 +13,13 @@ import { HyperliquidNetwork } from '@qntx/wallet-chains/evm';
 type BackupApi = {
     readonly enable: (options: {
         readonly verify: VerifyFactor;
-        readonly factors: ReadonlyArray<UnlockFactor>;
+        readonly factors: ReadonlyArray<BackupFactorInput>;
     }) => Promise<void>;
     readonly update: () => Promise<string>;
     readonly disable: (verify: VerifyFactor) => Promise<void>;
     readonly restore: (options: {
         readonly envelope: string;
-        readonly backupFactor: UnlockFactor;
+        readonly backupFactor: BackupFactorInput;
         readonly passphrases?: ReadonlyArray<{
             readonly walletId: string;
             readonly passphrase: string;
@@ -29,6 +29,14 @@ type BackupApi = {
         readonly wallets: ReadonlyArray<VaultWalletInfo>;
         readonly passphraseRequired: ReadonlyArray<string>;
     }>;
+};
+
+// @public
+type BackupFactorInput = {
+    readonly kind: "passkey";
+} | {
+    readonly kind: "password";
+    readonly password?: string;
 };
 
 // @public
@@ -92,6 +100,13 @@ type HardwareWalletInfo = {
     readonly createdAt: number;
 };
 
+// @public
+export type HyperliquidAgentLimits = {
+    readonly notional: string;
+    readonly maxLeverage: number;
+    readonly assets: ReadonlyArray<number>;
+};
+
 export { HyperliquidL1Action }
 
 export { HyperliquidL1Order }
@@ -153,6 +168,14 @@ type NostrKeyRef = {
 };
 
 // @public (undocumented)
+type NullValue = null;
+
+// @public (undocumented)
+type ProtocolValue = NullValue | boolean | number | string | Uint8Array | ReadonlyArray<ProtocolValue> | {
+    readonly [key: string]: ProtocolValue;
+};
+
+// @public (undocumented)
 export type SessionInfo = {
     readonly address: string;
     readonly scheme: string;
@@ -164,6 +187,8 @@ export type SessionInfo = {
     readonly name: string;
     readonly validUntil: number;
     readonly createdAt: number;
+    readonly limits: ProtocolValue;
+    readonly spent: string;
 };
 
 // @public (undocumented)
@@ -180,8 +205,11 @@ export type SessionsApi = {
         readonly scope: SessionSchemes[K]["scope"];
         readonly name: string;
         readonly validUntil: number;
+        readonly limits: SessionSchemes[K]["limits"];
+        readonly verify: VerifyFactor;
     }) => Promise<string>;
     readonly list: () => Promise<ReadonlyArray<SessionInfo>>;
+    readonly open: (address: string, verify: VerifyFactor) => Promise<void>;
     readonly delete: (address: string) => Promise<void>;
     readonly sign: <K extends SessionSchemeId>(params: {
         readonly scheme: K;
@@ -198,6 +226,7 @@ export type SessionSchemes = {
     readonly "hyperliquid-l1-agent": {
         readonly scope: HyperliquidNetwork;
         readonly params: HyperliquidL1Params;
+        readonly limits: HyperliquidAgentLimits;
     };
 };
 

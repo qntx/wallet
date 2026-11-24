@@ -11,7 +11,7 @@ import type { HyperliquidAccount } from "./account.ts";
 import type { HyperliquidAgent, HyperliquidAgentRegistry, HyperliquidGroup } from "./agents.ts";
 import { MAX_SKEW_MS } from "./clock.ts";
 import type { HyperliquidClock } from "./clock.ts";
-import { HyperliquidError } from "./errors.ts";
+import { HyperliquidError, SESSION_ERRORS } from "./errors.ts";
 import type { HyperliquidMarkets } from "./markets.ts";
 
 /** Why Hyperliquid refused an order — the docs error table plus the wire status names. */
@@ -576,24 +576,23 @@ export function createHyperliquidExchange(options: {
       });
     } catch (error) {
       if (error instanceof WalletError) {
-        if (error.code === "locked") {
-          throw new HyperliquidError("unlock-required", "the vault is locked", error);
-        }
         if (
           error.code === "not-found" ||
           (error.code === "invalid-input" && options.now() >= agent.validUntil)
         ) {
           options.registry.markRejected(agent.address);
-          throw new HyperliquidError(
-            "reauthorization-required",
-            "the agent is gone or expired",
-            error,
-          );
+          throw new HyperliquidError("reauthorization-required", "the agent is gone", error);
         }
         /* `invalid-input` while the agent still looks valid is a nonce-window or malformed-action
            rejection — a clock fault or a builder bug, never an agent fault worth latching. */
         if (error.code === "invalid-input") {
-          throw new HyperliquidError("invalid-input", "the kernel rejected the request", error);
+          throw new HyperliquidError("invalid-input", "kernel rejected", error);
+        }
+        /* `approval-required` means the lock cleared the opened mark — the host re-approves
+           with `reopen`, never by re-enabling. */
+        const mapped = SESSION_ERRORS[error.code];
+        if (mapped) {
+          throw new HyperliquidError(mapped[0], mapped[1], error);
         }
       }
       throw new HyperliquidError("unavailable", "the wallet failed to sign", error);

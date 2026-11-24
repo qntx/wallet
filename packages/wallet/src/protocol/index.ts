@@ -296,6 +296,7 @@ export const responseError: Validator<{
 }> = errorPayload;
 
 export { NOSTR_METHODS, SESSIONS_METHODS, SPARK_METHODS, HARDWARE_METHODS };
+export { SESSION_SPENT } from "./sessions.ts";
 export type {
   DeviceDisplay,
   DeviceRequest,
@@ -307,6 +308,7 @@ export type {
   QrPayload,
 } from "./hardware.ts";
 export type {
+  HyperliquidAgentLimits,
   HyperliquidL1Action,
   HyperliquidL1Order,
   HyperliquidL1Params,

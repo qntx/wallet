@@ -4,7 +4,7 @@
  * lock/unlock; and the serialized lock lifecycle from engine.ts (`transition`/`schedule` on
  * `wallet.subscribe`) drives every app's `unlock`/`lock`/`close` hooks.
  */
-import type { Wallet } from "@qntx/wallet";
+import type { VerifyFactor, Wallet } from "@qntx/wallet";
 
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
@@ -474,20 +474,20 @@ export class AppsController<G extends AppGroups = AppGroups> extends Controller<
     }
   }
 
-  async enable(group: AppGroup, app: Extract<keyof G, string>): Promise<void> {
+  async enable(group: AppGroup, app: Extract<keyof G, string>, input?: unknown): Promise<void> {
     this.requireAvailable(app);
-    await this.flow(group, app, async (provider, view) => provider.enable(group, view));
+    await this.flow(group, app, async (provider, view) => provider.enable(group, view, input));
   }
 
-  async renew(group: AppGroup, app: Extract<keyof G, string>): Promise<void> {
+  async renew(group: AppGroup, app: Extract<keyof G, string>, input?: unknown): Promise<void> {
     this.requireAvailable(app);
-    await this.flow(group, app, async (provider, view) => provider.renew(group, view));
+    await this.flow(group, app, async (provider, view) => provider.renew(group, view, input));
   }
 
   async disable(
     group: AppGroup,
     app: Extract<keyof G, string>,
-    options: { revoke: boolean },
+    options: { readonly revoke: boolean; readonly verify?: VerifyFactor },
   ): Promise<void> {
     await this.flow(group, app, async (provider, view) => provider.disable(group, options, view));
   }

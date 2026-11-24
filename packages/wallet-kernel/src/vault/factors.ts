@@ -75,9 +75,13 @@ const BACKUP_PASSWORD_MIN = 12;
  * Policy for a backup password, at creation only: at least 12 Unicode code points after NFKC. The
  * envelope leaves the device, so unlike a vault password its guesses are never rate limited.
  */
-export function assertBackupPasswordPolicy(password: Uint8Array): void {
+export function backupPasswordTooShort(password: Uint8Array): boolean {
   // oxlint-disable-next-line typescript/no-misused-spread -- counts Unicode code points of the NFKC password
-  if ([...decodePassword(password)].length < BACKUP_PASSWORD_MIN) {
+  return [...decodePassword(password)].length < BACKUP_PASSWORD_MIN;
+}
+
+export function assertBackupPasswordPolicy(password: Uint8Array): void {
+  if (backupPasswordTooShort(password)) {
     throw new KernelError("invalid-input", "backup password must be at least 12 characters");
   }
 }

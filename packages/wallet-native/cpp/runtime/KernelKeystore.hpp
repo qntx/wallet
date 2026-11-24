@@ -11,6 +11,7 @@ struct KernelGlobalsState;
 // Installs the frozen `keystore` object on `__qntx` before the caller freezes
 // it:
 //   locale                                        platform language (BCP 47)
+//   platform                                      "ios" | "android"
 //   seal(id, secret, title, description, done)    done(sealed | undefined, code | undefined)
 //   open(id, sealed, title, description, done)    done(kek | undefined, code | undefined)
 //   authenticate(title, description, done)        done(undefined, code | undefined)

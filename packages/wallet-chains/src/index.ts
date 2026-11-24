@@ -233,6 +233,10 @@ export type BlindReason =
   // on cannot be listed — writable addresses loaded from lookup tables, or more than
   // PROGRAM_AUTHORITY_ACCOUNTS
   | "program-authority"
+  // an account the decoded Solana intent names to the user — recipient, owner, authority,
+  // delegate, mint, stake or vote account — resolves through caller-supplied lookup-table
+  // contents the signer cannot verify
+  | "lookup-table-account"
   // a TRON contract type the wallet does not describe (unsupported or unknown enum value)
   | "tron-contract"
   // TRON raw/contract/value fields the decoder cannot bound, or an enum out of the modeled range

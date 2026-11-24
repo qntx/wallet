@@ -1,8 +1,7 @@
 import { getU32Decoder, getU64Decoder } from "@solana/codecs";
 
 import { associatedTokenAddress } from "./ata.ts";
-import type { ParsedSolanaMessage } from "./message.ts";
-import { resolveAccountIndex } from "./message.ts";
+import type { NamedAccounts } from "./message.ts";
 
 /** Raydium AMM v4 — raydium-io/raydium-amm program/src/lib.rs declare_id! */
 export const RAYDIUM_AMM_PROGRAM = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
@@ -58,15 +57,14 @@ export type AmmSwap = {
  * v4 token program — returns undefined and falls back to the program-authority rule.
  */
 export const decodeAmmSwapIx = (
-  parsed: ParsedSolanaMessage,
   ix: { readonly accountIndices: ReadonlyArray<number>; readonly data: Uint8Array },
-  lookups: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }> | undefined,
+  named: NamedAccounts,
   program: string,
 ): AmmSwap | undefined => {
   const { data } = ix;
   const account = (i: number): string | undefined => {
     const index = ix.accountIndices[i];
-    return index === undefined ? undefined : resolveAccountIndex(parsed, index, lookups);
+    return index === undefined ? undefined : named.at(index);
   };
 
   if (program === RAYDIUM_AMM_PROGRAM) {

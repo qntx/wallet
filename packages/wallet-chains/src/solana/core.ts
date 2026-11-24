@@ -1,5 +1,4 @@
-import type { ParsedSolanaMessage } from "./message.ts";
-import { resolveAccountIndex } from "./message.ts";
+import type { NamedAccounts } from "./message.ts";
 
 /** Metaplex Core — recognised by program id; the transfer authority is verified on-chain. */
 export const MPL_CORE_PROGRAM = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d";
@@ -23,14 +22,13 @@ export type CoreTransfer = {
  * call to count as a transfer the wallet is doing.
  */
 export const decodeCoreIx = (
-  parsed: ParsedSolanaMessage,
   ix: { readonly accountIndices: ReadonlyArray<number>; readonly data: Uint8Array },
-  lookups: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }> | undefined,
+  named: NamedAccounts,
 ): CoreTransfer | undefined => {
   const { data } = ix;
   const account = (i: number): string | undefined => {
     const index = ix.accountIndices[i];
-    return index === undefined ? undefined : resolveAccountIndex(parsed, index, lookups);
+    return index === undefined ? undefined : named.at(index);
   };
   /* Data must be exactly [14, 0] — a compression-proof transfer carries a proof blob. */
   if (data.length !== 2 || data[0] !== TRANSFER_V1[0] || data[1] !== TRANSFER_V1[1]) {

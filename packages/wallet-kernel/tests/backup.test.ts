@@ -18,7 +18,7 @@ import { createHarness, seededRandom } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { backupPayloadContext, loadVectors, quickArgon2id, realArgon2id } from "./helpers.ts";
 import { fakeKeystore } from "./keystore.ts";
-import type { KeystoreCall } from "./keystore.ts";
+import { fakeSecureInput } from "./secure-input.ts";
 
 const CREDENTIAL_ID = utf8ToBytes("credential-1");
 const PRF_VAULT = hexToBytes("11".repeat(32));
@@ -858,9 +858,6 @@ describe("backup enable/update/disable", () => {
   });
 });
 
-const isPresenceOpen = (call: KeystoreCall): boolean =>
-  call.op === "open" && call.protection === "presence";
-
 describe("establishing restore and the envelope's backup key", () => {
   const RP = { rpId: "wallet-harness.qntx.org", rpName: "Harness" };
   const BACKUP_SALT = "harness/backup/v1";
@@ -884,14 +881,15 @@ describe("establishing restore and the envelope's backup key", () => {
   };
 
   const nativeHarness = (seed: number) => {
-    const keystore = fakeKeystore();
+    const input = fakeSecureInput();
     const h = createHarness({
       seed,
-      keystore: keystore.keystore,
+      keystore: fakeKeystore().keystore,
       passkey: ownerAuthenticator(),
+      secureInput: input.secureInput,
       noIdle: true,
     });
-    return { h, keystore };
+    return { h, input };
   };
 
   const restoreOnDevice = async (h: Harness, envelope: string, backupFactor: unknown) => {
@@ -926,7 +924,7 @@ describe("establishing restore and the envelope's backup key", () => {
   };
 
   it("adopts it when a kernel passkey ceremony unwrapped the envelope", async () => {
-    const { h: a } = nativeHarness(110);
+    const { h: a, input } = nativeHarness(110);
     await a.settle();
     const created = ok(
       await a.call("wallet.importMnemonic", {
@@ -935,12 +933,17 @@ describe("establishing restore and the envelope's backup key", () => {
       }),
     );
     const aSession = strField(created, "session");
+    input.answer(new Uint8Array(PASSWORD));
+    input.answer(new Uint8Array(PASSWORD));
     ok(
       await a.call(
         "backup.enable",
         {
           verify: { kind: "hardware" },
-          factors: [{ ...kernelBackupPasskey, backupSalt: BACKUP_SALT }, backupPassword()],
+          factors: [
+            { ...kernelBackupPasskey, backupSalt: BACKUP_SALT },
+            { kind: "password", ceremony: "kernel" },
+          ],
         },
         aSession,
       ),
@@ -1027,9 +1030,11 @@ describe("establishing restore and the envelope's backup key", () => {
     expect(errCode(await b.call("backup.update", null, bSession))).toBe("not-found");
   });
 
-  it("leaves backup off when a password unwrapped the envelope on React Native", async () => {
-    // The password reached the kernel over the wire: the main runtime could have minted this
-    // empty envelope around a password of its own.
+  it("adopts it when a kernel-entered password unwrapped the envelope on React Native", async () => {
+    // A wire password is refused on a keystore host — the main runtime cannot mint a
+    // password factor around an envelope of its own, so the forged-envelope path that
+    // forced "leaves backup off" is closed. A kernel-entered password proves the user
+    // typed it, so an establishing restore may adopt the BEK.
     const attackerPassword = () => ({
       kind: "password" as const,
       password: utf8ToBytes("attacker-backup-pw-123"),
@@ -1051,11 +1056,27 @@ describe("establishing restore and the envelope's backup key", () => {
       "envelope",
     );
 
-    const { h: victim, keystore } = nativeHarness(114);
-    const session = await restoreOnDevice(victim, forged, attackerPassword());
-    await expect(statusBackup(victim, session)).resolves.toBeNull();
+    const { h: victim, input } = nativeHarness(114);
+    await victim.settle();
+    expect(
+      errCode(
+        await victim.call("backup.restore", {
+          envelope: forged,
+          backupFactor: attackerPassword(),
+          factor: { kind: "device" },
+        }),
+      ),
+    ).toBe("unsupported");
 
-    // Secrets the owner adds afterwards never reach an envelope the attacker can open.
+    input.answer(utf8ToBytes("attacker-backup-pw-123"));
+    const session = await restoreOnDevice(victim, forged, {
+      kind: "password",
+      ceremony: "kernel",
+    });
+    expect(strField(await statusBackup(victim, session), "id")).not.toBe("");
+
+    // Secrets the owner adds afterwards reach the adopted envelope the attacker can open —
+    // adoption is the point: the device keeps updating the same cloud file.
     ok(
       await victim.call(
         "wallet.createWithPasskey",
@@ -1063,18 +1084,6 @@ describe("establishing restore and the envelope's backup key", () => {
         session,
       ),
     );
-    expect(errCode(await victim.call("backup.update", null, session))).toBe("not-found");
-
-    // Turning backup on is the owner's own verified decision, under a fresh key.
-    const mark = keystore.calls.length;
-    ok(
-      await victim.call(
-        "backup.enable",
-        { verify: { kind: "hardware" }, factors: [backupPassword()] },
-        session,
-      ),
-    );
-    expect(keystore.calls.slice(mark).filter(isPresenceOpen)).toHaveLength(1);
     const envelope = strField(ok(await victim.call("backup.update", null, session)), "envelope");
     const outsider = createHarness({ seed: 115 });
     await outsider.settle();
@@ -1082,7 +1091,7 @@ describe("establishing restore and the envelope's backup key", () => {
       errCode(
         await outsider.call("backup.restore", {
           envelope,
-          backupFactor: attackerPassword(),
+          backupFactor: backupPassword(),
           factor: vaultPasswordFactor(),
         }),
       ),
@@ -1093,7 +1102,7 @@ describe("establishing restore and the envelope's backup key", () => {
       ok(
         await owner.call("backup.restore", {
           envelope,
-          backupFactor: backupPassword(),
+          backupFactor: attackerPassword(),
           factor: vaultPasswordFactor(),
         }),
       ),

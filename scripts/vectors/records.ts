@@ -9,7 +9,8 @@
  * - Entropy: walletId, origin, words, [passphrase: true,] backup, createdAt
  * - Data-key: purpose, createdAt
  * - Imported key: family, address, createdAt
- * - Session key: scheme, walletId, groupIndex, owner, scope, name, validUntil, createdAt
+ * - Session key: scheme, walletId, groupIndex, owner, scope, name, validUntil, createdAt, [limits,]
+ *   [spent]
  * - Hardware wallet: device, fingerprint, [model,] [firmware,] createdAt
  * - Nostr derived: publicKey, walletId, index, createdAt
  * - Nostr sync key: publicKey, walletId, createdAt
@@ -60,6 +61,8 @@ function textOf(kind: string, input: Input): string {
         name: i["name"],
         validUntil: i["validUntil"],
         createdAt: i["createdAt"],
+        ...(i["limits"] === undefined ? {} : { limits: i["limits"] }),
+        ...(i["spent"] === undefined ? {} : { spent: i["spent"] }),
       });
     case "hardware-wallet":
       return JSON.stringify({
@@ -199,6 +202,8 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
       name: "bot-1",
       validUntil: CREATED_AT + 180 * 86_400_000,
       createdAt: CREATED_AT,
+      limits: { notional: "10000", maxLeverage: 25, assets: [0, 1, 2, 3, 10007] },
+      spent: "0",
     },
   },
   {

@@ -249,4 +249,8 @@ std::string keystoreLocale() {
   return "zh-Hans-CN";
 }
 
+std::string keystorePlatform() {
+  return "ios";
+}
+
 } // namespace qntx

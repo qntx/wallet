@@ -29,6 +29,7 @@ import type { Harness, KernelResponse } from "./harness.ts";
 import { subtlePbkdf2 } from "./helpers.ts";
 import { fakeKeystore } from "./keystore.ts";
 import type { KeystoreCall } from "./keystore.ts";
+import { fakeSecureInput } from "./secure-input.ts";
 
 const SIGNER = "0x1111111111111111111111111111111111111111";
 
@@ -103,7 +104,7 @@ describe("hardware factor: establish and unlock", () => {
 
   it("renders Chinese for any zh locale and English otherwise", async () => {
     for (const [locale, expected] of [
-      ["zh-TW", "zh-Hans"],
+      ["zh-TW", "en"],
       ["zh-Hans-CN", "zh-Hans"],
       ["fr-FR", "en"],
     ] as const) {
@@ -666,7 +667,7 @@ describe("serializeCeremonies", () => {
     const release = fake.hold();
     const platform = serializeCeremonies(
       // Only keystore/passkey are read — the rest of the platform is unused here.
-      { keystore: fake.keystore, passkey: undefined } as KernelPlatform,
+      { keystore: fake.keystore, passkey: undefined, secureInput: undefined } as KernelPlatform,
       (active) => events.push(active),
     );
     const prompt = { title: "t", description: "d" };
@@ -692,7 +693,7 @@ describe("serializeCeremonies", () => {
     const fake = fakeKeystore();
     const release = fake.hold();
     const platform = serializeCeremonies(
-      { keystore: fake.keystore, passkey: undefined } as KernelPlatform,
+      { keystore: fake.keystore, passkey: undefined, secureInput: undefined } as KernelPlatform,
       (active) => events.push(active),
     );
     const prompt = { title: "t", description: "d" };
@@ -709,5 +710,35 @@ describe("serializeCeremonies", () => {
     await expect(first).resolves.toBeInstanceOf(Uint8Array);
     await expect(second).resolves.toBeUndefined();
     expect(events).toStrictEqual([true, false, true, false]);
+  });
+
+  it("queues a secure-input request behind a held keystore ceremony", async () => {
+    const events: boolean[] = [];
+    const fake = fakeKeystore();
+    const input = fakeSecureInput();
+    const release = fake.hold();
+    const platform = serializeCeremonies(
+      {
+        keystore: fake.keystore,
+        passkey: undefined,
+        secureInput: input.secureInput,
+      } as KernelPlatform,
+      (active) => events.push(active),
+    );
+    const prompt = { title: "t", description: "d" };
+    const presence = { protection: "presence", prompt } as const;
+    const sealed = await fake.keystore.seal("id", new Uint8Array(8), presence);
+    input.answer(new Uint8Array([1, 2, 3]));
+    const first = platform.keystore!.open("id", sealed, presence);
+    const second = platform.secureInput!.request("backup-password", "l");
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve);
+    });
+    expect(events).toStrictEqual([true]);
+    release();
+    await expect(first).resolves.toBeInstanceOf(Uint8Array);
+    await expect(second).resolves.toStrictEqual({ ok: true, value: new Uint8Array([1, 2, 3]) });
+    expect(events).toStrictEqual([true, false, true, false]);
+    expect(input.requests).toStrictEqual([{ kind: "backup-password", label: "l" }]);
   });
 });

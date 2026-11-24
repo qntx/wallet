@@ -97,4 +97,8 @@ void keystoreCancel();
 // main runtime cannot choose the prompt language.
 std::string keystoreLocale();
 
+// Which OS this build's keystore renders its system prompt on: "ios" or
+// "android". Compiled in, so the kernel's prompt bound cannot be spoofed.
+std::string keystorePlatform();
+
 } // namespace qntx

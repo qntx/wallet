@@ -348,27 +348,24 @@
    ],
    "expected": {
     "summary": "swap",
-    "verifiability": "partial",
+    "verifiability": "opaque",
+    "blind": "lookup-table-account",
     "outflows": [
      {
       "to": "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
       "amount": {
-       "asset": "lamports",
-       "amount": "1000000000",
-       "decimals": 9,
-       "symbol": "SOL"
+       "asset": "",
+       "amount": "1000000000"
       },
-      "verified": true
+      "verified": false
      }
     ],
     "minimumReceived": [
      {
-      "to": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+      "to": "FGETo8T8wMcN2wCjav8VK6eh3dLk63evNDPxzLSJra8B",
       "amount": {
-       "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-       "amount": "89000514",
-       "symbol": "USDC",
-       "decimals": 6
+       "asset": "",
+       "amount": "89000514"
       }
      }
     ]

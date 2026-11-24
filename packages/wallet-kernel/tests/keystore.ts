@@ -51,7 +51,7 @@ export type FakeKeystore = {
   readonly setLockScreen: (on: boolean) => void;
 };
 
-export function fakeKeystore(locale = "en-US"): FakeKeystore {
+export function fakeKeystore(locale = "en-US", platform: "ios" | "android" = "ios"): FakeKeystore {
   const keys = new Map<string, Uint8Array>();
   const protection = new Map<string, "device" | "presence">();
   const calls: KeystoreCall[] = [];
@@ -67,6 +67,7 @@ export function fakeKeystore(locale = "en-US"): FakeKeystore {
   };
   const keystore: Keystore = {
     locale,
+    platform,
     seal: async (id, secret, use) => {
       calls.push(
         use.protection === "presence"

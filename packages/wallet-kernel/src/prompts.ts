@@ -1,15 +1,26 @@
 /**
  * Kernel-owned verification prompt text (WD-065). The keystore shows these strings in the system
  * verification UI; the main runtime can neither choose nor alter them. The language follows the
- * platform's preferred locale, read natively — `zh*` selects Simplified Chinese, anything else
- * English.
+ * platform's preferred locale, read natively — Simplified Chinese for `zh` locales that are not
+ * Traditional-script or Traditional-region, English for everything else.
  */
 import type { KeystorePrompt } from "./platform.ts";
 
 export type PromptLocale = "zh-Hans" | "en";
 
 export function promptLocale(tag: string): PromptLocale {
-  return tag.toLowerCase().startsWith("zh") ? "zh-Hans" : "en";
+  // BCP-47, case-insensitive. There is no Traditional copy, so a Traditional user must not be
+  // shown Simplified text: an explicit script other than Hans, or a Traditional region, is English.
+  const [language, ...subtags] = tag.toLowerCase().split("-");
+  if (language !== "zh") {
+    return "en";
+  }
+  const script = subtags.find((s) => /^[a-z]{4}$/.test(s));
+  if (script !== undefined) {
+    return script === "hans" ? "zh-Hans" : "en";
+  }
+  const region = subtags.find((s) => /^[a-z]{2}$/.test(s) || /^[0-9]{3}$/.test(s));
+  return region === "tw" || region === "hk" || region === "mo" ? "en" : "zh-Hans";
 }
 
 export type CorePromptKind =
@@ -110,6 +121,35 @@ export function corePrompt(locale: PromptLocale, kind: CorePromptKind): Keystore
   return CORE[locale][kind];
 }
 
+export type BackupPasswordLabel = "choose" | "again" | "mismatch" | "short" | "enter";
+
+/**
+ * The secure-input labels for the kernel's backup-password ceremony: enable asks for the new
+ * password, then a repeat; a mismatch or a too-short entry is re-asked with the reason in the
+ * title; restore asks once.
+ */
+const BACKUP_PASSWORD_LABELS: Readonly<Record<PromptLocale, Record<BackupPasswordLabel, string>>> =
+  {
+    "zh-Hans": {
+      choose: "选择云备份密码",
+      again: "再次输入密码",
+      mismatch: "两次输入的密码不一致——选择云备份密码",
+      short: "密码至少 12 个字符——选择云备份密码",
+      enter: "输入云备份密码",
+    },
+    en: {
+      choose: "Choose a cloud backup password",
+      again: "Enter the password again",
+      mismatch: "The passwords did not match — choose a cloud backup password",
+      short: "Use at least 12 characters — choose a cloud backup password",
+      enter: "Enter the cloud backup password",
+    },
+  };
+
+export function backupPasswordLabel(locale: PromptLocale, kind: BackupPasswordLabel): string {
+  return BACKUP_PASSWORD_LABELS[locale][kind];
+}
+
 /**
  * The display name of a backup protection credential, chosen by the kernel so password managers
  * list it apart from the user's wallet passkeys (the RP and app name are shown next to it).
@@ -127,6 +167,39 @@ const BACKUP_CREDENTIAL_NAME: Readonly<Record<PromptLocale, string>> = {
 export const corePromptFor =
   (keystore: { readonly locale: string } | undefined, kind: CorePromptKind) => (): KeystorePrompt =>
     corePrompt(promptLocale(keystore?.locale ?? "en"), kind);
+
+/**
+ * How much prompt text the system verification dialog can show. These are policy values, not
+ * platform facts — neither OS documents a limit — and docs/device-checklist.md is what confirms
+ * them on real devices; lowering a value is always the safe direction. iOS renders only the
+ * description, so it has no title bound. `lines` counts `description.split("\n")`, `characters`
+ * counts Unicode code points (not UTF-16 units).
+ */
+export type PromptBound = {
+  readonly title?: number | undefined;
+  readonly lines: number;
+  readonly characters: number;
+};
+
+export const PROMPT_BOUNDS: Readonly<Record<"ios" | "android", PromptBound>> = {
+  ios: { lines: 8, characters: 400 },
+  android: { title: 60, lines: 12, characters: 640 },
+};
+
+/** Unicode code points of `text` — what the platform dialog measures, not UTF-16 units. */
+export function codePoints(text: string): number {
+  // oxlint-disable-next-line typescript/no-misused-spread -- counts code points; grapheme clusters must not merge
+  return [...text].length;
+}
+
+/** Whether the rendered prompt fits the platform bound the keystore reports. */
+export function promptFits(prompt: KeystorePrompt, bound: PromptBound): boolean {
+  return (
+    (bound.title === undefined || codePoints(prompt.title) <= bound.title) &&
+    prompt.description.split("\n").length <= bound.lines &&
+    codePoints(prompt.description) <= bound.characters
+  );
+}
 
 /**
  * An integer amount in smallest units rendered at `decimals` places with bigint arithmetic — no
@@ -147,3 +220,23 @@ export function formatUnits(amount: string, decimals: number): string {
 export function joinLines(lines: ReadonlyArray<string>): string {
   return lines.join("\n");
 }
+
+/** `YYYY-MM-DD` of a Unix-seconds instant in UTC (civil-from-days; no `Date` in the enclave). */
+export function utcDate(seconds: number): string {
+  const z = Math.floor(seconds / 86_400) + 719_468;
+  const era = Math.floor(z / 146_097);
+  const doe = z - era * 146_097;
+  const yoe = Math.floor(
+    (doe - Math.floor(doe / 1460) + Math.floor(doe / 36_524) - Math.floor(doe / 146_096)) / 365,
+  );
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+  const mp = Math.floor((5 * doy + 2) / 153);
+  const day = doy - Math.floor((153 * mp + 2) / 5) + 1;
+  const month = mp < 10 ? mp + 3 : mp - 9;
+  const year = yoe + era * 400 + (month <= 2 ? 1 : 0);
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/** `YYYY-MM-DD HH:MM` of a Unix-seconds instant in UTC. */
+export const utcDateTime = (seconds: number): string =>
+  `${utcDate(seconds)} ${String(Math.floor(seconds / 3600) % 24).padStart(2, "0")}:${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}`;

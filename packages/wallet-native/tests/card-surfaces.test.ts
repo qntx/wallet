@@ -6,8 +6,10 @@
  */
 import { describe, expect, it } from "vite-plus/test";
 
-import { bindNativeCardReader, bindNativeSecureInput } from "../kernel/card.ts";
-import type { KernelCardReaderNative, KernelSecureInputNative } from "../kernel/card.ts";
+import { bindNativeCardReader } from "../kernel/card.ts";
+import type { KernelCardReaderNative } from "../kernel/card.ts";
+import { bindNativeSecureInput } from "../kernel/secure-input.ts";
+import type { KernelSecureInputNative } from "../kernel/secure-input.ts";
 
 type OpenReply = { code?: string | undefined; detail?: string | undefined };
 type TransmitReply = {
@@ -188,6 +190,35 @@ describe("bindNativeSecureInput", () => {
     const { raw } = nativeInput({ value: new TextEncoder().encode(text) });
     const result = await bindNativeSecureInput(raw).request("short-id", "l");
     expect(result).toStrictEqual({ ok: false, failure: "unavailable" });
+  });
+
+  it("returns arbitrary UTF-8 bytes for a backup password", async () => {
+    const password = new TextEncoder().encode("密码 🔐 longer than twelve");
+    const { raw } = nativeInput({ value: password });
+    const result = await bindNativeSecureInput(raw).request("backup-password", "选择云备份密码");
+    expect(result).toStrictEqual({ ok: true, value: password });
+  });
+
+  it("accepts a full-length 1024-byte backup password", async () => {
+    const { raw } = nativeInput({ value: new Uint8Array(1024).fill(0x41) });
+    const result = await bindNativeSecureInput(raw).request("backup-password", "l");
+    expect(result.ok).toBe(true);
+  });
+
+  it.each([0, 1025] as const)("wipes and refuses a %d-byte backup password", async (length) => {
+    const value = new Uint8Array(length).fill(0x41);
+    const { raw } = nativeInput({ value });
+    const result = await bindNativeSecureInput(raw).request("backup-password", "l");
+    expect(result).toStrictEqual({ ok: false, failure: "unavailable" });
+    expect(value.every((byte) => byte === 0)).toBe(true);
+  });
+
+  it("wipes and refuses invalid UTF-8 for a backup password", async () => {
+    const value = new Uint8Array([0x70, 0xc0, 0xaf, 0x64]);
+    const { raw } = nativeInput({ value });
+    const result = await bindNativeSecureInput(raw).request("backup-password", "l");
+    expect(result).toStrictEqual({ ok: false, failure: "unavailable" });
+    expect(value.every((byte) => byte === 0)).toBe(true);
   });
 
   it("resolves cancelled when the request was cancelled", async () => {

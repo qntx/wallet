@@ -129,14 +129,9 @@ export type HyperliquidActions = {
   ) => ReadonlyArray<HyperliquidL1Action>;
   /** The dead-man's switch: `time` must be ≥ now + 5 s; `undefined` clears it. */
   readonly scheduleCancel: (time?: number) => HyperliquidL1Action;
-  readonly twap: (params: {
-    readonly coin: string;
-    readonly side: OrderSide;
-    readonly size: string;
-    readonly minutes: number;
-    readonly randomize: boolean;
-    readonly reduceOnly?: boolean;
-  }) => Promise<HyperliquidL1Action>;
+  /* There is no `twap` order builder: a TWAP's slices carry no price the kernel could meter
+     against the session's approved budget, so the scheme's validator refuses the action — the
+     engine offers only the cancel. */
   readonly twapCancel: (params: {
     readonly coin: string;
     readonly twapId: number;
@@ -406,23 +401,6 @@ export function createHyperliquidActions(options: {
           ? { type: "scheduleCancel" }
           : { type: "scheduleCancel", time: Math.trunc(time) },
       );
-    },
-    twap: async (params) => {
-      if (!Number.isInteger(params.minutes) || params.minutes < 5 || params.minutes > 1440) {
-        throw new HyperliquidError("invalid-input", "twap minutes must be an integer in 5..1440");
-      }
-      const asset = await resolve(params.coin);
-      return deepFreeze({
-        type: "twapOrder",
-        twap: {
-          a: asset.asset,
-          b: params.side === "buy",
-          s: roundSize(params.size, asset.szDecimals),
-          r: params.reduceOnly === true,
-          m: params.minutes,
-          t: params.randomize,
-        },
-      });
     },
     twapCancel: async (params) => {
       const asset = await resolve(params.coin);

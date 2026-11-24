@@ -107,6 +107,12 @@ export type KernelPlatform = {
    */
   readonly passkey: PasskeyAuthenticator | undefined;
   /**
+   * The trusted secure-input view — present only where the kernel runs input ceremonies itself
+   * (RN), so the cloud-backup password and the card's secrets never cross the main runtime.
+   * `undefined` on web/node, where secrets arrive over the wire from the host's own UI.
+   */
+  readonly secureInput: SecureInput | undefined;
+  /**
    * Heavy cryptographic backends the host supplies lazily. `spark` loads and verifies the wasm (or
    * native) SparkCrypto instance; the kernel calls it only when a spark.* method runs, so a
    * nostr-only session never loads it. Each call must return a backend the kernel keeps until a
@@ -148,6 +154,8 @@ export type KeyUse =
  */
 export type Keystore = {
   readonly locale: string; // host-preferred BCP 47 language tag
+  /** The OS the system prompt renders on; picks the kernel's prompt text bound. */
+  readonly platform: "ios" | "android";
   readonly seal: (id: string, secret: Uint8Array, use: KeyUse) => Promise<Uint8Array>;
   readonly open: (id: string, sealed: Uint8Array, use: KeyUse) => Promise<Uint8Array>;
   /**
@@ -208,12 +216,12 @@ export function requirePasskey(platform: KernelPlatform): PasskeyAuthenticator {
 }
 
 /**
- * Serializes every system-UI ceremony — presence keystore seal/open, authenticate, clear and
- * passkey create/get share one queue, because the platform can show only one verification at a
- * time. Silent keystore work (device seal/open, probe, remove) bypasses the queue and never fires
- * `onCeremony`. A rejection does not wedge the queue. Applied once by `startKernel`. `onCeremony`
- * fires `true` when a ceremony's work starts and `false` when it settles, strictly paired per
- * queued call.
+ * Serializes every system-UI ceremony — presence keystore seal/open, authenticate, clear, passkey
+ * create/get and secure-input requests share one queue, because the platform can show only one
+ * verification at a time. Silent keystore work (device seal/open, probe, remove) bypasses the queue
+ * and never fires `onCeremony`. A rejection does not wedge the queue. Applied once by
+ * `startKernel`. `onCeremony` fires `true` when a ceremony's work starts and `false` when it
+ * settles, strictly paired per queued call.
  */
 export function serializeCeremonies(
   platform: KernelPlatform,
@@ -235,7 +243,7 @@ export function serializeCeremonies(
       onCeremony(false);
     }
   };
-  const { keystore, passkey } = platform;
+  const { keystore, passkey, secureInput } = platform;
   return {
     ...platform,
     keystore:
@@ -243,6 +251,7 @@ export function serializeCeremonies(
         ? undefined
         : {
             locale: keystore.locale,
+            platform: keystore.platform,
             seal: async (id, secret, use) =>
               use.protection === "presence"
                 ? queue(async () => keystore.seal(id, secret, use))
@@ -262,6 +271,15 @@ export function serializeCeremonies(
         : {
             create: async (input) => queue(async () => passkey.create(input)),
             get: async (input) => queue(async () => passkey.get(input)),
+          },
+    secureInput:
+      secureInput === undefined
+        ? undefined
+        : {
+            request: async (kind, label) => queue(async () => secureInput.request(kind, label)),
+            cancel: () => {
+              secureInput.cancel();
+            },
           },
   };
 }
@@ -353,8 +371,11 @@ export type CardReader = {
   readonly close: (outcome: "success" | "failure", text: string) => void;
 };
 
-/** What the secure input view collects: the qntx card's access code, or its printed short ID. */
-export type SecureInputKind = "access-code" | "short-id";
+/**
+ * What the secure input view collects: the qntx card's access code, its printed short ID, or the
+ * cloud-backup password — 1..1024 bytes of valid UTF-8, masked.
+ */
+export type SecureInputKind = "access-code" | "short-id" | "backup-password";
 
 /** The outcome of a secure-input request; `value` is the confirmed bytes the user entered. */
 export type SecureInputResult =

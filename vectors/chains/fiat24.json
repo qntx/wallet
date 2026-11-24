@@ -1585,7 +1585,7 @@
         "verifiability": "partial",
         "warnings": [],
         "prompt": {
-          "en": "Allow Fiat24 account access\nA bearer grant for the Fiat24 account of the signing address, valid until 2026-11-21 16:20 (UTC)\nUntil then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords\nSigns: I agree to access my profile. 0x88f9ba6123137a551cdcf75f832f04b49b808ca993a625ecde45be54094e9cbd",
+          "en": "Allow Fiat24 account access\nA bearer grant for the Fiat24 account of the signing address, valid until 2026-11-21 16:20 (UTC)\nUntil then, the holder can read your Fiat24 profile, contact data and card details, and create or change cards, payees and your email — the card one-time-password channel\nSigns: I agree to access my profile. 0x88f9ba6123137a551cdcf75f832f04b49b808ca993a625ecde45be54094e9cbd",
           "zh-Hans": "授权访问 Fiat24 账户\n对签名地址的 Fiat24 账户的持有人授权，有效期至 2026-11-21 16:20（UTC）\n在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道\n签名消息：I agree to access my profile. 0x88f9ba6123137a551cdcf75f832f04b49b808ca993a625ecde45be54094e9cbd"
         }
       }
@@ -1615,7 +1615,7 @@
         "verifiability": "partial",
         "warnings": [],
         "prompt": {
-          "en": "Allow Fiat24 account access\nA bearer grant for the Fiat24 account of the signing address, valid until 2026-11-22 00:00 (UTC)\nUntil then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords\nSigns: I agree to access my profile. 0xa52ed47d4a4753121fc303162a376bfda1aad1d54e4f6be5b142ebb13099a440",
+          "en": "Allow Fiat24 account access\nA bearer grant for the Fiat24 account of the signing address, valid until 2026-11-22 00:00 (UTC)\nUntil then, the holder can read your Fiat24 profile, contact data and card details, and create or change cards, payees and your email — the card one-time-password channel\nSigns: I agree to access my profile. 0xa52ed47d4a4753121fc303162a376bfda1aad1d54e4f6be5b142ebb13099a440",
           "zh-Hans": "授权访问 Fiat24 账户\n对签名地址的 Fiat24 账户的持有人授权，有效期至 2026-11-22 00:00（UTC）\n在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道\n签名消息：I agree to access my profile. 0xa52ed47d4a4753121fc303162a376bfda1aad1d54e4f6be5b142ebb13099a440"
         }
       }
@@ -1645,7 +1645,7 @@
         "verifiability": "partial",
         "warnings": [],
         "prompt": {
-          "en": "Allow Fiat24 account access\nA bearer grant for the Fiat24 account of the signing address, valid until 2100-01-01 00:00 (UTC)\nUntil then, anyone holding this signature can read your Fiat24 profile and contact data, view your card details, create and change cards and payees, and change your email — the channel for card one-time passwords\nSigns: I agree to access my profile. 0xa21de2f4028526654fac3b214496aed83c4b2facc6bb1d3e9b892a0b39a555b5",
+          "en": "Allow Fiat24 account access\nA bearer grant for the Fiat24 account of the signing address, valid until 2100-01-01 00:00 (UTC)\nUntil then, the holder can read your Fiat24 profile, contact data and card details, and create or change cards, payees and your email — the card one-time-password channel\nSigns: I agree to access my profile. 0xa21de2f4028526654fac3b214496aed83c4b2facc6bb1d3e9b892a0b39a555b5",
           "zh-Hans": "授权访问 Fiat24 账户\n对签名地址的 Fiat24 账户的持有人授权，有效期至 2100-01-01 00:00（UTC）\n在此之前，任何持有此签名的人都能读取你的 Fiat24 资料和联系方式、查看你的卡信息、创建和修改卡与收款人，以及修改你的邮箱——银行卡一次性验证码的送达渠道\n签名消息：I agree to access my profile. 0xa21de2f4028526654fac3b214496aed83c4b2facc6bb1d3e9b892a0b39a555b5"
         }
       }
