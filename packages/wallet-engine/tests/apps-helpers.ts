@@ -569,6 +569,8 @@ export const world = async (
     deviceIo?: EngineOptions["deviceIo"];
     /** A caller-provided wallet (the card rig's) — the shared node wallet otherwise. */
     wallet?: { wallet: Wallet; walletId: string };
+    /** Extra host endpoints per network (the e2e harness registers its stub upstreams here). */
+    rpc?: Record<string, ReadonlyArray<string>>;
     /**
      * Wraps the real `requests` handed to `createApps` — a capture shim for the typed-data
      * documents the flows prepare (approvals still go through `w.requests`).
@@ -616,6 +618,7 @@ export const world = async (
       "eip155:421614": ["https://arb-sepolia.test/rpc"],
       "eip155:42161": ["https://arbitrum-one.test/rpc"],
       "eip155:137": ["https://polygon.test/rpc"],
+      ...options.rpc,
     },
     openStore: async () => {
       await Promise.resolve();
