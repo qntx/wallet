@@ -1475,10 +1475,12 @@ const DEVICE = { kind: "device" } as const;
 type KeystoreRig = Rig & { fake: ReturnType<typeof fakeKeystore> };
 
 /** A React-Native-style kernel: keystore factors plus the card platform. */
-const keystoreRig = async (): Promise<KeystoreRig> => {
+const keystoreRig = async (
+  platform: "ios" | "android" = "ios",
+): Promise<KeystoreRig> => {
   const reader = testCardReader();
   const input = testSecureInput();
-  const fake = fakeKeystore();
+  const fake = fakeKeystore("en-US", platform);
   const h = createHarness({
     keystore: fake.keystore,
     card: { reader: reader.reader, anchors: [CA1_ANCHOR] },
@@ -2415,7 +2417,9 @@ describe("card sign (fake card)", () => {
   };
 
   it("an over-long prompt refuses as blind before any input, tap or keystore call", async () => {
-    const r = await keystoreRig();
+    /* android shows the limits inside the presence dialog itself — no separate approval field,
+       so the refusal reaches findSeedWallet without a secure-input round-trip. */
+    const r = await keystoreRig("android");
     const card = await loadedCard(CODE, seed2);
     const walletId = await addWallet(r, card);
     /* A 12-call batch renders well over the platform bound — the same oversize→blind rule
@@ -2458,7 +2462,9 @@ describe("card sign (fake card)", () => {
   });
 
   it("a lookup-table sign is refused before any input or tap while blind signing is off", async () => {
-    const r = await keystoreRig();
+    /* android shows the limits inside the presence dialog itself — no separate approval field,
+       so the refusal reaches findSeedWallet without a secure-input round-trip. */
+    const r = await keystoreRig("android");
     const card = await loadedCard(CODE, seed2);
     const walletId = await addWallet(r, card);
     const own = strField(
@@ -3170,7 +3176,9 @@ describe("card sign (fake card)", () => {
     /* keystoreRig's vault carries the silent device factor (app lock off) plus the hardware
        verifying row: presence is still required for signing, but the device factor itself can
        never stand in for it. */
-    const r = await keystoreRig();
+    /* android shows the limits inside the presence dialog itself — no separate approval field,
+       so the refusal reaches findSeedWallet without a secure-input round-trip. */
+    const r = await keystoreRig("android");
     const card = await loadedCard(CODE, seed2);
     const walletId = await addWallet(r, card);
     const create = () =>
@@ -3185,7 +3193,7 @@ describe("card sign (fake card)", () => {
           limits: {
             notional: "1000000000",
             maxLeverage: 100,
-            assets: [0, 1, 2, 3, 4, 5, 10107],
+            assets: [0, 1, 2, 3, 4, 5, 10107].map((asset) => ({ asset, size: "1000" })),
           },
           verify: HARDWARE,
         },
@@ -3213,7 +3221,7 @@ describe("card sign (fake card)", () => {
     ok(await r.h.call("card.cancel", { opId: begun.opId }, r.session));
     // App lock off: the metered scheme refuses before any factor verification.
     await expect(errCode(create())).resolves.toBe("app-lock-required");
-    // App lock on: presence passes, but a card wallet owns no seed account to meter against.
+    // App lock on: presence verifies — then the scheme refuses the seed-less wallet.
     ok(await r.h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, r.session));
     await expect(errCode(create())).resolves.toBe("unsupported");
   });

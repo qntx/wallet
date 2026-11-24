@@ -678,7 +678,11 @@ describe("hardware wallet refusals", () => {
         scope: "Mainnet",
         name: "bot-1",
         validUntil: h.wallNow() + 86_400_000,
-        limits: { notional: "1000000000", maxLeverage: 100, assets: [0, 1] },
+        limits: {
+          notional: "1000000000",
+          maxLeverage: 100,
+          assets: [0, 1].map((asset) => ({ asset, size: "1000" })),
+        },
         /* Its own copy — the kernel wipes the verify bytes it consumes. */
         verify: PASSKEY(),
       },
@@ -822,7 +826,7 @@ describe("hardware wallet refusals", () => {
           limits: {
             notional: "1000000000",
             maxLeverage: 100,
-            assets: [0, 1, 2, 3, 4, 5, 10107].map((asset) => ({ asset, size: "1000000000" })),
+            assets: [0, 1, 2, 3, 4, 5, 10107].map((asset) => ({ asset, size: "1000" })),
           },
           verify: { kind: "hardware" },
         },
