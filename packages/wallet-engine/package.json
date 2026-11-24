@@ -74,12 +74,13 @@
   },
   "scripts": {
     "build": "vp run @qntx/wallet-worker#build && vp pack",
-    "test": "vp test && bun scripts/size-check.ts",
-    "test:coverage": "vp test --coverage",
+    "test": "vp test --project unit && bun scripts/size-check.ts",
+    "test:coverage": "vp test --coverage --project unit",
     "fuzz": "vp test fuzz --testTimeout 1800000",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p src/idb/tsconfig.json && tsc --noEmit -p src/connect/inject/tsconfig.json",
     "check:pkg": "vp pack && bun ../../scripts/check-dist-deps.ts . && bun ../../scripts/check-api.ts . && publint && attw --pack . --profile esm-only",
     "connect:provider": "bun ../../scripts/build-provider.ts",
+    "test:speculos": "vp test --project speculos",
     "test:browser": "playwright test --config tests/browser/playwright.config.ts",
     "smoke:hermes": "bun scripts/hermes-smoke.ts"
   },

@@ -635,6 +635,8 @@ export const world = async (
     recheck: async () => {
       // Unit fixtures keep no material cache — nothing to recheck.
     },
+    /* Same wiring as engine.ts: fetchAccounts derives on one enabled network per family. */
+    networks: { enabled: (family) => networks.enabled(family) },
     random: options.random ?? RANDOM,
     logger,
   });
