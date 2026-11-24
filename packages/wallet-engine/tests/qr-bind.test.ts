@@ -12,8 +12,9 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import type { QrAccountFacts } from "../src/qr/bind.ts";
-import { BITCOIN_MAINNET, bindQrRequest } from "../src/qr/bind.ts";
+import { bindQrRequest } from "../src/qr/bind.ts";
 import { QrError } from "../src/qr/errors.ts";
+import { BITCOIN_MAINNET } from "../src/qr/link.ts";
 import type { QrRequest } from "../src/qr/request.ts";
 
 const H = 0x80000000;

@@ -6,7 +6,14 @@ import { isSolanaAddress } from "@qntx/wallet-chains/solana";
 import { isTronAddress } from "@qntx/wallet-chains/tron";
 
 import { Controller } from "../controller.ts";
-import { QR_FINGERPRINT, pathComponents, qrLinkPath } from "../qr/link.ts";
+import {
+  BITCOIN_MAINNET,
+  BITCOIN_TESTNET,
+  PURPOSE_TEMPLATE,
+  QR_FINGERPRINT,
+  pathComponents,
+  qrLinkPath,
+} from "../qr/link.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineCollection, EngineStore } from "../store/port.ts";
 
@@ -53,10 +60,6 @@ const decodeBtcAddress = (address: string): boolean => {
     return false;
   }
 };
-
-const BTC_PURPOSE_TEMPLATE: Readonly<
-  Record<number, "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86">
-> = { 44: "btc.bip44", 49: "btc.bip49", 84: "btc.bip84", 86: "btc.bip86" };
 
 const normalise = (family: WatchAccount["family"], address: string): string | undefined => {
   if (family === "evm") {
@@ -188,14 +191,11 @@ export class WatchController extends Controller<WatchState> {
         const steps = pathComponents(qr.path);
         const purpose = steps?.[0]?.index;
         const coin = steps?.[1]?.index;
-        const template = purpose === undefined ? undefined : BTC_PURPOSE_TEMPLATE[purpose];
+        const template = purpose === undefined ? undefined : PURPOSE_TEMPLATE[purpose];
         if (template === undefined || (coin !== 0 && coin !== 1)) {
           throw new Error(`bad bitcoin qr path ${qr.path}`);
         }
-        const network =
-          coin === 0
-            ? "bip122:000000000019d6689c085ae165831e93"
-            : "bip122:00000000da84f2bafbbc53dee25a72ae";
+        const network = coin === 0 ? BITCOIN_MAINNET : BITCOIN_TESTNET;
         if (bitcoinAddressFromXpub(qr.xpub, template, network, 0, 0) !== address) {
           throw new Error("the xpub's first receive address is not the watched address");
         }

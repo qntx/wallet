@@ -22,13 +22,8 @@ import type {
 import type { BitcoinPsbtInput, BitcoinSigHash, QrOrigin } from "../requests/types.ts";
 import type { AccountRef } from "../transactions/route.ts";
 import { QrError, qrGuard } from "./errors.ts";
+import { BITCOIN_MAINNET, PURPOSE_TEMPLATE } from "./link.ts";
 import type { QrRequest } from "./request.ts";
-
-/** The Bitcoin mainnet CAIP-2 id — the only network a QR PSBT maps deterministically. */
-export const BITCOIN_MAINNET = "bip122:000000000019d6689c085ae165831e93";
-
-/** The Bitcoin testnet CAIP-2 id — the one testnet genesis an export's coin type can name. */
-export const BITCOIN_TESTNET = "bip122:00000000da84f2bafbbc53dee25a72ae";
 
 /**
  * Everything binding checks against: the selected account's authenticated facts — the master
@@ -292,14 +287,6 @@ const tronCandidates = (
 const SIGHASH_ALL = 1;
 const SIGHASH_DEFAULT = 0;
 const SIGHASH_SINGLE_ANYONECANPAY = 0x83;
-
-/** The `p` of an account path `m/p'/coin'/g'/c/i` gives the template it must be. */
-export const PURPOSE_TEMPLATE: Record<number, BitcoinTemplate> = {
-  44: "btc.bip44",
-  49: "btc.bip49",
-  84: "btc.bip84",
-  86: "btc.bip86",
-};
 
 /** The script type that template's prevout must carry — `OutScript.decode` names are lowercase. */
 const PURPOSE_SCRIPT: Record<number, "pkh" | "sh" | "wpkh" | "tr"> = {

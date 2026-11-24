@@ -1208,6 +1208,17 @@ describe("qr counterpart — request and signature guards", () => {
     const read = () => readQrSignature(sent, { type: "eth-signature", cbor: payload.toCborData() });
     expect(read).toThrow(expect.objectContaining({ code: "result-mismatch" }));
     expect(read).toThrow(/unexpected recovery id/);
+    /* A short signature never reaches our checks — the codec's own bounds refuse it, wrapped
+       as the same result-mismatch every other codec refusal is. */
+    const short = encodeCbor(
+      taggedValue(
+        INTEROP_TAGS["eth-signature"],
+        new CborMap(new Map<number, unknown>([[2, new Uint8Array(64)]])),
+      ),
+    );
+    expect(() => readQrSignature(sent, { type: "eth-signature", cbor: short })).toThrow(
+      expect.objectContaining({ code: "result-mismatch" }),
+    );
   });
 
   it("encodes each eth dataType the phone decodes", () => {

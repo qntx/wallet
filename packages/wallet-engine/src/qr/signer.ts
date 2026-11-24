@@ -14,11 +14,12 @@ import type { ChainAccount, ChainExportNode, ChainSignResult } from "@qntx/walle
 import type { NetworkController } from "../networks/controller.ts";
 import type { PendingRequest, RequestController, RequestResult } from "../requests/controller.ts";
 import { SolanaClusterBindingError, TronBindingError } from "../transactions/binding.ts";
-import { BITCOIN_MAINNET, bindQrRequest } from "./bind.ts";
+import { bindQrRequest } from "./bind.ts";
 import type { QrAccountFacts } from "./bind.ts";
 import { QrError, qrGuard } from "./errors.ts";
 import { qrExport } from "./export.ts";
 import type { QrExport } from "./export.ts";
+import { BITCOIN_MAINNET } from "./link.ts";
 import type { QrRequest } from "./request.ts";
 import { qrResponse } from "./response.ts";
 

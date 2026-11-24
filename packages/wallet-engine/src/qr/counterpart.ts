@@ -4,10 +4,14 @@
  * request our own `readQrRequest` accepts and binds, and `readQrSignature` verifies the phone's UR
  * answer against what was sent. Every hop is frames; nothing here touches a wallet.
  */
-import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
-import { base58, createBase58check } from "@scure/base";
+import { base58 } from "@scure/base";
+import { HDKey } from "@scure/bip32";
 import { Transaction } from "@scure/btc-signer/transaction.js";
+import * as Hex from "ox/Hex";
+import * as PublicKey from "ox/PublicKey";
+import * as Secp256k1 from "ox/Secp256k1";
+import * as Signature from "ox/Signature";
 
 import {
   cryptoMultiAccountsCodec,
@@ -28,17 +32,20 @@ import type {
 import { cryptoPsbtCodec } from "@qntx/ur/registry";
 import { Ur, fromUr, toUr } from "@qntx/ur/typed";
 import type { UrCodec } from "@qntx/ur/typed";
-import type { EvmTransaction } from "@qntx/wallet-chains";
+import type { EvmTransaction, SignRequest } from "@qntx/wallet-chains";
 import {
   bitcoinAddressFromXpub,
   bitcoinNetwork,
   samePsbtContent,
 } from "@qntx/wallet-chains/bitcoin";
 import {
+  assembleEvm,
   evmAddressFromPublicKey,
   evmSigningPreimage,
+  planEvm,
   recoverEvmSigner,
 } from "@qntx/wallet-chains/evm";
+import type { EvmSignPlan } from "@qntx/wallet-chains/evm";
 import {
   parseCompiledMessage,
   solanaAddressFromPublicKey,
@@ -52,9 +59,17 @@ import {
 } from "@qntx/wallet-chains/tron";
 import type { QrPayload } from "@qntx/wallet/hardware";
 
-import { BITCOIN_MAINNET, BITCOIN_TESTNET, PURPOSE_TEMPLATE, inputEntries } from "./bind.ts";
+import { inputEntries } from "./bind.ts";
 import { QrError, malformed, qrGuard, resultMismatch as mismatch, unsupported } from "./errors.ts";
-import { QR_FINGERPRINT, keypath, pathComponents, qrLinkPath } from "./link.ts";
+import {
+  BITCOIN_MAINNET,
+  BITCOIN_TESTNET,
+  PURPOSE_TEMPLATE,
+  QR_FINGERPRINT,
+  keypath,
+  pathComponents,
+  qrLinkPath,
+} from "./link.ts";
 import { evmProbe } from "./response.ts";
 
 /** One phone account a watch-only wallet signs through, read from the phone's export. */
@@ -111,28 +126,6 @@ export type QrSignature =
   | { readonly kind: "bitcoin.psbt"; readonly psbt: Uint8Array };
 
 const HARDENED = 0x80000000;
-
-const base58check = createBase58check(sha256);
-
-/** The BIP-32 extended public key's serialization — no secrets, plain field concatenation. */
-const xpubString = (
-  version: number,
-  depth: number,
-  parentFingerprint: number,
-  index: number,
-  chainCode: Uint8Array,
-  publicKey: Uint8Array,
-): string => {
-  const bytes = new Uint8Array(78);
-  const view = new DataView(bytes.buffer);
-  view.setUint32(0, version);
-  bytes[4] = depth;
-  view.setUint32(5, parentFingerprint);
-  view.setUint32(9, index);
-  bytes.set(chainCode, 13);
-  bytes.set(publicKey, 45);
-  return base58check.encode(bytes);
-};
 
 const pathString = (components: Keypath["components"]): string =>
   `m/${components.map((c) => (c.kind === "index" ? `${c.index}${c.hardened ? "'" : ""}` : "*")).join("/")}`;
@@ -202,15 +195,18 @@ const keyLink = (key: MultiAccountsKey, mfp: number): QrLink => {
     malformed("a bitcoin account carries no parent fingerprint");
   }
   const network = coin === 0 ? BITCOIN_MAINNET : BITCOIN_TESTNET;
-  const xpub = qrGuard("malformed", () =>
-    xpubString(
-      bitcoinNetwork(network).bip32.public,
-      steps.length,
-      parentFingerprint,
-      (steps[2]?.index ?? 0) + HARDENED,
-      chainCode,
-      pubkey,
-    ),
+  const version = bitcoinNetwork(network).bip32.public;
+  const xpub = qrGuard(
+    "malformed",
+    () =>
+      new HDKey({
+        versions: { private: version, public: version },
+        depth: steps.length,
+        parentFingerprint,
+        index: (steps[2]?.index ?? 0) + HARDENED,
+        chainCode,
+        publicKey: pubkey,
+      }).publicExtendedKey,
   );
   return {
     family: "bitcoin",
@@ -412,110 +408,55 @@ const echoRequestId = (sent: QrSentRequest, got: Uint8Array | undefined): void =
   mismatch("the response's request id is not the request's");
 };
 
-/* Minimal RLP for the three signed envelopes: byte strings and nested lists only. */
-const lenHeader = (offset: number, length: number): Uint8Array => {
-  if (length <= 55) {
-    return new Uint8Array([offset + length]);
-  }
-  const len = intBytes(length);
-  const out = new Uint8Array(1 + len.length);
-  out[0] = offset + 55 + len.length;
-  out.set(len, 1);
-  return out;
-};
+/* The transaction half of a sign request as the plan's request shape — planEvm reads only
+   `tx`; the head fields exist for the type, they name no account. */
+const evmTxRequest = (tx: EvmTransaction): Extract<SignRequest, { kind: "evm.transaction" }> => ({
+  kind: "evm.transaction",
+  network: `eip155:${tx.chainId}`,
+  account: { kind: "hd", walletId: "", groupIndex: 0, template: "" },
+  tx,
+});
 
-type RlpItem = Uint8Array | ReadonlyArray<RlpItem>;
-
-const rlp = (item: RlpItem): Uint8Array => {
-  if (item instanceof Uint8Array) {
-    if (item.length === 1 && (item[0] ?? 0) < 0x80) {
-      return item;
-    }
-    const head = lenHeader(0x80, item.length);
-    const out = new Uint8Array(head.length + item.length);
-    out.set(head, 0);
-    out.set(item, head.length);
-    return out;
-  }
-  const parts = item.map(rlp);
-  const total = parts.reduce((n, part) => n + part.length, 0);
-  const head = lenHeader(0xc0, total);
-  const out = new Uint8Array(head.length + total);
-  out.set(head, 0);
-  let at = head.length;
-  for (const part of parts) {
-    out.set(part, at);
-    at += part.length;
-  }
-  return out;
-};
-
-/** A non-negative integer (number, bigint or canonical-hex string) as minimal RLP bytes. */
-const intBytes = (value: number | bigint | string): Uint8Array => {
-  const big = BigInt(value);
-  return big === 0n ? new Uint8Array(0) : hexToBytes(big.toString(16).padStart(2, "0"));
-};
-
-/** A `0x…` hex quantity or 20-byte address as RLP bytes. */
-const hexBytes = (hex: string): Uint8Array => {
-  const body = hex.startsWith("0x") ? hex.slice(2) : hex;
-  if (body === "") {
-    return new Uint8Array(0);
-  }
-  return hexToBytes(body.length % 2 === 0 ? body : `0${body}`);
-};
-
-/** R‖s‖v as the phone writes it → the assembled signed envelope (EIP-155/2718 serialization). */
-const assembleEvmTx = (
-  tx: EvmTransaction,
-  signature: Uint8Array,
-): { readonly signedTransaction: Uint8Array } => {
-  if (signature.length < 65) {
-    mismatch("expected a 65-byte signature");
-  }
-  const r = signature.subarray(0, 32);
-  const s = signature.subarray(32, 64);
+/* R‖s‖v as the phone writes it → the signed envelope assembled by the signing plan. The wire's v
+   is inverted to the parity acceptEcdsa's signature form carries (legacy: EIP-155
+   27 + 2·chainId + 8 + parity; typed: the parity itself); any other v is result-mismatch. The
+   link names an address, not a key — the key is recovered over the plan's digest with that
+   declared parity, verified inside assembleEvm, and the recovered sender is re-checked against
+   the link below. */
+const evmSignedTransaction = (tx: EvmTransaction, signature: Uint8Array): Uint8Array => {
+  /* The eth-signature codec bounds the wire signature to exactly its min/max on decode, so a
+     signature reaching this point is the right length — only the v remains to check. */
   const v = signature.subarray(64).reduce((acc, byte) => acc * 256 + byte, 0);
-  // Legacy responses carry the EIP-155 v (27 + 2·chainId + parity); typed ones carry parity.
   const yParity = tx.type === "legacy" ? v - 27 - tx.chainId * 2 - 8 : v;
   if (yParity !== 0 && yParity !== 1) {
     mismatch("unexpected recovery id");
   }
-  const fields: RlpItem[] = [
-    intBytes(tx.gas),
-    tx.to === undefined ? new Uint8Array(0) : hexBytes(tx.to),
-    intBytes(tx.value),
-    hexBytes(tx.data),
-  ];
-  if (tx.type === "legacy") {
-    return {
-      signedTransaction: rlp([
-        intBytes(tx.nonce),
-        intBytes(tx.gasPrice),
-        ...fields,
-        intBytes(v),
-        r,
-        s,
-      ]),
-    };
+  const plan = (publicKey: Uint8Array): EvmSignPlan =>
+    planEvm(evmTxRequest(tx), { path: [], publicKey });
+  const wire = qrGuard("result-mismatch", () =>
+    Signature.from({
+      r: Hex.fromBytes(signature.subarray(0, 32)),
+      s: Hex.fromBytes(signature.subarray(32, 64)),
+      yParity,
+    }),
+  );
+  const publicKey = qrGuard("result-mismatch", () =>
+    PublicKey.toBytes(
+      PublicKey.compress(
+        Secp256k1.recoverPublicKey({
+          payload: Hex.fromBytes(plan(new Uint8Array(33)).tasks[0].digest),
+          signature: wire,
+        }),
+      ),
+    ),
+  );
+  const assembled = qrGuard("result-mismatch", () =>
+    assembleEvm(plan(publicKey), [signature.subarray(0, 64)]),
+  );
+  if (assembled.kind !== "signed") {
+    mismatch("the transaction plan did not sign");
   }
-  const head: RlpItem[] = [
-    intBytes(tx.chainId),
-    intBytes(tx.nonce),
-    ...(tx.type === "eip2930"
-      ? [intBytes(tx.gasPrice)]
-      : [intBytes(tx.maxPriorityFeePerGas), intBytes(tx.maxFeePerGas)]),
-    ...fields,
-    tx.accessList.map((e) => [hexBytes(e.address), e.storageKeys.map(hexBytes)]),
-    intBytes(yParity),
-    r,
-    s,
-  ];
-  const body = rlp(head);
-  const signedTransaction = new Uint8Array(1 + body.length);
-  signedTransaction[0] = tx.type === "eip2930" ? 0x01 : 0x02;
-  signedTransaction.set(body, 1);
-  return { signedTransaction };
+  return assembled.artefact;
 };
 
 const evmSignature = (sent: QrSentRequest, payload: QrPayload): QrSignature => {
@@ -526,7 +467,7 @@ const evmSignature = (sent: QrSentRequest, payload: QrPayload): QrSignature => {
     mismatch("not an evm request");
   }
   const signedTransaction =
-    input.kind === "transaction" ? assembleEvmTx(input.tx, signature).signedTransaction : undefined;
+    input.kind === "transaction" ? evmSignedTransaction(input.tx, signature) : undefined;
   const recovered = qrGuard("result-mismatch", () =>
     recoverEvmSigner(
       evmProbe(input),

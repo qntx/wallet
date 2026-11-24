@@ -4,6 +4,7 @@
  * chain imports so the watch validation pulls no codecs.
  */
 import type { Keypath } from "@qntx/ur/interop";
+import type { BitcoinTemplate } from "@qntx/wallet-chains";
 
 import { malformed } from "./errors.ts";
 
@@ -20,6 +21,20 @@ export const QR_LINK_PATHS: Readonly<Record<"evm" | "solana" | "tron" | "bitcoin
 
 export const qrLinkPath = (family: "evm" | "solana" | "tron" | "bitcoin", path: string): boolean =>
   QR_LINK_PATHS[family].test(path);
+
+/** The Bitcoin mainnet CAIP-2 id — the only network a QR PSBT maps deterministically. */
+export const BITCOIN_MAINNET = "bip122:000000000019d6689c085ae165831e93";
+
+/** The Bitcoin testnet CAIP-2 id — the one testnet genesis an export's coin type can name. */
+export const BITCOIN_TESTNET = "bip122:00000000da84f2bafbbc53dee25a72ae";
+
+/** The `p` of an account path `m/p'/coin'/g'/c/i` gives the template it must be. */
+export const PURPOSE_TEMPLATE: Record<number, BitcoinTemplate> = {
+  44: "btc.bip44",
+  49: "btc.bip49",
+  84: "btc.bip84",
+  86: "btc.bip86",
+};
 
 /** A `m/…` path as (index, hardened) steps, or `undefined` when a step is malformed. */
 export const pathComponents = (
