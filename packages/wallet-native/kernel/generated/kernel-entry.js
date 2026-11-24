@@ -313,7 +313,7 @@
 	* equalBytes(new Uint8Array([1]), new Uint8Array([1]));
 	* ```
 	*/
-	function equalBytes$9(a, b) {
+	function equalBytes$10(a, b) {
 		a = abytes$3(a);
 		b = abytes$3(b);
 		if (a.length !== b.length) return false;
@@ -519,7 +519,11 @@
 	}));
 	// packages/wallet/dist/types.mjs
 	/** The hardware-signing device families the kernel knows; each signer lane adds a literal. */
-	var HARDWARE_DEVICES = ["keystone", "ledger"];
+	var HARDWARE_DEVICES = [
+		"keystone",
+		"ledger",
+		"onekey"
+	];
 	// packages/wallet/dist/core-DZyoTqpO.mjs
 	init_defineProperty();
 	/**
@@ -5325,7 +5329,7 @@
 				const data = ciphertext.subarray(0, -16);
 				const passedTag = ciphertext.subarray(-16);
 				const tag = computeTag(xorStream, key, nonce, data, AAD);
-				if (!equalBytes$9(passedTag, tag)) {
+				if (!equalBytes$10(passedTag, tag)) {
 					clean$1(tag);
 					throw new Error("invalid tag");
 				}
@@ -5376,7 +5380,7 @@
 	* The header is the raw stored JSON text, so public headers are authenticated exactly as stored (no
 	* canonicalization step).
 	*/
-	var VERSION$2 = 1;
+	var VERSION$3 = 1;
 	function recordContext(kind, id) {
 		return `qntx-wallet/vault/v1/record/${kind}/${id}`;
 	}
@@ -5387,7 +5391,7 @@
 		const contextBytes = utf8ToBytes$1(context);
 		const headerBytes = utf8ToBytes$1(header);
 		const aad = new Uint8Array(3 + contextBytes.length + headerBytes.length);
-		aad[0] = VERSION$2;
+		aad[0] = VERSION$3;
 		new DataView(aad.buffer, aad.byteOffset, aad.byteLength).setUint16(1, contextBytes.length);
 		aad.set(contextBytes, 3);
 		aad.set(headerBytes, 3 + contextBytes.length);
@@ -5398,11 +5402,11 @@
 		const nonce = random(24);
 		if (nonce.length !== 24) throw new KernelError("integrity", "random source returned a wrong-length nonce");
 		const ciphertext = xchacha20poly1305(key, nonce, aadOf(context, header)).encrypt(plaintext);
-		return concatBytes$3(new Uint8Array([VERSION$2]), nonce, ciphertext);
+		return concatBytes$3(new Uint8Array([VERSION$3]), nonce, ciphertext);
 	}
 	function open(key, sealed, context, header) {
 		const failure = new KernelError("integrity", "envelope authentication failed");
-		if (key.length !== 32 || sealed.length < 41 || sealed[0] !== VERSION$2) throw failure;
+		if (key.length !== 32 || sealed.length < 41 || sealed[0] !== VERSION$3) throw failure;
 		try {
 			return xchacha20poly1305(key, sealed.subarray(1, 25), aadOf(context, header)).decrypt(sealed.subarray(25));
 		} catch (_unused) {
@@ -5659,7 +5663,7 @@
 	* equalBytes(Uint8Array.of(1), Uint8Array.of(1));
 	* ```
 	*/
-	function equalBytes$8(a, b) {
+	function equalBytes$9(a, b) {
 		a = abytes(a);
 		b = abytes(b);
 		if (a.length !== b.length) return false;
@@ -8045,7 +8049,7 @@
 			abytes$2(bytes, 32);
 			const { a, d } = ed25519_CURVE;
 			const s = bytes255ToNumberLE(bytes);
-			if (!equalBytes$8(Fp$1.toBytes(s), bytes) || Fp$1.isOdd(s)) throw new Error("invalid ristretto255 encoding 1");
+			if (!equalBytes$9(Fp$1.toBytes(s), bytes) || Fp$1.isOdd(s)) throw new Error("invalid ristretto255 encoding 1");
 			const s2 = Fp$1.sqr(s);
 			const u1 = Fp$1.add(_1n$6, Fp$1.mulN(a, s2));
 			const u2 = Fp$1.sub(_1n$6, Fp$1.mulN(a, s2));
@@ -8493,7 +8497,7 @@
 		if (sealed.length !== WRAPPED_DEK_LENGTH || sealed[0] !== WRAP_VERSION) return false;
 		const expected = dek.use((bytes) => factorBinding(bytes, factorContext(stored.kind, stored.id), stored.header));
 		try {
-			return equalBytes$9(expected, sealed.subarray(33, 65));
+			return equalBytes$10(expected, sealed.subarray(33, 65));
 		} finally {
 			wipe$1(expected);
 		}
@@ -8508,7 +8512,7 @@
 			const ephPk = x25519.getPublicKey(eph);
 			const shared = x25519.getSharedSecret(eph, factorPk);
 			try {
-				if (equalBytes$9(shared, ZERO32)) throw new KernelError("integrity", "weak factor public key");
+				if (equalBytes$10(shared, ZERO32)) throw new KernelError("integrity", "weak factor public key");
 				const wrapKey = hkdf(sha256$1, shared, concatBytes$3(ephPk, factorPk), WRAP_INFO, 32);
 				try {
 					const envelope = dek.use((bytes) => seal(wrapKey, bytes, factorContext(factor.kind, factor.id), factor.header, random));
@@ -8539,7 +8543,7 @@
 		const factorSk = hkdf(sha256$1, kek, /* @__PURE__ */ new Uint8Array(0), FACTOR_KEY_INFO, 32);
 		try {
 			const factorPk = x25519.getPublicKey(factorSk);
-			if (!equalBytes$9(factorPk, factorHeaderPublicKey(stored))) throw stored.kind === "password" ? new KernelError("wrong-password", "password did not open the vault") : stored.kind === "passkey" ? new KernelError("wrong-passkey", "passkey does not match the factor") : corruptError("keystore factor returned a key that does not match its header");
+			if (!equalBytes$10(factorPk, factorHeaderPublicKey(stored))) throw stored.kind === "password" ? new KernelError("wrong-password", "password did not open the vault") : stored.kind === "passkey" ? new KernelError("wrong-passkey", "passkey does not match the factor") : corruptError("keystore factor returned a key that does not match its header");
 			const { sealed } = stored;
 			if (sealed.length !== WRAPPED_DEK_LENGTH || sealed[0] !== WRAP_VERSION) throw corruptError("malformed factor wrapping");
 			const ephPk = sealed.subarray(1, 33);
@@ -8551,7 +8555,7 @@
 				throw corruptError("invalid factor ephemeral key");
 			}
 			try {
-				if (equalBytes$9(shared, ZERO32)) throw corruptError("weak factor ephemeral key");
+				if (equalBytes$10(shared, ZERO32)) throw corruptError("weak factor ephemeral key");
 				const wrapKey = hkdf(sha256$1, shared, concatBytes$3(ephPk, factorPk), WRAP_INFO, 32);
 				try {
 					let dekBytes;
@@ -8561,7 +8565,7 @@
 						throw corruptError("factor wrapping failed authentication");
 					}
 					const expected = factorBinding(dekBytes, factorContext(stored.kind, stored.id), stored.header);
-					const bound = equalBytes$9(expected, binding);
+					const bound = equalBytes$10(expected, binding);
 					wipe$1(expected);
 					if (!bound) {
 						wipe$1(dekBytes);
@@ -8800,7 +8804,7 @@
 		return out;
 	}
 	/** U64be as two u32 words — bare Hermes has no BigInt reliance here. */
-	function u64(value) {
+	function u64$5(value) {
 		const out = /* @__PURE__ */ new Uint8Array(8);
 		const view = new DataView(out.buffer);
 		view.setUint32(0, Math.floor(value / 4294967296));
@@ -8825,7 +8829,7 @@
 		};
 		lp(DOMAIN);
 		hash.update(u32$5(meta.format));
-		hash.update(u64(meta.revision));
+		hash.update(u64$5(meta.revision));
 		lp(meta.keyId);
 		const records = image.records.filter((record) => !isManifestRecord(record)).sort((a, b) => byCodeUnits(a.kind, b.kind) || byCodeUnits(a.id, b.id));
 		hash.update(u32$5(records.length));
@@ -8876,7 +8880,7 @@
 			throw failure;
 		}
 		try {
-			if (!equalBytes$9(sealed, manifestDigest(image))) throw failure;
+			if (!equalBytes$10(sealed, manifestDigest(image))) throw failure;
 		} finally {
 			wipe$1(sealed);
 		}
@@ -9189,7 +9193,7 @@
 				if (dek.wiped) throw new KernelError("locked", "the session ended during verification");
 				const opened = unwrapDek(kek, stored);
 				try {
-					verified = opened.use((a) => dek.use((b) => equalBytes$9(a, b)));
+					verified = opened.use((a) => dek.use((b) => equalBytes$10(a, b)));
 				} finally {
 					opened.wipe();
 				}
@@ -10851,7 +10855,7 @@
 		ripemd160 = /* @__PURE__ */ createHasher(() => new _RIPEMD160());
 	}));
 	// node_modules/.bun/@scure+bip32@2.4.0/node_modules/@scure/bip32/index.js
-	var Point$1, Fn$2, base58check$2, MASTER_SECRET$1, BITCOIN_VERSIONS, HARDENED_OFFSET$2, MAX_DEPTH, hash160$1, fromU32, toU32$1, validateVersions, HDKey$1;
+	var Point$1, Fn$2, base58check$3, MASTER_SECRET$1, BITCOIN_VERSIONS, HARDENED_OFFSET$2, MAX_DEPTH$1, hash160$1, fromU32, toU32$1, validateVersions, HDKey$1;
 	var init_bip32 = __esmMin((() => {
 		init_secp256k1();
 		init_hmac();
@@ -10863,7 +10867,7 @@
 		init_objectSpread2();
 		Point$1 = /* @__PURE__ */ (() => secp256k1.Point)();
 		Fn$2 = /* @__PURE__ */ (() => Point$1.Fn)();
-		base58check$2 = /* @__PURE__ */ createBase58check(sha256$1);
+		base58check$3 = /* @__PURE__ */ createBase58check(sha256$1);
 		MASTER_SECRET$1 = /* @__PURE__ */ (() => {
 			/*! scure-bip32 - MIT License (c) 2022 Patricio Palladino, Paul Miller (paulmillr.com) */
 			return Uint8Array.from("Bitcoin seed".split(""), (char) => char.charCodeAt(0));
@@ -10873,7 +10877,7 @@
 			public: 76067358
 		};
 		HARDENED_OFFSET$2 = 2147483648;
-		MAX_DEPTH = 255;
+		MAX_DEPTH$1 = 255;
 		hash160$1 = (data) => ripemd160(sha256$1(data));
 		fromU32 = (data) => createView$1(data).getUint32(0, false);
 		toU32$1 = (n, title = "number") => {
@@ -10912,11 +10916,11 @@
 			get privateExtendedKey() {
 				const priv = this._privateKey;
 				if (!priv) throw new Error("No private key");
-				return base58check$2.encode(this.serialize(this.versions.private, concatBytes$3(Uint8Array.of(0), priv)));
+				return base58check$3.encode(this.serialize(this.versions.private, concatBytes$3(Uint8Array.of(0), priv)));
 			}
 			get publicExtendedKey() {
 				if (!this._publicKey) throw new Error("No public key");
-				return base58check$2.encode(this.serialize(this.versions.public, this._publicKey));
+				return base58check$3.encode(this.serialize(this.versions.public, this._publicKey));
 			}
 			static fromMasterSeed(seed, versions = BITCOIN_VERSIONS) {
 				abytes$2(seed);
@@ -10933,7 +10937,7 @@
 			}
 			static fromExtendedKey(base58key, versions = BITCOIN_VERSIONS) {
 				versions = validateVersions(versions);
-				const keyBuffer = base58check$2.decode(base58key);
+				const keyBuffer = base58check$3.decode(base58key);
 				if (keyBuffer.length !== 78) throw new Error(`HDKey: invalid extended key length: expected 78 bytes, got ${keyBuffer.length}`);
 				const keyView = createView$1(keyBuffer);
 				const version = keyView.getUint32(0, false);
@@ -10967,7 +10971,7 @@
 				const depth = (_opt$depth = opt.depth) !== null && _opt$depth !== void 0 ? _opt$depth : 0;
 				const index = (_opt$index = opt.index) !== null && _opt$index !== void 0 ? _opt$index : 0;
 				const parentFingerprint = (_opt$parentFingerprin = opt.parentFingerprint) !== null && _opt$parentFingerprin !== void 0 ? _opt$parentFingerprin : 0;
-				if (!Number.isSafeInteger(depth) || depth < 0 || depth > MAX_DEPTH) throw new RangeError("HDKey: depth must be an integer in range 0..255");
+				if (!Number.isSafeInteger(depth) || depth < 0 || depth > MAX_DEPTH$1) throw new RangeError("HDKey: depth must be an integer in range 0..255");
 				toU32$1(index, "index");
 				toU32$1(parentFingerprint, "parentFingerprint");
 				if (depth === 0 && (index !== 0 || parentFingerprint !== 0)) throw new Error("HDKey: zero depth with non-zero index/parent fingerprint");
@@ -10990,7 +10994,7 @@
 				if (!/^[mM]'?/.test(path)) throw new Error("Path must start with \"m\" or \"M\"");
 				if (/^[mM]'?$/.test(path)) return this;
 				const parts = path.replace(/^[mM]'?\//, "").split("/");
-				if (parts.length > MAX_DEPTH - this.depth) throw new Error("HDKey: path exceeds the serializable depth 255");
+				if (parts.length > MAX_DEPTH$1 - this.depth) throw new Error("HDKey: path exceeds the serializable depth 255");
 				let child = this;
 				for (const c of parts) {
 					const m = /^(\d+)('?)$/.exec(c);
@@ -11026,7 +11030,7 @@
 					parentFingerprint: this.fingerprint,
 					index
 				};
-				if (opt.depth > MAX_DEPTH) throw new Error("HDKey: depth exceeds the serializable value 255");
+				if (opt.depth > MAX_DEPTH$1) throw new Error("HDKey: depth exceeds the serializable value 255");
 				const retry = () => {
 					if (index >= (this._privateKey ? 2 ** 32 - 1 : 2147483647)) throw new Error(`HDKey: cannot retry child derivation at index ${index}`);
 					return this.deriveChild(index + 1);
@@ -11084,7 +11088,7 @@
 	}));
 	// node_modules/.bun/micro-packed@0.11.1/node_modules/micro-packed/index.js
 	/** Checks if two Uint8Arrays are equal. Not constant-time. */
-	function equalBytes$7(a, b) {
+	function equalBytes$8(a, b) {
 		if (a.length !== b.length) return false;
 		for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
 		return true;
@@ -11111,10 +11115,10 @@
 		};
 	}
 	/** Compares values used as encoded-domain constants; byte arrays compare by contents. */
-	function equal(a, b) {
+	function equal$1(a, b) {
 		const aBytes = isBytes$2(a);
 		const bBytes = isBytes$2(b);
-		if (aBytes || bBytes) return aBytes && bBytes && equalBytes$7(a, b);
+		if (aBytes || bBytes) return aBytes && bBytes && equalBytes$8(a, b);
 		return a === b;
 	}
 	/** Checks if the given value is a Uint8Array. */
@@ -11500,7 +11504,7 @@
 		const valueObj = value !== null && typeof value === "object" && !isBytes$2(value);
 		const defObj = def !== null && typeof def === "object" && !isBytes$2(def);
 		const nan = typeof value === "number" && typeof def === "number" && Number.isNaN(value) && Number.isNaN(def);
-		if ((!valueObj || !defObj) && !equal(value, def) && !nan) throw r.err(`default: invalid value ${value} !== ${def}`);
+		if ((!valueObj || !defObj) && !equal$1(value, def) && !nan) throw r.err(`default: invalid value ${value} !== ${def}`);
 	}
 	/**
 	* Conditional CoderType that encodes/decodes a value only if a flag is present.
@@ -11580,7 +11584,7 @@
 				const value = inner.decodeStream(r);
 				const valueObj = value !== null && typeof value === "object" && !isBytes$2(value);
 				const constantObj = constant !== null && typeof constant === "object" && !isBytes$2(constant);
-				if (check && (!valueObj || !constantObj) && !equal(value, constant)) throw r.err(`magic: invalid value: ${value} !== ${constant}`);
+				if (check && (!valueObj || !constantObj) && !equal$1(value, constant)) throw r.err(`magic: invalid value: ${value} !== ${constant}`);
 			},
 			validate: (value) => {
 				if (value !== void 0) throw new Error(`magic: wrong value=${typeof value}`);
@@ -11700,7 +11704,7 @@
 						inner.encodeStream(w, elm);
 						if (terminator && terminator.length <= _w.pos - startPos) {
 							const data = _w.finish(false).subarray(startPos, _w.pos);
-							if (equalBytes$7(data.subarray(0, terminator.length), terminator)) throw _w.err(`array: inner element encoding same as separator. elm=${elm} data=${data}`);
+							if (equalBytes$8(data.subarray(0, terminator.length), terminator)) throw _w.err(`array: inner element encoding same as separator. elm=${elm} data=${data}`);
 						}
 						_w.exitField();
 					}
@@ -11720,7 +11724,7 @@
 						if (inner.size && r.leftBytes < inner.size) break;
 					}
 					else if (terminator) for (let i = 0;; i++) {
-						if (equalBytes$7(r.bytes(terminator.length, true), terminator)) {
+						if (equalBytes$8(r.bytes(terminator.length, true), terminator)) {
 							r.bytes(terminator.length);
 							break;
 						}
@@ -11777,7 +11781,7 @@
 		_255n = /* @__PURE__ */ BigInt(255);
 		hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 		utils = /* @__PURE__ */ Object.freeze({
-			equalBytes: equalBytes$7,
+			equalBytes: equalBytes$8,
 			isBytes: isBytes$2,
 			isCoder,
 			checkBounds,
@@ -12417,7 +12421,7 @@
 				decodeStream: (r) => {
 					let hasFlag = r.leftBytes >= marker.length;
 					if (hasFlag) {
-						hasFlag = equalBytes$7(r.bytes(marker.length, true), marker);
+						hasFlag = equalBytes$8(r.bytes(marker.length, true), marker);
 						if (hasFlag) r.bytes(marker.length);
 					}
 					return hasFlag !== xor;
@@ -13516,7 +13520,7 @@
 			throw new SiwxError({ code: "VerificationFailed" });
 		}
 		const expected = parseEip55(message.address);
-		if (!equalBytes$8(recovered, expected)) throw new SiwxError({ code: "VerificationFailed" });
+		if (!equalBytes$9(recovered, expected)) throw new SiwxError({ code: "VerificationFailed" });
 	}
 	//! On-chain smart-account verification: the ERC-6492 universal validator via a
 	//! deployless `eth_call`. Covers deployed ERC-1271 accounts, counterfactual
@@ -13706,7 +13710,7 @@
 	*
 	* @throws {SiwxError} `InvalidField` `address`.
 	*/
-	function addressBytes$1(address) {
+	function addressBytes$2(address) {
 		if (address.length < 32 || address.length > 44) throw fieldError("address", "expected 32–44 base58 chars");
 		let bytes;
 		try {
@@ -13732,7 +13736,7 @@
 		}
 		if (point.equals(ed25519.Point.ZERO)) throw fieldError("address", "identity pubkey");
 		if (!point.isTorsionFree()) throw fieldError("address", "not in the prime-order subgroup");
-		if (!equalBytes$8(point.toBytes(), bytes)) throw fieldError("address", "non-canonical pubkey");
+		if (!equalBytes$9(point.toBytes(), bytes)) throw fieldError("address", "non-canonical pubkey");
 	}
 	/**
 	* Validate that `address` is a canonical, non-identity, prime-order-subgroup Ed25519 verifying key
@@ -13741,7 +13745,7 @@
 	* @throws {SiwxError} `InvalidField` `address`.
 	*/
 	function validateAddress(address) {
-		canonicalPoint(addressBytes$1(address));
+		canonicalPoint(addressBytes$2(address));
 	}
 	ed25519.Point.CURVE().n;
 	ed25519.Point;
@@ -14968,7 +14972,7 @@
 	* @param values - The {@link ox#Hex.Hex} values to concatenate.
 	* @returns The concatenated {@link ox#Hex.Hex} value.
 	*/
-	function concat$6(...values) {
+	function concat$7(...values) {
 		if (values.length === 0) return "0x";
 		if (values.length === 1) return values[0];
 		if (values.length === 2) return `0x${values[0].slice(2)}${values[1].slice(2)}`;
@@ -15675,7 +15679,7 @@
 	* @param options - Decoding options.
 	* @returns Decoded bigint.
 	*/
-	function toBigInt$1(bytes, options = {}) {
+	function toBigInt$2(bytes, options = {}) {
 		const { signed, size } = options;
 		if (typeof size !== "undefined") assertSize$1(bytes, size);
 		return bytesToBigInt(bytes, signed);
@@ -17097,7 +17101,7 @@
 	var maxUint256 = 2n ** 256n - 1n;
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AbiParameters.js
 	init_defineProperty();
-	function decode$3(parameters, data, options = {}) {
+	function decode$4(parameters, data, options = {}) {
 		const { as = "Array", checksumAddress = true } = options;
 		const bytes = typeof data === "string" ? fromHex$2(data) : data;
 		const cursor = create$1(bytes);
@@ -17167,7 +17171,7 @@
 	* @param values - The set of primitive values that correspond to the ABI types defined in `parameters`.
 	* @returns ABI encoded data.
 	*/
-	function encode$2(parameters, values, options) {
+	function encode$3(parameters, values, options) {
 		const { checksumAddress = false } = options !== null && options !== void 0 ? options : {};
 		return encodeParameters(parameters, values, { checksumAddress });
 	}
@@ -17203,7 +17207,7 @@
 			const value = values[i];
 			data.push(encodePacked.encode(type, value));
 		}
-		return concat$6(...data);
+		return concat$7(...data);
 	}
 	(function(encodePacked) {
 		function encode(type, value, isArray = false) {
@@ -17247,7 +17251,7 @@
 				const data = [];
 				for (let i = 0; i < value.length; i++) data.push(encode(childType, value[i], true));
 				if (data.length === 0) return "0x";
-				return concat$6(...data);
+				return concat$7(...data);
 			}
 			throw new InvalidTypeError$1(type);
 		}
@@ -17600,7 +17604,7 @@
 		const signed = param.type.startsWith("int");
 		const size = Number.parseInt(param.type.split("int")[1] || "256", 10);
 		const value = cursor.readBytes(32);
-		return [size > 48 ? toBigInt$1(value, { signed }) : toNumber(value, { signed }), 32];
+		return [size > 48 ? toBigInt$2(value, { signed }) : toNumber(value, { signed }), 32];
 	}
 	/** @internal */
 	function decodeTuple(cursor, param, options) {
@@ -18470,7 +18474,7 @@
 			size: Math.max(0, size$1(data) - 4)
 		});
 		if (size$1(data) <= 4) return void 0;
-		return decode$3(item.inputs, slice$2(data, 4), options);
+		return decode$4(item.inputs, slice$2(data, 4), options);
 	}
 	function encodeData$1(...parameters) {
 		const [abiFunction, args] = (() => {
@@ -18801,7 +18805,7 @@
 	* @param value - The Typed Data to encode.
 	* @returns The encoded Typed Data.
 	*/
-	function encode$1(value) {
+	function encode$2(value) {
 		const { domain = {}, message, primaryType } = value;
 		const types = _objectSpread2({ EIP712Domain: extractEip712DomainTypes(domain) }, value.types);
 		assert$6({
@@ -18823,7 +18827,7 @@
 			types,
 			typeHashes
 		}));
-		return concat$6(...parts);
+		return concat$7(...parts);
 	}
 	/**
 	* Encodes [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) schema for the provided primaryType.
@@ -18963,7 +18967,7 @@
 	* @returns The payload to use for signing.
 	*/
 	function getSignPayload$6(value) {
-		return keccak256(encode$1(value));
+		return keccak256(encode$2(value));
 	}
 	/**
 	* Hashes [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) domain.
@@ -19129,7 +19133,7 @@
 			typeHashes
 		})];
 		for (const field of (_types$primaryType = types[primaryType]) !== null && _types$primaryType !== void 0 ? _types$primaryType : []) {
-			const [type, value] = encodeField({
+			const [type, value] = encodeField$1({
 				types,
 				name: field.name,
 				type: field.type,
@@ -19139,7 +19143,7 @@
 			encodedTypes.push(type);
 			encodedValues.push(value);
 		}
-		return encode$2(encodedTypes, encodedValues);
+		return encode$3(encodedTypes, encodedValues);
 	}
 	/** @internal */
 	function hashType(value) {
@@ -19154,7 +19158,7 @@
 		return hash;
 	}
 	/** @internal */
-	function encodeField(properties) {
+	function encodeField$1(properties) {
 		let { types, name, type, value, typeHashes } = properties;
 		if (types[type] !== void 0) return [{ type: "bytes32" }, keccak256(encodeData({
 			data: value,
@@ -19182,14 +19186,14 @@
 				expectedLength: fixedLength,
 				givenLength: value.length
 			});
-			const typeValuePairs = value.map((item) => encodeField({
+			const typeValuePairs = value.map((item) => encodeField$1({
 				name,
 				type: parsedType,
 				types,
 				value: item,
 				typeHashes
 			}));
-			return [{ type: "bytes32" }, keccak256(encode$2(typeValuePairs.map(([t]) => t), typeValuePairs.map(([, v]) => v)))];
+			return [{ type: "bytes32" }, keccak256(encode$3(typeValuePairs.map(([t]) => t), typeValuePairs.map(([, v]) => v)))];
 		}
 		return [{ type }, value];
 	}
@@ -19209,7 +19213,7 @@
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-BCPg0mMw.mjs
+	// packages/wallet-chains/dist/typed-data-B5sEI0Lb.mjs
 	init_utils$2();
 	init_secp256k1();
 	init_objectSpread2();
@@ -19261,7 +19265,7 @@
 		return v;
 	};
 	/** ERC-7821 batch-default self-call payload for `execute` on the delegator. */
-	var encodeBatchExecute = (calls) => encodeData$1(EXECUTE, [EXECUTE_BATCH_MODE, encode$2(EXECUTIONS, [calls.map((c) => ({
+	var encodeBatchExecute = (calls) => encodeData$1(EXECUTE, [EXECUTE_BATCH_MODE, encode$3(EXECUTIONS, [calls.map((c) => ({
 		target: hex$2(checksumEvmAddress(c.to)),
 		value: c.value,
 		callData: hex$2(c.data)
@@ -19273,7 +19277,7 @@
 		try {
 			const [mode, executionData] = list(decodeData(EXECUTE, hex$2(data)));
 			if (mode !== "0x0100000000000000000000000000000000000000000000000000000000000000" || typeof executionData !== "string") return;
-			const [inner] = list(decode$3(EXECUTIONS, hex$2(executionData)));
+			const [inner] = list(decode$4(EXECUTIONS, hex$2(executionData)));
 			const executions = [];
 			for (const e of list(inner)) {
 				if (!isExecution(e)) return;
@@ -19304,12 +19308,12 @@
 		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new ChainError("invalid-quantity", `${field} must be a non-negative safe integer`);
 		return value;
 	};
-	var quantity = (value, field) => {
+	var quantity$1 = (value, field) => {
 		if (typeof value !== "string") throw new ChainError("invalid-quantity", `${field} must be a 0x quantity string`);
 		if (CANONICAL_HEX.test(value)) return value;
 		return canonicalHex(quantityBigInt(value, field));
 	};
-	var hexBytes$2 = (value, field) => {
+	var hexBytes$4 = (value, field) => {
 		if (typeof value !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
 		return value.toLowerCase();
 	};
@@ -19396,9 +19400,9 @@
 		requireFields(tx, REQUIRED.base);
 		const chainId = safeInteger(tx["chainId"], "chainId");
 		const nonce = safeInteger(tx["nonce"], "nonce");
-		const gas = quantity(tx["gas"], "gas");
-		const value = quantity(tx["value"], "value");
-		const data = hexBytes$2(tx["data"], "data");
+		const gas = quantity$1(tx["gas"], "gas");
+		const value = quantity$1(tx["value"], "value");
+		const data = hexBytes$4(tx["data"], "data");
 		const toRaw = tx["to"];
 		const to = toRaw === void 0 ? void 0 : typeof toRaw === "string" && isEvmAddress(toRaw) ? checksumEvmAddress(toRaw) : void 0;
 		if (toRaw !== void 0 && to === void 0) throw new ChainError("invalid-address", "to must be a valid EVM address");
@@ -19411,19 +19415,19 @@
 		}, to === void 0 ? {} : { to });
 		if (type === "legacy") {
 			requireFields(tx, REQUIRED.gasPrice);
-			return _objectSpread2(_objectSpread2({ type }, base), {}, { gasPrice: quantity(tx["gasPrice"], "gasPrice") });
+			return _objectSpread2(_objectSpread2({ type }, base), {}, { gasPrice: quantity$1(tx["gasPrice"], "gasPrice") });
 		}
 		if (type === "eip2930") {
 			requireFields(tx, [...REQUIRED.gasPrice, ...REQUIRED.accessList]);
 			return _objectSpread2(_objectSpread2({ type }, base), {}, {
-				gasPrice: quantity(tx["gasPrice"], "gasPrice"),
+				gasPrice: quantity$1(tx["gasPrice"], "gasPrice"),
 				accessList: accessList(tx["accessList"])
 			});
 		}
 		requireFields(tx, [...REQUIRED.accessList, ...REQUIRED.eip1559]);
 		const fees = {
-			maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
-			maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas")
+			maxFeePerGas: quantity$1(tx["maxFeePerGas"], "maxFeePerGas"),
+			maxPriorityFeePerGas: quantity$1(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas")
 		};
 		if (BigInt(fees.maxPriorityFeePerGas) > BigInt(fees.maxFeePerGas)) throw new ChainError("invalid-request", "maxPriorityFeePerGas exceeds maxFeePerGas");
 		const list = accessList(tx["accessList"]);
@@ -19449,6 +19453,23 @@
 		return Object.values(types).every((fields) => Array.isArray(fields) && fields.every(isField));
 	};
 	var isTypedDataMessage = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	/**
+	* The EIP-712 domain separator and message struct hash of a parsed document — the same encoder
+	* `planEvmTypedData` signs (`keccak256(0x1901 | domain | message)` is the task digest). `message`
+	* is `undefined` when the primary type is `EIP712Domain` itself.
+	*/
+	var typedDataHashes = (json) => {
+		const encoded = toBytes$1(encode$2({
+			domain: json.domain,
+			types: json.types,
+			primaryType: json.primaryType,
+			message: json.message
+		}));
+		return {
+			domain: encoded.subarray(2, 34),
+			message: json.primaryType === "EIP712Domain" ? void 0 : encoded.subarray(34)
+		};
+	};
 	/** `value` is an array of message objects (empty allowed). */
 	var typedDataMessages = (value) => Array.isArray(value) && value.every(isTypedDataMessage) ? value : void 0;
 	/** The `Type field,Type field` signature of struct `name` in `types`. */
@@ -19518,7 +19539,7 @@
 		return { json: _objectSpread2(_objectSpread2({}, json), {}, { domain }) };
 	};
 	var FIXED_BYTES$1 = /^bytes(?:[1-9]|[12][0-9]|3[0-2])$/;
-	var INT_TYPE$1 = /^u?int([0-9]*)$/;
+	var INT_TYPE$2 = /^u?int([0-9]*)$/;
 	/**
 	* The display value of one atomic leaf, or `undefined` when the value is not in a form that is
 	* shown exactly as it is encoded. Only the canonical forms every EIP-712 hasher agrees on are
@@ -19534,7 +19555,7 @@
 			return excerpt.omitted === 0 ? (_excerpt$lines$ = excerpt.lines[0]) !== null && _excerpt$lines$ !== void 0 ? _excerpt$lines$ : "" : void 0;
 		}
 		if (type === "bytes" || FIXED_BYTES$1.test(type)) return typeof value === "string" && /^0x([0-9a-fA-F]{2})*$/.test(value) && value.length <= 96 ? value.toLowerCase() : void 0;
-		const int = INT_TYPE$1.exec(type);
+		const int = INT_TYPE$2.exec(type);
 		if (int !== null) {
 			const bits = int[1] === "" ? 256 : Number(int[1]);
 			if (bits % 8 !== 0 || bits < 8 || bits > 256) return;
@@ -19634,7 +19655,7 @@
 		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
 		return numeric;
 	};
-	// packages/wallet-chains/dist/token-call-BJAC7Ngb.mjs
+	// packages/wallet-chains/dist/token-call-BSiES6KC.mjs
 	init_utils$2();
 	init_objectSpread2();
 	var MAX_UINT256 = 2n ** 256n - 1n;
@@ -19811,7 +19832,7 @@
 	};
 	var ZERO$3 = "0x0000000000000000000000000000000000000000";
 	var isWitnessType = (type) => Object.hasOwn(ORDER_TYPES, type);
-	var address$1 = (message, key) => typedDataAddress(message[key]);
+	var address$1$1 = (message, key) => typedDataAddress(message[key]);
 	var uint$1$1 = (message, key) => typedDataUint(message[key], MAX_UINT256);
 	/** The witness decoded per its order type, or `undefined` when any needed value is malformed. */
 	var parse = (type, witness) => {
@@ -19819,9 +19840,9 @@
 		if (!isTypedDataMessage(info)) return;
 		const output = (item, amount) => {
 			if (!isTypedDataMessage(item)) return;
-			const token = address$1(item, "token");
+			const token = address$1$1(item, "token");
 			const value = amount(item);
-			const recipient = address$1(item, "recipient");
+			const recipient = address$1$1(item, "recipient");
 			return token === void 0 || value === void 0 || recipient === void 0 ? void 0 : {
 				token,
 				amount: value,
@@ -19847,13 +19868,13 @@
 		if (type === "ExclusiveDutchOrder" || type === "V2DutchOrder") {
 			const exclusive = type === "ExclusiveDutchOrder";
 			const prefix = exclusive ? "input" : "baseInput";
-			const inputToken = address$1(witness, `${prefix}Token`);
+			const inputToken = address$1$1(witness, `${prefix}Token`);
 			const start = uint$1$1(witness, `${prefix}StartAmount`);
 			const end = uint$1$1(witness, `${prefix}EndAmount`);
 			const outputs = outputsOf(exclusive ? "outputs" : "baseOutputs", (m) => dutch(m));
-			const filler = exclusive ? address$1(witness, "exclusiveFiller") : void 0;
+			const filler = exclusive ? address$1$1(witness, "exclusiveFiller") : void 0;
 			const decayed = uint$1$1(witness, "decayStartTime") !== void 0 && uint$1$1(witness, "decayEndTime") !== void 0 && uint$1$1(witness, "exclusivityOverrideBps") !== void 0;
-			const cosigned = exclusive || address$1(witness, "cosigner") !== void 0;
+			const cosigned = exclusive || address$1$1(witness, "cosigner") !== void 0;
 			if (inputToken === void 0 || start === void 0 || end === void 0 || outputs === void 0 || exclusive && (!decayed || filler === void 0) || !cosigned) return;
 			return _objectSpread2({
 				info,
@@ -19864,8 +19885,8 @@
 		}
 		if (type === "V3DutchOrder") {
 			const input = witness["baseInput"];
-			if (!isTypedDataMessage(input) || !isTypedDataMessage(input["curve"]) || address$1(witness, "cosigner") === void 0 || uint$1$1(witness, "startingBaseFee") === void 0) return;
-			const inputToken = address$1(input, "token");
+			if (!isTypedDataMessage(input) || !isTypedDataMessage(input["curve"]) || address$1$1(witness, "cosigner") === void 0 || uint$1$1(witness, "startingBaseFee") === void 0) return;
+			const inputToken = address$1$1(input, "token");
 			const maxAmount = uint$1$1(input, "maxAmount");
 			const outputs = outputsOf("baseOutputs", (m) => isTypedDataMessage(m["curve"]) ? uint$1$1(m, "minAmount") : void 0);
 			return inputToken === void 0 || maxAmount === void 0 || outputs === void 0 ? void 0 : {
@@ -19876,8 +19897,8 @@
 			};
 		}
 		const { input } = witness;
-		if (!isTypedDataMessage(input) || address$1(witness, "cosigner") === void 0 || uint$1$1(witness, "auctionStartBlock") === void 0 || uint$1$1(witness, "baselinePriorityFeeWei") === void 0 || uint$1$1(input, "mpsPerPriorityFeeWei") === void 0) return;
-		const inputToken = address$1(input, "token");
+		if (!isTypedDataMessage(input) || address$1$1(witness, "cosigner") === void 0 || uint$1$1(witness, "auctionStartBlock") === void 0 || uint$1$1(witness, "baselinePriorityFeeWei") === void 0 || uint$1$1(input, "mpsPerPriorityFeeWei") === void 0) return;
+		const inputToken = address$1$1(input, "token");
 		const amount = uint$1$1(input, "amount");
 		const outputs = outputsOf("outputs", (m) => uint$1$1(m, "mpsPerPriorityFeeWei") === void 0 ? void 0 : uint$1$1(m, "amount"));
 		return inputToken === void 0 || amount === void 0 || outputs === void 0 ? void 0 : {
@@ -19908,17 +19929,17 @@
 		if (Object.keys(types).length !== Object.keys(expected).length || !Object.entries(expected).every(([name, fields]) => sameFields(types, name, fields)) || domainChainId(domain) !== chainId) return;
 		const { permitted } = message;
 		const { witness } = message;
-		const spender = address$1(message, "spender");
-		const permittedToken = isTypedDataMessage(permitted) ? address$1(permitted, "token") : void 0;
+		const spender = address$1$1(message, "spender");
+		const permittedToken = isTypedDataMessage(permitted) ? address$1$1(permitted, "token") : void 0;
 		const permittedAmount = isTypedDataMessage(permitted) ? uint$1$1(permitted, "amount") : void 0;
 		const parsed = isTypedDataMessage(witness) ? parse(witnessType, witness) : void 0;
 		if (spender === void 0 || permittedToken === void 0 || permittedAmount === void 0 || parsed === void 0 || parsed.inputToken.toLowerCase() !== permittedToken.toLowerCase()) return;
 		const { info } = parsed;
-		const reactor = address$1(info, "reactor");
-		const swapper = address$1(info, "swapper");
+		const reactor = address$1$1(info, "reactor");
+		const swapper = address$1$1(info, "swapper");
 		const nonce = uint$1$1(info, "nonce");
 		const deadline = uint$1$1(info, "deadline");
-		if (reactor === void 0 || reactor.toLowerCase() !== spender.toLowerCase() || reactor.toLowerCase() !== ((_REACTORS$chainId = REACTORS[chainId]) === null || _REACTORS$chainId === void 0 ? void 0 : _REACTORS$chainId[witnessType]) || swapper === void 0 || swapper.toLowerCase() !== signer.toLowerCase() || nonce === void 0 || deadline === void 0 || deadline > BigInt(Number.MAX_SAFE_INTEGER) || address$1(info, "additionalValidationContract") === void 0 || typedDataBytes(info["additionalValidationData"]) === void 0) return;
+		if (reactor === void 0 || reactor.toLowerCase() !== spender.toLowerCase() || reactor.toLowerCase() !== ((_REACTORS$chainId = REACTORS[chainId]) === null || _REACTORS$chainId === void 0 ? void 0 : _REACTORS$chainId[witnessType]) || swapper === void 0 || swapper.toLowerCase() !== signer.toLowerCase() || nonce === void 0 || deadline === void 0 || deadline > BigInt(Number.MAX_SAFE_INTEGER) || address$1$1(info, "additionalValidationContract") === void 0 || typedDataBytes(info["additionalValidationData"]) === void 0) return;
 		if (parsed.outputs.length > 8) return { kind: "oversize" };
 		const maker = checksumEvmAddress(signer);
 		const giveAmount = parsed.giveAmount < permittedAmount ? parsed.giveAmount : permittedAmount;
@@ -19957,7 +19978,7 @@
 	var EXEC = from$2("function exec(address operator, address token, uint256 amount, address payable target, bytes data)");
 	var SETTLER_EXECUTE = from$2("function execute((address recipient, address buyToken, uint256 minAmountOut) slippage, bytes[] actions, bytes32 zid)");
 	var last20 = (hex) => `0x${hex.slice(-40)}`;
-	var addressBytes = (address) => hexToBytes$4(address.slice(2));
+	var addressBytes$1 = (address) => hexToBytes$4(address.slice(2));
 	var bigIntBytes32 = (value) => hexToBytes$4(value.toString(16).padStart(64, "0"));
 	var keccakHex = (parts) => {
 		const total = parts.reduce((sum, part) => sum + part.length, 0);
@@ -19981,11 +20002,11 @@
 	*/
 	var isZeroExSettler = (chainId, address, feature = FEATURE_TAKER) => {
 		const want = address.toLowerCase();
-		const deployer = addressBytes(ZEROX_DEPLOYER);
+		const deployer = addressBytes$1(ZEROX_DEPLOYER);
 		const initHash = hexToBytes$4(SHIM_INIT_CODE_HASH.slice(2));
 		for (let nonce = 1; nonce <= 256; nonce++) {
 			const salt = bigIntBytes32(feature * 2n ** 128n + BigInt(chainId) * 2n ** 64n + BigInt(nonce));
-			const shim = addressBytes(last20(keccakHex([
+			const shim = addressBytes$1(last20(keccakHex([
 				new Uint8Array([255]),
 				deployer,
 				salt,
@@ -20513,7 +20534,7 @@
 	* the root entry (declaring them here would cycle index ↔ tasks); the helpers stay
 	* package-internal.
 	*/
-	var equalBytes$6 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	var equalBytes$7 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	/**
 	* Checks a backend's 64-byte `r‖s` signature: `s` may be high (a backend that does not normalize —
 	* the card, protocol.md §12.1 — is normalized here, never refused); the recovery bit is found by
@@ -20536,7 +20557,7 @@
 			} catch (_unused2) {
 				recovered = void 0;
 			}
-			if (recovered !== void 0 && equalBytes$6(recovered, task.publicKey)) return {
+			if (recovered !== void 0 && equalBytes$7(recovered, task.publicKey)) return {
 				r: sig.r,
 				s: sig.s,
 				yParity
@@ -21217,7 +21238,7 @@
 	*/
 	function toHex(signature) {
 		assert$5(signature);
-		return concat$6(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber$1(yParityToV(signature.yParity), { size: 1 }) : "0x");
+		return concat$7(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber$1(yParityToV(signature.yParity), { size: 1 }) : "0x");
 	}
 	/**
 	* Converts a {@link ox#Signature.Signature} to a serialized {@link ox#Signature.Tuple} to be used for signatures in Transaction Envelopes, EIP-7702 Authorization Lists, etc.
@@ -21402,7 +21423,7 @@
 	*/
 	function hash$4(authorization, options = {}) {
 		const { presign } = options;
-		return keccak256(concat$6("0x05", fromHex$1(toTuple(presign ? {
+		return keccak256(concat$7("0x05", fromHex$1(toTuple(presign ? {
 			address: authorization.address,
 			chainId: authorization.chainId,
 			nonce: authorization.nonce
@@ -21531,9 +21552,9 @@
 	* @param data - The data to encode.
 	* @returns The encoded personal sign message.
 	*/
-	function encode(data) {
+	function encode$1(data) {
 		const message = from$6(data);
-		return concat$6(erc191PrefixHex, fromString$2(String(size$1(message))), message);
+		return concat$7(erc191PrefixHex, fromString$2(String(size$1(message))), message);
 	}
 	/**
 	* Gets the payload to use for signing an [ERC-191 formatted](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e) personal message.
@@ -21556,7 +21577,7 @@
 	* @returns The payload to use for signing.
 	*/
 	function getSignPayload$4(data) {
-		return keccak256(encode(data));
+		return keccak256(encode$1(data));
 	}
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AccessList.js
 	init_defineProperty();
@@ -21779,7 +21800,7 @@
 		assert$4(envelope);
 		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
-		return concat$6("0x01", fromHex$1([
+		return concat$7("0x01", fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(gasPrice),
@@ -21976,7 +21997,7 @@
 		const accessTupleList = toTupleList(accessList);
 		const authorizationTupleList = toTupleList$1(authorizationList);
 		const signature = extract(options.signature || envelope);
-		return concat$6(serializedType$1, fromHex$1([
+		return concat$7(serializedType$1, fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
@@ -22509,7 +22530,7 @@
 		assert$1(envelope);
 		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
-		return concat$6(serializedType, fromHex$1([
+		return concat$7(serializedType, fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
@@ -22522,7 +22543,7 @@
 			...signature ? toTuple$1(signature) : []
 		]));
 	}
-	// packages/wallet-chains/dist/assemble-BaraFVuC.mjs
+	// packages/wallet-chains/dist/assemble-D8DHLqIP.mjs
 	init_utils$2();
 	init_objectSpread2();
 	/**
@@ -23056,7 +23077,7 @@
 		publicKey: key.publicKey,
 		digest
 	});
-	var personalDigest$2 = (message) => toBytes$1(getSignPayload$4(fromBytes$2(message)));
+	var personalDigest$1 = (message) => toBytes$1(getSignPayload$4(fromBytes$2(message)));
 	/**
 	* The transaction plan. For `eip7702` the task covers the authorization digest; `assembleEvm` then
 	* returns a stage-2 plan whose task is the envelope digest of the authorized transaction.
@@ -23068,7 +23089,7 @@
 	});
 	var planEvmPersonalMessage = (message, key) => ({
 		kind: "evm.personal-message",
-		tasks: [ecdsa$2(personalDigest$2(message), key)]
+		tasks: [ecdsa$2(personalDigest$1(message), key)]
 	});
 	var planEvmTypedData = (typedData, key) => {
 		const { json } = parseTypedData(typedData);
@@ -23089,7 +23110,7 @@
 		if (request.kind === "evm.personal-message") return planEvmPersonalMessage(request.message, key);
 		if (request.kind === "evm.fiat24-session") return {
 			kind: "evm.fiat24-session",
-			tasks: [ecdsa$2(personalDigest$2(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline))), key)]
+			tasks: [ecdsa$2(personalDigest$1(utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline))), key)]
 		};
 		return planEvmTypedData(request.typedData, key);
 	};
@@ -27414,9 +27435,9 @@ zoo`.split("\n"));
 	var isKeyMetadata = (value) => typeof value === "object" && value !== null && "requestFid" in value && typeof value.requestFid === "bigint" && "requestSigner" in value && typedDataAddress(value.requestSigner) !== void 0 && "signature" in value && typedDataBytes(value.signature) !== void 0 && "deadline" in value && typeof value.deadline === "bigint";
 	var decodeKeyMetadata = (bytes) => {
 		try {
-			const decoded = decode$3(KEY_METADATA, bytes);
+			const decoded = decode$4(KEY_METADATA, bytes);
 			const tuple = Array.isArray(decoded) ? decoded[0] : void 0;
-			if (!isKeyMetadata(tuple) || encode$2(KEY_METADATA, [tuple]).toLowerCase() !== bytes.toLowerCase()) return;
+			if (!isKeyMetadata(tuple) || encode$3(KEY_METADATA, [tuple]).toLowerCase() !== bytes.toLowerCase()) return;
 			return tuple;
 		} catch (_unused3) {
 			return;
@@ -28408,7 +28429,7 @@ zoo`.split("\n"));
 	* order, exactly what must not happen.
 	*/
 	var utf8$6 = new TextEncoder();
-	function concat$5(...chunks) {
+	function concat$6(...chunks) {
 		let length = 0;
 		for (const chunk of chunks) length += chunk.length;
 		const out = new Uint8Array(length);
@@ -28424,7 +28445,7 @@ zoo`.split("\n"));
 		new DataView(out.buffer).setUint16(0, value);
 		return out;
 	};
-	var u32be = (value) => {
+	var u32be$1 = (value) => {
 		const out = /* @__PURE__ */ new Uint8Array(4);
 		new DataView(out.buffer).setUint32(0, value);
 		return out;
@@ -28445,29 +28466,29 @@ zoo`.split("\n"));
 		if (value >= 0) {
 			if (value <= 127) return new Uint8Array([value]);
 			if (value <= 255) return new Uint8Array([204, value]);
-			if (value <= 65535) return concat$5(new Uint8Array([205]), u16be(value));
-			if (value <= 4294967295) return concat$5(new Uint8Array([206]), u32be(value));
-			return concat$5(new Uint8Array([207]), u64be$1(BigInt(value)));
+			if (value <= 65535) return concat$6(new Uint8Array([205]), u16be(value));
+			if (value <= 4294967295) return concat$6(new Uint8Array([206]), u32be$1(value));
+			return concat$6(new Uint8Array([207]), u64be$1(BigInt(value)));
 		}
 		if (value >= -32) return new Uint8Array([value + 256]);
 		if (value >= -128) return new Uint8Array([208, value + 256]);
-		if (value >= -32768) return concat$5(new Uint8Array([209]), u16be(value + 65536));
-		if (value >= -2147483648) return concat$5(new Uint8Array([210]), u32be(value + 4294967296));
-		return concat$5(new Uint8Array([211]), i64be(BigInt(value)));
+		if (value >= -32768) return concat$6(new Uint8Array([209]), u16be(value + 65536));
+		if (value >= -2147483648) return concat$6(new Uint8Array([210]), u32be$1(value + 4294967296));
+		return concat$6(new Uint8Array([211]), i64be(BigInt(value)));
 	}
 	function packStr(value) {
 		const bytes = utf8$6.encode(value);
 		const { length } = bytes;
-		if (length < 32) return concat$5(new Uint8Array([160 | length]), bytes);
-		if (length < 256) return concat$5(new Uint8Array([217, length]), bytes);
-		if (length < 65536) return concat$5(new Uint8Array([218]), u16be(length), bytes);
-		return concat$5(new Uint8Array([219]), u32be(length), bytes);
+		if (length < 32) return concat$6(new Uint8Array([160 | length]), bytes);
+		if (length < 256) return concat$6(new Uint8Array([217, length]), bytes);
+		if (length < 65536) return concat$6(new Uint8Array([218]), u16be(length), bytes);
+		return concat$6(new Uint8Array([219]), u32be$1(length), bytes);
 	}
 	function packBool(value) {
 		return new Uint8Array([value ? 195 : 194]);
 	}
 	function packArray(items) {
-		return concat$5(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$5(new Uint8Array([220]), u16be(items.length)) : (() => {
+		return concat$6(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$6(new Uint8Array([220]), u16be(items.length)) : (() => {
 			throw new ChainError("invalid-request", "unreachable: msgpack array over 65535 items");
 		})(), ...items);
 	}
@@ -28476,7 +28497,7 @@ zoo`.split("\n"));
 	* literally; this writer never iterates an object.
 	*/
 	function packMap(entries) {
-		return concat$5(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$5(new Uint8Array([222]), u16be(entries.length)) : (() => {
+		return concat$6(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$6(new Uint8Array([222]), u16be(entries.length)) : (() => {
 			throw new ChainError("invalid-request", "unreachable: msgpack map over 65535 entries");
 		})(), ...entries.flatMap(([key, value]) => [packStr(key), value]));
 	}
@@ -28594,9 +28615,9 @@ zoo`.split("\n"));
 	*/
 	function l1ConnectionId(args) {
 		const packed = encodeL1Action(args.action);
-		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$5(new Uint8Array([1]), hexToBytes$4(args.vaultAddress.slice(2)));
-		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$5(new Uint8Array([0]), u64be(args.expiresAfter));
-		return keccak_256(concat$5(packed, u64be(args.nonce), vault, expiry));
+		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$6(new Uint8Array([1]), hexToBytes$4(args.vaultAddress.slice(2)));
+		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$6(new Uint8Array([0]), u64be(args.expiresAfter));
+		return keccak_256(concat$6(packed, u64be(args.nonce), vault, expiry));
 	}
 	/**
 	* The phantom-agent document the L1 signature actually covers — the kernel builds it, the host
@@ -29766,12 +29787,12 @@ zoo`.split("\n"));
 		const numBytes = getMemoizedBase58Encoder().encode(putativeAddress).byteLength;
 		if (numBytes !== 32) throw new SolanaError(SOLANA_ERROR__ADDRESSES__INVALID_BYTE_LENGTH, { actualLength: numBytes });
 	}
-	function address(putativeAddress) {
+	function address$1(putativeAddress) {
 		assertIsAddress(putativeAddress);
 		return putativeAddress;
 	}
 	function getAddressEncoder() {
-		return transformEncoder(fixEncoderSize(getMemoizedBase58Encoder(), 32), (value) => address(typeof value === "string" ? value : value.address));
+		return transformEncoder(fixEncoderSize(getMemoizedBase58Encoder(), 32), (value) => address$1(typeof value === "string" ? value : value.address));
 	}
 	function getAddressDecoder() {
 		return fixDecoderSize(getMemoizedBase58Decoder(), 32);
@@ -29894,7 +29915,7 @@ zoo`.split("\n"));
 							var _config$description4;
 							throw new SolanaError(SOLANA_ERROR__CODECS__SENTINEL_MISSING_AT_END_OF_BYTES, {
 								codecDescription: (_config$description4 = config.description) !== null && _config$description4 !== void 0 ? _config$description4 : "array",
-								hexSentinel: hexBytes$1(sentinel),
+								hexSentinel: hexBytes$3(sentinel),
 								sentinel
 							});
 						}
@@ -29941,7 +29962,7 @@ zoo`.split("\n"));
 			sizeStrategy: size === "remainder" ? "remainder" : "sentinel"
 		});
 	}
-	function hexBytes$1(bytes) {
+	function hexBytes$3(bytes) {
 		return bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, "0"), "");
 	}
 	function getBytesDecoder() {
@@ -30613,10 +30634,10 @@ zoo`.split("\n"));
 	* over bump 255→0 and takes the first hash off the ed25519 curve — matching the on-chain rule.
 	*/
 	var associatedTokenAddress = (owner, mint, tokenProgram) => {
-		const ownerBytes = encoder.encode(address(owner));
-		const programBytes = encoder.encode(address(tokenProgram));
-		const mintBytes = encoder.encode(address(mint));
-		const ataBytes = encoder.encode(address(PROGRAM_IDS.associatedToken));
+		const ownerBytes = encoder.encode(address$1(owner));
+		const programBytes = encoder.encode(address$1(tokenProgram));
+		const mintBytes = encoder.encode(address$1(mint));
+		const ataBytes = encoder.encode(address$1(PROGRAM_IDS.associatedToken));
 		const input = new Uint8Array(ownerBytes.length + programBytes.length + mintBytes.length + 1 + ataBytes.length + PDA_SEED.length);
 		let o = 0;
 		const put = (bytes) => {
@@ -31117,9 +31138,9 @@ zoo`.split("\n"));
 			if (ix.accountIndices.length === 2 && base !== from) return "other";
 			const seed = data.subarray(44, 44 + seedLen);
 			return to === solanaAddressFromPublicKey(sha256$1(new Uint8Array([
-				...addr.encode(address(base)),
+				...addr.encode(address$1(base)),
 				...seed,
-				...addr.encode(address(owner))
+				...addr.encode(address$1(owner))
 			]))) ? {
 				account: to,
 				from,
@@ -31753,7 +31774,7 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/plan-BkeI38lR.mjs
+	// packages/wallet-chains/dist/plan-CLgrC8kj.mjs
 	init_utils$2();
 	init_secp256k1();
 	init_sha2();
@@ -31792,7 +31813,7 @@ zoo`.split("\n"));
 	* A canonical varint: at most 10 bytes, the 10th byte carrying only bit 63 (`< 2^64`), and minimal
 	* — a multi-byte varint's last byte is non-zero, so `0x80 0x00` and friends are rejected.
 	*/
-	var readVarint = (bytes, offset) => {
+	var readVarint$1 = (bytes, offset) => {
 		let value = 0n;
 		for (let i = 0;; i++) {
 			if (i === 10) malformed$1("varint longer than 10 bytes");
@@ -31835,7 +31856,7 @@ zoo`.split("\n"));
 		let offset = 0;
 		while (offset < bytes.length) {
 			const start = offset;
-			const tag = readVarint(bytes, offset);
+			const tag = readVarint$1(bytes, offset);
 			offset = tag.next;
 			const wire = Number(tag.value & 7n);
 			const field = Number(tag.value >> 3n);
@@ -31847,11 +31868,11 @@ zoo`.split("\n"));
 			let varint;
 			let data;
 			if (wire === 0) {
-				const v = readVarint(bytes, offset);
+				const v = readVarint$1(bytes, offset);
 				varint = v.value;
 				offset = v.next;
 			} else if (wire === 2) {
-				const len = readVarint(bytes, offset);
+				const len = readVarint$1(bytes, offset);
 				offset = len.next;
 				if (len.value > BigInt(bytes.length - offset)) malformed$1(`field ${field} length exceeds the message`);
 				data = bytes.subarray(offset, offset + Number(len.value));
@@ -31872,7 +31893,7 @@ zoo`.split("\n"));
 		}
 		return fields;
 	};
-	var concat$4 = (parts) => {
+	var concat$5 = (parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let at = 0;
 		for (const p of parts) {
@@ -31886,11 +31907,11 @@ zoo`.split("\n"));
 	* One encoded field, or undefined when its value is a proto3 default (0, false, empty bytes or
 	* string) and canonical encoding omits it entirely.
 	*/
-	var varintField = (field, value) => BigInt(value) === 0n ? void 0 : concat$4([tag(field, 0), writeVarint(BigInt(value))]);
+	var varintField = (field, value) => BigInt(value) === 0n ? void 0 : concat$5([tag(field, 0), writeVarint(BigInt(value))]);
 	/** A varint field that is emitted even when 0 — required presence, e.g. `lock = false`. */
-	var requiredVarintField = (field, value) => concat$4([tag(field, 0), writeVarint(BigInt(value))]);
+	var requiredVarintField = (field, value) => concat$5([tag(field, 0), writeVarint(BigInt(value))]);
 	var bytesField = (field, data) => data.length === 0 ? void 0 : requiredBytesField(field, data);
-	var requiredBytesField = (field, data) => concat$4([
+	var requiredBytesField = (field, data) => concat$5([
 		tag(field, 2),
 		writeVarint(BigInt(data.length)),
 		data
@@ -31901,10 +31922,10 @@ zoo`.split("\n"));
 	* unknown fields (`extra` slices, tag included), all merged by field number. Two slices of the same
 	* field keep their relative order (consecutive repeats).
 	*/
-	var encodeMessage = (fields) => {
+	var encodeMessage$1 = (fields) => {
 		const present = fields.filter((f) => f.bytes !== void 0);
 		present.sort((a, b) => a.field - b.field);
-		return concat$4(present.map((f) => f.bytes));
+		return concat$5(present.map((f) => f.bytes));
 	};
 	/**
 	* Split a read field list into the decoder's own consumption plus captured unknowns: fields not in
@@ -31912,7 +31933,7 @@ zoo`.split("\n"));
 	* validated by `readFields`.
 	*/
 	var collectExtra = (fields, known) => fields.filter((f) => !known.includes(f.field));
-	var equalBytes$5 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	var equalBytes$6 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	var TRON_CONTRACT_TYPES = [
 		{
 			id: 0,
@@ -32150,14 +32171,14 @@ zoo`.split("\n"));
 		if (f === void 0 || f.wire !== 2 || f.data === void 0) malformed$1(`${what} is missing`);
 		return f.data;
 	};
-	var encodeAny = (typeUrl, value) => encodeMessage([{
+	var encodeAny = (typeUrl, value) => encodeMessage$1([{
 		field: 1,
 		bytes: stringField(1, typeUrl)
 	}, {
 		field: 2,
 		bytes: bytesField(2, value)
 	}]);
-	var encodeContract = (contract) => encodeMessage([
+	var encodeContract = (contract) => encodeMessage$1([
 		{
 			field: 1,
 			bytes: varintField(1, contract.typeId)
@@ -32234,12 +32255,12 @@ zoo`.split("\n"));
 				18
 			])
 		});
-		if (!equalBytes$5(encodeTronRawData(raw), bytes)) malformed$1("non-canonical encoding");
+		if (!equalBytes$6(encodeTronRawData(raw), bytes)) malformed$1("non-canonical encoding");
 		return raw;
 	};
 	var encodeTronRawData = (raw) => {
 		var _raw$memo, _raw$timestamp, _raw$feeLimit;
-		return encodeMessage([
+		return encodeMessage$1([
 			{
 				field: 1,
 				bytes: requiredBytesField(1, raw.refBlockBytes)
@@ -32485,12 +32506,12 @@ zoo`.split("\n"));
 		if (at !== text.length) fail("trailing text after the JSON value");
 		return parsed;
 	};
-	var base58check$1 = createBase58check(sha256$1);
+	var base58check$2 = createBase58check(sha256$1);
 	/** A 34-character base58check string whose payload is 21 bytes starting with 0x41. */
 	var isTronAddress = (value) => {
 		if (!/^[1-9A-HJ-NP-Za-km-z]{34}$/.test(value)) return false;
 		try {
-			const decoded = base58check$1.decode(value);
+			const decoded = base58check$2.decode(value);
 			return decoded.length === 21 && decoded[0] === 65;
 		} catch (_unused4) {
 			return false;
@@ -32498,7 +32519,7 @@ zoo`.split("\n"));
 	};
 	var tronBytes = (address, what) => {
 		if (!isTronAddress(address)) throw new ChainError("invalid-address", `not a TRON address: ${what}`);
-		return base58check$1.decode(address);
+		return base58check$2.decode(address);
 	};
 	/** The 21 raw bytes — 0x41 version byte plus the 20-byte address body. */
 	function tronAddressToBytes(address) {
@@ -32507,7 +32528,7 @@ zoo`.split("\n"));
 	/** Base58check encodes a 21-byte payload whose first byte is 0x41. */
 	function tronAddressFromBytes(bytes) {
 		if (bytes.length !== 21 || bytes[0] !== 65) throw new ChainError("invalid-address", "a TRON address is 21 bytes starting with 0x41");
-		return base58check$1.encode(bytes);
+		return base58check$2.encode(bytes);
 	}
 	/** `"41"` plus the 20-byte body as 40 lowercase hex — the form contract fields carry. */
 	function tronAddressToHex(address) {
@@ -32553,7 +32574,7 @@ zoo`.split("\n"));
 	var fail$5 = (what) => {
 		throw new ChainError("invalid-typed-data", what);
 	};
-	var INT_TYPE = /^(u?)int(\d*)$/;
+	var INT_TYPE$1 = /^(u?)int(\d*)$/;
 	var FIXED_BYTES = /^bytes(\d+)$/;
 	var ARRAY_TAIL = /^(.*)\[(\d*)\]$/;
 	/**
@@ -32599,7 +32620,7 @@ zoo`.split("\n"));
 	* forms to what `_signTypedData(domain, types, value)` accepts.
 	*/
 	var baseEncoder = (type, args) => {
-		const int = INT_TYPE.exec(type);
+		const int = INT_TYPE$1.exec(type);
 		if (int !== null) {
 			const signed = int[1] === "";
 			const w = int[2] === "" ? NaN : Number(int[2]);
@@ -32648,7 +32669,7 @@ zoo`.split("\n"));
 		}
 	};
 	/** Mirrors TronWeb's `isBaseTypeName`: every base-looking name counts, even a malformed one. */
-	var isBaseName = (name) => INT_TYPE.test(name) || FIXED_BYTES.test(name) || name === "address" || name === "bool" || name === "string" || name === "bytes" || name === "trcToken";
+	var isBaseName = (name) => INT_TYPE$1.test(name) || FIXED_BYTES.test(name) || name === "address" || name === "bool" || name === "string" || name === "bytes" || name === "trcToken";
 	/** A field type's base after stripping `[]`/`[n]` suffixes; a malformed suffix stays attached. */
 	var baseName = (type) => {
 		let t = type;
@@ -33035,7 +33056,7 @@ zoo`.split("\n"));
 		if (f.wire !== 2 || f.data === void 0) malformed$1("bytes field has the wrong wire type");
 		return f.data;
 	};
-	var utf8$2 = new TextDecoder("utf-8", {
+	var utf8$2$1 = new TextDecoder("utf-8", {
 		fatal: true,
 		ignoreBOM: true
 	});
@@ -33043,7 +33064,7 @@ zoo`.split("\n"));
 		if (f === void 0) return "";
 		const data = bytesOf$3(f);
 		try {
-			return utf8$2.decode(data);
+			return utf8$2$1.decode(data);
 		} catch (_unused) {
 			return malformed$1(`${what} is not UTF-8`);
 		}
@@ -33060,7 +33081,7 @@ zoo`.split("\n"));
 	* non-canonical.
 	*/
 	var canonical = (f, encoded) => {
-		if (f !== void 0 && !equalBytes$5(f.bytes, encoded !== null && encoded !== void 0 ? encoded : EMPTY$1)) malformed$1("non-canonical encoding");
+		if (f !== void 0 && !equalBytes$6(f.bytes, encoded !== null && encoded !== void 0 ? encoded : EMPTY$1)) malformed$1("non-canonical encoding");
 	};
 	var encAddress = (n, address) => requiredBytesField(n, tronAddressToBytes(address));
 	var encBytes = (n, data) => bytesField(n, data);
@@ -34383,14 +34404,14 @@ zoo`.split("\n"));
 		const seed = input.length === 64 ? input.slice(0, 32) : input;
 		if (seed.length !== 32) throw new KernelError("invalid-input", "a Solana key is a 32-byte seed or a 64-byte keypair");
 		const publicKey = ed25519.getPublicKey(seed);
-		if (input.length === 64 && !equalBytes$4(input.slice(32), publicKey)) throw new KernelError("invalid-input", "the keypair's public half does not match its secret half");
+		if (input.length === 64 && !equalBytes$5(input.slice(32), publicKey)) throw new KernelError("invalid-input", "the keypair's public half does not match its secret half");
 		return {
 			secret: seed,
 			publicKey,
 			address: solanaAddressFromPublicKey(publicKey)
 		};
 	}
-	var equalBytes$4 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	var equalBytes$5 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	/** The decoded secret, its public key and its chain address — input is wiped by the caller. */
 	function isKeyFamily(family) {
 		return family === "evm" || family === "solana" || family === "bitcoin" || family === "tron";
@@ -35003,7 +35024,7 @@ zoo`.split("\n"));
 	async function confirmWithPassphrase(ctx, params, passphrase) {
 		const allMatch = ctx.session.getDraft(params.draft).expected.every((expected, i) => {
 			const answer = params.answers[i];
-			return answer !== void 0 && answer.length === expected.length && equalBytes$9(answer, expected);
+			return answer !== void 0 && answer.length === expected.length && equalBytes$10(answer, expected);
 		});
 		for (const answer of params.answers) wipe$1(answer);
 		if (!allMatch) throw new KernelError("invalid-input", "backup confirmation failed");
@@ -36012,7 +36033,7 @@ zoo`.split("\n"));
 		}
 		return res;
 	}
-	var Point, Fn$1, CURVE_ORDER, _0n$3, _2n$1, hasEven, isBytes$1, concatBytes, equalBytes$3, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
+	var Point, Fn$1, CURVE_ORDER, _0n$3, _2n$1, hasEven, isBytes$1, concatBytes, equalBytes$4, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
 	var init_utils = __esmMin((() => {
 		init_secp256k1();
 		init_utils$1();
@@ -36028,7 +36049,7 @@ zoo`.split("\n"));
 		hasEven = (y) => y % _2n$1 === _0n$3;
 		isBytes$1 = /* @__PURE__ */ (() => utils.isBytes)();
 		concatBytes = /* @__PURE__ */ (() => utils.concatBytes)();
-		equalBytes$3 = /* @__PURE__ */ (() => utils.equalBytes)();
+		equalBytes$4 = /* @__PURE__ */ (() => utils.equalBytes)();
 		sha256 = /* @__PURE__ */ (() => sha256$1)();
 		hash160 = (msg) => ripemd160(sha256(msg));
 		sha256x2 = (...msgs) => sha256(sha256(concatBytes(...msgs)));
@@ -36076,7 +36097,7 @@ zoo`.split("\n"));
 	init_bip32();
 	init_utils();
 	init_objectSpread2();
-	var HARDENED$10 = 2147483648;
+	var HARDENED$13 = 2147483648;
 	var MAX_NODES = 512;
 	var MAX_ED25519 = 256;
 	var HEX$1 = /^[0-9a-f]+$/;
@@ -36095,12 +36116,12 @@ zoo`.split("\n"));
 			if (digits.length > 1 && digits.startsWith("0")) throw failure$2();
 			const index = Number(digits);
 			if (!Number.isSafeInteger(index) || index > 2147483647) throw failure$2();
-			return hardened ? index + HARDENED$10 : index;
+			return hardened ? index + HARDENED$13 : index;
 		});
 	}
 	/** `KeyPath` → `m/…` — the inverse of {@link pathFromString}; the empty path is `m`. */
 	function pathToString(path) {
-		return `m${path.map((i) => i >= HARDENED$10 ? `/${i - HARDENED$10}'` : `/${i}`).join("")}`;
+		return `m${path.map((i) => i >= HARDENED$13 ? `/${i - HARDENED$13}'` : `/${i}`).join("")}`;
 	}
 	var asSecpPoint$1 = (value) => {
 		const bytes = asHexBytes(value, 33);
@@ -36155,14 +36176,14 @@ zoo`.split("\n"));
 			publicKey: asEd25519Point(pub)
 		}));
 	}
-	var samePath$2 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+	var samePath = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	/**
 	* The node at `path`: an exact pinned node or one publicly derived under the deepest pinned prefix
 	* whose remaining tail is fully non-hardened. `undefined` when only the signer can answer — the
 	* master and hardened gaps never derive publicly.
 	*/
 	var nodeAt$1 = (pin, path) => {
-		const [ancestor] = pin.keys.nodes.filter((node) => node.path.length <= path.length && samePath$2(node.path, path.slice(0, node.path.length)) && path.slice(node.path.length).every((index) => index < HARDENED$10)).sort((a, b) => b.path.length - a.path.length);
+		const [ancestor] = pin.keys.nodes.filter((node) => node.path.length <= path.length && samePath(node.path, path.slice(0, node.path.length)) && path.slice(node.path.length).every((index) => index < HARDENED$13)).sort((a, b) => b.path.length - a.path.length);
 		if (ancestor === void 0) return;
 		let node = new HDKey$1({
 			publicKey: ancestor.publicKey,
@@ -36171,7 +36192,14 @@ zoo`.split("\n"));
 		for (const index of path.slice(ancestor.path.length)) node = node.deriveChild(index);
 		return node;
 	};
+	/** The BIP-32 master/parent fingerprint's first four bytes as the u32 device answers carry. */
 	var fingerprintNumber$1 = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0);
+	/** The inverse of `fingerprintNumber`: a u32 fingerprint as its four big-endian bytes. */
+	var fingerprintBytes = (n) => {
+		const out = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(out.buffer).setUint32(0, n);
+		return out;
+	};
 	/** The pin's public material; misses are `device-required`, corrupt pins are `integrity`. */
 	var pinnedMaterial = (pin) => ({
 		secp256k1: async (path) => {
@@ -36185,7 +36213,7 @@ zoo`.split("\n"));
 			return key;
 		},
 		ed25519: async (path) => {
-			const key = pin.keys.ed25519.find((k) => samePath$2(k.path, path));
+			const key = pin.keys.ed25519.find((k) => samePath(k.path, path));
 			if (key === void 0) throw deviceRequired();
 			return key.publicKey;
 		},
@@ -36193,7 +36221,7 @@ zoo`.split("\n"));
 			var _path$at;
 			const node = path.length === 0 ? void 0 : nodeAt$1(pin, path);
 			if (node === void 0 || node.publicKey === null || node.chainCode === null) throw deviceRequired();
-			const pinned = pin.keys.nodes.find((entry) => samePath$2(entry.path, path));
+			const pinned = pin.keys.nodes.find((entry) => samePath(entry.path, path));
 			let parentFingerprint;
 			if ((pinned === null || pinned === void 0 ? void 0 : pinned.parent) === void 0) {
 				var _nodeAt$publicKey, _nodeAt2;
@@ -36213,7 +36241,7 @@ zoo`.split("\n"));
 		fingerprint: async () => {
 			if (pin.master !== void 0) {
 				const derived = hash160(pin.master).slice(0, 4);
-				if (pin.fingerprint !== void 0 && !equalBytes$9(derived, pin.fingerprint)) throw new KernelError("integrity", "pinned fingerprint does not match the master key");
+				if (pin.fingerprint !== void 0 && !equalBytes$10(derived, pin.fingerprint)) throw new KernelError("integrity", "pinned fingerprint does not match the master key");
 				return derived;
 			}
 			if (pin.fingerprint === void 0) throw new KernelError("integrity", "the pin carries neither master key nor fingerprint");
@@ -36275,12 +36303,12 @@ zoo`.split("\n"));
 		}
 	}
 	/** Whether `bytes` is a valid secp256k1 point encoding (compressed or uncompressed). */
-	function validPoint(bytes) {
+	function validPoint$1(bytes) {
 		return tryPoint(bytes) !== void 0;
 	}
 	/** Whether `bytes` is a valid 65-byte uncompressed secp256k1 point (`0x04 ‖ x ‖ y`). */
 	function validUncompressedPoint(bytes) {
-		return bytes.length === 65 && bytes[0] === 4 && validPoint(bytes);
+		return bytes.length === 65 && bytes[0] === 4 && validPoint$1(bytes);
 	}
 	// packages/wallet-kernel/src/modules/card/protocol/errors.ts
 	init_defineProperty();
@@ -36332,7 +36360,7 @@ zoo`.split("\n"));
 		if (cert.length !== 97) throw new CardError("card-not-genuine", "certificate is not 97 bytes");
 		for (const anchor of anchors) if (!validUncompressedPoint(anchor.key)) throw new CardError("invalid-input", "anchor key is not a valid uncompressed point");
 		const identity = cert.subarray(0, 33);
-		if (!validPoint(identity)) throw new CardError("card-not-genuine", "certificate subject is not a compressed point");
+		if (!validPoint$1(identity)) throw new CardError("card-not-genuine", "certificate subject is not a compressed point");
 		const signature = cert.subarray(33, 97);
 		const digest = sha256$1(concatBytes$3(LABEL_CERT, identity));
 		for (const anchor of anchors) if (secp256k1.verify(signature, digest, anchor.key, {
@@ -37133,7 +37161,7 @@ zoo`.split("\n"));
 					if (!_cur || _cur[k] === void 0) throw new Error(`Cannot add signed field=${k}`);
 					let current = _cur[k];
 					if (typeof current === "string") current = vC.decode(hex$3.decode(current));
-					if (!equalBytes$3(vC.encode(res[k]), vC.encode(current))) throw new Error(`Cannot change signed field=${k}`);
+					if (!equalBytes$4(vC.encode(res[k]), vC.encode(current))) throw new Error(`Cannot change signed field=${k}`);
 				}
 			}
 		}
@@ -37191,7 +37219,7 @@ zoo`.split("\n"));
 			let b = _other[key];
 			if (typeof a === "string") a = valueCoder.decode(hex$3.decode(a));
 			if (typeof b === "string") b = valueCoder.decode(hex$3.decode(b));
-			if (!equalBytes$3(valueCoder.encode(a), valueCoder.encode(b))) throw new Error(`Cannot combine conflicting field=${k}`);
+			if (!equalBytes$4(valueCoder.encode(a), valueCoder.encode(b))) throw new Error(`Cannot combine conflicting field=${k}`);
 		}
 		return mergeKeyMap(psbtEnum, _other, _current, void 0, unknown, proprietary);
 	}
@@ -37478,7 +37506,7 @@ zoo`.split("\n"));
 		}
 	}
 	function checkWSH(s, witnessScript) {
-		if (!equalBytes$3(s.hash, sha256(witnessScript))) throw new Error("checkScript: wsh wrong witnessScript hash");
+		if (!equalBytes$4(s.hash, sha256(witnessScript))) throw new Error("checkScript: wsh wrong witnessScript hash");
 		const w = OutScript.decode(witnessScript);
 		if (w.type === "tr" || w.type === "tr_ns" || w.type === "tr_ms") throw new Error(`checkScript: P2${w.type} cannot be wrapped in P2SH`);
 		if (w.type === "wpkh" || w.type === "wsh" || w.type === "sh") throw new Error(`checkScript: P2${w.type} cannot be wrapped in P2WSH`);
@@ -37508,7 +37536,7 @@ zoo`.split("\n"));
 			if (s.type === "tr_ns" || s.type === "tr_ms" || s.type === "ms" || s.type == "pk") throw new Error(`checkScript: non-wrapped ${s.type}`);
 			if (redeemScript) {
 				if (s.type !== "sh") throw new Error("checkScript: redeemScript without P2SH");
-				if (!equalBytes$3(s.hash, hash160(redeemScript))) throw new Error("checkScript: sh wrong redeemScript hash");
+				if (!equalBytes$4(s.hash, hash160(redeemScript))) throw new Error("checkScript: sh wrong redeemScript hash");
 				r = _WitnessOutScript.decode(redeemScript);
 				if ((r === null || r === void 0 ? void 0 : r.type) === "tr" || (r === null || r === void 0 ? void 0 : r.type) === "tr_ns" || (r === null || r === void 0 ? void 0 : r.type) === "tr_ms") throw new Error(`checkScript: P2${r.type} cannot be wrapped in P2SH`);
 				if ((r === null || r === void 0 ? void 0 : r.type) === "sh") throw new Error("checkScript: P2SH cannot be wrapped in P2SH");
@@ -37548,8 +37576,8 @@ zoo`.split("\n"));
 		if (!["tr_ns", "tr_ms"].includes(out.type)) throw new Error(`P2TR: invalid leaf script=${out.type}`);
 		const outms = out;
 		if (!allowUnknownOutputs && outms.pubkeys) for (const p of outms.pubkeys) {
-			if (equalBytes$3(p, taprootNumsKey())) throw new Error("Unspendable taproot key in leaf script");
-			if (equalBytes$3(p, internalPubKey)) throw new Error("Using P2TR with leaf script with same key as internal key is not supported");
+			if (equalBytes$4(p, taprootNumsKey())) throw new Error("Unspendable taproot key in leaf script");
+			if (equalBytes$4(p, internalPubKey)) throw new Error("Using P2TR with leaf script with same key as internal key is not supported");
 		}
 	}
 	/**
@@ -37614,7 +37642,7 @@ zoo`.split("\n"));
 			validateObject(tree, {}, {}, "tree");
 			const version = tree.leafVersion;
 			const { script: leafScript } = tree;
-			if (tree.tapLeafScript || tree.tapMerkleRoot && !equalBytes$3(tree.tapMerkleRoot, EMPTY$2)) throw new Error("P2TR: tapRoot leafScript cannot have tree");
+			if (tree.tapLeafScript || tree.tapMerkleRoot && !equalBytes$4(tree.tapMerkleRoot, EMPTY$2)) throw new Error("P2TR: tapRoot leafScript cannot have tree");
 			const script = typeof leafScript === "string" ? hex$3.decode(leafScript) : abytes(leafScript, void 0, "tree.script");
 			checkTaprootScript(script, internalPubKey, allowUnknownOutputs, customScripts);
 			return {
@@ -37662,7 +37690,7 @@ zoo`.split("\n"));
 					type: "tr",
 					pubkey: tweakedPubkey
 				}),
-				address: Address(network).encode({
+				address: Address$1(network).encode({
 					type: "tr",
 					pubkey: tweakedPubkey
 				}),
@@ -37680,7 +37708,7 @@ zoo`.split("\n"));
 					type: "tr",
 					pubkey: tweakedPubkey
 				}),
-				address: Address(network).encode({
+				address: Address$1(network).encode({
 					type: "tr",
 					pubkey: tweakedPubkey
 				}),
@@ -37700,7 +37728,7 @@ zoo`.split("\n"));
 		return coder.encode(network.bech32, [version].concat(coder.toWords(data)));
 	}
 	function formatKey(hashed, prefix) {
-		return base58check.encode(concatBytes(Uint8Array.from(prefix), hashed));
+		return base58check$1.encode(concatBytes(Uint8Array.from(prefix), hashed));
 	}
 	/**
 	* Address encoder/decoder for a specific Bitcoin network.
@@ -37715,7 +37743,7 @@ zoo`.split("\n"));
 	* coder.encode(p2wpkh(pubECDSA(randomPrivateKeyBytes())));
 	* ```
 	*/
-	function Address(network = NETWORK) {
+	function Address$1(network = NETWORK) {
 		validateObject(network, {}, {}, "network");
 		return {
 			encode(from) {
@@ -37758,13 +37786,13 @@ zoo`.split("\n"));
 						type: "tr",
 						pubkey: data
 					};
-					else if (version === 1 && equalBytes$3(data, P2A_PROGRAM)) return {
+					else if (version === 1 && equalBytes$4(data, P2A_PROGRAM)) return {
 						type: "p2a",
 						script: Script.encode([1, data])
 					};
 					else throw new Error("Unknown witness program");
 				}
-				const data = base58check.decode(address);
+				const data = base58check$1.decode(address);
 				if (data.length !== 21) throw new Error("Invalid base58 address");
 				if (data[0] === network.pubKeyHash) return {
 					type: "pkh",
@@ -37778,7 +37806,7 @@ zoo`.split("\n"));
 			}
 		};
 	}
-	var P2A_PROGRAM, OutP2A, OutPK, OutPKH, OutSH, OutWSH, OutWPKH, OutMS, OutTR, OutTRNS, OutTRMS, OutUnknown, OutScripts, _OutScript, OutScript, _WitnessOutScript, p2pkh, checkCanonicalScript, p2sh, p2wpkh, TAPROOT_MAX_DEPTH, tapLeafVersion, tapLeafHash, base58check;
+	var P2A_PROGRAM, OutP2A, OutPK, OutPKH, OutSH, OutWSH, OutWPKH, OutMS, OutTR, OutTRNS, OutTRMS, OutUnknown, OutScripts, _OutScript, OutScript, _WitnessOutScript, p2pkh, checkCanonicalScript, p2sh, p2wpkh, TAPROOT_MAX_DEPTH, tapLeafVersion, tapLeafHash, base58check$1;
 	var init_payment = __esmMin((() => {
 		init_base();
 		init_utils$2();
@@ -37791,7 +37819,7 @@ zoo`.split("\n"));
 		P2A_PROGRAM = /* @__PURE__ */ Uint8Array.from([78, 115]);
 		OutP2A = {
 			encode(from) {
-				if (from.length !== 2 || from[0] !== 1 || !isBytes$1(from[1]) || !equalBytes$3(from[1], P2A_PROGRAM)) return;
+				if (from.length !== 2 || from[0] !== 1 || !isBytes$1(from[1]) || !equalBytes$4(from[1], P2A_PROGRAM)) return;
 				return {
 					type: "p2a",
 					script: Script.encode(from)
@@ -38017,7 +38045,7 @@ zoo`.split("\n"));
 			decodeStream: (r) => {
 				const raw = r.bytes(r.leftBytes);
 				const out = OutScript.decode(raw);
-				if (out && (out.type === "p2a" || out.type === "wpkh" || out.type === "wsh" || out.type === "tr") && !equalBytes$3(raw, OutScript.encode(out))) throw new Error("OutScript: non-canonical witness program");
+				if (out && (out.type === "p2a" || out.type === "wpkh" || out.type === "wsh" || out.type === "tr") && !equalBytes$4(raw, OutScript.encode(out))) throw new Error("OutScript: non-canonical witness program");
 				return out;
 			}
 		})))();
@@ -38030,7 +38058,7 @@ zoo`.split("\n"));
 					type: "pkh",
 					hash
 				}),
-				address: Address(network).encode({
+				address: Address$1(network).encode({
 					type: "pkh",
 					hash
 				}),
@@ -38040,7 +38068,7 @@ zoo`.split("\n"));
 		checkCanonicalScript = (script, name, allowNonCanonicalScript) => {
 			if (allowNonCanonicalScript) return;
 			const decoded = Script.decode(script);
-			if (decoded.some((op) => isBytes$1(op) && op.length === 1 && (1 <= op[0] && op[0] <= 16 || op[0] === 129)) || !equalBytes$3(script, Script.encode(decoded))) throw new Error(`${name === "redeemScript" ? "P2SH" : "P2WSH"}: non-canonical ${name}`);
+			if (decoded.some((op) => isBytes$1(op) && op.length === 1 && (1 <= op[0] && op[0] <= 16 || op[0] === 129)) || !equalBytes$4(script, Script.encode(decoded))) throw new Error(`${name === "redeemScript" ? "P2SH" : "P2WSH"}: non-canonical ${name}`);
 		};
 		p2sh = (child, network = NETWORK, allowNonCanonicalScript = false) => {
 			validateObject(child, {}, {}, "child");
@@ -38055,7 +38083,7 @@ zoo`.split("\n"));
 				hash
 			};
 			const script = OutScript.encode(out);
-			const address = Address(network).encode(out);
+			const address = Address$1(network).encode(out);
 			checkScript(script, cs, c.witnessScript);
 			if (c.witnessScript) return {
 				type: "sh",
@@ -38083,7 +38111,7 @@ zoo`.split("\n"));
 					type: "wpkh",
 					hash
 				}),
-				address: Address(network).encode({
+				address: Address$1(network).encode({
 					type: "wpkh",
 					hash
 				}),
@@ -38098,7 +38126,7 @@ zoo`.split("\n"));
 			return version;
 		};
 		tapLeafHash = (script, version = 192) => tagSchnorr("TapLeaf", new Uint8Array([tapLeafVersion(version)]), VarBytes.encode(script));
-		base58check = /* @__PURE__ */ createBase58check(sha256);
+		base58check$1 = /* @__PURE__ */ createBase58check(sha256);
 	}));
 	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/transaction.js
 	/**
@@ -38127,7 +38155,7 @@ zoo`.split("\n"));
 		throw new Error(`cloneDeep: unknown type=${typeof obj}`);
 	}
 	function getTaprootKeys(privKey, pubKey, internalKey, merkleRoot = EMPTY$2) {
-		if (equalBytes$3(internalKey, pubKey)) {
+		if (equalBytes$4(internalKey, pubKey)) {
 			privKey = taprootTweakPrivKey(privKey, merkleRoot);
 			pubKey = pubSchnorr(privKey);
 		}
@@ -38256,7 +38284,7 @@ zoo`.split("\n"));
 		}
 		const checkOutputKey = (internalKey, merkleRoot, parity) => {
 			const [outputKey, outputParity] = taprootTweakPubkey(internalKey, merkleRoot);
-			if (!equalBytes$3(outputKey, output.pubkey)) throw new Error("validateInput: Taproot commitment does not match previous output");
+			if (!equalBytes$4(outputKey, output.pubkey)) throw new Error("validateInput: Taproot commitment does not match previous output");
 			if (parity !== void 0 && outputParity !== parity) throw new Error("validateInput: Taproot control-block parity does not match previous output");
 		};
 		if (input.tapLeafScript) for (const [controlBlock, scriptWithVersion] of input.tapLeafScript) {
@@ -38265,8 +38293,8 @@ zoo`.split("\n"));
 			let merkleRoot = tapLeafHash(script, leafVersion);
 			for (const sibling of controlBlock.merklePath) merkleRoot = compareBytes$2(sibling, merkleRoot) === -1 ? tagSchnorr("TapBranch", sibling, merkleRoot) : tagSchnorr("TapBranch", merkleRoot, sibling);
 			checkOutputKey(controlBlock.internalKey, merkleRoot, controlBlock.version & 1);
-			if (input.tapInternalKey && !equalBytes$3(input.tapInternalKey, controlBlock.internalKey)) throw new Error("validateInput: tapInternalKey does not match Taproot control block");
-			if (input.tapMerkleRoot && !equalBytes$3(input.tapMerkleRoot, merkleRoot)) throw new Error("validateInput: tapMerkleRoot does not match Taproot control block");
+			if (input.tapInternalKey && !equalBytes$4(input.tapInternalKey, controlBlock.internalKey)) throw new Error("validateInput: tapInternalKey does not match Taproot control block");
+			if (input.tapMerkleRoot && !equalBytes$4(input.tapMerkleRoot, merkleRoot)) throw new Error("validateInput: tapMerkleRoot does not match Taproot control block");
 		}
 		if (input.tapInternalKey && (input.tapMerkleRoot || !((_input$tapLeafScript2 = input.tapLeafScript) === null || _input$tapLeafScript2 === void 0 ? void 0 : _input$tapLeafScript2.length))) checkOutputKey(input.tapInternalKey, input.tapMerkleRoot || EMPTY$2);
 	}
@@ -38313,7 +38341,7 @@ zoo`.split("\n"));
 			const last = _i.nonWitnessUtxo.outputs.length - 1;
 			if (_i.index > last) throw new Error(`validateInput: index(${_i.index}) not in nonWitnessUtxo`);
 			prevOut = _i.nonWitnessUtxo.outputs[_i.index];
-			if (_i.witnessUtxo && (!equalBytes$3(_i.witnessUtxo.script, prevOut.script) || _i.witnessUtxo.amount !== prevOut.amount)) throw new Error("validateInput: witnessUtxo different from nonWitnessUtxo");
+			if (_i.witnessUtxo && (!equalBytes$4(_i.witnessUtxo.script, prevOut.script) || _i.witnessUtxo.amount !== prevOut.amount)) throw new Error("validateInput: witnessUtxo different from nonWitnessUtxo");
 			if (_i.txid) {
 				if (_i.nonWitnessUtxo.outputs.length - 1 < _i.index) throw new Error("nonWitnessUtxo: incorect output index");
 				const tx = Transaction.fromRaw(RawTx.encode(_i.nonWitnessUtxo), {
@@ -38959,7 +38987,7 @@ zoo`.split("\n"));
 				const nextLockTime = resolvePSBTLocktime(inputs, (_this$global$fallback3 = this.global.fallbackLocktime) !== null && _this$global$fallback3 !== void 0 ? _this$global$fallback3 : 0);
 				if ((signatures === null || signatures === void 0 ? void 0 : signatures.length) && nextLockTime !== this.lockTime) throw new Error("Tx has signed inputs, cannot change lockTime");
 				const current = this.inputs[idx];
-				if (current.index !== normalized.index || def(current.sequence, 4294967295) !== def(normalized.sequence, 4294967295) || (current.txid === void 0 ? normalized.txid !== void 0 : normalized.txid === void 0 || !equalBytes$3(current.txid, normalized.txid)) || nextLockTime !== this.lockTime) this.requireTxModifiable(1, "inputs");
+				if (current.index !== normalized.index || def(current.sequence, 4294967295) !== def(normalized.sequence, 4294967295) || (current.txid === void 0 ? normalized.txid !== void 0 : normalized.txid === void 0 || !equalBytes$4(current.txid, normalized.txid)) || nextLockTime !== this.lockTime) this.requireTxModifiable(1, "inputs");
 				this.inputs[idx] = normalized;
 			}
 			checkOutputIdx(idx) {
@@ -38973,7 +39001,7 @@ zoo`.split("\n"));
 			getOutputAddress(idx, network = NETWORK) {
 				const out = this.getOutput(idx);
 				if (!out.script) return;
-				return Address(network).encode(_WitnessOutScript.decode(out.script));
+				return Address$1(network).encode(_WitnessOutScript.decode(out.script));
 			}
 			get outputsLength() {
 				return this.outputs.length;
@@ -39014,12 +39042,12 @@ zoo`.split("\n"));
 				}
 				const current = this.outputs[idx];
 				const normalized = cloneDeep(this.normalizeOutput(output, current, allowedFields));
-				if (current.amount !== normalized.amount || (current.script === void 0 ? normalized.script !== void 0 : normalized.script === void 0 || !equalBytes$3(current.script, normalized.script))) this.requireTxModifiable(2, "outputs");
+				if (current.amount !== normalized.amount || (current.script === void 0 ? normalized.script !== void 0 : normalized.script === void 0 || !equalBytes$4(current.script, normalized.script))) this.requireTxModifiable(2, "outputs");
 				this.outputs[idx] = normalized;
 			}
 			addOutputAddress(address, amount, network = NETWORK) {
 				return this.addOutput({
-					script: OutScript.encode(Address(network).decode(address)),
+					script: OutScript.encode(Address$1(network).decode(address)),
 					amount
 				});
 			}
@@ -39117,14 +39145,14 @@ zoo`.split("\n"));
 				const canSign = (privateKey) => {
 					if (inputType.txType === "taproot") {
 						const pubKey = pubSchnorr(privateKey);
-						if (input.tapInternalKey && equalBytes$3(pubKey, input.tapInternalKey)) return true;
+						if (input.tapInternalKey && equalBytes$4(pubKey, input.tapInternalKey)) return true;
 						if (!input.tapLeafScript) return false;
-						for (const [_, leaf] of input.tapLeafScript) for (const op of Script.decode(leaf.subarray(0, -1))) if (isBytes$1(op) && equalBytes$3(op, pubKey)) return true;
+						for (const [_, leaf] of input.tapLeafScript) for (const op of Script.decode(leaf.subarray(0, -1))) if (isBytes$1(op) && equalBytes$4(op, pubKey)) return true;
 						return false;
 					}
 					const pubKey = pubECDSA(privateKey);
 					const pubKeyHash = hash160(pubKey);
-					for (const op of Script.decode(inputType.lastScript)) if (isBytes$1(op) && (equalBytes$3(op, pubKey) || equalBytes$3(op, pubKeyHash))) return true;
+					for (const op of Script.decode(inputType.lastScript)) if (isBytes$1(op) && (equalBytes$4(op, pubKey) || equalBytes$4(op, pubKeyHash))) return true;
 					return false;
 				};
 				if (!isBytes$1(privateKey)) {
@@ -39135,7 +39163,7 @@ zoo`.split("\n"));
 						const signers = rows.filter((row) => row.fingerprint == root.fingerprint).map((row) => {
 							let s = root;
 							for (const i of row.path) s = s.deriveChild(i);
-							if (!equalBytes$3(pubKey(s), row.pubKey)) throw new Error(`${label}: wrong pubKey`);
+							if (!equalBytes$4(pubKey(s), row.pubKey)) throw new Error(`${label}: wrong pubKey`);
 							if (!s.privateKey) throw new Error(`${label}: no privateKey`);
 							return s;
 						});
@@ -39177,7 +39205,7 @@ zoo`.split("\n"));
 					if (input.tapInternalKey) {
 						const { pubKey, privKey } = getTaprootKeys(privateKey, schnorrPub, input.tapInternalKey, merkleRoot);
 						const [taprootPubKey, _] = taprootTweakPubkey(input.tapInternalKey, merkleRoot);
-						if (equalBytes$3(taprootPubKey, pubKey)) {
+						if (equalBytes$4(taprootPubKey, pubKey)) {
 							const hash = this.preimageWitnessV1(idx, prevOutScript, sighash, amount);
 							const sig = concatBytes(signSchnorr(hash, privKey, _auxRand), sighash !== SignatureHash.DEFAULT ? new Uint8Array([sighash]) : EMPTY$2);
 							this.updateInput(idx, { tapKeySig: sig }, true);
@@ -39191,7 +39219,7 @@ zoo`.split("\n"));
 							const scriptDecoded = Script.decode(script);
 							const ver = _script[_script.length - 1];
 							const hash = tapLeafHash(script, ver);
-							if (scriptDecoded.findIndex((i) => isBytes$1(i) && equalBytes$3(i, schnorrPub)) === -1) continue;
+							if (scriptDecoded.findIndex((i) => isBytes$1(i) && equalBytes$4(i, schnorrPub)) === -1) continue;
 							const msg = this.preimageWitnessV1(idx, prevOutScript, sighash, amount, void 0, script, ver);
 							const sig = concatBytes(signSchnorr(msg, privateKey, _auxRand), sighash !== SignatureHash.DEFAULT ? new Uint8Array([sighash]) : EMPTY$2);
 							this.updateInput(idx, { tapScriptSig: [[{
@@ -39207,7 +39235,7 @@ zoo`.split("\n"));
 					const pubKey = pubECDSA(privateKey);
 					let hasPubkey = false;
 					const pubKeyHash = hash160(pubKey);
-					for (const i of Script.decode(inputType.lastScript)) if (isBytes$1(i) && (equalBytes$3(i, pubKey) || equalBytes$3(i, pubKeyHash))) hasPubkey = true;
+					for (const i of Script.decode(inputType.lastScript)) if (isBytes$1(i) && (equalBytes$4(i, pubKey) || equalBytes$4(i, pubKeyHash))) hasPubkey = true;
 					if (!hasPubkey) throw new Error(`Input script doesn't have pubKey: ${inputType.lastScript}`);
 					let hash;
 					if (inputType.txType === "legacy") hash = this.preimageLegacy(idx, inputType.lastScript, sighash);
@@ -39252,7 +39280,7 @@ zoo`.split("\n"));
 							const ver = _script[_script.length - 1];
 							const outScript = OutScript.decode(script);
 							const hash = tapLeafHash(script, ver);
-							const scriptSig = input.tapScriptSig.filter((i) => equalBytes$3(i[0].leafHash, hash));
+							const scriptSig = input.tapScriptSig.filter((i) => equalBytes$4(i[0].leafHash, hash));
 							let signatures = [];
 							let witness;
 							if (outScript.type === "tr_ms") {
@@ -39260,7 +39288,7 @@ zoo`.split("\n"));
 								const pubkeys = outScript.pubkeys;
 								let added = 0;
 								for (const pub of pubkeys) {
-									const sigIdx = scriptSig.findIndex((i) => equalBytes$3(i[0].pubKey, pub));
+									const sigIdx = scriptSig.findIndex((i) => equalBytes$4(i[0].pubKey, pub));
 									if (added === m || sigIdx === -1) {
 										signatures.push(EMPTY$2);
 										continue;
@@ -39271,7 +39299,7 @@ zoo`.split("\n"));
 								if (added !== m) continue;
 							} else if (outScript.type === "tr_ns") {
 								for (const pub of outScript.pubkeys) {
-									const sigIdx = scriptSig.findIndex((i) => equalBytes$3(i[0].pubKey, pub));
+									const sigIdx = scriptSig.findIndex((i) => equalBytes$4(i[0].pubKey, pub));
 									if (sigIdx === -1) continue;
 									signatures.push(scriptSig[sigIdx][1]);
 								}
@@ -39279,7 +39307,7 @@ zoo`.split("\n"));
 							} else if (outScript.type === "unknown" && this.opts.allowUnknownInputs) {
 								const scriptDecoded = Script.decode(script);
 								signatures = scriptSig.map(([{ pubKey }, signature]) => {
-									const pos = scriptDecoded.findIndex((i) => isBytes$1(i) && equalBytes$3(i, pubKey));
+									const pos = scriptDecoded.findIndex((i) => isBytes$1(i) && equalBytes$4(i, pubKey));
 									if (pos === -1) throw new Error("finalize/taproot: cannot find position of pubkey in script");
 									return {
 										signature,
@@ -39326,7 +39354,7 @@ zoo`.split("\n"));
 					const pubkeys = inputType.last.pubkeys;
 					let signatures = [];
 					for (const pub of pubkeys) {
-						const sign = input.partialSig.find((s) => equalBytes$3(pub, s[0]));
+						const sign = input.partialSig.find((s) => equalBytes$4(pub, s[0]));
 						if (!sign) continue;
 						signatures.push(sign[1]);
 					}
@@ -39380,7 +39408,7 @@ zoo`.split("\n"));
 				}
 				for (const k of ["inputs", "outputs"]) if (this[k].length !== other[k].length) throw new Error(`Transaction/combine: different ${k} length this=${this[k].length} other=${other[k].length}`);
 				const unsignedTx = this.unsignedTx;
-				if (!equalBytes$3(unsignedTx, other.unsignedTx)) throw new Error(`Transaction/combine: different unsigned tx`);
+				if (!equalBytes$4(unsignedTx, other.unsignedTx)) throw new Error(`Transaction/combine: different unsigned tx`);
 				let txModifiable;
 				if (thisV2 && otherV2) {
 					const policy = (tx) => {
@@ -39435,7 +39463,7 @@ zoo`.split("\n"));
 				candidate.inputs = inputs;
 				candidate.outputs = outputs;
 				if ((!thisV2 || !otherV2) && candidate.isPSBTv2()) candidate.global.txModifiable = candidate.txModifiable;
-				if (!equalBytes$3(candidate.unsignedTx, unsignedTx)) throw new Error("Transaction/combine: combined unsigned tx differs");
+				if (!equalBytes$4(candidate.unsignedTx, unsignedTx)) throw new Error("Transaction/combine: combined unsigned tx differs");
 				this.global = candidate.global;
 				this.inputs = candidate.inputs;
 				this.outputs = candidate.outputs;
@@ -39507,10 +39535,10 @@ zoo`.split("\n"));
 	* BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
 	* https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
 	*/
-	var utf8$1 = (s) => new TextEncoder().encode(s);
+	var utf8$2 = (s) => new TextEncoder().encode(s);
 	var BIP322_TAG = "BIP0322-signed-message";
-	var LEGACY_MAGIC = utf8$1("Bitcoin Signed Message:\n");
-	var concat$3 = (...parts) => {
+	var LEGACY_MAGIC = utf8$2("Bitcoin Signed Message:\n");
+	var concat$4 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let o = 0;
 		for (const p of parts) {
@@ -39525,7 +39553,7 @@ zoo`.split("\n"));
 	/** A length-prefixed push; longer data would need a multi-byte CompactSize this code never emits. */
 	var pushData = (data) => {
 		if (data.length > COMPACT_SIZE_ONE_BYTE_MAX) throw new ChainError("invalid-request", "BIP-322 script data exceeds 252 bytes");
-		return concat$3(varint$1(data.length), data);
+		return concat$4(varint$1(data.length), data);
 	};
 	var u32le = (n) => Uint8Array.of(n % 256, Math.floor(n / 256) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 16777216) % 256);
 	var u64le = (n) => {
@@ -39539,8 +39567,8 @@ zoo`.split("\n"));
 	};
 	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
 	var bip322MessageHash = (message) => {
-		const tag = sha256$1(utf8$1(BIP322_TAG));
-		return sha256$1(concat$3(tag, tag, utf8$1(message)));
+		const tag = sha256$1(utf8$2(BIP322_TAG));
+		return sha256$1(concat$4(tag, tag, utf8$2(message)));
 	};
 	/**
 	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
@@ -39548,8 +39576,8 @@ zoo`.split("\n"));
 	* digest — internal byte order, the reverse of the displayed hex.
 	*/
 	var toSpend = (scriptPubKey, messageHash) => {
-		const scriptSig = concat$3(Uint8Array.of(0), pushData(messageHash));
-		const raw = concat$3(u32le(0), varint$1(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint$1(1), u64le(0n), pushData(scriptPubKey), u32le(0));
+		const scriptSig = concat$4(Uint8Array.of(0), pushData(messageHash));
+		const raw = concat$4(u32le(0), varint$1(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint$1(1), u64le(0n), pushData(scriptPubKey), u32le(0));
 		return {
 			txid: sha256$1(sha256$1(raw)),
 			raw
@@ -39610,15 +39638,15 @@ zoo`.split("\n"));
 	* each stack item as a pushData — the finalized P2WPKH `[DER‖sighash, pubkey]` or P2TR `[sig]`.
 	*/
 	var encodeBip322Simple = (witness) => {
-		return `smp${base64(concat$3(varint$1(witness.length), ...witness.map(pushData)))}`;
+		return `smp${base64(concat$4(varint$1(witness.length), ...witness.map(pushData)))}`;
 	};
 	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
-	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$3(pushData(LEGACY_MAGIC), pushData(utf8$1(message)))));
+	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$4(pushData(LEGACY_MAGIC), pushData(utf8$2(message)))));
 	/**
 	* The legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
 	* 64-byte compact ECDSA sig), header = 27 + yParity + 4 (compressed pubkey).
 	*/
-	var encodeLegacySignature = (yParity, compact) => base64(concat$3(Uint8Array.of(27 + yParity + 4), compact));
+	var encodeLegacySignature = (yParity, compact) => base64(concat$4(Uint8Array.of(27 + yParity + 4), compact));
 	/**
 	* /bitcoin/plan — the serialisable signing plan of a normalized request. A PSBT plans one task per
 	* listed input (key-path P2TR → BIP-340 over the tweaked output key; P2WPKH/P2SH-P2WPKH/P2PKH →
@@ -39641,7 +39669,7 @@ zoo`.split("\n"));
 	var taprootTask = (tx, index, input, type, key) => {
 		if (input.tapLeafScript !== void 0 || input.tapMerkleRoot !== void 0) throw cannotSign(index);
 		const x = key.publicKey.slice(1);
-		if (input.tapInternalKey === void 0 || !equalBytes$3(input.tapInternalKey, x)) throw cannotSign(index);
+		if (input.tapInternalKey === void 0 || !equalBytes$4(input.tapInternalKey, x)) throw cannotSign(index);
 		const [outputKey] = taprootTweakPubkey(x, /* @__PURE__ */ new Uint8Array());
 		const prevouts = prevoutsOf(tx, index);
 		return {
@@ -39656,7 +39684,7 @@ zoo`.split("\n"));
 	var ecdsaTask = (tx, index, input, type, key) => {
 		const pubHash = hash160(key.publicKey);
 		let digest;
-		if (type.txType === "segwit" && type.last.type === "wpkh" && equalBytes$3(type.last.hash, pubHash)) {
+		if (type.txType === "segwit" && type.last.type === "wpkh" && equalBytes$4(type.last.hash, pubHash)) {
 			const scriptCode = OutScript.encode({
 				type: "pkh",
 				hash: type.last.hash
@@ -39668,7 +39696,7 @@ zoo`.split("\n"));
 				throw new ChainError("invalid-request", `input ${index}: ${message(error)}`);
 			}
 			digest = tx.preimageWitnessV0(index, scriptCode, type.sighash, prevOut.amount);
-		} else if (type.txType === "legacy" && type.last.type === "pkh" && equalBytes$3(type.last.hash, pubHash)) digest = preimageLegacy(tx, index, type.lastScript, type.sighash);
+		} else if (type.txType === "legacy" && type.last.type === "pkh" && equalBytes$4(type.last.hash, pubHash)) digest = preimageLegacy(tx, index, type.lastScript, type.sighash);
 		else throw cannotSign(index);
 		return {
 			scheme: "ecdsa-secp256k1",
@@ -39723,7 +39751,7 @@ zoo`.split("\n"));
 	/** The address's decoded output — the plan rejects anything it cannot bind to the key. */
 	var decodeAddress = (network, address) => {
 		try {
-			return Address(bitcoinNetwork(network).params).decode(address);
+			return Address$1(bitcoinNetwork(network).params).decode(address);
 		} catch (_unused2) {
 			throw new ChainError("invalid-address", "address does not belong to this network");
 		}
@@ -39738,7 +39766,7 @@ zoo`.split("\n"));
 		const decoded = decodeAddress(request.network, request.address);
 		const pubHash = hash160(key.publicKey);
 		if (request.format === "legacy") {
-			if (decoded.type !== "pkh" || !equalBytes$3(decoded.hash, pubHash)) throw cannotSignAddress();
+			if (decoded.type !== "pkh" || !equalBytes$4(decoded.hash, pubHash)) throw cannotSignAddress();
 			return {
 				kind: "bitcoin.message",
 				format: "legacy",
@@ -39752,7 +39780,7 @@ zoo`.split("\n"));
 			};
 		}
 		const scriptPubKey = OutScript.encode(decoded);
-		if (decoded.type === "wpkh" && equalBytes$3(decoded.hash, pubHash)) {
+		if (decoded.type === "wpkh" && equalBytes$4(decoded.hash, pubHash)) {
 			const tx = bip322ToSign(scriptPubKey, request.message);
 			return {
 				kind: "bitcoin.message",
@@ -39772,7 +39800,7 @@ zoo`.split("\n"));
 		if (decoded.type === "tr") {
 			const x = key.publicKey.slice(1);
 			const [outputKey] = taprootTweakPubkey(x, /* @__PURE__ */ new Uint8Array());
-			if (equalBytes$3(decoded.pubkey, outputKey)) {
+			if (equalBytes$4(decoded.pubkey, outputKey)) {
 				const tx = bip322ToSign(scriptPubKey, request.message);
 				return {
 					kind: "bitcoin.message",
@@ -39888,7 +39916,7 @@ zoo`.split("\n"));
 		}
 	};
 	var DEFAULT_SIGHASH = 0;
-	var SIGHASH_ALL = 1;
+	var SIGHASH_ALL$1 = 1;
 	var TEMPLATES$1 = /* @__PURE__ */ new Set([
 		"btc.bip44",
 		"btc.bip49",
@@ -39926,7 +39954,7 @@ zoo`.split("\n"));
 			if (template === "btc.bip86" ? input.tapBip32Derivation === void 0 : input.bip32Derivation === void 0) throw new ChainError("invalid-request", `input ${idx} is missing a bip32 derivation`);
 			if (template !== "btc.bip86" && input.nonWitnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} must carry nonWitnessUtxo`);
 			const sighash = input.sighashType;
-			if (!(sighash === void 0 || sighash === SIGHASH_ALL || isTaprootInput(input) && sighash === DEFAULT_SIGHASH || sighash === 131)) throw new ChainError("unsupported", `input ${idx} uses a non-default sighash`);
+			if (!(sighash === void 0 || sighash === SIGHASH_ALL$1 || isTaprootInput(input) && sighash === DEFAULT_SIGHASH || sighash === 131)) throw new ChainError("unsupported", `input ${idx} uses a non-default sighash`);
 			if (sighash === 131 && idx >= tx.outputsLength) throw new ChainError("unsupported", `input ${idx} uses SIGHASH_SINGLE without a same-index output`);
 		}
 		return {
@@ -39994,7 +40022,7 @@ zoo`.split("\n"));
 	*/
 	var decodeBitcoinPsbt = (request, ownScripts = /* @__PURE__ */ new Set()) => {
 		const tx = parsePsbt(request.psbt);
-		const coder = Address(bitcoinNetwork(request.network).params);
+		const coder = Address$1(bitcoinNetwork(request.network).params);
 		const signed = new Set(request.sign.map((s) => s.index));
 		const outflows = [];
 		let canFee = true;
@@ -40071,9 +40099,9 @@ zoo`.split("\n"));
 	};
 	var samePrevout = (a, b) => {
 		const [x, y] = [a.witnessUtxo, b.witnessUtxo];
-		const witness = x === void 0 || y === void 0 ? x === y : x.amount === y.amount && equalBytes$3(x.script, y.script);
+		const witness = x === void 0 || y === void 0 ? x === y : x.amount === y.amount && equalBytes$4(x.script, y.script);
 		const [m, n] = [a.nonWitnessUtxo, b.nonWitnessUtxo];
-		const full = m === void 0 || n === void 0 ? m === n : equalBytes$3(RawTx.encode(m), RawTx.encode(n));
+		const full = m === void 0 || n === void 0 ? m === n : equalBytes$4(RawTx.encode(m), RawTx.encode(n));
 		return witness && full;
 	};
 	/**
@@ -40085,7 +40113,7 @@ zoo`.split("\n"));
 		try {
 			const want = Transaction.fromPSBT(requested);
 			const got = Transaction.fromPSBT(signed);
-			if (!equalBytes$3(want.unsignedTx, got.unsignedTx)) return false;
+			if (!equalBytes$4(want.unsignedTx, got.unsignedTx)) return false;
 			return Array.from({ length: want.inputsLength }, (_, i) => i).every((i) => samePrevout(want.getInput(i), got.getInput(i)));
 		} catch (_unused3) {
 			return false;
@@ -40101,7 +40129,7 @@ zoo`.split("\n"));
 		const net = bitcoinNetwork(network);
 		let decoded;
 		try {
-			decoded = Address(net.params).decode(address);
+			decoded = Address$1(net.params).decode(address);
 		} catch (_unused7) {
 			throw new ChainError("invalid-address", "address does not belong to this network");
 		}
@@ -41466,9 +41494,9 @@ zoo`.split("\n"));
 	init_secp256k1();
 	init_bip32();
 	init_utils();
-	var HARDENED$9 = 2147483648;
+	var HARDENED$12 = 2147483648;
 	/** `m/…` notation of a task path — hardened indices print with `'`. */
-	var pathString = (path) => `m${path.map((i) => i >= HARDENED$9 ? `/${i - HARDENED$9}'` : `/${i}`).join("")}`;
+	var pathString = (path) => `m${path.map((i) => i >= HARDENED$12 ? `/${i - HARDENED$12}'` : `/${i}`).join("")}`;
 	/** The HD source: BIP-32 for secp256k1 schemes, SLIP-10 for ed25519, both lazy and path-cached. */
 	var seedKeys = (seed, random) => {
 		const secpNodes = /* @__PURE__ */ new Map();
@@ -41823,19 +41851,19 @@ zoo`.split("\n"));
 	* source — the plan itself is reused, never recomputed.
 	*/
 	init_objectSpread2();
-	var HARDENED$8 = 2147483648;
+	var HARDENED$11 = 2147483648;
 	/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
 	var leafPath = (family, groupIndex) => {
 		if (family === "solana") return [
 			2147483692,
 			2147484149,
-			groupIndex + HARDENED$8,
-			HARDENED$8
+			groupIndex + HARDENED$11,
+			HARDENED$11
 		];
 		return [
 			2147483692,
-			(family === "tron" ? 195 : 60) + HARDENED$8,
-			HARDENED$8,
+			(family === "tron" ? 195 : 60) + HARDENED$11,
+			HARDENED$11,
 			0,
 			groupIndex
 		];
@@ -41868,9 +41896,9 @@ zoo`.split("\n"));
 		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
 		const net = bitcoinNetwork(network);
 		const path = [
-			purpose + HARDENED$8,
-			net.coinType + HARDENED$8,
-			groupIndex + HARDENED$8
+			purpose + HARDENED$11,
+			net.coinType + HARDENED$11,
+			groupIndex + HARDENED$11
 		];
 		const fingerprint = await material.fingerprint();
 		return {
@@ -42168,7 +42196,7 @@ zoo`.split("\n"));
 		"import-payload": 66
 	};
 	var PATH_HARDENED = 2147483648;
-	var CHUNK$3 = 236;
+	var CHUNK$4 = 236;
 	function inner(name, p1, p2, data) {
 		return {
 			name,
@@ -42200,7 +42228,7 @@ zoo`.split("\n"));
 		if (others.length > 2) throw new CardError("invalid-input", "more than two other member IDs");
 		for (const [i, id] of others.entries()) {
 			if (id.length !== 16) throw new CardError("invalid-input", "member ID is not 16 bytes");
-			if (others.slice(i + 1).some((other) => equalBytes$9(other, id))) throw new CardError("invalid-input", "member IDs are not pairwise distinct");
+			if (others.slice(i + 1).some((other) => equalBytes$10(other, id))) throw new CardError("invalid-input", "member IDs are not pairwise distinct");
 		}
 	}
 	/**
@@ -42264,9 +42292,9 @@ zoo`.split("\n"));
 		ed25519Stream: (encodedR, publicKey, message) => {
 			const stream = concatBytes$3(exact$1("encodedR", encodedR, 32), exact$1("publicKey", publicKey, 32), message);
 			const chunks = [];
-			for (let offset = 0; offset < stream.length; offset += CHUNK$3) {
-				const last = offset + CHUNK$3 >= stream.length;
-				chunks.push(inner(last ? "ed25519-finish" : "ed25519-update", last ? 2 : 1, 0, stream.subarray(offset, Math.min(offset + CHUNK$3, stream.length))));
+			for (let offset = 0; offset < stream.length; offset += CHUNK$4) {
+				const last = offset + CHUNK$4 >= stream.length;
+				chunks.push(inner(last ? "ed25519-finish" : "ed25519-update", last ? 2 : 1, 0, stream.subarray(offset, Math.min(offset + CHUNK$4, stream.length))));
 			}
 			return chunks;
 		},
@@ -42290,7 +42318,7 @@ zoo`.split("\n"));
 	init_utils$1();
 	init_utils$2();
 	var N = secp256k1.Point.Fn.ORDER;
-	var fault$2 = (message) => {
+	var fault$10 = (message) => {
 		throw new CardError("card-fault", message);
 	};
 	var input$2 = (message) => {
@@ -42302,10 +42330,10 @@ zoo`.split("\n"));
 	/** Compressed secp256k1 key argument: 33 bytes on the curve. */
 	function checkIdentityKey(key, what) {
 		exact(key, 33, what);
-		if (!validPoint(key)) input$2(`${what} is not a valid point`);
+		if (!validPoint$1(key)) input$2(`${what} is not a valid point`);
 	}
 	function recoveryBit(r, lowS, digest, publicKey) {
-		return equalBytes$9(new secp256k1.Signature(r, lowS).addRecoveryBit(0).recoverPublicKey(digest).toBytes(true), publicKey) ? 0 : 1;
+		return equalBytes$10(new secp256k1.Signature(r, lowS).addRecoveryBit(0).recoverPublicKey(digest).toBytes(true), publicKey) ? 0 : 1;
 	}
 	/**
 	* §12.1: card output `r ‖ s` over a pre-computed `digest`; `s` may be high. The host verifies
@@ -42316,15 +42344,15 @@ zoo`.split("\n"));
 		exact(digest, 32, "digest");
 		checkIdentityKey(publicKey, "publicKey");
 		for (const r of previousR) exact(r, 32, "previousR entry");
-		if (data.length !== 64) fault$2("SIGN_ECDSA response is not 64 bytes");
+		if (data.length !== 64) fault$10("SIGN_ECDSA response is not 64 bytes");
 		const rBytes = data.subarray(0, 32);
 		const r = bytesToNumberBE(rBytes);
 		const s = bytesToNumberBE(data.subarray(32, 64));
 		if (!secp256k1.verify(data, digest, publicKey, {
 			prehash: false,
 			lowS: false
-		})) fault$2("ECDSA signature does not verify");
-		if (previousR.some((previous) => equalBytes$9(previous, rBytes))) fault$2("card reused an r value");
+		})) fault$10("ECDSA signature does not verify");
+		if (previousR.some((previous) => equalBytes$10(previous, rBytes))) fault$10("card reused an r value");
 		const lowS = s > N / 2n ? N - s : s;
 		return {
 			signature: concatBytes$3(numberToBytesBE(r, 32), numberToBytesBE(lowS, 32)),
@@ -42346,7 +42374,7 @@ zoo`.split("\n"));
 			const output = t === 0n ? internal : internal.add(secp256k1.Point.BASE.multiply(t));
 			return schnorr.utils.pointToBytes(output);
 		} catch (_unused) {
-			return fault$2("tweaked output key is not on the curve");
+			return fault$10("tweaked output key is not on the curve");
 		}
 	}
 	/**
@@ -42356,8 +42384,8 @@ zoo`.split("\n"));
 	*/
 	function bip340(data, message, internalKey, tweak) {
 		exact(message, 32, "message");
-		if (data.length !== 64) fault$2("SIGN_BIP340 response is not 64 bytes");
-		if (!schnorr.verify(data, message, bip340OutputX(internalKey, tweak))) fault$2("BIP-340 signature does not verify under the tweaked key");
+		if (data.length !== 64) fault$10("SIGN_BIP340 response is not 64 bytes");
+		if (!schnorr.verify(data, message, bip340OutputX(internalKey, tweak))) fault$10("BIP-340 signature does not verify under the tweaked key");
 		return new Uint8Array(data);
 	}
 	/**
@@ -42367,9 +42395,9 @@ zoo`.split("\n"));
 	function ed25519Signature(data, encodedR, publicKey, message) {
 		exact(encodedR, 32, "encodedR");
 		exact(publicKey, 32, "publicKey");
-		if (data.length !== 32) fault$2("SIGN_ED25519 finish response is not 32 bytes");
+		if (data.length !== 32) fault$10("SIGN_ED25519 finish response is not 32 bytes");
 		const signature = concatBytes$3(encodedR, data);
-		if (!ed25519.verify(signature, message, publicKey, { zip215: false })) fault$2("assembled Ed25519 signature does not verify");
+		if (!ed25519.verify(signature, message, publicKey, { zip215: false })) fault$10("assembled Ed25519 signature does not verify");
 		return signature;
 	}
 	// packages/wallet-kernel/src/modules/card/protocol/status.ts
@@ -42472,7 +42500,7 @@ zoo`.split("\n"));
 	var A3 = BigInt("0x2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad2451");
 	/** Sqrt(−486664 mod q), the root that maps G_W onto the RFC 8032 base point (§10.4). */
 	var C = BigInt("0x70d9120b9f5ff9442d84f723fc03b0813a5e2c2eb482e57d3391fb5500ba81e7");
-	var fault$1 = (message) => {
+	var fault$9 = (message) => {
 		throw new CardError("card-fault", message);
 	};
 	/**
@@ -42481,14 +42509,14 @@ zoo`.split("\n"));
 	* the identity, or in the torsion subgroup.
 	*/
 	function edwardsEncode(wei) {
-		if (wei.length !== 64) fault$1("Wei25519 point is not 64 bytes");
+		if (wei.length !== 64) fault$9("Wei25519 point is not 64 bytes");
 		const x0 = bytesToNumberBE(wei.subarray(0, 32));
 		const y0 = bytesToNumberBE(wei.subarray(32, 64));
-		if (x0 >= Fp.ORDER || y0 >= Fp.ORDER) fault$1("Wei25519 coordinate is not reduced mod q");
-		if (Fp.is0(y0)) fault$1("Wei25519 Y is zero");
+		if (x0 >= Fp.ORDER || y0 >= Fp.ORDER) fault$9("Wei25519 coordinate is not reduced mod q");
+		if (Fp.is0(y0)) fault$9("Wei25519 Y is zero");
 		const u = Fp.sub(x0, A3);
 		const uPlusOne = Fp.add(u, Fp.ONE);
-		if (Fp.is0(uPlusOne)) fault$1("Wei25519 point has no edwards image");
+		if (Fp.is0(uPlusOne)) fault$9("Wei25519 point has no edwards image");
 		const y = Fp.mul(Fp.sub(u, Fp.ONE), Fp.inv(uPlusOne));
 		const x = Fp.mul(Fp.mul(C, u), Fp.inv(y0));
 		const point = ed25519.Point.fromAffine({
@@ -42498,9 +42526,9 @@ zoo`.split("\n"));
 		try {
 			point.assertValidity();
 		} catch (_unused) {
-			fault$1("Wei25519 point does not map onto edwards25519");
+			fault$9("Wei25519 point does not map onto edwards25519");
 		}
-		if (!point.isTorsionFree()) fault$1("Wei25519 point maps to a torsion point");
+		if (!point.isTorsionFree()) fault$9("Wei25519 point maps to a torsion point");
 		return point.toBytes();
 	}
 	// packages/wallet-kernel/src/modules/card/protocol/decode.ts
@@ -42512,7 +42540,7 @@ zoo`.split("\n"));
 	*/
 	init_secp256k1();
 	init_sha2();
-	var fault = (message) => {
+	var fault$8 = (message) => {
 		throw new CardError("card-fault", message);
 	};
 	var input$1 = (message) => {
@@ -42520,11 +42548,11 @@ zoo`.split("\n"));
 	};
 	/** Compressed secp256k1 identity key argument: 33 bytes on the curve. */
 	function checkIdentity(key, what) {
-		if (key.length !== 33 || !validPoint(key)) input$1(`${what} is not a valid identity key`);
+		if (key.length !== 33 || !validPoint$1(key)) input$1(`${what} is not a valid identity key`);
 	}
 	/** §9.3: `life ‖ tries` — `01 00` BLANK; `02` with `tries ∈ [0, L]` LOADED. */
 	function status(data) {
-		if (data.length !== 2) fault("STATUS response is not 2 bytes");
+		if (data.length !== 2) fault$8("STATUS response is not 2 bytes");
 		const bytes = new DataView(data.buffer, data.byteOffset, data.byteLength);
 		const life = bytes.getUint8(0);
 		const tries = bytes.getUint8(1);
@@ -42536,20 +42564,20 @@ zoo`.split("\n"));
 			life: "loaded",
 			tries
 		};
-		return fault("STATUS response carries an unknown life or tries");
+		return fault$8("STATUS response carries an unknown life or tries");
 	}
 	function parseWalletInfo(data) {
-		if (data.length < 51 || (data.length - 35) % 16 !== 0) fault("WalletInfo has an invalid length");
+		if (data.length < 51 || (data.length - 35) % 16 !== 0) fault$8("WalletInfo has an invalid length");
 		const bytes = new DataView(data.buffer, data.byteOffset, data.byteLength);
 		const count = bytes.getUint8(34);
-		if (count < 1 || count > 3 || data.length !== 35 + 16 * count) fault("WalletInfo member count is inconsistent");
+		if (count < 1 || count > 3 || data.length !== 35 + 16 * count) fault$8("WalletInfo member count is inconsistent");
 		const masterPublicKey = data.subarray(0, 33);
-		if (!validPoint(masterPublicKey)) fault("WalletInfo master key is not a valid point");
+		if (!validPoint$1(masterPublicKey)) fault$8("WalletInfo master key is not a valid point");
 		const origin = bytes.getUint8(33);
-		if (origin !== 1 && origin !== 2) fault("WalletInfo origin is neither generated nor imported");
+		if (origin !== 1 && origin !== 2) fault$8("WalletInfo origin is neither generated nor imported");
 		const members = [];
 		for (let i = 0; i < count; i += 1) members.push(new Uint8Array(data.subarray(35 + 16 * i, 35 + 16 * (i + 1))));
-		for (const [i, id] of members.entries()) if (members.slice(i + 1).some((other) => equalBytes$9(other, id))) fault("WalletInfo member IDs are not pairwise distinct");
+		for (const [i, id] of members.entries()) if (members.slice(i + 1).some((other) => equalBytes$10(other, id))) fault$8("WalletInfo member IDs are not pairwise distinct");
 		return {
 			masterPublicKey: new Uint8Array(masterPublicKey),
 			originByte: origin,
@@ -42564,7 +42592,7 @@ zoo`.split("\n"));
 	function walletInfo(data, cardId) {
 		checkCardId(cardId);
 		const { masterPublicKey, originByte, members } = parseWalletInfo(data);
-		if (!members.some((member) => equalBytes$9(member, cardId))) fault("WalletInfo does not list this card as a member");
+		if (!members.some((member) => equalBytes$10(member, cardId))) fault$8("WalletInfo does not list this card as a member");
 		return {
 			masterPublicKey,
 			origin: originName(originByte),
@@ -42579,13 +42607,13 @@ zoo`.split("\n"));
 		checkCardId(cardId);
 		checkCreateParams(params);
 		const { masterPublicKey: echoed, originByte, members } = parseWalletInfo(data);
-		if (originByte !== (params.mode === "generate" ? 1 : 2)) fault("CREATE echoed a different origin than requested");
-		if (members.length !== 1 + params.others.length) fault("CREATE echoed a different member count");
+		if (originByte !== (params.mode === "generate" ? 1 : 2)) fault$8("CREATE echoed a different origin than requested");
+		if (members.length !== 1 + params.others.length) fault$8("CREATE echoed a different member count");
 		for (const [i, member] of members.entries()) {
 			const expected = i === 0 ? cardId : params.others[i - 1];
-			if (expected === void 0 || !equalBytes$9(member, expected)) fault("CREATE echoed the members in a different order");
+			if (expected === void 0 || !equalBytes$10(member, expected)) fault$8("CREATE echoed the members in a different order");
 		}
-		if (params.mode === "import" && !equalBytes$9(masterPublicKey(params.seed), echoed)) fault("CREATE echoed a different master public key");
+		if (params.mode === "import" && !equalBytes$10(masterPublicKey(params.seed), echoed)) fault$8("CREATE echoed a different master public key");
 		return {
 			masterPublicKey: echoed,
 			origin: originName(originByte),
@@ -42594,9 +42622,9 @@ zoo`.split("\n"));
 	}
 	/** §9.8 secp256k1 response: `publicKey(33) ‖ chainCode(32)`; the key must be a valid point. */
 	function publicKey(data) {
-		if (data.length !== 65) fault("PUBLIC_KEY response is not 65 bytes");
+		if (data.length !== 65) fault$8("PUBLIC_KEY response is not 65 bytes");
 		const key = data.subarray(0, 33);
-		if (!validPoint(key)) fault("PUBLIC_KEY returned a point that is not on the curve");
+		if (!validPoint$1(key)) fault$8("PUBLIC_KEY returned a point that is not on the curve");
 		return {
 			publicKey: new Uint8Array(key),
 			chainCode: new Uint8Array(data.subarray(33, 65))
@@ -42604,11 +42632,11 @@ zoo`.split("\n"));
 	}
 	/** Commands whose success response is empty. */
 	function empty(data) {
-		if (data.length > 0) fault("a command with an empty layout returned data");
+		if (data.length > 0) fault$8("a command with an empty layout returned data");
 	}
 	/** §9.13 `P1 = 0x01` response: `ct ‖ tag` — 160 bytes (c = 2) or 176 (c = 3). */
 	function exportPayload(data) {
-		if (data.length !== 160 && data.length !== 176) fault("export payload is not 160 or 176 bytes");
+		if (data.length !== 160 && data.length !== 176) fault$8("export payload is not 160 or 176 bytes");
 		return new Uint8Array(data);
 	}
 	/**
@@ -42618,14 +42646,14 @@ zoo`.split("\n"));
 	*/
 	function offer(data, target) {
 		checkIdentity(target, "target");
-		if (data.length !== 129) fault("OFFER response is not 129 bytes");
+		if (data.length !== 129) fault$8("OFFER response is not 129 bytes");
 		const linkKey = data.subarray(0, 65);
 		const signature = data.subarray(65, 129);
-		if (!validUncompressedPoint(linkKey)) fault("OFFER link key is not a valid point");
+		if (!validUncompressedPoint(linkKey)) fault$8("OFFER link key is not a valid point");
 		if (!secp256k1.verify(signature, sha256$1(offerMessage(linkKey)), target, {
 			prehash: false,
 			lowS: false
-		})) fault("OFFER signature does not verify under the target identity");
+		})) fault$8("OFFER signature does not verify under the target identity");
 		return {
 			linkKey: new Uint8Array(linkKey),
 			signature: new Uint8Array(signature)
@@ -42639,21 +42667,21 @@ zoo`.split("\n"));
 		checkIdentity(params.source, "source");
 		checkIdentity(params.target, "target");
 		if (params.linkKey.length !== 65 || !validUncompressedPoint(params.linkKey)) input$1("linkKey is not a valid uncompressed point");
-		if (data.length !== 129) fault("EXPORT head is not 129 bytes");
+		if (data.length !== 129) fault$8("EXPORT head is not 129 bytes");
 		const ephemeral = data.subarray(0, 65);
 		const signature = data.subarray(65, 129);
-		if (!validUncompressedPoint(ephemeral)) fault("EXPORT ephemeral is not a valid point");
+		if (!validUncompressedPoint(ephemeral)) fault$8("EXPORT ephemeral is not a valid point");
 		const message = exportMessage(params.source, params.target, params.linkKey, ephemeral);
 		if (!secp256k1.verify(signature, sha256$1(message), params.source, {
 			prehash: false,
 			lowS: false
-		})) fault("EXPORT signature does not verify under the source identity");
+		})) fault$8("EXPORT signature does not verify under the source identity");
 		return {
 			ephemeral: new Uint8Array(ephemeral),
 			signature: new Uint8Array(signature)
 		};
 	}
-	var decode$2 = {
+	var decode$3 = {
 		status,
 		walletInfo,
 		created,
@@ -42809,7 +42837,7 @@ zoo`.split("\n"));
 	*/
 	init_utils$2();
 	init_objectSpread2();
-	var HARDENED$7 = 2147483648;
+	var HARDENED$10 = 2147483648;
 	/** Headroom kept inside the plan so the tap can still finish its commit and close. */
 	var PLAN_MARGIN_MS = 1e3;
 	/** The input contract: 6–64 printable ASCII bytes (§7.1, enforced again in accessHash). */
@@ -42879,7 +42907,7 @@ zoo`.split("\n"));
 						secure: "access-code",
 						label: confirmAccessCodeLabel(env.locale, void 0, code.length < CODE_LIMITS.confirmBelow)
 					})));
-					const matched = equalBytes$9(code, confirm);
+					const matched = equalBytes$10(code, confirm);
 					wipe$1(confirm);
 					if (matched) {
 						const accepted = code;
@@ -42936,14 +42964,14 @@ zoo`.split("\n"));
 			path: [
 				2147483692,
 				2147483708,
-				HARDENED$7
+				HARDENED$10
 			]
 		}, {
 			curve: "secp256k1",
 			path: [
 				2147483692,
 				2147483843,
-				HARDENED$7
+				HARDENED$10
 			]
 		}];
 		for (const purpose of [
@@ -42954,14 +42982,14 @@ zoo`.split("\n"));
 		]) {
 			paths.push({
 				curve: "secp256k1",
-				path: [purpose + HARDENED$7, HARDENED$7]
+				path: [purpose + HARDENED$10, HARDENED$10]
 			});
 			for (let g = 0; g < groups; g += 1) paths.push({
 				curve: "secp256k1",
 				path: [
-					purpose + HARDENED$7,
-					HARDENED$7,
-					g + HARDENED$7
+					purpose + HARDENED$10,
+					HARDENED$10,
+					g + HARDENED$10
 				]
 			});
 		}
@@ -42970,8 +42998,8 @@ zoo`.split("\n"));
 			path: [
 				2147483692,
 				2147484149,
-				g + HARDENED$7,
-				HARDENED$7
+				g + HARDENED$10,
+				HARDENED$10
 			]
 		});
 		return paths;
@@ -42994,7 +43022,7 @@ zoo`.split("\n"));
 					path: [
 						2147483692,
 						2147483708,
-						HARDENED$7
+						HARDENED$10
 					]
 				});
 				continue;
@@ -43005,7 +43033,7 @@ zoo`.split("\n"));
 					path: [
 						2147483692,
 						2147483843,
-						HARDENED$7
+						HARDENED$10
 					]
 				});
 				continue;
@@ -43016,8 +43044,8 @@ zoo`.split("\n"));
 					path: [
 						2147483692,
 						2147484149,
-						groupIndex + HARDENED$7,
-						HARDENED$7
+						groupIndex + HARDENED$10,
+						HARDENED$10
 					]
 				});
 				continue;
@@ -43027,14 +43055,14 @@ zoo`.split("\n"));
 			const coin = bitcoinNetwork(network).coinType;
 			push({
 				curve: "secp256k1",
-				path: [purpose + HARDENED$7, coin + HARDENED$7]
+				path: [purpose + HARDENED$10, coin + HARDENED$10]
 			});
 			push({
 				curve: "secp256k1",
 				path: [
-					purpose + HARDENED$7,
-					coin + HARDENED$7,
-					groupIndex + HARDENED$7
+					purpose + HARDENED$10,
+					coin + HARDENED$10,
+					groupIndex + HARDENED$10
 				]
 			});
 		}
@@ -43068,12 +43096,12 @@ zoo`.split("\n"));
 			const key = pathString(needed.path);
 			const data = await tap.send(cmd.publicKey(needed.curve, needed.path));
 			if (needed.curve === "secp256k1") {
-				const { publicKey, chainCode } = decode$2.publicKey(data);
+				const { publicKey, chainCode } = decode$3.publicKey(data);
 				staged.nodes[key] = {
 					key: bytesToHex$5(publicKey),
 					chainCode: bytesToHex$5(chainCode)
 				};
-			} else staged.ed25519[key] = bytesToHex$5(decode$2.weiPoint(data));
+			} else staged.ed25519[key] = bytesToHex$5(decode$3.weiPoint(data));
 		}
 	};
 	/** A record a `VERIFY`/`CREATE` just proved: members in the card's order, this card ready. */
@@ -43086,7 +43114,7 @@ zoo`.split("\n"));
 			members: info.members.map(bytesToHex$5),
 			cards: info.members.map((id) => ({
 				cardId: bytesToHex$5(id),
-				state: equalBytes$9(id, cardId) ? "ready" : "unknown"
+				state: equalBytes$10(id, cardId) ? "ready" : "unknown"
 			}))
 		},
 		body: _objectSpread2({
@@ -43452,7 +43480,7 @@ zoo`.split("\n"));
 									remaining: verified.remaining
 								};
 								changeSent.add(id);
-								decode$2.empty(await tap.send(cmd.change(newHash)));
+								decode$3.empty(await tap.send(cmd.change(newHash)));
 								tap.update((d) => {
 									if (d.body !== void 0) {
 										var _d$body$access;
@@ -43517,7 +43545,7 @@ zoo`.split("\n"));
 	*/
 	init_utils$2();
 	/** OFFER on the session's card; the signature must verify under the card's own identity (§9.12). */
-	var takeOffer = async (tap) => decode$2.offer(await tap.send(cmd.offer()), tap.identity);
+	var takeOffer = async (tap) => decode$3.offer(await tap.send(cmd.offer()), tap.identity);
 	/**
 	* EXPORT head + payload to `target` (§9.13): the head is bound to this session's identity, the
 	* target identity and the link key by the decoder's signature check; the payload is sealed under
@@ -43525,12 +43553,12 @@ zoo`.split("\n"));
 	*/
 	var exportTo = async (tap, target, accessHashT) => {
 		return {
-			head: decode$2.exportHead(await tap.send(cmd.export0(target.cert, target.offer)), {
+			head: decode$3.exportHead(await tap.send(cmd.export0(target.cert, target.offer)), {
 				source: tap.identity,
 				target: target.identity,
 				linkKey: target.offer.linkKey
 			}),
-			payload: decode$2.exportPayload(await tap.send(cmd.export1(accessHashT)))
+			payload: decode$3.exportPayload(await tap.send(cmd.export1(accessHashT)))
 		};
 	};
 	/**
@@ -43542,14 +43570,14 @@ zoo`.split("\n"));
 	*/
 	var importOutcome = async (tap, sourceCert, transfer) => {
 		try {
-			decode$2.empty(await tap.send(cmd.import0(sourceCert, transfer.head)));
+			decode$3.empty(await tap.send(cmd.import0(sourceCert, transfer.head)));
 		} catch (error) {
 			if (error instanceof CardError && error.code === "wrong-state") return "offer-gone";
 			if (error instanceof CardError && error.code === "invalid-data" && tap.status.life === "loaded") throw new KernelError("wrong-device", "the loaded card does not accept this wallet's export");
 			throw error;
 		}
 		try {
-			return decode$2.walletInfo(await tap.send(cmd.import1(transfer.payload)), tap.cardId);
+			return decode$3.walletInfo(await tap.send(cmd.import1(transfer.payload)), tap.cardId);
 		} catch (error) {
 			if (error instanceof CardError && error.code === "invalid-data" && tap.status.life === "loaded") throw new KernelError("wrong-device", "the loaded card holds a different wallet");
 			throw error;
@@ -43562,7 +43590,7 @@ zoo`.split("\n"));
 	var checkInfo = (header, body, info) => {
 		if (bytesToHex$5(info.masterPublicKey) !== body.master || header.members.length !== info.members.length || !header.members.every((m, i) => {
 			const member = info.members[i];
-			return member !== void 0 && equalBytes$9(hexToBytes$4(m), member);
+			return member !== void 0 && equalBytes$10(hexToBytes$4(m), member);
 		})) throw new KernelError("wrong-device", "the card's wallet does not match the record");
 	};
 	/**
@@ -43734,7 +43762,7 @@ zoo`.split("\n"));
 									others: []
 								};
 								const data = await tap.send(cmd.create(params));
-								const echoed = decode$2.created(data, params, tap.cardId);
+								const echoed = decode$3.created(data, params, tap.cardId);
 								tap.installed(echoed);
 								return echoed;
 							});
@@ -43870,7 +43898,7 @@ zoo`.split("\n"));
 					const expected = [tap.cardId, ...targets.map((t) => t.cardId)];
 					if (verified.members.length !== expected.length || !verified.members.every((m, i) => {
 						var _expected$i;
-						return equalBytes$9(m, (_expected$i = expected[i]) !== null && _expected$i !== void 0 ? _expected$i : m);
+						return equalBytes$10(m, (_expected$i = expected[i]) !== null && _expected$i !== void 0 ? _expected$i : m);
 					})) throw new KernelError("wrong-device", "the card's member list does not match this set");
 					if (generate && verified.origin !== "generated") throw new KernelError("wrong-device", "the card's wallet was not generated");
 					if (!generate && verified.origin !== "imported") throw new KernelError("wrong-device", "the card's wallet was not imported");
@@ -43969,7 +43997,7 @@ zoo`.split("\n"));
 									others: targets.map((t) => t.cardId)
 								};
 								try {
-									const echoed = decode$2.created(await tap.send(cmd.create(params)), params, tap.cardId);
+									const echoed = decode$3.created(await tap.send(cmd.create(params)), params, tap.cardId);
 									tap.installed(echoed);
 									stage(tap, echoed);
 								} finally {
@@ -43986,7 +44014,7 @@ zoo`.split("\n"));
 										seed,
 										others: targets.map((t) => t.cardId)
 									};
-									const echoed = decode$2.created(await tap.send(cmd.create(build)), build, tap.cardId);
+									const echoed = decode$3.created(await tap.send(cmd.create(build)), build, tap.cardId);
 									tap.installed(echoed);
 									return echoed;
 								});
@@ -44195,7 +44223,7 @@ zoo`.split("\n"));
 										remaining: verified.remaining
 									};
 								}
-								decode$2.empty(await tap.send(cmd.erase()));
+								decode$3.empty(await tap.send(cmd.erase()));
 								tap.update((d) => {
 									if (d.header === void 0 || d.body === void 0) return;
 									const cards = d.header.cards.filter((c) => c.cardId !== target);
@@ -44585,7 +44613,7 @@ zoo`.split("\n"));
 	* the signature and its `r` so the op can feed it to the next task.
 	*/
 	var signEcdsaTask = async (tap, task, previousR) => {
-		const { signature } = decode$2.ecdsa(await tap.send(cmd.signEcdsa(task.digest, task.path)), task.digest, task.publicKey, previousR);
+		const { signature } = decode$3.ecdsa(await tap.send(cmd.signEcdsa(task.digest, task.path)), task.digest, task.publicKey, previousR);
 		return {
 			signature,
 			r: signature.subarray(0, 32)
@@ -44596,8 +44624,8 @@ zoo`.split("\n"));
 	* internal key `P` and the tweaked output key is checked to be the task's (§12.2).
 	*/
 	var signBip340Task = async (tap, task, internalKey) => {
-		if (!equalBytes$9(bip340OutputX(internalKey, task.tweak), task.publicKey)) throw new KernelError("card-fault", "the card's tweaked key is not the task's output key");
-		return decode$2.bip340(await tap.send(cmd.signBip340(task.message, task.tweak, task.path)), task.message, internalKey, task.tweak);
+		if (!equalBytes$10(bip340OutputX(internalKey, task.tweak), task.publicKey)) throw new KernelError("card-fault", "the card's tweaked key is not the task's output key");
+		return decode$3.bip340(await tap.send(cmd.signBip340(task.message, task.tweak, task.path)), task.message, internalKey, task.tweak);
 	};
 	/**
 	* SIGN_ED25519 — begin(path) → `W(R)`, then the challenge stream `encode(R)‖encode(A)‖M` in
@@ -44605,11 +44633,11 @@ zoo`.split("\n"));
 	* 8032 signature (§12.3). `publicKey` is the task's RFC 8032 key.
 	*/
 	var signEd25519Task = async (tap, task, publicKey) => {
-		const encodedR = decode$2.weiPoint(await tap.send(cmd.ed25519Begin(task.path)));
+		const encodedR = decode$3.weiPoint(await tap.send(cmd.ed25519Begin(task.path)));
 		const chunks = cmd.ed25519Stream(encodedR, publicKey, task.message);
 		let data = /* @__PURE__ */ new Uint8Array(0);
 		for (const chunk of chunks) data = await tap.send(chunk);
-		return decode$2.ed25519(data, encodedR, publicKey, task.message);
+		return decode$3.ed25519(data, encodedR, publicKey, task.message);
 	};
 	/**
 	* Sign one prepared task on the open card session. BIP-340 derives the internal key `P` at
@@ -44627,7 +44655,7 @@ zoo`.split("\n"));
 			case "bip340": return signBip340Task(tap, task, await material.secp256k1(task.path));
 			case "ed25519": {
 				const publicKey = await material.ed25519(task.path);
-				if (!equalBytes$9(publicKey, task.publicKey)) throw new KernelError("integrity", "the card's ed25519 key is not the task's key");
+				if (!equalBytes$10(publicKey, task.publicKey)) throw new KernelError("integrity", "the card's ed25519 key is not the task's key");
 				return signEd25519Task(tap, task, publicKey);
 			}
 		}
@@ -45240,7 +45268,7 @@ zoo`.split("\n"));
 		try {
 			if (!secp256k1.utils.isValidSecretKey(secret)) throw new CardError("invalid-input", "host ephemeral is not a valid scalar");
 			const hostEph = secp256k1.getPublicKey(secret, false);
-			if (!equalBytes$9(request, concatBytes$3(new Uint8Array([
+			if (!equalBytes$10(request, concatBytes$3(new Uint8Array([
 				128,
 				INS_OPEN,
 				0,
@@ -45260,7 +45288,7 @@ zoo`.split("\n"));
 				lowS: false
 			})) throw new CardError("card-not-genuine", "session signature does not verify");
 			const ephemeralTag = sha256$1(cardEph).subarray(0, 8);
-			if (recentEphemerals.some((seen) => equalBytes$9(seen, ephemeralTag))) throw new CardError("card-fault", "cardEph repeats a recently seen value");
+			if (recentEphemerals.some((seen) => equalBytes$10(seen, ephemeralTag))) throw new CardError("card-fault", "cardEph repeats a recently seen value");
 			shared = secp256k1.getSharedSecret(secret, cardEph, true);
 			return sessionFromKeys(kdf(shared.subarray(1, 33), LABEL_KDF_SESSION, transcriptHash, 64), identity, cert, batch, ephemeralTag);
 		} finally {
@@ -45333,7 +45361,7 @@ zoo`.split("\n"));
 			const ciphertext = rapdu.subarray(0, bodyLength);
 			const tag = rapdu.subarray(bodyLength, -2);
 			const counter = _classPrivateFieldGet2(_received, this);
-			if (!equalBytes$9(tag, cmac(concatBytes$3(u16(counter), ciphertext), keys.subarray(48, 64)).subarray(0, 8))) _assertClassBrand(_CardSession_brand, this, _break).call(this, "response MAC does not verify");
+			if (!equalBytes$10(tag, cmac(concatBytes$3(u16(counter), ciphertext), keys.subarray(48, 64)).subarray(0, 8))) _assertClassBrand(_CardSession_brand, this, _break).call(this, "response MAC does not verify");
 			const kre = keys.subarray(32, 48);
 			const padded = cbc(kre, recordIv(kre, 2, counter), { disablePadding: true }).decrypt(ciphertext);
 			try {
@@ -45581,8 +45609,8 @@ zoo`.split("\n"));
 			if (own !== void 0 && ((_own$body$ephemerals$ = own.body.ephemerals[cardIdHex]) !== null && _own$body$ephemerals$ !== void 0 ? _own$body$ephemerals$ : []).includes(tag)) throw new CardError("card-fault", "cardEph repeats a recently seen value");
 			tagHex = tag;
 			const entry = own === null || own === void 0 ? void 0 : own.header.cards.find((c) => c.cardId === cardIdHex);
-			if ((entry === null || entry === void 0 ? void 0 : entry.cert) !== void 0 && !equalBytes$9(hexToBytes$4(entry.cert), sess.cert)) throw new CardError("card-not-genuine", "the card presented a different certificate");
-			if (expect.cards !== void 0 && !expect.cards.some((id) => equalBytes$9(id, sess.cardId)) || expect.exclude !== void 0 && expect.exclude.some((id) => equalBytes$9(id, sess.cardId))) throw new KernelError("card-id-mismatch", "this tap expects a different card");
+			if ((entry === null || entry === void 0 ? void 0 : entry.cert) !== void 0 && !equalBytes$10(hexToBytes$4(entry.cert), sess.cert)) throw new CardError("card-not-genuine", "the card presented a different certificate");
+			if (expect.cards !== void 0 && !expect.cards.some((id) => equalBytes$10(id, sess.cardId)) || expect.exclude !== void 0 && expect.exclude.some((id) => equalBytes$10(id, sess.cardId))) throw new KernelError("card-id-mismatch", "this tap expects a different card");
 			if (expect.shortId !== void 0 && expect.shortId !== shortId(sess.identity)) throw new KernelError("card-id-mismatch", "the card's short ID does not match");
 			const spent = { ms: 200 };
 			const send = async (inner) => {
@@ -45591,7 +45619,7 @@ zoo`.split("\n"));
 				if (!response.ok) throw new LostError(response.failure, response.detail);
 				return result(inner, sess.unwrap(response.value));
 			};
-			const status = decode$2.status(await send(cmd.status()));
+			const status = decode$3.status(await send(cmd.status()));
 			triesNow = status.tries;
 			const ourMissedAttempt = unaccounted.delete(cardIdHex);
 			const memberOf = (_ctx$image$records$fi = ctx.image.records.find((record) => {
@@ -45625,7 +45653,7 @@ zoo`.split("\n"));
 					throw error;
 				}
 				triesNow = ACCESS_LIMITS.failures;
-				const info = decode$2.walletInfo(data, sess.cardId);
+				const info = decode$3.walletInfo(data, sess.cardId);
 				if (draft.header !== void 0 && draft.body !== void 0) {
 					const { members } = draft.header;
 					if (bytesToHex$5(info.masterPublicKey) !== draft.body.master || members.length !== info.members.length || !members.every((m) => info.members.some((id) => bytesToHex$5(id) === m))) throw new KernelError("wrong-device", "the card's wallet does not match the record");
@@ -46977,7 +47005,7 @@ zoo`.split("\n"));
 		var _opts$maxPayloadChars;
 		const { nonce, ciphertext, mac } = decodePayload(payload, (_opts$maxPayloadChars = opts === null || opts === void 0 ? void 0 : opts.maxPayloadChars) !== null && _opts$maxPayloadChars !== void 0 ? _opts$maxPayloadChars : DEFAULT_MAX_PAYLOAD_CHARS);
 		const { chacha_key, chacha_nonce, hmac_key } = getMessageKeys(conversationKey, nonce);
-		if (!equalBytes$9(hmacAad(hmac_key, ciphertext, nonce), mac)) throw new CryptoError("invalid MAC");
+		if (!equalBytes$10(hmacAad(hmac_key, ciphertext, nonce), mac)) throw new CryptoError("invalid MAC");
 		return unpad(chacha20(chacha_key, chacha_nonce, ciphertext));
 	}
 	// node_modules/.bun/@qntx+nostr@0.16.0+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip59.mjs
@@ -47392,7 +47420,7 @@ zoo`.split("\n"));
 	*
 	* @see https://github.com/nostr-protocol/nips/blob/master/49.md
 	*/
-	var VERSION$1 = 2;
+	var VERSION$2 = 2;
 	var SALT_LEN = 16;
 	var NONCE_LEN = 24;
 	var LOGN_MIN = 1;
@@ -47435,7 +47463,7 @@ zoo`.split("\n"));
 		const nonce = randomBytes$2(NONCE_LEN);
 		const aad = Uint8Array.from([(_opts$ksb = opts === null || opts === void 0 ? void 0 : opts.ksb) !== null && _opts$ksb !== void 0 ? _opts$ksb : 2]);
 		const ciphertext = xchacha20poly1305(key, nonce, aad).encrypt(secretKey);
-		return encodeBytes$1("ncryptsec", concatBytes$3(Uint8Array.from([VERSION$1]), Uint8Array.from([logn]), salt, nonce, aad, ciphertext));
+		return encodeBytes$1("ncryptsec", concatBytes$3(Uint8Array.from([VERSION$2]), Uint8Array.from([logn]), salt, nonce, aad, ciphertext));
 	}
 	// packages/wallet-kernel/src/modules/nostr/pool.ts
 	init_defineProperty();
@@ -47679,7 +47707,7 @@ zoo`.split("\n"));
 		}
 	}
 	// packages/wallet-kernel/src/modules/nostr/ops.ts
-	async function sign$2(ctx, pool, params, requestSession) {
+	async function sign$3(ctx, pool, params, requestSession) {
 		ctx.session.require(requestSession);
 		return signEvent(pool, params.publicKey, params.event);
 	}
@@ -47835,7 +47863,7 @@ zoo`.split("\n"));
 				"nostr.deriveKey": async (ctx, params, session) => deriveKey(ctx, params, session),
 				"nostr.removeKey": async (ctx, params, session) => removeKey(ctx, params, session),
 				"nostr.exportKey": async (ctx, params, session) => exportKey(ctx, params, session),
-				"nostr.signEvent": async (ctx, params, session) => sign$2(ctx, pool, params, session),
+				"nostr.signEvent": async (ctx, params, session) => sign$3(ctx, pool, params, session),
 				"nostr.nip04Encrypt": async (ctx, params, session) => nip04Encrypt(ctx, pool, params, session),
 				"nostr.nip04Decrypt": async (ctx, params, session) => nip04Decrypt(ctx, pool, params, session),
 				"nostr.nip44Encrypt": async (ctx, params, session) => nip44Encrypt(ctx, pool, params, session),
@@ -51479,7 +51507,7 @@ zoo`.split("\n"));
 	* @param cbor - CBOR value to check
 	* @returns True if value is array
 	*/
-	var isArray = (cbor) => {
+	var isArray$1 = (cbor) => {
 		return cbor.type === MajorType.Array;
 	};
 	/**
@@ -51873,7 +51901,7 @@ zoo`.split("\n"));
 				i += 2;
 				continue;
 			}
-			if (isArray(head)) {
+			if (isArray$1(head)) {
 				const inner = head.value;
 				if (inner.length === 0) {
 					const hardened = expectBool(take(items, i + 1));
@@ -52916,50 +52944,50 @@ zoo`.split("\n"));
 	// packages/wallet-kernel/src/modules/signers/keystone/sync.ts
 	init_secp256k1();
 	init_objectSpread2();
-	var HARDENED$6 = 2147483648;
+	var HARDENED$9 = 2147483648;
 	/** The BIP-32 account nodes the sync pins: btc purposes, ethereum and tron, coin 0' account 0'. */
 	var SECP256K1_PATHS = [
 		[
 			2147483692,
-			HARDENED$6,
-			HARDENED$6
+			HARDENED$9,
+			HARDENED$9
 		],
 		[
 			2147483697,
-			HARDENED$6,
-			HARDENED$6
+			HARDENED$9,
+			HARDENED$9
 		],
 		[
 			2147483732,
-			HARDENED$6,
-			HARDENED$6
+			HARDENED$9,
+			HARDENED$9
 		],
 		[
 			2147483734,
-			HARDENED$6,
-			HARDENED$6
+			HARDENED$9,
+			HARDENED$9
 		],
 		[
 			2147483692,
 			2147483708,
-			HARDENED$6
+			HARDENED$9
 		],
 		[
 			2147483692,
 			2147483843,
-			HARDENED$6
+			HARDENED$9
 		]
 	];
 	/** The solana account and its change leaf — the only ed25519 keys the sync pins. */
 	var ED25519_PATHS = [[
 		2147483692,
 		2147484149,
-		HARDENED$6
+		HARDENED$9
 	], [
 		2147483692,
 		2147484149,
-		HARDENED$6,
-		HARDENED$6
+		HARDENED$9,
+		HARDENED$9
 	]];
 	function fail$2() {
 		throw new KernelError("integrity", "malformed crypto-multi-accounts sync");
@@ -52969,17 +52997,11 @@ zoo`.split("\n"));
 		const components = [];
 		for (const component of keyPath.components) {
 			if (component.kind !== "index" || component.index > 2147483647) return;
-			components.push(component.index + (component.hardened ? HARDENED$6 : 0));
+			components.push(component.index + (component.hardened ? HARDENED$9 : 0));
 		}
 		return components;
 	};
 	/** A registry uint32 fingerprint as the four-byte big-endian form the kernel pins. */
-	var fingerprintBytes = (n) => {
-		const out = /* @__PURE__ */ new Uint8Array(4);
-		new DataView(out.buffer).setUint32(0, n);
-		return out;
-	};
-	var samePath$1 = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	/** Parses the QR response: exactly a `crypto-multi-accounts` UR or `integrity`. */
 	var parseSync = (response) => {
 		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") fail$2();
@@ -52994,16 +53016,16 @@ zoo`.split("\n"));
 			const source = (_key$origin = key.origin) === null || _key$origin === void 0 ? void 0 : _key$origin.sourceFingerprint;
 			if (source !== void 0 && source !== accounts.masterFingerprint) fail$2();
 			if (path === void 0) continue;
-			if (claimed.some((seen) => samePath$1(seen, path))) fail$2();
+			if (claimed.some((seen) => samePath(seen, path))) fail$2();
 			claimed.push(path);
-			if (SECP256K1_PATHS.some((wanted) => samePath$1(path, wanted))) {
+			if (SECP256K1_PATHS.some((wanted) => samePath(path, wanted))) {
 				if (entry.curve !== "secp256k1" || key.chainCode === void 0 || !secp256k1.utils.isValidPublicKey(key.keyData)) fail$2();
 				nodes.push(_objectSpread2({
 					path,
 					publicKey: new Uint8Array(key.keyData),
 					chainCode: new Uint8Array(key.chainCode)
 				}, key.parentFingerprint === void 0 ? {} : { parent: fingerprintBytes(key.parentFingerprint) }));
-			} else if (ED25519_PATHS.some((wanted) => samePath$1(path, wanted))) {
+			} else if (ED25519_PATHS.some((wanted) => samePath(path, wanted))) {
 				if (entry.curve !== "ed25519") fail$2();
 				ed25519.push({
 					path,
@@ -53020,9 +53042,9 @@ zoo`.split("\n"));
 	// packages/wallet-kernel/src/modules/signers/keystone/derive.ts
 	init_secp256k1();
 	init_objectSpread2();
-	var HARDENED$5 = 2147483648;
+	var HARDENED$8 = 2147483648;
 	var ORIGIN$1 = "qntx";
-	var h = (...indices) => indices.map((i) => i + HARDENED$5);
+	var h = (...indices) => indices.map((i) => i + HARDENED$8);
 	/**
 	* The path prefixes firmware 3.2.2 derives on request (`is_supported_hardware_call_path`): a prefix
 	* matches the path itself or any extension of it.
@@ -53057,7 +53079,7 @@ zoo`.split("\n"));
 		h(44, 9e3)
 	];
 	var under = (prefix, path) => path.length >= prefix.length && prefix.every((v, i) => path[i] === v);
-	function integrity$3() {
+	function integrity$4() {
 		throw new KernelError("integrity", "malformed key-derivation answer");
 	}
 	/** `accounts` driver op: refuse underivable paths, then exchange and pin exactly what was asked. */
@@ -53074,7 +53096,7 @@ zoo`.split("\n"));
 			},
 			scan: ["crypto-multi-accounts"]
 		});
-		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") integrity$3();
+		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") integrity$4();
 		const accounts = decodeRegistry(response.ur.cbor, cryptoMultiAccountsCodec);
 		const nodes = [];
 		const ed25519 = [];
@@ -53084,17 +53106,17 @@ zoo`.split("\n"));
 			const { key } = entry;
 			const path = key.origin === void 0 ? void 0 : pathOf(key.origin);
 			const source = (_key$origin = key.origin) === null || _key$origin === void 0 ? void 0 : _key$origin.sourceFingerprint;
-			if (source !== void 0 && source !== accounts.masterFingerprint) integrity$3();
-			if (path === void 0) integrity$3();
-			if (need.secp256k1.some((wanted) => samePath$1(path, wanted))) {
-				if (entry.curve !== "secp256k1" || key.chainCode === void 0 || !secp256k1.utils.isValidPublicKey(key.keyData)) integrity$3();
+			if (source !== void 0 && source !== accounts.masterFingerprint) integrity$4();
+			if (path === void 0) integrity$4();
+			if (need.secp256k1.some((wanted) => samePath(path, wanted))) {
+				if (entry.curve !== "secp256k1" || key.chainCode === void 0 || !secp256k1.utils.isValidPublicKey(key.keyData)) integrity$4();
 				nodes.push(_objectSpread2({
 					path,
 					publicKey: new Uint8Array(key.keyData),
 					chainCode: new Uint8Array(key.chainCode)
 				}, key.parentFingerprint === void 0 ? {} : { parent: fingerprintBytes(key.parentFingerprint) }));
-			} else if (need.ed25519.some((wanted) => samePath$1(path, wanted))) {
-				if (entry.curve !== "ed25519") integrity$3();
+			} else if (need.ed25519.some((wanted) => samePath(path, wanted))) {
+				if (entry.curve !== "ed25519") integrity$4();
 				ed25519.push({
 					path,
 					publicKey: new Uint8Array(key.keyData)
@@ -53103,11 +53125,25 @@ zoo`.split("\n"));
 			answered.push(path);
 		}
 		const wanted = [...need.secp256k1, ...need.ed25519];
-		if (answered.length !== wanted.length || !wanted.every((w) => answered.some((a) => samePath$1(a, w)))) integrity$3();
+		if (answered.length !== wanted.length || !wanted.every((w) => answered.some((a) => samePath(a, w)))) integrity$4();
 		return _objectSpread2(_objectSpread2(_objectSpread2({ fingerprint: fingerprintBytes(accounts.masterFingerprint) }, accounts.device === void 0 ? {} : { model: accounts.device }), accounts.version === void 0 ? {} : { firmware: accounts.version }), {}, {
 			nodes,
 			ed25519
 		});
+	};
+	// packages/wallet-kernel/src/modules/signers/digest.ts
+	/**
+	* The digest guards every hardware signer shares: `personalDigest` recomputes the EIP-191
+	* personal-message digest a kernel personal-message task was planned over, and `expectDigest`
+	* requires a recomputed digest to equal the task's — `integrity` otherwise, so a kernel-side
+	* planning fault can never produce a signature over bytes the user did not approve.
+	*/
+	init_utils$2();
+	/** The EIP-191 digest of `message` — what a personal-message task must equal. */
+	var personalDigest = (message) => keccak_256(concatBytes$3(utf8ToBytes$1(`\u0019Ethereum Signed Message:\n${message.length}`), message));
+	/** Requires `computed` to equal the task's planned digest — `integrity` otherwise. */
+	var expectDigest = (computed, task) => {
+		if (!equalBytes$10(computed, task.digest)) throw new KernelError("integrity", "malformed device sign exchange");
 	};
 	// packages/wallet-kernel/src/modules/signers/keystone/sign.ts
 	/**
@@ -53126,14 +53162,14 @@ zoo`.split("\n"));
 	init_transaction();
 	init_objectSpread2();
 	var ORIGIN = "qntx";
-	function integrity$2() {
+	function integrity$3() {
 		throw new KernelError("integrity", "malformed device sign exchange");
 	}
-	function wrongDevice() {
+	function wrongDevice$1() {
 		throw new KernelError("wrong-device", "the signature answers a different request");
 	}
 	/** The device's display for a request: `clear` what firmware renders, refuse the rest. */
-	var display$1 = (_request, plan) => {
+	var display$2 = (_request, plan, _identity) => {
 		switch (plan.kind) {
 			case "evm.transaction": return plan.tx.type === "legacy" || plan.tx.type === "eip1559" ? "clear" : "unsupported";
 			case "evm.personal-message":
@@ -53159,22 +53195,17 @@ zoo`.split("\n"));
 			show,
 			scan: [type]
 		});
-		if (response.kind !== "qr" || response.ur.type !== type) integrity$2();
+		if (response.kind !== "qr" || response.ur.type !== type) integrity$3();
 		return decodeRegistry(response.ur.cbor, codec);
 	};
 	/** A signature answer must name the request id this exchange minted. */
 	var checkRequestId = (returned, sent) => {
-		if (returned === void 0 || !equalBytes$9(returned, sent)) wrongDevice();
+		if (returned === void 0 || !equalBytes$10(returned, sent)) wrongDevice$1();
 	};
 	var compactSecp256k1 = (signature, requestId, length) => {
 		checkRequestId(signature.requestId, requestId);
-		if (signature.signature.length !== length) integrity$2();
+		if (signature.signature.length !== length) integrity$3();
 		return signature.signature.subarray(0, 64);
-	};
-	/** The EIP-191 digest of `message` — what a personal-message task must equal. */
-	var personalDigest$1 = (message) => keccak_256(concatBytes$3(utf8ToBytes$1(`\u0019Ethereum Signed Message:\n${message.length}`), message));
-	var expectDigest$1 = (computed, task) => {
-		if (!equalBytes$9(computed, task.digest)) integrity$2();
 	};
 	var evm$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
@@ -53183,7 +53214,7 @@ zoo`.split("\n"));
 		let dataType;
 		let chainId;
 		if (stage.kind === "evm.transaction") {
-			if (request.kind !== "evm.transaction") integrity$2();
+			if (request.kind !== "evm.transaction") integrity$3();
 			const { tx } = request;
 			signData = evmSigningPreimage(tx);
 			const { chainId: txChainId } = tx;
@@ -53193,21 +53224,21 @@ zoo`.split("\n"));
 			} else if (tx.type === "eip1559") {
 				dataType = 4;
 				chainId = txChainId;
-			} else integrity$2();
-			expectDigest$1(keccak_256(signData), task);
+			} else integrity$3();
+			expectDigest(keccak_256(signData), task);
 		} else if (stage.kind === "evm.typed-data") {
-			if (request.kind !== "evm.typed-data") integrity$2();
+			if (request.kind !== "evm.typed-data") integrity$3();
 			signData = utf8ToBytes$1(request.typedData);
 			dataType = 2;
-			expectDigest$1(planEvm(request, {
+			expectDigest(planEvm(request, {
 				path: task.path,
 				publicKey: task.publicKey
 			}).tasks[0].digest, task);
 		} else {
-			if (request.kind !== stage.kind) integrity$2();
+			if (request.kind !== stage.kind) integrity$3();
 			signData = request.kind === "evm.fiat24-session" ? utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline)) : request.message;
 			dataType = 3;
-			expectDigest$1(personalDigest$1(signData), task);
+			expectDigest(personalDigest(signData), task);
 		}
 		return compactSecp256k1(await exchange(link, {
 			type: "eth-sign-request",
@@ -53230,12 +53261,12 @@ zoo`.split("\n"));
 		if (request.kind === "tron.transaction" && stage.kind === "tron.transaction") {
 			signData = request.rawData;
 			dataType = 1;
-			expectDigest$1(sha256$1(signData), task);
+			expectDigest(sha256$1(signData), task);
 		} else if (request.kind === "tron.message" && stage.kind === "tron.message") {
 			signData = request.message;
 			dataType = 2;
-			expectDigest$1(tronMessageDigest(signData), task);
-		} else integrity$2();
+			expectDigest(tronMessageDigest(signData), task);
+		} else integrity$3();
 		return compactSecp256k1(await exchange(link, {
 			type: "tron-sign-request",
 			cbor: tronSignRequest({
@@ -53250,9 +53281,9 @@ zoo`.split("\n"));
 	};
 	var solana$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
-		if (request.kind !== stage.kind) integrity$2();
+		if (request.kind !== stage.kind) integrity$3();
 		const signData = request.message;
-		if (!equalBytes$9(signData, task.message)) integrity$2();
+		if (!equalBytes$10(signData, task.message)) integrity$3();
 		const requestId = context.random(16);
 		const answer = await exchange(link, {
 			type: "sol-sign-request",
@@ -53266,7 +53297,7 @@ zoo`.split("\n"));
 			})
 		}, "sol-signature", solSignatureCodec);
 		checkRequestId(answer.requestId, requestId);
-		if (answer.signature.length !== 64) integrity$2();
+		if (answer.signature.length !== 64) integrity$3();
 		return answer.signature;
 	};
 	var bitcoinPsbt$1 = async (link, stage) => {
@@ -53274,42 +53305,42 @@ zoo`.split("\n"));
 			type: "crypto-psbt",
 			cbor: cryptoPsbt(stage.psbt)
 		}, "crypto-psbt", cryptoPsbtCodec)).bytes;
-		if (!samePsbtContent(stage.psbt, signed)) integrity$2();
+		if (!samePsbtContent(stage.psbt, signed)) integrity$3();
 		let transaction;
 		try {
 			transaction = Transaction.fromPSBT(signed);
 		} catch (_unused) {
-			integrity$2();
+			integrity$3();
 		}
 		return stage.tasks.map((task, index) => {
 			var _input$partialSig;
 			const planned = stage.inputs[index];
-			if (planned === void 0) integrity$2();
+			if (planned === void 0) integrity$3();
 			const input = transaction.getInput(planned.index);
 			if (task.scheme === "bip340") {
 				const signature = input.tapKeySig;
-				if (signature === void 0 || signature.length !== (planned.sighash === 0 ? 64 : 65)) integrity$2();
-				if (signature.length === 65 && signature[64] !== planned.sighash) integrity$2();
+				if (signature === void 0 || signature.length !== (planned.sighash === 0 ? 64 : 65)) integrity$3();
+				if (signature.length === 65 && signature[64] !== planned.sighash) integrity$3();
 				return signature.subarray(0, 64);
 			}
-			const entry = ((_input$partialSig = input.partialSig) !== null && _input$partialSig !== void 0 ? _input$partialSig : []).find(([key]) => equalBytes$9(key, task.publicKey));
-			if (entry === void 0) integrity$2();
+			const entry = ((_input$partialSig = input.partialSig) !== null && _input$partialSig !== void 0 ? _input$partialSig : []).find(([key]) => equalBytes$10(key, task.publicKey));
+			if (entry === void 0) integrity$3();
 			const [, der] = entry;
-			if (der.length < 2 || der.at(-1) !== planned.sighash) integrity$2();
+			if (der.length < 2 || der.at(-1) !== planned.sighash) integrity$3();
 			let signature;
 			try {
 				signature = secp256k1.Signature.fromBytes(der.subarray(0, -1), "der").toBytes();
 			} catch (_unused2) {
-				integrity$2();
+				integrity$3();
 			}
 			return signature;
 		});
 	};
 	var bitcoinMessage$1 = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
-		if (request.format !== "legacy" || stage.format !== "legacy" || task.scheme !== "ecdsa-secp256k1") integrity$2();
+		if (request.format !== "legacy" || stage.format !== "legacy" || task.scheme !== "ecdsa-secp256k1") integrity$3();
 		const signData = utf8ToBytes$1(request.message);
-		expectDigest$1(legacyMessageHash(request.message), task);
+		expectDigest(legacyMessageHash(request.message), task);
 		const requestId = context.random(16);
 		const answer = await exchange(link, {
 			type: "btc-sign-request",
@@ -53322,32 +53353,32 @@ zoo`.split("\n"));
 			})
 		}, "btc-signature", btcSignatureCodec);
 		checkRequestId(answer.requestId, requestId);
-		if (!equalBytes$9(answer.publicKey, task.publicKey)) wrongDevice();
-		if (answer.signature.length !== 65) integrity$2();
+		if (!equalBytes$10(answer.publicKey, task.publicKey)) wrongDevice$1();
+		if (answer.signature.length !== 65) integrity$3();
 		return answer.signature.subarray(1);
 	};
-	var sign$1 = async (link, context) => {
+	var sign$2 = async (link, context) => {
 		const { request, stage } = context;
 		switch (stage.kind) {
 			case "evm.transaction":
 			case "evm.personal-message":
 			case "evm.fiat24-session":
 			case "evm.typed-data":
-				if (request.kind !== stage.kind) integrity$2();
+				if (request.kind !== stage.kind) integrity$3();
 				return [await evm$1(link, context, request, stage)];
 			case "tron.transaction":
 			case "tron.message":
-				if (request.kind !== stage.kind) integrity$2();
+				if (request.kind !== stage.kind) integrity$3();
 				return [await tron$1(link, context, request, stage)];
 			case "solana.transaction":
 			case "solana.message":
-				if (request.kind !== "solana.transaction" && request.kind !== "solana.message") integrity$2();
+				if (request.kind !== "solana.transaction" && request.kind !== "solana.message") integrity$3();
 				return [await solana$1(link, context, request, stage)];
 			case "bitcoin.psbt":
-				if (request.kind !== "bitcoin.psbt") integrity$2();
+				if (request.kind !== "bitcoin.psbt") integrity$3();
 				return bitcoinPsbt$1(link, stage);
 			case "bitcoin.message":
-				if (request.kind !== "bitcoin.message") integrity$2();
+				if (request.kind !== "bitcoin.message") integrity$3();
 				return [await bitcoinMessage$1(link, context, request, stage)];
 			default: throw new KernelError("unsupported", "keystone cannot sign this request");
 		}
@@ -53366,8 +53397,8 @@ zoo`.split("\n"));
 			kind: "qr",
 			scan: ["crypto-multi-accounts"]
 		})),
-		display: display$1,
-		sign: sign$1,
+		display: display$2,
+		sign: sign$2,
 		accounts: derive,
 		verifyAddress: async (link, target) => {
 			const response = await link.exchange({
@@ -53507,7 +53538,7 @@ zoo`.split("\n"));
 		return isAscii(body) ? "ascii" : "utf8";
 	};
 	/** The device's display for a request: `clear` what firmware renders, refuse the rest. */
-	var display = (request, plan) => {
+	var display$1 = (request, plan, _identity) => {
 		if (plan.kind === "evm.transaction") {
 			const { tx } = plan;
 			if (tx.type === "eip7702") return "unsupported";
@@ -53540,7 +53571,7 @@ zoo`.split("\n"));
 		}
 		return "unsupported";
 	};
-	// packages/wallet-kernel/src/modules/ledger/protocol/errors.ts
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/errors.ts
 	init_defineProperty();
 	var LedgerError = class extends Error {
 		constructor(code, message, sw) {
@@ -53557,7 +53588,41 @@ zoo`.split("\n"));
 			this.sw = sw;
 		}
 	};
-	// packages/wallet-kernel/src/modules/ledger/protocol/bytes.ts
+	// packages/wallet-kernel/src/modules/signers/ledger/errors.ts
+	/**
+	* Ledger protocol errors into kernel errors: the wire-level `LedgerError` codes the protocol
+	* clients throw map onto the signer module's contract codes — `user-rejected` maps to
+	* `device-rejected` like every other refusal. The map is exported as a pure function and the catch
+	* is the caller's.
+	*/
+	var CODES = {
+		"device-locked": "device-locked",
+		"app-not-open": "device-app-closed",
+		"app-not-installed": "device-app-closed",
+		"user-rejected": "device-rejected",
+		"setting-required": "blind-signing-disabled",
+		unsupported: "unsupported",
+		"invalid-input": "unsupported",
+		"invalid-response": "integrity",
+		transport: "integrity",
+		"device-fault": "unsupported"
+	};
+	/** Maps one `LedgerError` to the kernel code its ledger code names. */
+	var mapLedgerError = (error) => new KernelError(CODES[error.code], error.code === "device-fault" ? "the device refused the request" : error.message);
+	/**
+	* Runs `job` and maps any `LedgerError` it throws to the kernel code for that ledger code —
+	* `device-fault` loses its (unreliable, status-word-dependent) message for the fixed refusal text.
+	* Kernel errors from the driver's own guards pass through untouched.
+	*/
+	var call$4 = async (job) => {
+		try {
+			return await job();
+		} catch (error) {
+			if (error instanceof LedgerError) throw mapLedgerError(error);
+			throw error;
+		}
+	};
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/bytes.ts
 	init_defineProperty();
 	var input = (message) => new LedgerError("invalid-input", message);
 	var response = (message) => new LedgerError("invalid-response", message);
@@ -53659,7 +53724,7 @@ zoo`.split("\n"));
 			if (this.remaining !== 0) throw response("response has trailing bytes");
 		}
 	};
-	// packages/wallet-kernel/src/modules/ledger/protocol/status.ts
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/status.ts
 	/** The error assigned to a status word the allow-list knows. */
 	function mapped(app, sw) {
 		switch (sw) {
@@ -53702,7 +53767,7 @@ zoo`.split("\n"));
 		const code = (_mapped = mapped(app, sw)) !== null && _mapped !== void 0 ? _mapped : "device-fault";
 		return new LedgerError(code, MESSAGES[code], sw);
 	}
-	// packages/wallet-kernel/src/modules/ledger/protocol/apdu.ts
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/apdu.ts
 	/**
 	* Short-APDU codec and the exchange primitive every app call is built on
 	* (ledger-app-solana/doc/api.md "APDU Command payload encoding").
@@ -53757,7 +53822,118 @@ zoo`.split("\n"));
 		for (const command of commands.slice(0, -1)) if ((await transmit(exchange, app, command)).length > 0) throw new LedgerError("invalid-response", "an intermediate chunk returned data");
 		return transmit(exchange, app, last);
 	}
-	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/merkle.ts
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/device.ts
+	var PRINTABLE$1 = (b) => b >= 32 && b <= 126;
+	var ascii$1 = (bytes) => {
+		if (!bytes.every(PRINTABLE$1)) throw new LedgerError("invalid-response", "a response string is not printable ASCII");
+		return new TextDecoder().decode(bytes);
+	};
+	/** `B0 01 00 00` — `01 ‖ LV(name) ‖ LV(version) ‖ [LV(flags)]`, nothing after. */
+	async function appAndVersion(exchange) {
+		const reader = new Reader(await transmit(exchange, "dashboard", {
+			cla: 176,
+			ins: 1,
+			p1: 0,
+			p2: 0,
+			data: /* @__PURE__ */ new Uint8Array(0)
+		}));
+		if (reader.u8() !== 1) throw new LedgerError("invalid-response", "GET_APP_AND_VERSION format is not 0x01");
+		const name = ascii$1(reader.lv());
+		const version = ascii$1(reader.lv());
+		const flags = reader.remaining > 0 ? reader.lv() : /* @__PURE__ */ new Uint8Array(0);
+		reader.end();
+		return {
+			name,
+			version,
+			flags
+		};
+	}
+	/**
+	* Names and minimum versions pinned in scripts/ledger/apps.json — device-release tags
+	* `nanos+_1.6.1_2.5.1_sdk_v26.6.2`, `nanos+_1.7.0_1.24.0_sdk_v27.1.7`,
+	* `nanos+_1.6.1_1.16.0_sdk_v26.4.0`, `nanos+_1.7.0_0.8.2_sdk_v27.1.5`. A unit test keeps this table
+	* equal to apps.json.
+	*/
+	var LEDGER_APPS = {
+		bitcoin: {
+			name: "Bitcoin",
+			minimum: [
+				2,
+				5,
+				1
+			]
+		},
+		ethereum: {
+			name: "Ethereum",
+			minimum: [
+				1,
+				24,
+				0
+			]
+		},
+		solana: {
+			name: "Solana",
+			minimum: [
+				1,
+				16,
+				0
+			]
+		},
+		tron: {
+			name: "Tron",
+			minimum: [
+				0,
+				8,
+				2
+			]
+		}
+	};
+	/** Wrong app in the foreground → app-not-open; malformed or too-old version → unsupported. */
+	function requireApp(info, app) {
+		if (info.name !== LEDGER_APPS[app].name) throw new LedgerError("app-not-open", "the app is not open on the device");
+		const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(info.version);
+		if (match === null) throw new LedgerError("unsupported", "the app version is not x.y.z");
+		const actual = [
+			Number(match[1]),
+			Number(match[2]),
+			Number(match[3])
+		];
+		const { minimum } = LEDGER_APPS[app];
+		for (const i of [
+			0,
+			1,
+			2
+		]) if (actual[i] !== minimum[i]) {
+			if (actual[i] < minimum[i]) throw new LedgerError("unsupported", "the app version is below the pinned minimum");
+			return;
+		}
+	}
+	// packages/wallet-kernel/src/modules/signers/ledger/link.ts
+	/**
+	* The link adapter every Ledger operation uses: one APDU is one `message` request on the
+	* `DeviceLink`, and the answer must be a `message` too — the raw `data ‖ SW` the host's byte pipe
+	* returned. Any other response kind means the host lied about the exchange it ran: `integrity`. App
+	* pinning is shared too: `requiredApp` reads `appAndVersion` and enforces the pinned name and
+	* minimum version before any operation-specific exchange.
+	*/
+	var apduExchange = (link) => {
+		const exchange = async (apdu) => {
+			const response = await link.exchange({
+				kind: "message",
+				data: apdu
+			});
+			if (response.kind !== "message") throw new KernelError("integrity", "the device answered a message with another kind");
+			return response.data;
+		};
+		return exchange;
+	};
+	/** `appAndVersion` plus `requireApp`: wrong app or too-old version fails before any other APDU. */
+	var requiredApp = async (exchange, app) => call$4(async () => {
+		const info = await appAndVersion(exchange);
+		requireApp(info, app);
+		return info;
+	});
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/bitcoin/merkle.ts
 	init_sha2();
 	/** `sha256(0x00 ‖ data)` — the domain-separated leaf hash of doc/merkle.md. */
 	function leafHash(data) {
@@ -53804,11 +53980,11 @@ zoo`.split("\n"));
 		};
 		return walk(leafHashes, index);
 	}
-	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/policy.ts
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/bitcoin/policy.ts
 	init_sha2();
 	init_utils$2();
 	init_bip32();
-	var HARDENED$4 = 2147483648;
+	var HARDENED$7 = 2147483648;
 	var MAX_ACCOUNT = 100;
 	var TEMPLATES = {
 		"btc.bip44": {
@@ -53840,7 +54016,7 @@ zoo`.split("\n"));
 			throw input("the policy key is not a mainnet xpub");
 		}
 	};
-	var ascii$1 = (value) => new TextEncoder().encode(value);
+	var ascii = (value) => new TextEncoder().encode(value);
 	/**
 	* `[fingerprinthex/purpose'/coin'/account']xpub` for a default wallet. `account` must be the three
 	* hardened steps of the matching BIP (purpose matching the template, coin 0' or 1', account' at
@@ -53851,12 +54027,12 @@ zoo`.split("\n"));
 		if (spec === void 0) throw input("unknown bitcoin account template");
 		if (fingerprint.length !== 4) throw input("the master fingerprint is not 4 bytes");
 		const [purpose, coin, index] = account;
-		if (purpose === void 0 || coin === void 0 || index === void 0 || account.length !== 3 || !account.every((step) => Number.isSafeInteger(step) && step >= HARDENED$4 && step <= 4294967295)) throw input("the account path is not three hardened steps");
-		if (purpose - HARDENED$4 !== spec.purpose) throw input("the account purpose does not match the template");
-		if (coin - HARDENED$4 !== 0 && coin - HARDENED$4 !== 1) throw input("the account coin type is not 0' or 1'");
-		if (index - HARDENED$4 > MAX_ACCOUNT) throw input("the account index is above 100");
+		if (purpose === void 0 || coin === void 0 || index === void 0 || account.length !== 3 || !account.every((step) => Number.isSafeInteger(step) && step >= HARDENED$7 && step <= 4294967295)) throw input("the account path is not three hardened steps");
+		if (purpose - HARDENED$7 !== spec.purpose) throw input("the account purpose does not match the template");
+		if (coin - HARDENED$7 !== 0 && coin - HARDENED$7 !== 1) throw input("the account coin type is not 0' or 1'");
+		if (index - HARDENED$7 > MAX_ACCOUNT) throw input("the account index is above 100");
 		if (xpubKey(xpub).depth !== account.length) throw input("the xpub depth does not match the account path");
-		const origin = account.map((step) => `${String(step - HARDENED$4)}'`).join("/");
+		const origin = account.map((step) => `${String(step - HARDENED$7)}'`).join("/");
 		return {
 			template: spec.template,
 			key: `[${bytesToHex$5(fingerprint)}/${origin}]${xpub}`
@@ -53885,7 +54061,7 @@ zoo`.split("\n"));
 		const account = origin.slice(1).split("/").map((step) => {
 			const n = Number(step.slice(0, -1));
 			if (n > 2147483647) throw input("a policy origin step is not a hardened index");
-			return n + HARDENED$4;
+			return n + HARDENED$7;
 		});
 		if (xpubKey(xpub).depth !== account.length) throw input("the policy key origin does not match its xpub");
 		return {
@@ -53900,8 +54076,8 @@ zoo`.split("\n"));
 	* doc/wallet.md "Serialization" for a default (nameless, single-key) wallet.
 	*/
 	function serializePolicy(policy) {
-		const template = ascii$1(policy.template);
-		const keyRoot = merkleRoot([leafHash(ascii$1(policy.key))]);
+		const template = ascii(policy.template);
+		const keyRoot = merkleRoot([leafHash(ascii(policy.key))]);
 		const out = new Uint8Array(2 + varint(template.length).length + 32 + 1 + 32);
 		out[0] = WALLET_POLICY_V2;
 		out[1] = 0;
@@ -53915,7 +54091,7 @@ zoo`.split("\n"));
 	function policyId(policy) {
 		return sha256$1(serializePolicy(policy));
 	}
-	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/client.ts
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/bitcoin/client.ts
 	init_sha2();
 	init_utils$2();
 	var newKnown = () => ({
@@ -53947,8 +54123,8 @@ zoo`.split("\n"));
 	/** AddKnownWalletPolicy — policy serialization, descriptor template, and the key-info list. */
 	var knownWalletPolicy = (known, policy) => {
 		knownPreimage(known, serializePolicy(policy));
-		knownPreimage(known, ascii$1(policy.template));
-		knownList(known, [ascii$1(policy.key)]);
+		knownPreimage(known, ascii(policy.template));
+		knownList(known, [ascii(policy.key)]);
 	};
 	/**
 	* The round bound for `interact`. A compliant device asks a leaf-index or leaf-proof command plus a
@@ -53963,8 +54139,8 @@ zoo`.split("\n"));
 		for (const tree of known.trees.values()) cost += tree.length * tree.length;
 		return 8 + 6 * (known.preimages.size + cost);
 	};
-	var invalid$2 = (message) => new LedgerError("invalid-response", message);
-	var concat$2 = (...parts) => {
+	var invalid$9 = (message) => new LedgerError("invalid-response", message);
+	var concat$3 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let offset = 0;
 		for (const part of parts) {
@@ -53973,23 +54149,23 @@ zoo`.split("\n"));
 		}
 		return out;
 	};
-	var equalBytes$2 = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
+	var equalBytes$3 = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
 	var yieldCommand = (state, request) => {
-		if (request.length === 0) throw invalid$2("YIELD carries no data");
+		if (request.length === 0) throw invalid$9("YIELD carries no data");
 		state.yielded.push(Uint8Array.from(request));
 		return /* @__PURE__ */ new Uint8Array(0);
 	};
 	var preimageCommand = (state, request) => {
 		const reader = new Reader(request);
-		if (reader.u8() !== 0) throw invalid$2("GET_PREIMAGE request version is not 0");
+		if (reader.u8() !== 0) throw invalid$9("GET_PREIMAGE request version is not 0");
 		const hash = reader.bytes(32);
 		reader.end();
 		const preimage = state.known.preimages.get(bytesToHex$5(hash));
-		if (preimage === void 0) throw invalid$2("GET_PREIMAGE asked for an unknown hash");
+		if (preimage === void 0) throw invalid$9("GET_PREIMAGE asked for an unknown hash");
 		const count = varint(preimage.length);
 		const payload = Math.min(255 - count.length - 1, preimage.length);
 		for (let i = payload; i < preimage.length; i += 1) state.queue.push(preimage.subarray(i, i + 1));
-		return concat$2(count, Uint8Array.of(payload), preimage.subarray(0, payload));
+		return concat$3(count, Uint8Array.of(payload), preimage.subarray(0, payload));
 	};
 	var leafProofCommand = (state, request) => {
 		const reader = new Reader(request);
@@ -53998,13 +54174,13 @@ zoo`.split("\n"));
 		const index = reader.varint();
 		reader.end();
 		const tree = state.known.trees.get(root);
-		if (tree === void 0) throw invalid$2("GET_MERKLE_LEAF_PROOF asked for an unknown root");
-		if (size !== tree.length || index >= size) throw invalid$2("GET_MERKLE_LEAF_PROOF size or index is out of range");
-		if (state.queue.length > 0) throw invalid$2("GET_MERKLE_LEAF_PROOF arrived with a pending queue");
+		if (tree === void 0) throw invalid$9("GET_MERKLE_LEAF_PROOF asked for an unknown root");
+		if (size !== tree.length || index >= size) throw invalid$9("GET_MERKLE_LEAF_PROOF size or index is out of range");
+		if (state.queue.length > 0) throw invalid$9("GET_MERKLE_LEAF_PROOF arrived with a pending queue");
 		const proof = merkleProof(tree, index);
 		const answer = Math.min(Math.floor(221 / 32), proof.length);
 		for (const hash of proof.slice(answer)) state.queue.push(hash);
-		return concat$2(...tree.slice(index, index + 1), Uint8Array.of(proof.length), Uint8Array.of(answer), ...proof.slice(0, answer));
+		return concat$3(...tree.slice(index, index + 1), Uint8Array.of(proof.length), Uint8Array.of(answer), ...proof.slice(0, answer));
 	};
 	var leafIndexCommand = (state, request) => {
 		const reader = new Reader(request);
@@ -54012,20 +54188,20 @@ zoo`.split("\n"));
 		const leaf = reader.bytes(32);
 		reader.end();
 		const tree = state.known.trees.get(root);
-		if (tree === void 0) throw invalid$2("GET_MERKLE_LEAF_INDEX asked for an unknown root");
-		if (state.queue.length > 0) throw invalid$2("GET_MERKLE_LEAF_INDEX arrived with a pending queue");
-		const index = tree.findIndex((hash) => equalBytes$2(hash, leaf));
-		return concat$2(Uint8Array.of(index === -1 ? 0 : 1), varint(Math.max(index, 0)));
+		if (tree === void 0) throw invalid$9("GET_MERKLE_LEAF_INDEX asked for an unknown root");
+		if (state.queue.length > 0) throw invalid$9("GET_MERKLE_LEAF_INDEX arrived with a pending queue");
+		const index = tree.findIndex((hash) => equalBytes$3(hash, leaf));
+		return concat$3(Uint8Array.of(index === -1 ? 0 : 1), varint(Math.max(index, 0)));
 	};
 	var moreElementsCommand = (state, request) => {
-		if (request.length > 0) throw invalid$2("GET_MORE_ELEMENTS carries trailing bytes");
+		if (request.length > 0) throw invalid$9("GET_MORE_ELEMENTS carries trailing bytes");
 		const [first] = state.queue;
-		if (first === void 0) throw invalid$2("GET_MORE_ELEMENTS has an empty queue");
+		if (first === void 0) throw invalid$9("GET_MORE_ELEMENTS has an empty queue");
 		const count = Math.min(Math.floor(253 / first.length), state.queue.length);
 		const returned = state.queue.splice(0, count);
-		return concat$2(Uint8Array.of(count), Uint8Array.of(first.length), ...returned);
+		return concat$3(Uint8Array.of(count), Uint8Array.of(first.length), ...returned);
 	};
-	var dispatch = (state, request) => {
+	var dispatch$1 = (state, request) => {
 		const [code] = request;
 		const rest = request.subarray(1);
 		switch (code) {
@@ -54034,14 +54210,14 @@ zoo`.split("\n"));
 			case 65: return leafProofCommand(state, rest);
 			case 66: return leafIndexCommand(state, rest);
 			case 160: return moreElementsCommand(state, rest);
-			default: throw invalid$2("unknown client command code");
+			default: throw invalid$9("unknown client command code");
 		}
 	};
 	/**
 	* Run `command` (an `E1` APDU) and serve every client command the device asks, up to `maxRounds`
 	* interruptions. Returns the final response data and everything the device yielded.
 	*/
-	async function interact(exchange, command, known, rounds) {
+	async function interact$1(exchange, command, known, rounds) {
 		if (!Number.isSafeInteger(rounds) || rounds < 0) throw input("maxRounds is not a non-negative integer");
 		const state = {
 			known,
@@ -54055,25 +54231,25 @@ zoo`.split("\n"));
 				yielded: state.yielded
 			};
 			if (sw !== 57344) throw statusError("bitcoin", sw);
-			if (round >= rounds) throw invalid$2("the device exceeded its client-command budget");
+			if (round >= rounds) throw invalid$9("the device exceeded its client-command budget");
 			const response = await exchange(encodeCommand({
 				cla: 248,
 				ins: 1,
 				p1: 0,
 				p2: 1,
-				data: dispatch(state, data)
+				data: dispatch$1(state, data)
 			}));
 			({data, sw} = decodeResponse(response));
 		}
 	}
-	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/psbt.ts
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/bitcoin/psbt.ts
 	init_transaction();
 	var MAGIC = Uint8Array.of(112, 115, 98, 116, 255);
 	var KEY_INPUT_COUNT = 4;
 	var KEY_OUTPUT_COUNT = 5;
 	var KEY_VERSION = 251;
-	var invalid$1 = (message) => input(message);
-	var equalBytes$1 = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
+	var invalid$8 = (message) => input(message);
+	var equalBytes$2 = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
 	var compareKeys = (a, b) => {
 		const av = new DataView(a.buffer, a.byteOffset, a.byteLength);
 		const bv = new DataView(b.buffer, b.byteOffset, b.byteLength);
@@ -54088,7 +54264,7 @@ zoo`.split("\n"));
 		const sorted = [...kvs].sort((x, y) => compareKeys(x.key, y.key));
 		let prev;
 		for (const kv of sorted) {
-			if (prev !== void 0 && equalBytes$1(prev, kv.key)) throw invalid$1("a PSBT map has a duplicate key");
+			if (prev !== void 0 && equalBytes$2(prev, kv.key)) throw invalid$8("a PSBT map has a duplicate key");
 			prev = kv.key;
 		}
 		return sorted;
@@ -54096,14 +54272,14 @@ zoo`.split("\n"));
 	/** A CompactSize-encoded number stored as a standalone value (inputCount/outputCount). */
 	var countValue = (global, type) => {
 		const hit = global.find((kv) => kv.key.length === 1 && kv.key[0] === type);
-		if (hit === void 0) throw invalid$1("the PSBTv2 global map lacks a required count field");
+		if (hit === void 0) throw invalid$8("the PSBTv2 global map lacks a required count field");
 		try {
 			const reader = new Reader(hit.value);
 			const count = reader.varint();
 			reader.end();
 			return count;
 		} catch (_unused) {
-			throw invalid$1("a PSBTv2 count field is not a varint");
+			throw invalid$8("a PSBTv2 count field is not a varint");
 		}
 	};
 	/** Split the raw `psbt‖…‖0x00` stream into maps; every malformed byte is `invalid-input`. */
@@ -54111,7 +54287,7 @@ zoo`.split("\n"));
 		const reader = new Reader(v2);
 		const maps = [];
 		try {
-			if (!equalBytes$1(reader.bytes(5), MAGIC)) throw invalid$1("the PSBTv2 stream has no magic prefix");
+			if (!equalBytes$2(reader.bytes(5), MAGIC)) throw invalid$8("the PSBTv2 stream has no magic prefix");
 			let map = [];
 			while (reader.remaining > 0) {
 				const keyLength = reader.varint();
@@ -54127,13 +54303,13 @@ zoo`.split("\n"));
 					value: reader.bytes(valueLength)
 				});
 			}
-			if (map.length > 0) throw invalid$1("the last PSBT map is not terminated");
+			if (map.length > 0) throw invalid$8("the last PSBT map is not terminated");
 		} catch (error) {
 			if (error instanceof LedgerError && error.code === "invalid-input") throw error;
-			throw invalid$1("the PSBTv2 stream is malformed");
+			throw invalid$8("the PSBTv2 stream is malformed");
 		}
 		const [global] = maps;
-		if (global === void 0) throw invalid$1("the PSBTv2 stream has no global map");
+		if (global === void 0) throw invalid$8("the PSBTv2 stream has no global map");
 		return {
 			maps,
 			global: sortMap(global)
@@ -54162,7 +54338,7 @@ zoo`.split("\n"));
 				disableScriptCheck: true
 			}).toPSBT(2);
 		} catch (_unused2) {
-			throw invalid$1("the PSBT does not decode or cannot be expressed as version 2");
+			throw invalid$8("the PSBT does not decode or cannot be expressed as version 2");
 		}
 	};
 	function psbtV2Maps(psbt) {
@@ -54175,7 +54351,7 @@ zoo`.split("\n"));
 		const { maps, global } = parsed !== void 0 && versionOf(parsed.global) === 2 ? parsed : splitMaps(toV2(psbt));
 		const inputCount = countValue(global, KEY_INPUT_COUNT);
 		const outputCount = countValue(global, KEY_OUTPUT_COUNT);
-		if (maps.length !== 1 + inputCount + outputCount) throw invalid$1("the PSBTv2 map count does not match its global counts");
+		if (maps.length !== 1 + inputCount + outputCount) throw invalid$8("the PSBTv2 map count does not match its global counts");
 		return {
 			global,
 			inputs: maps.slice(1, 1 + inputCount).map(sortMap),
@@ -54194,7 +54370,7 @@ zoo`.split("\n"));
 		out.set(merkleRoot(kvs.map((kv) => leafHash(kv.value))), count.length + 32);
 		return out;
 	}
-	// packages/wallet-kernel/src/modules/ledger/protocol/bitcoin/index.ts
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/bitcoin/index.ts
 	init_secp256k1();
 	init_utils$2();
 	init_bip32();
@@ -54218,8 +54394,8 @@ zoo`.split("\n"));
 		"wpkh(@0/**)": "btc.bip84",
 		"tr(@0/**)": "btc.bip86"
 	};
-	var invalid = (message) => new LedgerError("invalid-response", message);
-	var concat$1 = (...parts) => {
+	var invalid$7 = (message) => new LedgerError("invalid-response", message);
+	var concat$2 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let offset = 0;
 		for (const part of parts) {
@@ -54228,10 +54404,10 @@ zoo`.split("\n"));
 		}
 		return out;
 	};
-	var equalBytes = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
-	var PRINTABLE$1 = (byte) => byte >= 32 && byte <= 126;
+	var equalBytes$1 = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
+	var PRINTABLE = (byte) => byte >= 32 && byte <= 126;
 	var asciiReply = (data) => {
-		if (!data.every(PRINTABLE$1)) throw invalid("a response string is not printable ASCII");
+		if (!data.every(PRINTABLE)) throw invalid$7("a response string is not printable ASCII");
 		return new TextDecoder().decode(data);
 	};
 	var command$2 = (ins, data) => ({
@@ -54244,7 +54420,7 @@ zoo`.split("\n"));
 	/** `E1 05 00 01` → the 4-byte master fingerprint (doc/bitcoin.md GET_MASTER_FINGERPRINT). */
 	async function btcMasterFingerprint(exchange) {
 		const data = await transmit(exchange, "bitcoin", command$2(INS_GET_MASTER_FINGERPRINT, /* @__PURE__ */ new Uint8Array(0)));
-		if (data.length !== 4) throw invalid("the master fingerprint is not 4 bytes");
+		if (data.length !== 4) throw invalid$7("the master fingerprint is not 4 bytes");
 		return Uint8Array.from(data);
 	}
 	/**
@@ -54255,15 +54431,15 @@ zoo`.split("\n"));
 	async function btcExtendedPublicKey(exchange, path, display) {
 		const last = path.at(-1);
 		if (last === void 0) throw input("the derivation path is empty");
-		const xpub = asciiReply(await transmit(exchange, "bitcoin", command$2(INS_GET_EXTENDED_PUBKEY, concat$1(Uint8Array.of(display ? 1 : 0), encodePath(path, MAX_PATH_DEPTH$3)))));
+		const xpub = asciiReply(await transmit(exchange, "bitcoin", command$2(INS_GET_EXTENDED_PUBKEY, concat$2(Uint8Array.of(display ? 1 : 0), encodePath(path, MAX_PATH_DEPTH$3)))));
 		const key = (() => {
 			try {
 				return HDKey$1.fromExtendedKey(xpub, MAINNET_BIP32);
 			} catch (_unused) {
-				throw invalid("the extended pubkey does not decode");
+				throw invalid$7("the extended pubkey does not decode");
 			}
 		})();
-		if (key.depth !== path.length || key.index !== last) throw invalid("the extended pubkey does not match the requested path");
+		if (key.depth !== path.length || key.index !== last) throw invalid$7("the extended pubkey does not match the requested path");
 		return xpub;
 	}
 	/** The local address for `policy` at `change`/`index` — the device reply must equal it. */
@@ -54282,9 +54458,9 @@ zoo`.split("\n"));
 		const expected = expectedAddress(policy, change, index);
 		const known = newKnown();
 		knownWalletPolicy(known, policy);
-		const { data } = await interact(exchange, command$2(INS_GET_WALLET_ADDRESS, concat$1(Uint8Array.of(display ? 1 : 0), policyId(policy), /* @__PURE__ */ new Uint8Array(32), Uint8Array.of(change), u32(index))), known, maxRounds(known));
+		const { data } = await interact$1(exchange, command$2(INS_GET_WALLET_ADDRESS, concat$2(Uint8Array.of(display ? 1 : 0), policyId(policy), /* @__PURE__ */ new Uint8Array(32), Uint8Array.of(change), u32(index))), known, maxRounds(known));
 		const address = asciiReply(data);
-		if (address !== expected) throw invalid("the device address does not match the policy key");
+		if (address !== expected) throw invalid$7("the device address does not match the policy key");
 		return address;
 	}
 	/**
@@ -54334,22 +54510,22 @@ zoo`.split("\n"));
 			for (const { key, value } of kvs) {
 				if (key.length !== 33 || key[0] !== PSBT_IN_TAP_BIP32_DERIVATION) continue;
 				const derivation = derivationOf(value, true);
-				if (derivation === void 0 || !equalBytes(derivation.fingerprint, parsed.fingerprint)) continue;
+				if (derivation === void 0 || !equalBytes$1(derivation.fingerprint, parsed.fingerprint)) continue;
 				const internal = policyChild(derivation.path, parsed, true);
-				if (internal === void 0 || !equalBytes(internal, key.subarray(1))) continue;
+				if (internal === void 0 || !equalBytes$1(internal, key.subarray(1))) continue;
 				const [tweaked] = taprootTweakPubkey(internal, /* @__PURE__ */ new Uint8Array());
-				if (equalBytes(tweaked, pubkey)) return;
+				if (equalBytes$1(tweaked, pubkey)) return;
 			}
-			throw invalid("the yielded pubkey does not belong to the wallet policy");
+			throw invalid$7("the yielded pubkey does not belong to the wallet policy");
 		}
 		for (const { key, value } of kvs) {
-			if (key.length !== 34 || key[0] !== PSBT_IN_BIP32_DERIVATION || !equalBytes(key.subarray(1), pubkey)) continue;
+			if (key.length !== 34 || key[0] !== PSBT_IN_BIP32_DERIVATION || !equalBytes$1(key.subarray(1), pubkey)) continue;
 			const derivation = derivationOf(value, false);
-			if (derivation === void 0 || !equalBytes(derivation.fingerprint, parsed.fingerprint)) continue;
+			if (derivation === void 0 || !equalBytes$1(derivation.fingerprint, parsed.fingerprint)) continue;
 			const expected = policyChild(derivation.path, parsed, false);
-			if (expected !== void 0 && equalBytes(expected, pubkey)) return;
+			if (expected !== void 0 && equalBytes$1(expected, pubkey)) return;
 		}
-		throw invalid("the yielded pubkey does not belong to the wallet policy");
+		throw invalid$7("the yielded pubkey does not belong to the wallet policy");
 	};
 	/**
 	* One YIELD item: `varint tagOrInput ‖ u8 pubkeyAugmLen ‖ pubkeyAugm ‖ signature` (doc/bitcoin.md
@@ -54360,18 +54536,18 @@ zoo`.split("\n"));
 	var parseYield = (item, inputs) => {
 		const reader = new Reader(item);
 		const index = reader.varint();
-		if (index > 65535) throw invalid("a yielded tag is not a signature under a default policy");
+		if (index > 65535) throw invalid$7("a yielded tag is not a signature under a default policy");
 		const kvs = inputs[index];
-		if (kvs === void 0) throw invalid("a yielded input index is out of range");
+		if (kvs === void 0) throw invalid$7("a yielded input index is out of range");
 		const pubkey = reader.bytes(reader.u8());
 		const signature = reader.rest();
 		reader.end();
-		if (pubkey.length === 64) throw invalid("tapscript signatures are not supported");
+		if (pubkey.length === 64) throw invalid$7("tapscript signatures are not supported");
 		if (pubkey.length === 33) {
 			try {
 				secp256k1.Signature.fromBytes(signature.subarray(0, -1), "der");
 			} catch (_unused3) {
-				throw invalid("the yielded ECDSA signature is not DER plus a sighash byte");
+				throw invalid$7("the yielded ECDSA signature is not DER plus a sighash byte");
 			}
 			return {
 				input: index,
@@ -54381,7 +54557,7 @@ zoo`.split("\n"));
 			};
 		}
 		if (pubkey.length === 32) {
-			if (signature.length !== 64 && signature.length !== 65) throw invalid("the yielded taproot signature is not 64 or 65 bytes");
+			if (signature.length !== 64 && signature.length !== 65) throw invalid$7("the yielded taproot signature is not 64 or 65 bytes");
 			return {
 				input: index,
 				pubkey,
@@ -54389,7 +54565,7 @@ zoo`.split("\n"));
 				kvs
 			};
 		}
-		throw invalid("the yielded pubkey is not 32 or 33 bytes");
+		throw invalid$7("the yielded pubkey is not 32 or 33 bytes");
 	};
 	/**
 	* `E1 04 00 01` — the merkleized global/input/output map commitments plus `policyId ‖ 32×00`
@@ -54409,13 +54585,13 @@ zoo`.split("\n"));
 		for (const map of maps.outputs) knownMapping(known, map);
 		knownList(known, inputCommitments);
 		knownList(known, outputCommitments);
-		const { yielded } = await interact(exchange, command$2(INS_SIGN_PSBT, concat$1(mapCommitment(maps.global), varint(maps.inputs.length), merkleRoot(inputCommitments.map((c) => leafHash(c))), varint(maps.outputs.length), merkleRoot(outputCommitments.map((c) => leafHash(c))), policyId(policy), /* @__PURE__ */ new Uint8Array(32))), known, maxRounds(known));
+		const { yielded } = await interact$1(exchange, command$2(INS_SIGN_PSBT, concat$2(mapCommitment(maps.global), varint(maps.inputs.length), merkleRoot(inputCommitments.map((c) => leafHash(c))), varint(maps.outputs.length), merkleRoot(outputCommitments.map((c) => leafHash(c))), policyId(policy), /* @__PURE__ */ new Uint8Array(32))), known, maxRounds(known));
 		const seen = /* @__PURE__ */ new Set();
 		const out = [];
 		for (const item of yielded) {
 			const yield1 = parseYield(item, maps.inputs);
 			const tag = `${String(yield1.input)}:${bytesToHex$5(yield1.pubkey)}`;
-			if (seen.has(tag)) throw invalid("a signature was yielded twice for the same input and key");
+			if (seen.has(tag)) throw invalid$7("a signature was yielded twice for the same input and key");
 			seen.add(tag);
 			ownKey(yield1.kvs, yield1.pubkey, parsed);
 			out.push({
@@ -54436,16 +54612,16 @@ zoo`.split("\n"));
 		for (let offset = 0; offset < message.length; offset += MESSAGE_CHUNK) chunks.push(message.subarray(offset, offset + MESSAGE_CHUNK));
 		const known = newKnown();
 		knownList(known, chunks);
-		const { data } = await interact(exchange, command$2(INS_SIGN_MESSAGE$1, concat$1(encodePath(path, MAX_PATH_DEPTH$3), varint(message.length), merkleRoot(chunks.map((c) => leafHash(c))))), known, maxRounds(known));
-		if (data.length !== 65) throw invalid("the message signature is not 65 bytes");
+		const { data } = await interact$1(exchange, command$2(INS_SIGN_MESSAGE$1, concat$2(encodePath(path, MAX_PATH_DEPTH$3), varint(message.length), merkleRoot(chunks.map((c) => leafHash(c))))), known, maxRounds(known));
+		if (data.length !== 65) throw invalid$7("the message signature is not 65 bytes");
 		const [header] = data;
-		if (header !== 31 && header !== 32) throw invalid("the message signature header is invalid");
+		if (header !== 31 && header !== 32) throw invalid$7("the message signature header is invalid");
 		return {
 			header,
 			signature: data.subarray(1)
 		};
 	}
-	// packages/wallet-kernel/src/modules/ledger/protocol/ethereum.ts
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/ethereum.ts
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -54471,8 +54647,8 @@ zoo`.split("\n"));
 	var P1_IMPL_PARTIAL = 1;
 	var P1_IMPL_COMPLETE = 0;
 	var MAX_PATH_DEPTH$2 = 10;
-	var CHUNK$2 = 255;
-	var utf8 = (value) => utf8ToBytes$1(value);
+	var CHUNK$3 = 255;
+	var utf8$1 = (value) => utf8ToBytes$1(value);
 	/** The JSON value form kernel typed-data parsing produces for struct fields. */
 	var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	var command$1 = (ins, p1, p2, data) => ({
@@ -54605,12 +54781,12 @@ zoo`.split("\n"));
 		const payload = new Uint8Array(path.length + tx.length);
 		payload.set(path);
 		payload.set(tx, path.length);
-		if (payload.length <= CHUNK$2) return [payload];
-		let chunkSize = CHUNK$2;
+		if (payload.length <= CHUNK$3) return [payload];
+		let chunkSize = CHUNK$3;
 		const { 0: first } = tx;
 		if (first !== void 0 && first >= 192) {
 			const tail = rlpVrsTailLength(tx);
-			const remainder = payload.length % CHUNK$2;
+			const remainder = payload.length % CHUNK$3;
 			if (remainder !== 0 && remainder <= tail) for (let candidate = 254; candidate >= 1; candidate -= 1) {
 				const last = payload.length % candidate;
 				if (last === 0 || last > tail) {
@@ -54626,7 +54802,7 @@ zoo`.split("\n"));
 	/** Splits `payload` into ≤255 chunks: first `P1 0x00`, continuations `P1 0x80` (apdu_constants.h). */
 	var chunked = (ins, payload) => {
 		const commands = [];
-		for (let offset = 0; offset < payload.length; offset += CHUNK$2) commands.push(command$1(ins, offset === 0 ? P1_FIRST$1 : P1_MORE$1, 0, payload.subarray(offset, offset + CHUNK$2)));
+		for (let offset = 0; offset < payload.length; offset += CHUNK$3) commands.push(command$1(ins, offset === 0 ? P1_FIRST$1 : P1_MORE$1, 0, payload.subarray(offset, offset + CHUNK$3)));
 		return commands;
 	};
 	/**
@@ -54714,7 +54890,7 @@ zoo`.split("\n"));
 		const typeSize = key === TYPE_KEYS.int || key === TYPE_KEYS.uint ? Math.floor(((_t$size = t.size) !== null && _t$size !== void 0 ? _t$size : 256) / 8) : key === TYPE_KEYS.bytesFixed ? t.size : void 0;
 		const parts = [(isArray ? 128 : 0) | (typeSize === void 0 ? 0 : 64) | (isCustom ? TYPE_KEYS.custom : key)];
 		if (isCustom) {
-			const name = utf8(t.name);
+			const name = utf8$1(t.name);
 			if (name.length > 255) throw input("EIP-712 type name exceeds 255 bytes");
 			parts.push(name.length, ...name);
 		}
@@ -54728,7 +54904,7 @@ zoo`.split("\n"));
 				parts.push(1, size);
 			}
 		}
-		const field = utf8(fieldName);
+		const field = utf8$1(fieldName);
 		if (field.length > 255) throw input("EIP-712 field name exceeds 255 bytes");
 		parts.push(field.length, ...field);
 		return Uint8Array.from(parts);
@@ -54741,7 +54917,7 @@ zoo`.split("\n"));
 		return hexToBytes$4(hex);
 	};
 	/** Mirrors the value forms ox's ABI integer encoding accepts — anything `BigInt()` parses. */
-	var toBigInt = (value) => {
+	var toBigInt$1 = (value) => {
 		switch (typeof value) {
 			case "bigint":
 			case "boolean":
@@ -54754,7 +54930,7 @@ zoo`.split("\n"));
 			default: return;
 		}
 	};
-	var hexBytes = (value) => {
+	var hexBytes$2 = (value) => {
 		if (typeof value !== "string" || !/^0x([0-9a-fA-F]{2})*$/.test(value)) return;
 		return hexToBytes$4(value.slice(2));
 	};
@@ -54771,28 +54947,28 @@ zoo`.split("\n"));
 		const bits = (_t$size2 = t.size) !== null && _t$size2 !== void 0 ? _t$size2 : 256;
 		switch (t.name) {
 			case "uint": {
-				const v = toBigInt(value);
+				const v = toBigInt$1(value);
 				if (v === void 0 || v < 0n || v >= 2n ** BigInt(bits)) throw input("uint value out of range");
 				return bigEndianMinimal(v);
 			}
 			case "int": {
-				const v = toBigInt(value);
+				const v = toBigInt$1(value);
 				const min = -(2n ** BigInt(bits - 1));
 				const max = 2n ** BigInt(bits - 1) - 1n;
 				if (v === void 0 || v < min || v > max) throw input("int value out of range");
 				return bigEndianMinimal(v < 0n ? v + 2n ** BigInt(bits) : v);
 			}
 			case "address": {
-				const bytes = hexBytes(value);
+				const bytes = hexBytes$2(value);
 				if (bytes === void 0 || bytes.length !== 20) throw input("address value is not a 0x-prefixed 20-byte hex string");
 				return bytes;
 			}
 			case "bool":
 				if (typeof value !== "boolean") throw input("bool value is not a boolean");
 				return Uint8Array.of(value ? 1 : 0);
-			case "string": return utf8(String(value));
+			case "string": return utf8$1(String(value));
 			case "bytes": {
-				const bytes = hexBytes(value);
+				const bytes = hexBytes$2(value);
 				if (bytes === void 0) throw input("bytes value is not 0x-prefixed hex");
 				if (t.size !== void 0 && bytes.length !== t.size) throw input("fixed bytes value is not the declared size");
 				return bytes;
@@ -54809,9 +54985,9 @@ zoo`.split("\n"));
 		new DataView(payload.buffer).setUint16(0, encoded.length);
 		payload.set(encoded, 2);
 		const commands = [];
-		for (let offset = 0; offset < payload.length; offset += CHUNK$2) {
-			const last = offset + CHUNK$2 >= payload.length;
-			commands.push(command$1(INS_EIP712_STRUCT_IMPL, last ? P1_IMPL_COMPLETE : P1_IMPL_PARTIAL, P2_IMPL_FIELD, payload.subarray(offset, offset + CHUNK$2)));
+		for (let offset = 0; offset < payload.length; offset += CHUNK$3) {
+			const last = offset + CHUNK$3 >= payload.length;
+			commands.push(command$1(INS_EIP712_STRUCT_IMPL, last ? P1_IMPL_COMPLETE : P1_IMPL_PARTIAL, P2_IMPL_FIELD, payload.subarray(offset, offset + CHUNK$3)));
 		}
 		return commands;
 	};
@@ -54829,7 +55005,7 @@ zoo`.split("\n"));
 		const path = encodePath(keyPath, MAX_PATH_DEPTH$2);
 		const commands = [];
 		for (const [typeName, fields] of Object.entries(types).sort(byTypeName)) {
-			commands.push(command$1(INS_EIP712_STRUCT_DEF, P1_DEF_COMPLETE, P2_DEF_NAME, utf8(typeName)));
+			commands.push(command$1(INS_EIP712_STRUCT_DEF, P1_DEF_COMPLETE, P2_DEF_NAME, utf8$1(typeName)));
 			for (const field of fields) commands.push(command$1(INS_EIP712_STRUCT_DEF, P1_DEF_COMPLETE, P2_DEF_FIELD, structFieldDefinition(field.name, field.type)));
 		}
 		const implFields = (structName, value, depth) => {
@@ -54859,11 +55035,11 @@ zoo`.split("\n"));
 			}
 			commands.push(...implFieldCommands(encodeFieldValue(t, value)));
 		};
-		commands.push(command$1(INS_EIP712_STRUCT_IMPL, P1_IMPL_COMPLETE, P2_IMPL_NAME, utf8("EIP712Domain")));
+		commands.push(command$1(INS_EIP712_STRUCT_IMPL, P1_IMPL_COMPLETE, P2_IMPL_NAME, utf8$1("EIP712Domain")));
 		const domainFields = types["EIP712Domain"];
 		if (domainFields === void 0) throw input("types has no EIP712Domain");
 		for (const field of domainFields) implValue(destructType(field.type), domain[field.name], 0);
-		commands.push(command$1(INS_EIP712_STRUCT_IMPL, P1_IMPL_COMPLETE, P2_IMPL_NAME, utf8(primaryType)));
+		commands.push(command$1(INS_EIP712_STRUCT_IMPL, P1_IMPL_COMPLETE, P2_IMPL_NAME, utf8$1(primaryType)));
 		implFields(primaryType, message, 0);
 		commands.push(command$1(INS_SIGN_EIP_712_MESSAGE, P1_NON_CONFIRM, P2_EIP712_V1_IMPLEM, path));
 		return rsSignature(await transmitChunks(exchange, "ethereum", commands));
@@ -54884,7 +55060,7 @@ zoo`.split("\n"));
 			blindSigning: (flags & 1) !== 0
 		};
 	}
-	// packages/wallet-kernel/src/modules/ledger/protocol/solana.ts
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/solana.ts
 	/**
 	* Solana app client (CLA `0xE0`). Sources: refs/ledger-app-solana src/globals.h (`InsGetPubkey
 	* 0x05`, `InsSignMessage 0x06`, `InsSignOffchainMessage 0x07`, `InsGetAppConfiguration 0x04`,
@@ -54900,12 +55076,12 @@ zoo`.split("\n"));
 	var P2_EXTEND = 1;
 	var P2_MORE = 2;
 	var MAX_PATH_DEPTH$1 = 5;
-	var MAX_MESSAGE = 1232;
-	var CHUNK$1 = 255;
-	var HARDENED$3 = 2147483648;
+	var MAX_MESSAGE$1 = 1232;
+	var CHUNK$2 = 255;
+	var HARDENED$6 = 2147483648;
 	/** Solana derives hardened-only paths; depth 1..5 per the app docs. */
 	var path = (keyPath) => {
-		for (const index of keyPath) if (!Number.isSafeInteger(index) || index < HARDENED$3 || index > 4294967295) throw input("solana derivation path indices must all be hardened");
+		for (const index of keyPath) if (!Number.isSafeInteger(index) || index < HARDENED$6 || index > 4294967295) throw input("solana derivation path indices must all be hardened");
 		return encodePath(keyPath, MAX_PATH_DEPTH$1);
 	};
 	/** `INS ‖ P1 ‖ P2 0x00` command. */
@@ -54917,7 +55093,7 @@ zoo`.split("\n"));
 		data
 	});
 	/** Exactly 64 bytes of ed25519 signature, or invalid-response. */
-	var signature64 = (data) => {
+	var signature64$1 = (data) => {
 		if (data.length !== 64) throw new LedgerError("invalid-response", "solana signature is not 64 bytes");
 		return data;
 	};
@@ -54937,16 +55113,16 @@ zoo`.split("\n"));
 	* `P2_EXTEND`, and every chunk but the last `P2_MORE` (globals.h).
 	*/
 	var signCommands$1 = (ins, keyPath, message) => {
-		if (message.length === 0 || message.length > MAX_MESSAGE) throw input("solana message is not 1..1232 bytes");
+		if (message.length === 0 || message.length > MAX_MESSAGE$1) throw input("solana message is not 1..1232 bytes");
 		const prefix = path(keyPath);
 		const payload = new Uint8Array(1 + prefix.length + message.length);
 		payload[0] = 1;
 		payload.set(prefix, 1);
 		payload.set(message, 1 + prefix.length);
 		const commands = [];
-		for (let offset = 0; offset < payload.length; offset += CHUNK$1) {
-			const slice = payload.subarray(offset, offset + CHUNK$1);
-			const p2 = (offset === 0 ? 0 : P2_EXTEND) + (offset + CHUNK$1 < payload.length ? P2_MORE : 0);
+		for (let offset = 0; offset < payload.length; offset += CHUNK$2) {
+			const slice = payload.subarray(offset, offset + CHUNK$2);
+			const p2 = (offset === 0 ? 0 : P2_EXTEND) + (offset + CHUNK$2 < payload.length ? P2_MORE : 0);
 			commands.push({
 				cla: CLA$1,
 				ins,
@@ -54959,11 +55135,11 @@ zoo`.split("\n"));
 	};
 	/** `INS_06` — signs a serialized transaction message. */
 	async function solanaSignTransaction(exchange, keyPath, message) {
-		return signature64(await transmitChunks(exchange, "solana", signCommands$1(INS_SIGN_MESSAGE, keyPath, message)));
+		return signature64$1(await transmitChunks(exchange, "solana", signCommands$1(INS_SIGN_MESSAGE, keyPath, message)));
 	}
 	/** `INS_07` — signs a serialized off-chain message. */
 	async function solanaSignOffchainMessage(exchange, keyPath, message) {
-		return signature64(await transmitChunks(exchange, "solana", signCommands$1(INS_SIGN_OFFCHAIN_MESSAGE, keyPath, message)));
+		return signature64$1(await transmitChunks(exchange, "solana", signCommands$1(INS_SIGN_OFFCHAIN_MESSAGE, keyPath, message)));
 	}
 	/**
 	* `INS_04` — `allow_blind_sign ‖ pubkey_display ‖ major ‖ minor ‖ patch`, exactly 5 bytes on the
@@ -54983,7 +55159,7 @@ zoo`.split("\n"));
 			blindSigning
 		};
 	}
-	// packages/wallet-kernel/src/modules/ledger/protocol/tron.ts
+	// packages/wallet-kernel/src/modules/signers/ledger/protocol/tron.ts
 	init_secp256k1();
 	init_objectSpread2();
 	var CLA = 224;
@@ -54998,7 +55174,7 @@ zoo`.split("\n"));
 	var P1_MORE = 128;
 	var P1_LAST = 144;
 	var MAX_PATH_DEPTH = 10;
-	var CHUNK = 255;
+	var CHUNK$1 = 255;
 	var secp256k1OnCurve = (bytes) => {
 		try {
 			return secp256k1.Point.fromBytes(bytes).toBytes(true);
@@ -55076,10 +55252,10 @@ zoo`.split("\n"));
 		payload.set(prefix);
 		payload.set(body, prefix.length);
 		const commands = [];
-		for (let offset = 0; offset < payload.length; offset += CHUNK) {
-			const slice = payload.subarray(offset, offset + CHUNK);
+		for (let offset = 0; offset < payload.length; offset += CHUNK$1) {
+			const slice = payload.subarray(offset, offset + CHUNK$1);
 			const first = offset === 0;
-			const last = offset + CHUNK >= payload.length;
+			const last = offset + CHUNK$1 >= payload.length;
 			commands.push({
 				cla: CLA,
 				ins,
@@ -55145,151 +55321,6 @@ zoo`.split("\n"));
 			signByHash: (flags & 8) !== 0
 		};
 	}
-	// packages/wallet-kernel/src/modules/signers/ledger/errors.ts
-	/**
-	* Ledger protocol errors into kernel errors: the wire-level `LedgerError` codes the protocol
-	* clients throw map onto the signer module's contract codes. `user-rejected` is the only code a
-	* caller may want to intercept before mapping (an address check answers `matched: false` rather
-	* than failing), so the map is exported as a pure function and the catch is the caller's.
-	*/
-	var CODES = {
-		"device-locked": "device-locked",
-		"app-not-open": "device-app-closed",
-		"app-not-installed": "device-app-closed",
-		"user-rejected": "device-rejected",
-		"setting-required": "blind-signing-disabled",
-		unsupported: "unsupported",
-		"invalid-input": "unsupported",
-		"invalid-response": "integrity",
-		transport: "integrity",
-		"device-fault": "unsupported"
-	};
-	/** Maps one `LedgerError` to the kernel code its ledger code names. */
-	var mapLedgerError = (error) => new KernelError(CODES[error.code], error.code === "device-fault" ? "the device refused the request" : error.message);
-	/**
-	* Runs `job` and maps any `LedgerError` it throws to the kernel code for that ledger code —
-	* `device-fault` loses its (unreliable, status-word-dependent) message for the fixed refusal text.
-	* Kernel errors from the driver's own guards pass through untouched.
-	*/
-	var call$3 = async (job) => {
-		try {
-			return await job();
-		} catch (error) {
-			if (error instanceof LedgerError) throw mapLedgerError(error);
-			throw error;
-		}
-	};
-	// packages/wallet-kernel/src/modules/ledger/protocol/device.ts
-	var PRINTABLE = (b) => b >= 32 && b <= 126;
-	var ascii = (bytes) => {
-		if (!bytes.every(PRINTABLE)) throw new LedgerError("invalid-response", "a response string is not printable ASCII");
-		return new TextDecoder().decode(bytes);
-	};
-	/** `B0 01 00 00` — `01 ‖ LV(name) ‖ LV(version) ‖ [LV(flags)]`, nothing after. */
-	async function appAndVersion(exchange) {
-		const reader = new Reader(await transmit(exchange, "dashboard", {
-			cla: 176,
-			ins: 1,
-			p1: 0,
-			p2: 0,
-			data: /* @__PURE__ */ new Uint8Array(0)
-		}));
-		if (reader.u8() !== 1) throw new LedgerError("invalid-response", "GET_APP_AND_VERSION format is not 0x01");
-		const name = ascii(reader.lv());
-		const version = ascii(reader.lv());
-		const flags = reader.remaining > 0 ? reader.lv() : /* @__PURE__ */ new Uint8Array(0);
-		reader.end();
-		return {
-			name,
-			version,
-			flags
-		};
-	}
-	/**
-	* Names and minimum versions pinned in scripts/ledger/apps.json — device-release tags
-	* `nanos+_1.6.1_2.5.1_sdk_v26.6.2`, `nanos+_1.7.0_1.24.0_sdk_v27.1.7`,
-	* `nanos+_1.6.1_1.16.0_sdk_v26.4.0`, `nanos+_1.7.0_0.8.2_sdk_v27.1.5`. A unit test keeps this table
-	* equal to apps.json.
-	*/
-	var LEDGER_APPS = {
-		bitcoin: {
-			name: "Bitcoin",
-			minimum: [
-				2,
-				5,
-				1
-			]
-		},
-		ethereum: {
-			name: "Ethereum",
-			minimum: [
-				1,
-				24,
-				0
-			]
-		},
-		solana: {
-			name: "Solana",
-			minimum: [
-				1,
-				16,
-				0
-			]
-		},
-		tron: {
-			name: "Tron",
-			minimum: [
-				0,
-				8,
-				2
-			]
-		}
-	};
-	/** Wrong app in the foreground → app-not-open; malformed or too-old version → unsupported. */
-	function requireApp(info, app) {
-		if (info.name !== LEDGER_APPS[app].name) throw new LedgerError("app-not-open", "the app is not open on the device");
-		const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(info.version);
-		if (match === null) throw new LedgerError("unsupported", "the app version is not x.y.z");
-		const actual = [
-			Number(match[1]),
-			Number(match[2]),
-			Number(match[3])
-		];
-		const { minimum } = LEDGER_APPS[app];
-		for (const i of [
-			0,
-			1,
-			2
-		]) if (actual[i] !== minimum[i]) {
-			if (actual[i] < minimum[i]) throw new LedgerError("unsupported", "the app version is below the pinned minimum");
-			return;
-		}
-	}
-	// packages/wallet-kernel/src/modules/signers/ledger/link.ts
-	/**
-	* The link adapter every Ledger operation uses: one APDU is one `message` request on the
-	* `DeviceLink`, and the answer must be a `message` too — the raw `data ‖ SW` the host's byte pipe
-	* returned. Any other response kind means the host lied about the exchange it ran: `integrity`. App
-	* pinning is shared too: `requiredApp` reads `appAndVersion` and enforces the pinned name and
-	* minimum version before any operation-specific exchange.
-	*/
-	var apduExchange = (link) => {
-		const exchange = async (apdu) => {
-			const response = await link.exchange({
-				kind: "message",
-				data: apdu
-			});
-			if (response.kind !== "message") throw new KernelError("integrity", "the device answered a message with another kind");
-			return response.data;
-		};
-		return exchange;
-	};
-	/** `appAndVersion` plus `requireApp`: wrong app or too-old version fails before any other APDU. */
-	var requiredApp = async (exchange, app) => call$3(async () => {
-		const info = await appAndVersion(exchange);
-		requireApp(info, app);
-		return info;
-	});
 	// packages/wallet-kernel/src/modules/signers/ledger/pair.ts
 	/**
 	* Pairing and account fetch. The Bitcoin app is the identity source: it is the only Ledger app that
@@ -55298,16 +55329,22 @@ zoo`.split("\n"));
 	* group-0 account xpubs it serves. `accounts` serves one chain family per call — coin type 0' →
 	* bitcoin (re-checking the master fingerprint against the pin), 60' → ethereum, 195' → tron, 501' →
 	* solana; any other type or a mix is `unsupported`.
+	*
+	* For a family the pin already carries, the driver first re-fetches one pinned path of that family
+	* in the same session and compares it byte-for-byte — the device-identity proof the fingerprint
+	* check gives for bitcoin (`wrong-device` on mismatch). The first fetch of a family stays
+	* trust-on-first-use: there is nothing pinned to prove against, so a foreign device could merge its
+	* material — the same trust pairing extends, and on-device verify-address is the mitigation.
 	*/
 	init_bip32();
-	var HARDENED$2 = 2147483648;
+	var HARDENED$5 = 2147483648;
 	var PAIR_PURPOSES = [
 		44,
 		49,
 		84,
 		86
 	];
-	var unsupported = (message) => {
+	var unsupported$4 = (message) => {
 		throw new KernelError("unsupported", message);
 	};
 	/** The pinned node the xpub at `path` carries — public key, chain code and parent fingerprint. */
@@ -55327,16 +55364,16 @@ zoo`.split("\n"));
 	* The pairing ceremony: the Bitcoin app must be open — only it reveals the master fingerprint. The
 	* pinned nodes are the four group-0 account xpubs m/{44,49,84,86}'/0'/0'.
 	*/
-	var pair = async (link) => call$3(async () => {
+	var pair$1 = async (link) => call$4(async () => {
 		const exchange = apduExchange(link);
 		const info = await requiredApp(exchange, "bitcoin");
 		const fingerprint = await btcMasterFingerprint(exchange);
 		const nodes = [];
 		for (const purpose of PAIR_PURPOSES) {
 			const path = [
-				purpose + HARDENED$2,
-				HARDENED$2,
-				HARDENED$2
+				purpose + HARDENED$5,
+				HARDENED$5,
+				HARDENED$5
 			];
 			nodes.push(nodeAt(path, await btcExtendedPublicKey(exchange, path, false)));
 		}
@@ -55350,7 +55387,7 @@ zoo`.split("\n"));
 	/** The coin type a BIP-44-style account path names — `undefined` when the path has no second step. */
 	var coinType = (path) => {
 		const [, coin] = path;
-		return coin === void 0 || coin < HARDENED$2 ? void 0 : coin - HARDENED$2;
+		return coin === void 0 || coin < HARDENED$5 ? void 0 : coin - HARDENED$5;
 	};
 	var SECP_FAMILY = {
 		0: "bitcoin",
@@ -55362,7 +55399,7 @@ zoo`.split("\n"));
 	* fingerprint (`wrong-device` on a different seed); ethereum/tron take the chain-code public-node
 	* variant; solana reads the ed25519 keys directly.
 	*/
-	var accounts = async (link, need, pin) => {
+	var accounts$1 = async (link, need, pin) => {
 		const families = /* @__PURE__ */ new Set();
 		for (const path of need.secp256k1) {
 			const coin = coinType(path);
@@ -55371,21 +55408,21 @@ zoo`.split("\n"));
 			families.add(app);
 		}
 		for (const path of need.ed25519) {
-			if (coinType(path) !== 501) unsupported("the ed25519 path is not the solana family");
+			if (coinType(path) !== 501) unsupported$4("the ed25519 path is not the solana family");
 			families.add("solana");
 		}
-		if (families.size > 1) unsupported("fetch one chain family at a time");
+		if (families.size > 1) unsupported$4("fetch one chain family at a time");
 		const [app] = families;
 		if (app === void 0) return {
 			fingerprint: pin.fingerprint,
 			nodes: [],
 			ed25519: []
 		};
-		return call$3(async () => {
+		return call$4(async () => {
 			const exchange = apduExchange(link);
 			await requiredApp(exchange, app);
 			if (app === "bitcoin") {
-				if (!equalBytes$9(await btcMasterFingerprint(exchange), pin.fingerprint)) throw new KernelError("wrong-device", "the device is not the paired one");
+				if (!equalBytes$10(await btcMasterFingerprint(exchange), pin.fingerprint)) throw new KernelError("wrong-device", "the device is not the paired one");
 				const nodes = [];
 				for (const path of need.secp256k1) nodes.push(nodeAt(path, await btcExtendedPublicKey(exchange, path, false)));
 				return {
@@ -55396,6 +55433,12 @@ zoo`.split("\n"));
 			}
 			if (app === "ethereum" || app === "tron") {
 				const get = app === "ethereum" ? ethPublicNode : tronPublicNode;
+				const coin = app === "ethereum" ? 60 : 195;
+				const pinned = pin.nodes.find((node) => coinType(node.path) === coin);
+				if (pinned !== void 0) {
+					const proof = await get(exchange, pinned.path);
+					if (!equalBytes$10(proof.publicKey, pinned.publicKey) || !equalBytes$10(proof.chainCode, pinned.chainCode)) throw new KernelError("wrong-device", "the device is not the paired one");
+				}
 				const nodes = [];
 				for (const path of need.secp256k1) {
 					const node = await get(exchange, path);
@@ -55411,6 +55454,8 @@ zoo`.split("\n"));
 					ed25519: []
 				};
 			}
+			const pinnedEd = pin.ed25519.find((key) => coinType(key.path) === 501);
+			if (pinnedEd !== void 0 && !equalBytes$10(await solanaAddress(exchange, pinnedEd.path, false), pinnedEd.publicKey)) throw new KernelError("wrong-device", "the device is not the paired one");
 			const ed25519 = [];
 			for (const path of need.ed25519) ed25519.push({
 				path,
@@ -55436,43 +55481,38 @@ zoo`.split("\n"));
 	init_secp256k1();
 	init_sha2();
 	init_utils$2();
-	function integrity$1() {
+	function integrity$2() {
 		throw new KernelError("integrity", "malformed device sign exchange");
 	}
 	var blind = () => new KernelError("blind-signing-disabled", "the device setting required to sign is off");
-	var expectDigest = (computed, task) => {
-		if (!equalBytes$9(computed, task.digest)) integrity$1();
-	};
-	/** The EIP-191 digest of `message` — what a personal-message task must equal. */
-	var personalDigest = (message) => keccak_256(concatBytes$3(utf8ToBytes$1(`\u0019Ethereum Signed Message:\n${message.length}`), message));
 	var evmBlind = (tx) => tx.to === void 0 || tx.data !== "0x" && tx.data !== "";
 	var evm = async (exchange, request, stage) => {
 		await requiredApp(exchange, "ethereum");
 		const [task] = stage.tasks;
 		if (stage.kind === "evm.transaction") {
-			if (request.kind !== "evm.transaction") integrity$1();
+			if (request.kind !== "evm.transaction") integrity$2();
 			const { tx } = request;
-			if (tx.type === "eip7702") integrity$1();
+			if (tx.type === "eip7702") integrity$2();
 			const preimage = evmSigningPreimage(tx);
 			expectDigest(keccak_256(preimage), task);
 			if (evmBlind(tx)) {
-				if (!(await call$3(async () => ethConfiguration(exchange))).blindSigning) throw blind();
+				if (!(await call$4(async () => ethConfiguration(exchange))).blindSigning) throw blind();
 			}
-			return call$3(async () => ethSignTransaction(exchange, task.path, preimage));
+			return call$4(async () => ethSignTransaction(exchange, task.path, preimage));
 		}
 		if (stage.kind === "evm.typed-data") {
-			if (request.kind !== "evm.typed-data") integrity$1();
+			if (request.kind !== "evm.typed-data") integrity$2();
 			expectDigest(planEvm(request, {
 				path: task.path,
 				publicKey: task.publicKey
 			}).tasks[0].digest, task);
-			if (!(await call$3(async () => ethConfiguration(exchange))).blindSigning) throw blind();
-			return call$3(async () => ethSignTypedData(exchange, task.path, parseTypedData(request.typedData).json));
+			if (!(await call$4(async () => ethConfiguration(exchange))).blindSigning) throw blind();
+			return call$4(async () => ethSignTypedData(exchange, task.path, parseTypedData(request.typedData).json));
 		}
-		if (request.kind !== stage.kind) integrity$1();
+		if (request.kind !== stage.kind) integrity$2();
 		const signData = request.kind === "evm.fiat24-session" ? utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline)) : request.message;
 		expectDigest(personalDigest(signData), task);
-		return call$3(async () => ethSignPersonalMessage(exchange, task.path, signData));
+		return call$4(async () => ethSignPersonalMessage(exchange, task.path, signData));
 	};
 	var tron = async (exchange, request, stage) => {
 		await requiredApp(exchange, "tron");
@@ -55482,49 +55522,49 @@ zoo`.split("\n"));
 			expectDigest(sha256$1(rawData), task);
 			const needs = tronSettings(rawData);
 			if (needs.dataAllowed || needs.customContracts || needs.signByHash) {
-				const config = await call$3(async () => tronConfiguration(exchange));
+				const config = await call$4(async () => tronConfiguration(exchange));
 				if (needs.dataAllowed && !config.dataAllowed || needs.customContracts && !config.customContracts || needs.signByHash && !config.signByHash) throw blind();
 			}
-			return call$3(async () => tronSignTransaction(exchange, task.path, rawData));
+			return call$4(async () => tronSignTransaction(exchange, task.path, rawData));
 		}
 		if (request.kind === "tron.message" && stage.kind === "tron.message") {
 			expectDigest(tronMessageDigest(request.message), task);
-			if (!(await call$3(async () => tronConfiguration(exchange))).signByHash) throw blind();
-			return call$3(async () => tronSignPersonalMessage(exchange, task.path, request.message));
+			if (!(await call$4(async () => tronConfiguration(exchange))).signByHash) throw blind();
+			return call$4(async () => tronSignPersonalMessage(exchange, task.path, request.message));
 		}
 		if (request.kind === "tron.typed-data" && stage.kind === "tron.typed-data") {
 			const { json } = parseTronTypedData(request.typedData);
 			const { domain, message } = tronTypedDataHashes(json);
 			expectDigest(keccak_256(concatBytes$3(Uint8Array.of(25, 1), domain, message)), task);
-			if (!(await call$3(async () => tronConfiguration(exchange))).signByHash) throw blind();
-			return call$3(async () => tronSignTypedDataHash(exchange, task.path, domain, message));
+			if (!(await call$4(async () => tronConfiguration(exchange))).signByHash) throw blind();
+			return call$4(async () => tronSignTypedDataHash(exchange, task.path, domain, message));
 		}
-		return integrity$1();
+		return integrity$2();
 	};
 	var solana = async (exchange, request, stage) => {
 		await requiredApp(exchange, "solana");
 		const [task] = stage.tasks;
-		if (!equalBytes$9(request.message, task.message)) integrity$1();
+		if (!equalBytes$10(request.message, task.message)) integrity$2();
 		if (request.kind === "solana.transaction") {
 			if (!solanaClears(request.message)) {
-				if (!(await call$3(async () => solanaConfiguration(exchange))).blindSigning) throw blind();
+				if (!(await call$4(async () => solanaConfiguration(exchange))).blindSigning) throw blind();
 			}
-			return call$3(async () => solanaSignTransaction(exchange, task.path, request.message));
+			return call$4(async () => solanaSignTransaction(exchange, task.path, request.message));
 		}
 		const offchain = solanaOffchain(request.message);
-		if (offchain === void 0) integrity$1();
+		if (offchain === void 0) integrity$2();
 		if (offchain === "utf8") {
-			if (!(await call$3(async () => solanaConfiguration(exchange))).blindSigning) throw blind();
+			if (!(await call$4(async () => solanaConfiguration(exchange))).blindSigning) throw blind();
 		}
-		return call$3(async () => solanaSignOffchainMessage(exchange, task.path, request.message));
+		return call$4(async () => solanaSignOffchainMessage(exchange, task.path, request.message));
 	};
 	var bitcoinPsbt = async (exchange, context, request, stage) => {
 		await requiredApp(exchange, "bitcoin");
 		const templates = new Set(request.sign.map((s) => s.template));
-		if (templates.size !== 1) integrity$1();
+		if (templates.size !== 1) integrity$2();
 		const [template] = templates;
 		const [firstTask] = stage.tasks;
-		if (template === void 0 || firstTask === void 0) integrity$1();
+		if (template === void 0 || firstTask === void 0) integrity$2();
 		const account = firstTask.path.slice(0, 3);
 		const net = bitcoinNetwork(request.network);
 		const xpub = await pinnedMaterial({
@@ -55532,56 +55572,56 @@ zoo`.split("\n"));
 			keys: context.pin
 		}).extendedPublicKey(account, net.bip32);
 		const policy = defaultPolicy(template, context.pin.fingerprint, account, xpub);
-		const yielded = await call$3(async () => btcSignPsbt(exchange, stage.psbt, policy));
+		const yielded = await call$4(async () => btcSignPsbt(exchange, stage.psbt, policy));
 		return stage.tasks.map((task, index) => {
 			const planned = stage.inputs[index];
-			if (planned === void 0) return integrity$1();
+			if (planned === void 0) return integrity$2();
 			const hit = yielded.find((y) => y.input === planned.index);
-			if (hit === void 0) return integrity$1();
+			if (hit === void 0) return integrity$2();
 			if (task.scheme === "bip340") {
-				if (!equalBytes$9(hit.publicKey, task.publicKey)) return integrity$1();
+				if (!equalBytes$10(hit.publicKey, task.publicKey)) return integrity$2();
 				const { signature } = hit;
-				if (signature.length !== (planned.sighash === 0 ? 64 : 65)) return integrity$1();
-				if (signature.length === 65 && signature[64] !== planned.sighash) return integrity$1();
+				if (signature.length !== (planned.sighash === 0 ? 64 : 65)) return integrity$2();
+				if (signature.length === 65 && signature[64] !== planned.sighash) return integrity$2();
 				return signature.subarray(0, 64);
 			}
-			if (!equalBytes$9(hit.publicKey, task.publicKey)) return integrity$1();
+			if (!equalBytes$10(hit.publicKey, task.publicKey)) return integrity$2();
 			const der = hit.signature;
-			if (der.at(-1) !== planned.sighash) return integrity$1();
+			if (der.at(-1) !== planned.sighash) return integrity$2();
 			return secp256k1.Signature.fromBytes(der.subarray(0, -1), "der").toBytes();
 		});
 	};
 	var bitcoinMessage = async (exchange, request, stage) => {
 		await requiredApp(exchange, "bitcoin");
 		const [task] = stage.tasks;
-		if (request.format !== "legacy" || stage.format !== "legacy" || task.scheme !== "ecdsa-secp256k1") integrity$1();
+		if (request.format !== "legacy" || stage.format !== "legacy" || task.scheme !== "ecdsa-secp256k1") integrity$2();
 		expectDigest(legacyMessageHash(request.message), task);
-		return (await call$3(async () => btcSignMessage(exchange, task.path, utf8ToBytes$1(request.message)))).signature;
+		return (await call$4(async () => btcSignMessage(exchange, task.path, utf8ToBytes$1(request.message)))).signature;
 	};
-	var sign = async (link, context) => {
+	var sign$1 = async (link, context) => {
 		const { request, stage } = context;
 		const exchange = apduExchange(link);
 		if (stage.kind === "evm.transaction" || stage.kind === "evm.personal-message" || stage.kind === "evm.fiat24-session" || stage.kind === "evm.typed-data") {
-			if (request.kind !== stage.kind) return integrity$1();
+			if (request.kind !== stage.kind) return integrity$2();
 			return [await evm(exchange, request, stage)];
 		}
 		if (stage.kind === "tron.transaction" || stage.kind === "tron.message" || stage.kind === "tron.typed-data") {
-			if (request.kind !== stage.kind) return integrity$1();
+			if (request.kind !== stage.kind) return integrity$2();
 			return [await tron(exchange, request, stage)];
 		}
 		if (stage.kind === "solana.transaction" || stage.kind === "solana.message") {
-			if (request.kind !== "solana.transaction" && request.kind !== "solana.message") return integrity$1();
+			if (request.kind !== "solana.transaction" && request.kind !== "solana.message") return integrity$2();
 			return [await solana(exchange, request, stage)];
 		}
 		if (stage.kind === "bitcoin.psbt") {
-			if (request.kind !== "bitcoin.psbt") return integrity$1();
+			if (request.kind !== "bitcoin.psbt") return integrity$2();
 			return bitcoinPsbt(exchange, context, request, stage);
 		}
 		if (stage.kind === "bitcoin.message") {
-			if (request.kind !== "bitcoin.message") return integrity$1();
+			if (request.kind !== "bitcoin.message") return integrity$2();
 			return [await bitcoinMessage(exchange, request, stage)];
 		}
-		return integrity$1();
+		return integrity$2();
 	};
 	// packages/wallet-kernel/src/modules/signers/ledger/verify.ts
 	init_objectSpread2();
@@ -55592,16 +55632,6 @@ zoo`.split("\n"));
 		"btc.bip86"
 	]);
 	var isBitcoinTemplate = (template) => BTC_TEMPLATE.has(template);
-	/** The device's answer to the display, or `undefined` when the user rejected it there. */
-	var shown = async (job) => {
-		try {
-			return await job();
-		} catch (error) {
-			if (error instanceof LedgerError && error.code === "user-rejected") return;
-			if (error instanceof LedgerError) throw mapLedgerError(error);
-			throw error;
-		}
-	};
 	var bitcoin = async (exchange, target, pin) => {
 		const [purpose, coin, group, change, index] = target.path;
 		if (index === void 0 || purpose === void 0 || coin === void 0 || group === void 0 || target.path.length !== 5 || change !== 0 && change !== 1) throw new KernelError("integrity", "a bitcoin address path is m/purpose'/coin'/account'/*/i");
@@ -55616,9 +55646,9 @@ zoo`.split("\n"));
 			keys: pin
 		}).extendedPublicKey(account, net.bip32);
 		const policy = defaultPolicy(target.template, pin.fingerprint, account, xpub);
-		return shown(async () => btcWalletAddress(exchange, policy, change, index, true));
+		return call$4(async () => btcWalletAddress(exchange, policy, change, index, true));
 	};
-	var verifyAddress = async (link, target, pin) => {
+	var verifyAddress$1 = async (link, target, pin) => {
 		const exchange = apduExchange(link);
 		const expected = target.template === "evm.bip44" ? target.address.toLowerCase() : target.address;
 		let deviceAddress;
@@ -55627,32 +55657,3988 @@ zoo`.split("\n"));
 			deviceAddress = await bitcoin(exchange, _objectSpread2(_objectSpread2({}, target), {}, { template: target.template }), pin);
 		} else if (target.template === "evm.bip44") {
 			await requiredApp(exchange, "ethereum");
-			deviceAddress = await shown(async () => {
+			deviceAddress = await call$4(async () => {
 				return (await ethAddress(exchange, target.path, true)).address.toLowerCase();
 			});
 		} else if (target.template === "tron.bip44") {
 			await requiredApp(exchange, "tron");
-			deviceAddress = await shown(async () => {
+			deviceAddress = await call$4(async () => {
 				return (await tronAddress(exchange, target.path, true)).address;
 			});
 		} else if (target.template === "solana.bip44-change") {
 			await requiredApp(exchange, "solana");
-			deviceAddress = await shown(async () => solanaAddressFromPublicKey(await solanaAddress(exchange, target.path, true)));
+			deviceAddress = await call$4(async () => solanaAddressFromPublicKey(await solanaAddress(exchange, target.path, true)));
 		} else throw new KernelError("unsupported", "the device cannot check this address");
 		return {
 			method: "device",
 			matched: deviceAddress === expected
 		};
 	};
+	// packages/wallet-kernel/src/modules/signers/ledger/driver.ts
+	var LEDGER_DRIVER = {
+		pair: pair$1,
+		display: display$1,
+		sign: sign$1,
+		accounts: accounts$1,
+		verifyAddress: verifyAddress$1
+	};
+	// packages/wallet-kernel/src/modules/signers/onekey/protocol/errors.ts
+	init_defineProperty();
+	var OneKeyError = class extends Error {
+		constructor(code, message, failure) {
+			super(message);
+			_defineProperty(this, "code", void 0);
+			_defineProperty(
+				this,
+				/** The device Failure code that triggered the error, when one did. */
+				"failure",
+				void 0
+			);
+			this.name = "OneKeyError";
+			this.code = code;
+			this.failure = failure;
+		}
+	};
+	// packages/wallet-kernel/src/modules/signers/onekey/protocol/proto.ts
+	init_utils$2();
+	/** Varint wire type; the length-delimited kinds all share wire type 2. */
+	var WIRE_VARINT = 0;
+	var WIRE_LENGTH = 2;
+	/** Field numbers are positive integers below 2^29 (proto tag space). */
+	var MAX_FIELD_NUMBER = 536870911;
+	var UINT32_MAX$5 = 4294967295;
+	var UINT64_MAX = 2n ** 64n - 1n;
+	var MAX_DEPTH = 8;
+	function defineMessage(typeId, fields) {
+		for (const [name, spec] of Object.entries(fields)) if (!Number.isInteger(spec.no) || spec.no < 1 || spec.no > MAX_FIELD_NUMBER) throw new OneKeyError("invalid-input", `bad field number for ${name}`);
+		if (!Number.isInteger(typeId) || typeId < 0 || typeId > 65535) throw new OneKeyError("invalid-input", "bad message type id");
+		return {
+			typeId,
+			fields
+		};
+	}
+	var fault$7 = (message) => new OneKeyError("device-fault", message);
+	function invalid$6(message) {
+		return new OneKeyError("invalid-input", message);
+	}
+	function varintBytes(value, into) {
+		let v = value;
+		do {
+			const byte = Number(v % 128n);
+			v /= 128n;
+			into.push(v === 0n ? byte : byte + 128);
+		} while (v !== 0n);
+	}
+	/** Reads a varint at `pos`; rejects truncation, > 10 bytes, and values ≥ 2^64. */
+	function readVarint(data, pos) {
+		let value = 0n;
+		for (let i = 0; i < 10; i++) {
+			var _data$at;
+			const at = pos + i;
+			if (at >= data.length) throw fault$7("truncated varint");
+			const byte = (_data$at = data[at]) !== null && _data$at !== void 0 ? _data$at : 0;
+			value += BigInt(byte % 128) * 128n ** BigInt(i);
+			if (byte < 128) {
+				if (i === 9 && byte > 1) throw fault$7("varint exceeds 64 bits");
+				return [value, at + 1];
+			}
+		}
+		throw fault$7("varint longer than 10 bytes");
+	}
+	function wireOf(spec) {
+		switch (spec.kind) {
+			case "bytes":
+			case "string":
+			case "message": return WIRE_LENGTH;
+			default: return WIRE_VARINT;
+		}
+	}
+	function scalarFromVarint(kind, value) {
+		switch (kind) {
+			case "uint32":
+			case "enum":
+				if (value > BigInt(UINT32_MAX$5)) throw fault$7("uint32 field overflows");
+				return Number(value);
+			case "uint64": return value;
+			case "bool":
+				if (value !== 0n && value !== 1n) throw fault$7("bool field is not 0 or 1");
+				return value === 1n;
+			default: throw fault$7("length-delimited field on a varint path");
+		}
+	}
+	function skipField(data, pos, wire) {
+		switch (wire) {
+			case WIRE_VARINT: return readVarint(data, pos)[1];
+			case 1:
+				if (pos + 8 > data.length) throw fault$7("truncated fixed64");
+				return pos + 8;
+			case WIRE_LENGTH: {
+				const [length, start] = readVarint(data, pos);
+				if (length > BigInt(data.length - start)) throw fault$7("length past the end of the message");
+				return start + Number(length);
+			}
+			case 5:
+				if (pos + 4 > data.length) throw fault$7("truncated fixed32");
+				return pos + 4;
+			default: throw fault$7(`unsupported wire type ${wire}`);
+		}
+	}
+	var textDecoder$1 = new TextDecoder("utf-8", {
+		fatal: true,
+		ignoreBOM: true
+	});
+	function readLengthDelimited(spec, data, pos, depth) {
+		const [length, start] = readVarint(data, pos);
+		if (length > BigInt(data.length - start)) throw fault$7("length past the end of the message");
+		const end = start + Number(length);
+		const body = data.subarray(start, end);
+		switch (spec.kind) {
+			case "bytes": return [new Uint8Array(body), end];
+			case "string": try {
+				return [textDecoder$1.decode(body), end];
+			} catch (_unused) {
+				throw fault$7("invalid UTF-8 in a string field");
+			}
+			case "message": return [decodeAt(spec.message, body, depth + 1), end];
+			default: throw fault$7("varint field on a length-delimited path");
+		}
+	}
+	function mergeField(out, name, spec, items) {
+		if (spec.rule === "repeated") {
+			const existing = out[name];
+			out[name] = isArray(existing) ? [...existing, ...items] : items;
+			return;
+		}
+		const [single] = items;
+		out[name] = single;
+	}
+	var isArray = (value) => Array.isArray(value);
+	function decodeAt(def, data, depth) {
+		if (depth > MAX_DEPTH) throw fault$7("message nested deeper than 8 levels");
+		const byNumber = /* @__PURE__ */ new Map();
+		for (const [name, spec] of Object.entries(def.fields)) byNumber.set(spec.no, {
+			name,
+			spec
+		});
+		const out = {};
+		const seen = /* @__PURE__ */ new Set();
+		let pos = 0;
+		while (pos < data.length) {
+			const [key, afterKey] = readVarint(data, pos);
+			pos = afterKey;
+			const number = Number(key / 8n);
+			const wire = Number(key % 8n);
+			if (number === 0) throw fault$7("field number 0");
+			const known = byNumber.get(number);
+			if (known === void 0) {
+				pos = skipField(data, pos, wire);
+				continue;
+			}
+			const { name, spec } = known;
+			const repeated = spec.rule === "repeated";
+			if (!repeated && seen.has(spec.no)) throw fault$7("non-repeated field appears twice");
+			const lengthDelimited = spec.kind === "bytes" || spec.kind === "string" || spec.kind === "message";
+			if (wire !== (lengthDelimited ? WIRE_LENGTH : WIRE_VARINT) && !(repeated && !lengthDelimited && wire === WIRE_LENGTH)) throw fault$7("wire type mismatch for a known field");
+			if (lengthDelimited) {
+				const [value, next] = readLengthDelimited(spec, data, pos, depth);
+				pos = next;
+				mergeField(out, name, spec, [value]);
+			} else if (wire === WIRE_LENGTH) {
+				const [length, start] = readVarint(data, pos);
+				if (length > BigInt(data.length - start)) throw fault$7("length past the end of the message");
+				const end = start + Number(length);
+				const packed = data.subarray(start, end);
+				const items = [];
+				let packedPos = 0;
+				while (packedPos < packed.length) {
+					const [value, next] = readVarint(packed, packedPos);
+					packedPos = next;
+					items.push(scalarFromVarint(spec.kind, value));
+				}
+				mergeField(out, name, spec, items);
+				pos = end;
+			} else {
+				const [value, next] = readVarint(data, pos);
+				pos = next;
+				mergeField(out, name, spec, [scalarFromVarint(spec.kind, value)]);
+			}
+			seen.add(spec.no);
+		}
+		for (const [name, spec] of Object.entries(def.fields)) if (spec.rule === "required" && out[name] === void 0) throw fault$7("missing required field");
+		return out;
+	}
+	function decode$2(def, data) {
+		return decodeAt(def, data, 1);
+	}
+	function checkScalar(kind, value) {
+		switch (kind) {
+			case "uint32":
+			case "enum":
+				if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > UINT32_MAX$5) throw invalid$6("uint32/enum field must be an integer in [0, 2^32)");
+				return BigInt(value);
+			case "uint64":
+				if (typeof value !== "bigint" || value < 0n || value > UINT64_MAX) throw invalid$6("uint64 field must be a bigint in [0, 2^64)");
+				return value;
+			case "bool":
+				if (typeof value !== "boolean") throw invalid$6("bool field must be a boolean");
+				return value ? 1n : 0n;
+			default: throw invalid$6("length-delimited field on a varint path");
+		}
+	}
+	function encodeField(spec, value, into, depth) {
+		switch (spec.kind) {
+			case "bytes":
+				if (!(value instanceof Uint8Array)) throw invalid$6("bytes field must be a Uint8Array");
+				varintBytes(BigInt(value.length), into);
+				for (const byte of value) into.push(byte);
+				return;
+			case "string":
+				if (typeof value !== "string") throw invalid$6("string field must be a string");
+				{
+					const bytes = utf8ToBytes$1(value);
+					varintBytes(BigInt(bytes.length), into);
+					for (const byte of bytes) into.push(byte);
+				}
+				return;
+			case "message": {
+				if (typeof value !== "object" || value === null || isArray(value)) throw invalid$6("message field must be an object");
+				const nested = encodeAt(spec.message, value, depth + 1);
+				varintBytes(BigInt(nested.length), into);
+				for (const byte of nested) into.push(byte);
+				return;
+			}
+			default: varintBytes(checkScalar(spec.kind, value), into);
+		}
+	}
+	function encodeAt(def, record, depth) {
+		if (depth > MAX_DEPTH) throw invalid$6("message nested deeper than 8 levels");
+		const specs = Object.entries(def.fields).map(([name, spec]) => ({
+			name,
+			spec
+		})).sort((a, b) => a.spec.no - b.spec.no);
+		const out = [];
+		for (const { name, spec } of specs) {
+			const field = record[name];
+			if (field === void 0) {
+				if (spec.rule === "required") throw invalid$6(`missing required field ${name}`);
+				continue;
+			}
+			if (spec.rule === "repeated") {
+				if (!isArray(field)) throw invalid$6(`repeated field ${name} must be an array`);
+				for (const item of field) {
+					varintBytes(BigInt(spec.no) * 8n + BigInt(wireOf(spec)), out);
+					encodeField(spec, item, out, depth);
+				}
+			} else {
+				varintBytes(BigInt(spec.no) * 8n + BigInt(wireOf(spec)), out);
+				encodeField(spec, field, out, depth);
+			}
+		}
+		return Uint8Array.from(out);
+	}
+	function encode(def, value) {
+		return encodeAt(def, value, 1);
+	}
+	// packages/wallet-kernel/src/modules/signers/onekey/protocol/messages.ts
+	/**
+	* The message descriptors the client uses — message type ids and field numbers only, each cited to
+	* the firmware `.proto` file they were read from. Both schemas agree on every field listed here
+	* (firmware-pro v4.21.0 and firmware-classic1s v3.21.0, `common/protob/`); fields where they
+	* disagree are omitted, except the classic1s-only BixinPinInputOnDevice noted inline.
+	*/
+	var Initialize = defineMessage(0, { sessionId: {
+		no: 1,
+		kind: "bytes",
+		rule: "optional"
+	} });
+	var Features = defineMessage(17, {
+		vendor: {
+			no: 1,
+			kind: "string",
+			rule: "optional"
+		},
+		majorVersion: {
+			no: 2,
+			kind: "uint32",
+			rule: "required"
+		},
+		minorVersion: {
+			no: 3,
+			kind: "uint32",
+			rule: "required"
+		},
+		patchVersion: {
+			no: 4,
+			kind: "uint32",
+			rule: "required"
+		},
+		bootloaderMode: {
+			no: 5,
+			kind: "bool",
+			rule: "optional"
+		},
+		deviceId: {
+			no: 6,
+			kind: "string",
+			rule: "optional"
+		},
+		pinProtection: {
+			no: 7,
+			kind: "bool",
+			rule: "optional"
+		},
+		passphraseProtection: {
+			no: 8,
+			kind: "bool",
+			rule: "optional"
+		},
+		label: {
+			no: 10,
+			kind: "string",
+			rule: "optional"
+		},
+		initialized: {
+			no: 12,
+			kind: "bool",
+			rule: "optional"
+		},
+		unlocked: {
+			no: 16,
+			kind: "bool",
+			rule: "optional"
+		},
+		model: {
+			no: 21,
+			kind: "string",
+			rule: "optional"
+		},
+		capabilities: {
+			no: 30,
+			kind: "enum",
+			rule: "repeated"
+		},
+		sessionId: {
+			no: 35,
+			kind: "bytes",
+			rule: "optional"
+		},
+		onekeyVersion: {
+			no: 508,
+			kind: "string",
+			rule: "optional"
+		},
+		onekeyDeviceType: {
+			no: 600,
+			kind: "enum",
+			rule: "optional"
+		},
+		onekeyFirmwareVersion: {
+			no: 609,
+			kind: "string",
+			rule: "optional"
+		},
+		onekeySerialNo: {
+			no: 612,
+			kind: "string",
+			rule: "optional"
+		}
+	});
+	var Failure = defineMessage(3, {
+		code: {
+			no: 1,
+			kind: "enum",
+			rule: "optional"
+		},
+		message: {
+			no: 2,
+			kind: "string",
+			rule: "optional"
+		}
+	});
+	var ButtonRequest = defineMessage(26, {
+		code: {
+			no: 1,
+			kind: "enum",
+			rule: "optional"
+		},
+		pages: {
+			no: 2,
+			kind: "uint32",
+			rule: "optional"
+		}
+	});
+	var ButtonAck = defineMessage(27, {});
+	var PinMatrixRequest = defineMessage(18, { type: {
+		no: 1,
+		kind: "enum",
+		rule: "optional"
+	} });
+	var BixinPinInputOnDevice = defineMessage(1e4, {});
+	var PassphraseRequest = defineMessage(41, { existsAttachPinUser: {
+		no: 8e3,
+		kind: "bool",
+		rule: "optional"
+	} });
+	var PassphraseAck = defineMessage(42, { onDevice: {
+		no: 3,
+		kind: "bool",
+		rule: "optional"
+	} });
+	var HDNodeType = {
+		typeId: -1,
+		fields: {
+			depth: {
+				no: 1,
+				kind: "uint32",
+				rule: "required"
+			},
+			fingerprint: {
+				no: 2,
+				kind: "uint32",
+				rule: "required"
+			},
+			childNum: {
+				no: 3,
+				kind: "uint32",
+				rule: "required"
+			},
+			chainCode: {
+				no: 4,
+				kind: "bytes",
+				rule: "required"
+			},
+			privateKey: {
+				no: 5,
+				kind: "bytes",
+				rule: "optional"
+			},
+			publicKey: {
+				no: 6,
+				kind: "bytes",
+				rule: "required"
+			}
+		}
+	};
+	var GetPublicKey = defineMessage(11, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		showDisplay: {
+			no: 3,
+			kind: "bool",
+			rule: "optional"
+		},
+		coinName: {
+			no: 4,
+			kind: "string",
+			rule: "optional"
+		},
+		scriptType: {
+			no: 5,
+			kind: "enum",
+			rule: "optional"
+		}
+	});
+	var PublicKey = defineMessage(12, {
+		node: {
+			no: 1,
+			kind: "message",
+			rule: "required",
+			message: HDNodeType
+		},
+		xpub: {
+			no: 2,
+			kind: "string",
+			rule: "required"
+		},
+		rootFingerprint: {
+			no: 3,
+			kind: "uint32",
+			rule: "optional"
+		}
+	});
+	var GetAddress = defineMessage(29, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		coinName: {
+			no: 2,
+			kind: "string",
+			rule: "optional"
+		},
+		showDisplay: {
+			no: 3,
+			kind: "bool",
+			rule: "optional"
+		},
+		scriptType: {
+			no: 5,
+			kind: "enum",
+			rule: "optional"
+		}
+	});
+	var Address = defineMessage(30, { address: {
+		no: 1,
+		kind: "string",
+		rule: "required"
+	} });
+	defineMessage(20100, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		showDisplay: {
+			no: 2,
+			kind: "bool",
+			rule: "optional"
+		},
+		chainId: {
+			no: 3,
+			kind: "uint64",
+			rule: "optional"
+		}
+	});
+	defineMessage(20101, {
+		node: {
+			no: 1,
+			kind: "message",
+			rule: "required",
+			message: HDNodeType
+		},
+		xpub: {
+			no: 2,
+			kind: "string",
+			rule: "required"
+		}
+	});
+	var EthereumGetAddressOneKey = defineMessage(20102, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		showDisplay: {
+			no: 2,
+			kind: "bool",
+			rule: "optional"
+		},
+		chainId: {
+			no: 3,
+			kind: "uint64",
+			rule: "optional"
+		}
+	});
+	var EthereumAddressOneKey = defineMessage(20103, { address: {
+		no: 2,
+		kind: "string",
+		rule: "optional"
+	} });
+	var SolanaGetAddress = defineMessage(10100, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		showDisplay: {
+			no: 2,
+			kind: "bool",
+			rule: "optional"
+		}
+	});
+	var SolanaAddress = defineMessage(10101, { address: {
+		no: 1,
+		kind: "string",
+		rule: "required"
+	} });
+	var TronGetAddress = defineMessage(10501, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		showDisplay: {
+			no: 2,
+			kind: "bool",
+			rule: "optional"
+		}
+	});
+	var TronAddress = defineMessage(10502, { address: {
+		no: 1,
+		kind: "string",
+		rule: "optional"
+	} });
+	var EthereumAccessListOneKey = {
+		typeId: -1,
+		fields: {
+			address: {
+				no: 1,
+				kind: "string",
+				rule: "required"
+			},
+			storageKeys: {
+				no: 2,
+				kind: "bytes",
+				rule: "repeated"
+			}
+		}
+	};
+	var EthereumAuthorizationSignature = {
+		typeId: -1,
+		fields: {
+			yParity: {
+				no: 1,
+				kind: "uint32",
+				rule: "required"
+			},
+			r: {
+				no: 2,
+				kind: "bytes",
+				rule: "required"
+			},
+			s: {
+				no: 3,
+				kind: "bytes",
+				rule: "required"
+			}
+		}
+	};
+	var EthereumAuthorizationOneKey = {
+		typeId: -1,
+		fields: {
+			addressN: {
+				no: 1,
+				kind: "uint32",
+				rule: "repeated"
+			},
+			chainId: {
+				no: 2,
+				kind: "uint64",
+				rule: "required"
+			},
+			address: {
+				no: 3,
+				kind: "string",
+				rule: "required"
+			},
+			nonce: {
+				no: 4,
+				kind: "bytes",
+				rule: "required"
+			},
+			signature: {
+				no: 5,
+				kind: "message",
+				rule: "optional",
+				message: EthereumAuthorizationSignature
+			}
+		}
+	};
+	var EthereumSignTxOneKey = defineMessage(20104, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		nonce: {
+			no: 2,
+			kind: "bytes",
+			rule: "optional"
+		},
+		gasPrice: {
+			no: 3,
+			kind: "bytes",
+			rule: "required"
+		},
+		gasLimit: {
+			no: 4,
+			kind: "bytes",
+			rule: "required"
+		},
+		to: {
+			no: 11,
+			kind: "string",
+			rule: "optional"
+		},
+		value: {
+			no: 6,
+			kind: "bytes",
+			rule: "optional"
+		},
+		dataInitialChunk: {
+			no: 7,
+			kind: "bytes",
+			rule: "optional"
+		},
+		dataLength: {
+			no: 8,
+			kind: "uint32",
+			rule: "optional"
+		},
+		chainId: {
+			no: 9,
+			kind: "uint64",
+			rule: "required"
+		},
+		txType: {
+			no: 10,
+			kind: "uint32",
+			rule: "optional"
+		}
+	});
+	var EthereumSignTxEIP1559OneKey = defineMessage(20105, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		nonce: {
+			no: 2,
+			kind: "bytes",
+			rule: "required"
+		},
+		maxGasFee: {
+			no: 3,
+			kind: "bytes",
+			rule: "required"
+		},
+		maxPriorityFee: {
+			no: 4,
+			kind: "bytes",
+			rule: "required"
+		},
+		gasLimit: {
+			no: 5,
+			kind: "bytes",
+			rule: "required"
+		},
+		to: {
+			no: 6,
+			kind: "string",
+			rule: "optional"
+		},
+		value: {
+			no: 7,
+			kind: "bytes",
+			rule: "required"
+		},
+		dataInitialChunk: {
+			no: 8,
+			kind: "bytes",
+			rule: "optional"
+		},
+		dataLength: {
+			no: 9,
+			kind: "uint32",
+			rule: "required"
+		},
+		chainId: {
+			no: 10,
+			kind: "uint64",
+			rule: "required"
+		},
+		accessList: {
+			no: 11,
+			kind: "message",
+			rule: "repeated",
+			message: EthereumAccessListOneKey
+		}
+	});
+	var EthereumSignTxEIP7702OneKey = defineMessage(20120, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		nonce: {
+			no: 2,
+			kind: "bytes",
+			rule: "required"
+		},
+		maxGasFee: {
+			no: 3,
+			kind: "bytes",
+			rule: "required"
+		},
+		maxPriorityFee: {
+			no: 4,
+			kind: "bytes",
+			rule: "required"
+		},
+		gasLimit: {
+			no: 5,
+			kind: "bytes",
+			rule: "required"
+		},
+		to: {
+			no: 6,
+			kind: "string",
+			rule: "required"
+		},
+		value: {
+			no: 7,
+			kind: "bytes",
+			rule: "required"
+		},
+		dataInitialChunk: {
+			no: 8,
+			kind: "bytes",
+			rule: "optional"
+		},
+		dataLength: {
+			no: 9,
+			kind: "uint32",
+			rule: "required"
+		},
+		chainId: {
+			no: 10,
+			kind: "uint64",
+			rule: "required"
+		},
+		accessList: {
+			no: 11,
+			kind: "message",
+			rule: "repeated",
+			message: EthereumAccessListOneKey
+		},
+		authorizationList: {
+			no: 12,
+			kind: "message",
+			rule: "repeated",
+			message: EthereumAuthorizationOneKey
+		}
+	});
+	var EthereumTxRequestOneKey = defineMessage(20106, {
+		dataLength: {
+			no: 1,
+			kind: "uint32",
+			rule: "optional"
+		},
+		signatureV: {
+			no: 2,
+			kind: "uint32",
+			rule: "optional"
+		},
+		signatureR: {
+			no: 3,
+			kind: "bytes",
+			rule: "optional"
+		},
+		signatureS: {
+			no: 4,
+			kind: "bytes",
+			rule: "optional"
+		},
+		authorizationSignatures: {
+			no: 10,
+			kind: "message",
+			rule: "repeated",
+			message: EthereumAuthorizationSignature
+		}
+	});
+	var EthereumTxAckOneKey = defineMessage(20107, { dataChunk: {
+		no: 1,
+		kind: "bytes",
+		rule: "required"
+	} });
+	var EthereumSignMessageOneKey = defineMessage(20108, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		message: {
+			no: 2,
+			kind: "bytes",
+			rule: "required"
+		},
+		chainId: {
+			no: 3,
+			kind: "uint64",
+			rule: "optional"
+		}
+	});
+	var EthereumMessageSignatureOneKey = defineMessage(20110, {
+		signature: {
+			no: 2,
+			kind: "bytes",
+			rule: "required"
+		},
+		address: {
+			no: 3,
+			kind: "string",
+			rule: "required"
+		}
+	});
+	var EthereumFieldTypeOneKey = {
+		typeId: -1,
+		fields: {
+			dataType: {
+				no: 1,
+				kind: "enum",
+				rule: "required"
+			},
+			size: {
+				no: 2,
+				kind: "uint32",
+				rule: "optional"
+			},
+			entryType: {
+				no: 3,
+				kind: "message",
+				rule: "optional",
+				get message() {
+					return EthereumFieldTypeOneKey;
+				}
+			},
+			structName: {
+				no: 4,
+				kind: "string",
+				rule: "optional"
+			}
+		}
+	};
+	var EthereumStructMemberOneKey = {
+		typeId: -1,
+		fields: {
+			type: {
+				no: 1,
+				kind: "message",
+				rule: "required",
+				message: EthereumFieldTypeOneKey
+			},
+			name: {
+				no: 2,
+				kind: "string",
+				rule: "required"
+			}
+		}
+	};
+	var EthereumSignTypedDataOneKey = defineMessage(20111, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		primaryType: {
+			no: 2,
+			kind: "string",
+			rule: "required"
+		},
+		metamaskV4Compat: {
+			no: 3,
+			kind: "bool",
+			rule: "optional"
+		},
+		chainId: {
+			no: 4,
+			kind: "uint64",
+			rule: "optional"
+		}
+	});
+	var EthereumTypedDataStructRequestOneKey = defineMessage(20112, { name: {
+		no: 1,
+		kind: "string",
+		rule: "required"
+	} });
+	var EthereumTypedDataStructAckOneKey = defineMessage(20113, { members: {
+		no: 1,
+		kind: "message",
+		rule: "repeated",
+		message: EthereumStructMemberOneKey
+	} });
+	var EthereumTypedDataValueRequestOneKey = defineMessage(20114, { memberPath: {
+		no: 1,
+		kind: "uint32",
+		rule: "repeated"
+	} });
+	var EthereumTypedDataValueAckOneKey = defineMessage(20115, { value: {
+		no: 1,
+		kind: "bytes",
+		rule: "required"
+	} });
+	var EthereumTypedDataSignatureOneKey = defineMessage(20116, {
+		signature: {
+			no: 1,
+			kind: "bytes",
+			rule: "required"
+		},
+		address: {
+			no: 2,
+			kind: "string",
+			rule: "required"
+		}
+	});
+	var EthereumSignTypedHashOneKey = defineMessage(20117, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		domainSeparatorHash: {
+			no: 2,
+			kind: "bytes",
+			rule: "required"
+		},
+		messageHash: {
+			no: 3,
+			kind: "bytes",
+			rule: "optional"
+		},
+		chainId: {
+			no: 4,
+			kind: "uint64",
+			rule: "optional"
+		}
+	});
+	var SolanaSignTx = defineMessage(10102, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		rawTx: {
+			no: 2,
+			kind: "bytes",
+			rule: "required"
+		}
+	});
+	var SolanaSignedTx = defineMessage(10103, { signature: {
+		no: 1,
+		kind: "bytes",
+		rule: "required"
+	} });
+	var SolanaMessageSignature = defineMessage(10105, {
+		signature: {
+			no: 1,
+			kind: "bytes",
+			rule: "required"
+		},
+		publicKey: {
+			no: 2,
+			kind: "bytes",
+			rule: "optional"
+		}
+	});
+	var SolanaSignUnsafeMessage = defineMessage(10106, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		message: {
+			no: 2,
+			kind: "bytes",
+			rule: "required"
+		}
+	});
+	var TronSignTx = defineMessage(10503, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		refBlockBytes: {
+			no: 2,
+			kind: "bytes",
+			rule: "required"
+		},
+		refBlockHash: {
+			no: 3,
+			kind: "bytes",
+			rule: "required"
+		},
+		expiration: {
+			no: 4,
+			kind: "uint64",
+			rule: "required"
+		},
+		data: {
+			no: 5,
+			kind: "bytes",
+			rule: "optional"
+		},
+		contract: {
+			no: 6,
+			kind: "message",
+			rule: "required",
+			message: {
+				typeId: -1,
+				fields: {
+					transferContract: {
+						no: 2,
+						kind: "message",
+						rule: "optional",
+						message: {
+							typeId: -1,
+							fields: {
+								toAddress: {
+									no: 2,
+									kind: "string",
+									rule: "optional"
+								},
+								amount: {
+									no: 3,
+									kind: "uint64",
+									rule: "optional"
+								}
+							}
+						}
+					},
+					provider: {
+						no: 3,
+						kind: "bytes",
+						rule: "optional"
+					},
+					voteWitnessContract: {
+						no: 4,
+						kind: "message",
+						rule: "optional",
+						message: {
+							typeId: -1,
+							fields: {
+								votes: {
+									no: 2,
+									kind: "message",
+									rule: "repeated",
+									message: {
+										typeId: -1,
+										fields: {
+											voteAddress: {
+												no: 1,
+												kind: "string",
+												rule: "required"
+											},
+											voteCount: {
+												no: 2,
+												kind: "uint32",
+												rule: "required"
+											}
+										}
+									}
+								},
+								support: {
+									no: 3,
+									kind: "bool",
+									rule: "optional"
+								}
+							}
+						}
+					},
+					contractName: {
+						no: 5,
+						kind: "bytes",
+						rule: "optional"
+					},
+					permissionId: {
+						no: 6,
+						kind: "uint32",
+						rule: "optional"
+					},
+					freezeBalanceContract: {
+						no: 11,
+						kind: "message",
+						rule: "optional",
+						message: {
+							typeId: -1,
+							fields: {
+								frozenBalance: {
+									no: 1,
+									kind: "uint64",
+									rule: "optional"
+								},
+								frozenDuration: {
+									no: 2,
+									kind: "uint64",
+									rule: "optional"
+								},
+								resource: {
+									no: 3,
+									kind: "enum",
+									rule: "optional"
+								},
+								receiverAddress: {
+									no: 4,
+									kind: "string",
+									rule: "optional"
+								}
+							}
+						}
+					},
+					unfreezeBalanceContract: {
+						no: 12,
+						kind: "message",
+						rule: "optional",
+						message: {
+							typeId: -1,
+							fields: {
+								resource: {
+									no: 1,
+									kind: "enum",
+									rule: "optional"
+								},
+								receiverAddress: {
+									no: 2,
+									kind: "string",
+									rule: "optional"
+								}
+							}
+						}
+					},
+					withdrawBalanceContract: {
+						no: 13,
+						kind: "message",
+						rule: "optional",
+						message: {
+							typeId: -1,
+							fields: { ownerAddress: {
+								no: 1,
+								kind: "bytes",
+								rule: "optional"
+							} }
+						}
+					},
+					triggerSmartContract: {
+						no: 31,
+						kind: "message",
+						rule: "optional",
+						message: {
+							typeId: -1,
+							fields: {
+								contractAddress: {
+									no: 2,
+									kind: "string",
+									rule: "optional"
+								},
+								callValue: {
+									no: 3,
+									kind: "uint64",
+									rule: "optional"
+								},
+								data: {
+									no: 4,
+									kind: "bytes",
+									rule: "optional"
+								},
+								callTokenValue: {
+									no: 5,
+									kind: "uint64",
+									rule: "optional"
+								},
+								assetId: {
+									no: 6,
+									kind: "uint64",
+									rule: "optional"
+								}
+							}
+						}
+					},
+					freezeBalanceV2Contract: {
+						no: 54,
+						kind: "message",
+						rule: "optional",
+						message: {
+							typeId: -1,
+							fields: {
+								frozenBalance: {
+									no: 2,
+									kind: "uint64",
+									rule: "optional"
+								},
+								resource: {
+									no: 3,
+									kind: "enum",
+									rule: "optional"
+								}
+							}
+						}
+					},
+					unfreezeBalanceV2Contract: {
+						no: 55,
+						kind: "message",
+						rule: "optional",
+						message: {
+							typeId: -1,
+							fields: {
+								unfreezeBalance: {
+									no: 2,
+									kind: "uint64",
+									rule: "optional"
+								},
+								resource: {
+									no: 3,
+									kind: "enum",
+									rule: "optional"
+								}
+							}
+						}
+					},
+					withdrawExpireUnfreezeContract: {
+						no: 56,
+						kind: "message",
+						rule: "optional",
+						message: {
+							typeId: -1,
+							fields: {}
+						}
+					},
+					delegateResourceContract: {
+						no: 57,
+						kind: "message",
+						rule: "optional",
+						message: {
+							typeId: -1,
+							fields: {
+								resource: {
+									no: 2,
+									kind: "enum",
+									rule: "optional"
+								},
+								balance: {
+									no: 3,
+									kind: "uint64",
+									rule: "optional"
+								},
+								receiverAddress: {
+									no: 4,
+									kind: "string",
+									rule: "optional"
+								},
+								lock: {
+									no: 5,
+									kind: "bool",
+									rule: "optional"
+								},
+								lockPeriod: {
+									no: 6,
+									kind: "uint64",
+									rule: "optional"
+								}
+							}
+						}
+					},
+					undelegateResourceContract: {
+						no: 58,
+						kind: "message",
+						rule: "optional",
+						message: {
+							typeId: -1,
+							fields: {
+								resource: {
+									no: 2,
+									kind: "enum",
+									rule: "optional"
+								},
+								balance: {
+									no: 3,
+									kind: "uint64",
+									rule: "optional"
+								},
+								receiverAddress: {
+									no: 4,
+									kind: "string",
+									rule: "optional"
+								}
+							}
+						}
+					},
+					cancelAllUnfreezeV2Contract: {
+						no: 59,
+						kind: "message",
+						rule: "optional",
+						message: {
+							typeId: -1,
+							fields: {}
+						}
+					}
+				}
+			}
+		},
+		timestamp: {
+			no: 7,
+			kind: "uint64",
+			rule: "required"
+		},
+		feeLimit: {
+			no: 8,
+			kind: "uint64",
+			rule: "optional"
+		}
+	});
+	var TronSignedTx = defineMessage(10504, {
+		signature: {
+			no: 1,
+			kind: "bytes",
+			rule: "required"
+		},
+		serializedTx: {
+			no: 2,
+			kind: "bytes",
+			rule: "optional"
+		}
+	});
+	var TronSignMessage = defineMessage(10505, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		message: {
+			no: 2,
+			kind: "bytes",
+			rule: "required"
+		},
+		messageType: {
+			no: 3,
+			kind: "enum",
+			rule: "optional"
+		}
+	});
+	var TronMessageSignature = defineMessage(10506, {
+		address: {
+			no: 1,
+			kind: "bytes",
+			rule: "required"
+		},
+		signature: {
+			no: 2,
+			kind: "bytes",
+			rule: "required"
+		}
+	});
+	var BtcSignTx = defineMessage(15, {
+		outputsCount: {
+			no: 1,
+			kind: "uint32",
+			rule: "required"
+		},
+		inputsCount: {
+			no: 2,
+			kind: "uint32",
+			rule: "required"
+		},
+		coinName: {
+			no: 3,
+			kind: "string",
+			rule: "optional"
+		},
+		version: {
+			no: 4,
+			kind: "uint32",
+			rule: "optional"
+		},
+		lockTime: {
+			no: 5,
+			kind: "uint32",
+			rule: "optional"
+		}
+	});
+	var BtcTxRequest = defineMessage(21, {
+		requestType: {
+			no: 1,
+			kind: "enum",
+			rule: "optional"
+		},
+		details: {
+			no: 2,
+			kind: "message",
+			rule: "optional",
+			message: {
+				typeId: -1,
+				fields: {
+					requestIndex: {
+						no: 1,
+						kind: "uint32",
+						rule: "optional"
+					},
+					txHash: {
+						no: 2,
+						kind: "bytes",
+						rule: "optional"
+					},
+					extraDataLen: {
+						no: 3,
+						kind: "uint32",
+						rule: "optional"
+					},
+					extraDataOffset: {
+						no: 4,
+						kind: "uint32",
+						rule: "optional"
+					}
+				}
+			}
+		},
+		serialized: {
+			no: 3,
+			kind: "message",
+			rule: "optional",
+			message: {
+				typeId: -1,
+				fields: {
+					signatureIndex: {
+						no: 1,
+						kind: "uint32",
+						rule: "optional"
+					},
+					signature: {
+						no: 2,
+						kind: "bytes",
+						rule: "optional"
+					},
+					serializedTx: {
+						no: 3,
+						kind: "bytes",
+						rule: "optional"
+					}
+				}
+			}
+		}
+	});
+	var BtcTxInput = {
+		typeId: -1,
+		fields: {
+			addressN: {
+				no: 1,
+				kind: "uint32",
+				rule: "repeated"
+			},
+			prevHash: {
+				no: 2,
+				kind: "bytes",
+				rule: "required"
+			},
+			prevIndex: {
+				no: 3,
+				kind: "uint32",
+				rule: "required"
+			},
+			scriptSig: {
+				no: 4,
+				kind: "bytes",
+				rule: "optional"
+			},
+			sequence: {
+				no: 5,
+				kind: "uint32",
+				rule: "optional"
+			},
+			scriptType: {
+				no: 6,
+				kind: "enum",
+				rule: "optional"
+			},
+			amount: {
+				no: 8,
+				kind: "uint64",
+				rule: "required"
+			},
+			scriptPubkey: {
+				no: 19,
+				kind: "bytes",
+				rule: "optional"
+			}
+		}
+	};
+	var BtcTxOutput = {
+		typeId: -1,
+		fields: {
+			address: {
+				no: 1,
+				kind: "string",
+				rule: "optional"
+			},
+			addressN: {
+				no: 2,
+				kind: "uint32",
+				rule: "repeated"
+			},
+			amount: {
+				no: 3,
+				kind: "uint64",
+				rule: "required"
+			},
+			scriptType: {
+				no: 4,
+				kind: "enum",
+				rule: "optional"
+			},
+			opReturnData: {
+				no: 6,
+				kind: "bytes",
+				rule: "optional"
+			}
+		}
+	};
+	var BtcPrevTx = {
+		typeId: -1,
+		fields: {
+			version: {
+				no: 1,
+				kind: "uint32",
+				rule: "required"
+			},
+			lockTime: {
+				no: 4,
+				kind: "uint32",
+				rule: "required"
+			},
+			inputsCount: {
+				no: 6,
+				kind: "uint32",
+				rule: "required"
+			},
+			outputsCount: {
+				no: 7,
+				kind: "uint32",
+				rule: "required"
+			},
+			extraDataLen: {
+				no: 9,
+				kind: "uint32",
+				rule: "optional"
+			}
+		}
+	};
+	var BtcPrevInput = {
+		typeId: -1,
+		fields: {
+			prevHash: {
+				no: 2,
+				kind: "bytes",
+				rule: "required"
+			},
+			prevIndex: {
+				no: 3,
+				kind: "uint32",
+				rule: "required"
+			},
+			scriptSig: {
+				no: 4,
+				kind: "bytes",
+				rule: "required"
+			},
+			sequence: {
+				no: 5,
+				kind: "uint32",
+				rule: "required"
+			}
+		}
+	};
+	var BtcPrevOutput = {
+		typeId: -1,
+		fields: {
+			amount: {
+				no: 1,
+				kind: "uint64",
+				rule: "required"
+			},
+			scriptPubkey: {
+				no: 2,
+				kind: "bytes",
+				rule: "required"
+			}
+		}
+	};
+	var BtcTxAckInput = defineMessage(22, { tx: {
+		no: 1,
+		kind: "message",
+		rule: "required",
+		message: {
+			typeId: -1,
+			fields: { input: {
+				no: 2,
+				kind: "message",
+				rule: "required",
+				message: BtcTxInput
+			} }
+		}
+	} });
+	var BtcTxAckOutput = defineMessage(22, { tx: {
+		no: 1,
+		kind: "message",
+		rule: "required",
+		message: {
+			typeId: -1,
+			fields: { output: {
+				no: 5,
+				kind: "message",
+				rule: "required",
+				message: BtcTxOutput
+			} }
+		}
+	} });
+	var BtcTxAckPrevMeta = defineMessage(22, { tx: {
+		no: 1,
+		kind: "message",
+		rule: "required",
+		message: BtcPrevTx
+	} });
+	var BtcTxAckPrevInput = defineMessage(22, { tx: {
+		no: 1,
+		kind: "message",
+		rule: "required",
+		message: {
+			typeId: -1,
+			fields: { input: {
+				no: 2,
+				kind: "message",
+				rule: "required",
+				message: BtcPrevInput
+			} }
+		}
+	} });
+	var BtcTxAckPrevOutput = defineMessage(22, { tx: {
+		no: 1,
+		kind: "message",
+		rule: "required",
+		message: {
+			typeId: -1,
+			fields: { output: {
+				no: 3,
+				kind: "message",
+				rule: "required",
+				message: BtcPrevOutput
+			} }
+		}
+	} });
+	var BtcSignMessage = defineMessage(38, {
+		addressN: {
+			no: 1,
+			kind: "uint32",
+			rule: "repeated"
+		},
+		message: {
+			no: 2,
+			kind: "bytes",
+			rule: "required"
+		},
+		coinName: {
+			no: 3,
+			kind: "string",
+			rule: "optional"
+		},
+		scriptType: {
+			no: 4,
+			kind: "enum",
+			rule: "optional"
+		},
+		noScriptType: {
+			no: 5,
+			kind: "bool",
+			rule: "optional"
+		},
+		isBip322Simple: {
+			no: 10,
+			kind: "bool",
+			rule: "optional"
+		}
+	});
+	var BtcMessageSignature = defineMessage(40, {
+		address: {
+			no: 1,
+			kind: "string",
+			rule: "required"
+		},
+		signature: {
+			no: 2,
+			kind: "bytes",
+			rule: "required"
+		}
+	});
+	var MAGIC0 = 63;
+	var MAGIC1 = 35;
+	var MAGIC2 = 35;
+	var FIRST_PAYLOAD = 55;
+	var CONT_PAYLOAD = 63;
+	var frame = (message) => new OneKeyError("frame", message);
+	/** Report count a payload of `length` bytes occupies. */
+	function reportCount(length) {
+		return Math.max(1, Math.ceil((8 + length) / CONT_PAYLOAD));
+	}
+	/** Encodes one logical message as the concatenated V1 reports both transports send. */
+	function encodeMessage(type, payload) {
+		if (!Number.isInteger(type) || type < 0 || type > 65535) throw new OneKeyError("invalid-input", "message type id out of range");
+		if (payload.length > 64504) throw new OneKeyError("invalid-input", "message payload too large");
+		const reports = reportCount(payload.length);
+		const out = new Uint8Array(64 * reports);
+		out[0] = MAGIC0;
+		out[1] = MAGIC1;
+		out[2] = MAGIC2;
+		const view = new DataView(out.buffer);
+		view.setUint16(3, type);
+		view.setUint32(5, payload.length);
+		let written = 0;
+		for (let r = 0; r < reports; r++) {
+			const base = r * 64;
+			if (r > 0) out[base] = MAGIC0;
+			const offset = r === 0 ? base + 9 : base + 1;
+			const take = Math.min(payload.length - written, r === 0 ? FIRST_PAYLOAD : CONT_PAYLOAD);
+			out.set(payload.subarray(written, written + take), offset);
+			written += take;
+		}
+		return out;
+	}
+	/** Decodes device→host bytes in either the BLE stream or USB report form (see file note). */
+	function decodeMessage(data) {
+		if (data.length < 9 || data[0] !== MAGIC0 || data[1] !== MAGIC1 || data[2] !== MAGIC2) throw frame("missing report magic");
+		const view = new DataView(data.buffer, data.byteOffset, data.length);
+		const length = view.getUint32(5);
+		if (length > 64504) throw frame("message length exceeds the maximum");
+		const type = view.getUint16(3);
+		if (data.length === 9 + length) return {
+			type,
+			payload: data.slice(9)
+		};
+		const reports = reportCount(length);
+		if (data.length !== 64 * reports) throw frame("report count does not match the declared length");
+		const gathered = new Uint8Array(FIRST_PAYLOAD + CONT_PAYLOAD * (reports - 1));
+		gathered.set(data.subarray(9, 64), 0);
+		for (let r = 1; r < reports; r++) {
+			const base = r * 64;
+			if (data[base] !== MAGIC0) throw frame("missing continuation magic");
+			gathered.set(data.subarray(base + 1, base + 64), FIRST_PAYLOAD + (r - 1) * CONT_PAYLOAD);
+		}
+		return {
+			type,
+			payload: gathered.slice(0, length)
+		};
+	}
+	// packages/wallet-kernel/src/modules/signers/onekey/protocol/session.ts
+	/**
+	* The request driver. One `Exchange` moves one logical message each way — the host transport splits
+	* the bytes into V1 reports or GATT writes; this layer only sees whole messages (`hw-signers`
+	* driver.ts `DeviceLink.exchange({kind:"message"})`). A call is the initial request plus at most
+	* 256 interaction rounds: ButtonRequest → ButtonAck, a Current/absent PinMatrixRequest →
+	* BixinPinInputOnDevice (the device then takes the PIN on its own buttons — the client never sends
+	* PinMatrixAck), PassphraseRequest → PassphraseAck{on_device:true} (never passphrase text), Failure
+	* → the typed error table, and the expected type ends the call. Anything else from the device is
+	* `device-fault`.
+	*/
+	var MAX_ROUNDS$1 = 256;
+	var fault$6 = (message) => new OneKeyError("device-fault", message);
+	var FAILURE_CODE = {
+		4: "user-rejected",
+		6: "user-rejected",
+		7: "pin-invalid",
+		11: "not-initialized",
+		5: "device-locked"
+	};
+	function failureError(decoded) {
+		var _FAILURE_CODE, _decoded$code;
+		return new OneKeyError((_FAILURE_CODE = FAILURE_CODE[(_decoded$code = decoded.code) !== null && _decoded$code !== void 0 ? _decoded$code : -1]) !== null && _FAILURE_CODE !== void 0 ? _FAILURE_CODE : "device-error", "device reported failure", decoded.code);
+	}
+	async function exchangeMessage(exchange, def, value) {
+		return decodeMessage(await exchange(encodeMessage(def.typeId, encode(def, value))));
+	}
+	async function call$3(exchange, request, expected) {
+		return resolveRound(exchange, Array.isArray(expected) ? expected : [expected], await exchangeMessage(exchange, request.def, request.value), 0);
+	}
+	/** The interaction for one device message that is not the expected answer. */
+	function interact(message) {
+		switch (message.type) {
+			case ButtonRequest.typeId:
+				decode$2(ButtonRequest, message.payload);
+				return {
+					def: ButtonAck,
+					value: {}
+				};
+			case PinMatrixRequest.typeId: {
+				const pin = decode$2(PinMatrixRequest, message.payload);
+				if (pin.type !== void 0 && pin.type !== 1) throw fault$6("device requested a PIN change or wipe code");
+				return {
+					def: BixinPinInputOnDevice,
+					value: {}
+				};
+			}
+			case PassphraseRequest.typeId:
+				decode$2(PassphraseRequest, message.payload);
+				return {
+					def: PassphraseAck,
+					value: { onDevice: true }
+				};
+			case Failure.typeId: throw failureError(decode$2(Failure, message.payload));
+			default: throw fault$6(`unexpected message type ${message.type}`);
+		}
+	}
+	async function resolveRound(exchange, accepted, message, round) {
+		const answer = accepted.find((def) => def.typeId === message.type);
+		if (answer !== void 0) return decode$2(answer, message.payload);
+		const reply = interact(message);
+		if (round >= MAX_ROUNDS$1) throw fault$6("too many interaction rounds");
+		return resolveRound(exchange, accepted, await exchangeMessage(exchange, reply.def, reply.value), round + 1);
+	}
+	// packages/wallet-kernel/src/modules/signers/onekey/protocol/device.ts
+	/**
+	* `initialize` — the first call of every device operation (it also aborts any workflow the device
+	* left pending). Maps Features onto DeviceInfo: the model comes from `onekey_device_type` (the
+	* Trezor-compat `model` string does not name OneKey hardware), the firmware version from
+	* `onekey_firmware_version`/`onekey_version` — `major/minor/patch` carry the Trezor-compat 2.99.99
+	* on both firmwares (research.md "Device type"), not the OneKey release. A device that does not
+	* identify itself as a OneKey V1 model, is in bootloader mode, or is not initialized is refused
+	* with a typed error.
+	*/
+	function modelOf(code) {
+		switch (code) {
+			case 0: return "classic";
+			case 1: return "classic1s";
+			case 2: return "mini";
+			case 3: return "touch";
+			case 5: return "pro";
+			case 6: return "pure";
+			default: return;
+		}
+	}
+	var VERSION$1 = /^(\d+)\.(\d+)\.(\d+)$/;
+	function firmwareVersion(features) {
+		const { onekeyFirmwareVersion, onekeyVersion } = features;
+		if (onekeyFirmwareVersion !== void 0 && onekeyVersion !== void 0 && onekeyFirmwareVersion !== onekeyVersion) throw new OneKeyError("device-fault", "conflicting firmware version fields");
+		const text = onekeyFirmwareVersion !== null && onekeyFirmwareVersion !== void 0 ? onekeyFirmwareVersion : onekeyVersion;
+		if (text === void 0) throw new OneKeyError("unsupported", "device does not report a OneKey firmware version");
+		const match = VERSION$1.exec(text);
+		if (match === null) throw new OneKeyError("device-fault", "malformed firmware version");
+		const parts = [
+			Number(match[1]),
+			Number(match[2]),
+			Number(match[3])
+		];
+		if (parts.some((part) => !Number.isSafeInteger(part) || part > 4294967295)) throw new OneKeyError("device-fault", "malformed firmware version");
+		return [
+			parts[0],
+			parts[1],
+			parts[2]
+		];
+	}
+	var CAPABILITY_BITCOIN_LIKE = 2;
+	var CAPABILITY_ETHEREUM_TYPED_DATA$1 = 1e3;
+	var CLASSIC_FAMILY = /* @__PURE__ */ new Set([
+		"classic",
+		"classic1s",
+		"pure",
+		"mini"
+	]);
+	var atLeast$1 = (firmware, version) => firmware[0] === version[0] ? firmware[1] === version[1] ? firmware[2] >= version[2] : firmware[1] > version[1] : firmware[0] > version[0];
+	/**
+	* Whether the device supports a feature the wire layer gates on. Table built from the SDK's
+	* per-method version ranges (EVMSignTransaction.ts getVersionRange, EVMSignTypedData.ts
+	* supportEip712OnClassic) — entries already implied by the initialize floor are unconditional.
+	*
+	* - `evm-1559`: the only SDK gate is model_mini ≥ 2.1.11, below the 3.3.0 floor.
+	* - `evm-7702`: classic1s/pure ≥ 3.13.0, pro ≥ 4.16.0, never on the other models.
+	* - `evm-typed-data-stream`: classic family needs Capability_EthereumTypedData (1000); touch/pro
+	*   stream unconditionally.
+	* - `tron-message-v2`: classic ≥ 3.12.0, classic1s/pure ≥ 3.13.0, touch ≥ 4.12.0, pro ≥ 4.16.0, never
+	*   on mini (SDK api/tron/TronSignMessage.ts getVersionRange).
+	*/
+	function supports(info, feature) {
+		switch (feature) {
+			case "btc-bip322": return info.model === "pro" && atLeast$1(info.firmware, [
+				4,
+				9,
+				3
+			]);
+			case "evm-1559": return true;
+			case "evm-7702":
+				if (info.model === "classic1s" || info.model === "pure") return atLeast$1(info.firmware, [
+					3,
+					13,
+					0
+				]);
+				return info.model === "pro" && atLeast$1(info.firmware, [
+					4,
+					16,
+					0
+				]);
+			case "evm-typed-data-stream": return CLASSIC_FAMILY.has(info.model) ? info.capabilities.includes(CAPABILITY_ETHEREUM_TYPED_DATA$1) : true;
+			case "tron-message-v2": switch (info.model) {
+				case "classic": return atLeast$1(info.firmware, [
+					3,
+					12,
+					0
+				]);
+				case "classic1s":
+				case "pure": return atLeast$1(info.firmware, [
+					3,
+					13,
+					0
+				]);
+				case "touch": return atLeast$1(info.firmware, [
+					4,
+					12,
+					0
+				]);
+				case "pro": return atLeast$1(info.firmware, [
+					4,
+					16,
+					0
+				]);
+				case "mini": return false;
+			}
+		}
+	}
+	async function initialize(exchange, sessionId) {
+		var _features$deviceId, _features$pinProtecti, _features$passphraseP, _features$unlocked;
+		const features = await call$3(exchange, {
+			def: Initialize,
+			value: sessionId === void 0 ? {} : { sessionId }
+		}, Features);
+		if (features.bootloaderMode === true) throw new OneKeyError("unsupported", "device is in bootloader mode");
+		if (features.onekeyDeviceType === void 0) throw new OneKeyError("unsupported", "device does not report a OneKey model");
+		const model = modelOf(features.onekeyDeviceType);
+		if (model === void 0) throw new OneKeyError("unsupported", "unknown OneKey device type");
+		const firmware = firmwareVersion(features);
+		if (features.initialized !== true) throw new OneKeyError("not-initialized", "device has no wallet loaded");
+		if (!atLeast$1(firmware, CLASSIC_FAMILY.has(model) ? [
+			3,
+			3,
+			0
+		] : [
+			4,
+			5,
+			0
+		])) throw new OneKeyError("unsupported", "firmware speaks a legacy message schema");
+		const { capabilities } = features;
+		return {
+			model,
+			firmware,
+			deviceId: (_features$deviceId = features.deviceId) !== null && _features$deviceId !== void 0 ? _features$deviceId : "",
+			capabilities: capabilities !== null && capabilities !== void 0 ? capabilities : [],
+			bitcoinOnly: capabilities !== void 0 && !capabilities.includes(CAPABILITY_BITCOIN_LIKE),
+			pinProtection: (_features$pinProtecti = features.pinProtection) !== null && _features$pinProtecti !== void 0 ? _features$pinProtecti : false,
+			passphraseProtection: (_features$passphraseP = features.passphraseProtection) !== null && _features$passphraseP !== void 0 ? _features$passphraseP : false,
+			unlocked: (_features$unlocked = features.unlocked) !== null && _features$unlocked !== void 0 ? _features$unlocked : false,
+			sessionId: features.sessionId
+		};
+	}
+	// packages/wallet-kernel/src/modules/signers/onekey/protocol/evm-typed-data.ts
+	init_utils$2();
+	init_objectSpread2();
+	var fault$5 = (message) => new OneKeyError("device-fault", message);
+	var invalid$5 = (message) => new OneKeyError("invalid-input", message);
+	var UINT32_MAX$4 = 4294967295;
+	var MAX_ROUNDS = 4096;
+	function checkPath$5(path) {
+		if (path.length === 0) throw invalid$5("derivation path is empty");
+		for (const element of path) if (!Number.isInteger(element) || element < 0 || element > UINT32_MAX$4) throw invalid$5("derivation path element out of range");
+	}
+	/** The minimal big-endian byte string of a non-negative integer; zero encodes empty. */
+	function minimalBytes$1(value) {
+		const out = [];
+		for (let v = value; v > 0n; v /= 256n) out.push(Number(v % 256n));
+		return new Uint8Array(out.reverse());
+	}
+	var hexBytes$1 = (hex) => {
+		const body = hex.startsWith("0x") ? hex.slice(2) : hex;
+		try {
+			return hexToBytes$4(body);
+		} catch (_unused) {
+			throw invalid$5("malformed hex data");
+		}
+	};
+	/** Reads one own property of a member object without asserting its shape. */
+	var readProp = (value, name) => typeof value === "object" && value !== null ? Reflect.get(value, name) : void 0;
+	var INT_TYPE = /^(u?int)([0-9]+)$/;
+	var BYTES_TYPE = /^bytes([0-9]*)$/;
+	var ARRAY_TYPE = /^(.*)\[([0-9]*)\]$/;
+	/** Parses one EIP-712 type name against the document's struct table. */
+	function parseType(typeName, doc) {
+		const array = ARRAY_TYPE.exec(typeName);
+		if (array !== null) {
+			const [, entryTypeName, sizeText] = array;
+			if (entryTypeName === void 0) throw invalid$5(`array type ${typeName} has no entry type`);
+			const entry = parseType(entryTypeName, doc);
+			const size = sizeText === "" || sizeText === void 0 ? void 0 : Number(sizeText);
+			if (size !== void 0 && (!Number.isInteger(size) || size < 0 || size > 65535)) throw invalid$5("array size out of range");
+			return {
+				kind: "array",
+				entry,
+				size
+			};
+		}
+		const int = INT_TYPE.exec(typeName);
+		if (int !== null) {
+			const bits = Number(int[2]);
+			if (bits % 8 !== 0 || bits < 8 || bits > 256) throw invalid$5(`integer type ${typeName} out of range`);
+			return {
+				kind: int[1] === "uint" ? "uint" : "int",
+				size: bits / 8
+			};
+		}
+		const bytes = BYTES_TYPE.exec(typeName);
+		if (bytes !== null) {
+			const size = bytes[1] === "" ? void 0 : Number(bytes[1]);
+			if (size !== void 0 && (size < 1 || size > 32)) throw invalid$5(`bytes type ${typeName} out of range`);
+			return {
+				kind: "bytes",
+				size
+			};
+		}
+		if (typeName === "string" || typeName === "bool" || typeName === "address") return { kind: typeName };
+		if (doc.types[typeName] !== void 0) return {
+			kind: "struct",
+			name: typeName
+		};
+		throw invalid$5(`unknown type ${typeName}`);
+	}
+	var DATA_TYPE = {
+		uint: 1,
+		int: 2,
+		bytes: 3,
+		string: 4,
+		bool: 5,
+		address: 6,
+		array: 7,
+		struct: 8
+	};
+	/** The field-type record the struct ack sends, matching validate_field_type's requirements. */
+	function wireFieldType(type, doc) {
+		switch (type.kind) {
+			case "uint": return {
+				dataType: DATA_TYPE.uint,
+				size: type.size
+			};
+			case "int": return {
+				dataType: DATA_TYPE.int,
+				size: type.size
+			};
+			case "bytes": return _objectSpread2({ dataType: DATA_TYPE.bytes }, type.size === void 0 ? {} : { size: type.size });
+			case "string": return { dataType: DATA_TYPE.string };
+			case "bool": return { dataType: DATA_TYPE.bool };
+			case "address": return { dataType: DATA_TYPE.address };
+			case "array": return _objectSpread2({
+				dataType: DATA_TYPE.array,
+				entryType: wireFieldType(type.entry, doc)
+			}, type.size === void 0 ? {} : { size: type.size });
+			case "struct": {
+				const members = doc.types[type.name];
+				if (members === void 0) throw invalid$5(`unknown struct ${type.name}`);
+				return {
+					dataType: DATA_TYPE.struct,
+					structName: type.name,
+					size: members.length
+				};
+			}
+		}
+	}
+	/**
+	* Resolves a device `member_path`: [0] walks the domain struct, [1] the message struct; each
+	* further index selects a struct member by declaration index or an array element. An out-of-range
+	* path is a device-fault.
+	*/
+	function resolveMember(doc, path) {
+		if (path.length === 0 || path[0] !== 0 && path[0] !== 1) throw fault$5("typed-data member path has a bad root");
+		let type = {
+			kind: "struct",
+			name: path[0] === 0 ? "EIP712Domain" : doc.primaryType
+		};
+		let value = path[0] === 0 ? doc.domain : doc.message;
+		for (const index of path.slice(1)) if (type.kind === "struct") {
+			const members = doc.types[type.name];
+			const member = members === null || members === void 0 ? void 0 : members[index];
+			if (member === void 0) throw fault$5("typed-data member path is out of range");
+			type = parseType(member.type, doc);
+			value = readProp(value, member.name);
+		} else if (type.kind === "array") {
+			if (!Array.isArray(value) || index >= value.length) throw fault$5("typed-data member path is out of range");
+			type = type.entry;
+			value = value[index];
+		} else throw fault$5("typed-data member path walks into an atomic value");
+		return {
+			type,
+			value
+		};
+	}
+	var toBigInt = (value) => {
+		if (typeof value === "bigint") return value;
+		if (typeof value === "number" && Number.isSafeInteger(value)) return BigInt(value);
+		if (typeof value === "string" && /^(0x[0-9a-fA-F]+|[0-9]+)$/.test(value)) return BigInt(value);
+		throw invalid$5("integer member is not a quantity");
+	};
+	/** The uintN/intN big-endian two's-complement at the declared byte size. */
+	var intBytes = (value, size, signed) => {
+		const n = toBigInt(value);
+		const modulus = 256n ** BigInt(size);
+		let encoded = n;
+		if (signed) {
+			if (n < -(modulus / 2n) || n >= modulus / 2n) throw invalid$5("int member overflows its type");
+			if (n < 0n) encoded = n + modulus;
+		} else if (n < 0n || n >= modulus) throw invalid$5("uint member overflows its type");
+		const bytes = minimalBytes$1(encoded);
+		const out = new Uint8Array(size);
+		out.set(bytes, size - bytes.length);
+		return out;
+	};
+	var addressBytes = (value) => {
+		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw invalid$5("address member is not 20 bytes of hex");
+		return hexBytes$1(value);
+	};
+	var stringBytes = (value) => {
+		if (typeof value !== "string") throw invalid$5("string member is not a string");
+		return utf8ToBytes$1(value);
+	};
+	var bytesValue = (value) => {
+		if (typeof value !== "string" || !/^0x([0-9a-fA-F]{2})*$/.test(value)) throw invalid$5("bytes member is not hex");
+		return hexBytes$1(value);
+	};
+	/** The raw bytes the ValueAck carries for an atomic member (device applies the padding). */
+	function atomicValue(type, value) {
+		switch (type.kind) {
+			case "uint": return intBytes(value, type.size, false);
+			case "int": return intBytes(value, type.size, true);
+			case "bytes": {
+				const bytes = bytesValue(value);
+				if (type.size !== void 0 && bytes.length !== type.size) throw invalid$5("bytesN member does not match its type size");
+				return bytes;
+			}
+			case "string": return stringBytes(value);
+			case "bool":
+				if (typeof value !== "boolean") throw invalid$5("bool member is not a boolean");
+				return new Uint8Array([value ? 1 : 0]);
+			case "address": return addressBytes(value);
+			default: throw fault$5("device requested a reference type as an atomic value");
+		}
+	}
+	var MINI_MAX_STRUCT_FIELDS = 16;
+	var MINI_MAX_ACCESS_PATH_DEPTH = 6;
+	var MINI_MAX_CUSTOM_DEP_STRUCTS = 8;
+	var MINI_MAX_NAME_LENGTH = 63;
+	var MINI_MAX_DYNAMIC_VALUE_BYTES = 1536;
+	var MINI_MAX_ARRAY_TYPE_FIELDS = 24;
+	var MINI_MAX_ARRAY_ELEMENTS = 24;
+	/** Byte size of a dynamic (string/bytes) member value — the MINI_MAX_DYNAMIC_VALUE_BYTES input. */
+	var dynamicSize = (typeName, value) => {
+		if (typeName === "string") return typeof value === "string" ? utf8ToBytes$1(value).length : 0;
+		if (BYTES_TYPE.test(typeName)) try {
+			return bytesValue(value).length;
+		} catch (_unused2) {
+			return 0;
+		}
+		return 0;
+	};
+	function classicViolations(doc) {
+		const typeList = Object.values(doc.types);
+		if (typeList.some((fields) => fields.length > MINI_MAX_STRUCT_FIELDS)) return true;
+		if (Object.entries(doc.types).some(([typeName, fields]) => typeName.length > MINI_MAX_NAME_LENGTH || fields.some((field) => field.name.length > MINI_MAX_NAME_LENGTH))) return true;
+		if (typeList.reduce((count, fields) => count + fields.filter((field) => ARRAY_TYPE.test(field.type)).length, 0) > MINI_MAX_ARRAY_TYPE_FIELDS) return true;
+		const depth = (type, visiting) => {
+			var _doc$types$type$name;
+			if (type.kind === "array") return 1 + depth(type.entry, visiting);
+			if (type.kind !== "struct") return 1;
+			if (visiting.has(type.name)) return 7;
+			const next = /* @__PURE__ */ new Set([...visiting, type.name]);
+			let max = 1;
+			for (const member of (_doc$types$type$name = doc.types[type.name]) !== null && _doc$types$type$name !== void 0 ? _doc$types$type$name : []) max = Math.max(max, 1 + depth(parseType(member.type, doc), next));
+			return max;
+		};
+		if (1 + Math.max(depth(parseType("EIP712Domain", doc), /* @__PURE__ */ new Set()), depth(parseType(doc.primaryType, doc), /* @__PURE__ */ new Set())) > MINI_MAX_ACCESS_PATH_DEPTH) return true;
+		const depStructs = /* @__PURE__ */ new Set();
+		structDeps(doc, "EIP712Domain", depStructs);
+		structDeps(doc, doc.primaryType, depStructs);
+		depStructs.delete("EIP712Domain");
+		depStructs.delete(doc.primaryType);
+		if (depStructs.size > MINI_MAX_CUSTOM_DEP_STRUCTS) return true;
+		const walk = (typeName, value) => {
+			if (value === null || value === void 0) return false;
+			const array = ARRAY_TYPE.exec(typeName);
+			if (array !== null) {
+				const [, entryTypeName] = array;
+				if (!Array.isArray(value) || entryTypeName === void 0) return false;
+				const entry = parseType(entryTypeName, doc);
+				if (value.length > MINI_MAX_ARRAY_ELEMENTS && entry.kind !== "array") return true;
+				return value.some((item) => walk(entryTypeName, item));
+			}
+			if (dynamicSize(typeName, value) > MINI_MAX_DYNAMIC_VALUE_BYTES) return true;
+			if (typeof value === "object" && doc.types[typeName] !== void 0) return doc.types[typeName].some(({ name, type }) => walk(type, readProp(value, name)));
+			return false;
+		};
+		return walk("EIP712Domain", doc.domain) || walk(doc.primaryType, doc.message);
+	}
+	/** The struct types `typeName` transitively references (through arrays too), sorted. */
+	function structDeps(doc, typeName, into) {
+		const members = doc.types[typeName];
+		if (members === void 0 || into.has(typeName)) return;
+		into.add(typeName);
+		for (const member of members) {
+			let type = parseType(member.type, doc);
+			while (type.kind === "array") type = type.entry;
+			if (type.kind === "struct") structDeps(doc, type.name, into);
+		}
+	}
+	function hasNestedArrays(value) {
+		if (Array.isArray(value)) return value.some((entry) => Array.isArray(entry) || typeof entry === "object" && hasNestedArrays(entry));
+		if (typeof value === "object" && value !== null) return Object.values(value).some(hasNestedArrays);
+		return false;
+	}
+	/**
+	* Where the device parses the typed document on screen vs. signs only its digest. Mirrors the SDK
+	* decision (EVMSignTypedData.ts:560-636): the classic family needs the typed-data capability and a
+	* document inside its format limits; every model hashes documents with nested arrays or a
+	* `message.data` field above 1024 bytes (1536 on classic1s/pure and touch/pro ≥ 4.4.0,
+	* hasBiggerData).
+	*/
+	function typedDataMode(info, typedDataJson) {
+		const doc = parseTypedData(typedDataJson).json;
+		if (CLASSIC.has(info.model) && (!supports(info, "evm-typed-data-stream") || classicViolations(doc))) return "hash";
+		const { data } = doc.message;
+		const biggerLimit = info.model === "classic1s" || info.model === "pure" || (info.model === "touch" || info.model === "pro") && (info.firmware[0] > 4 || info.firmware[0] === 4 && info.firmware[1] >= 4) ? 1536 : 1024;
+		if (typeof data === "string") {
+			const hex = data.startsWith("0x") ? 2 : 0;
+			if ((data.length - hex) / 2 > biggerLimit) return "hash";
+		}
+		return hasNestedArrays(doc) ? "hash" : "stream";
+	}
+	var CLASSIC = /* @__PURE__ */ new Set([
+		"classic",
+		"classic1s",
+		"pure",
+		"mini"
+	]);
+	/**
+	* EIP-712 signing: stream mode answers the device's struct/value requests from the parsed document
+	* (`metamaskV4Compat: true`, same as the SDK); hash mode ships the domain and message hashes
+	* computed with the same wallet-chains encoder the plan digests use. Rounds are bounded at 4096; an
+	* unknown struct name or an out-of-range member path is a device-fault. The 65-byte answer is
+	* r‖s‖v; only r‖s returns.
+	*/
+	async function signTypedData(exchange, info, path, typedDataJson, chainId) {
+		checkPath$5(path);
+		const doc = parseTypedData(typedDataJson).json;
+		if (doc.types["EIP712Domain"] === void 0 || doc.types[doc.primaryType] === void 0) throw invalid$5("typed data is missing EIP712Domain or the primary type");
+		if (typedDataMode(info, typedDataJson) === "hash") {
+			const { domain, message } = typedDataHashes(doc);
+			return signature64((await call$3(exchange, {
+				def: EthereumSignTypedHashOneKey,
+				value: _objectSpread2(_objectSpread2({
+					addressN: [...path],
+					domainSeparatorHash: domain
+				}, message === void 0 ? {} : { messageHash: message }), chainId === void 0 ? {} : { chainId })
+			}, EthereumTypedDataSignatureOneKey)).signature);
+		}
+		return typedDataRound(exchange, doc, asTypedDataReply(await call$3(exchange, {
+			def: EthereumSignTypedDataOneKey,
+			value: _objectSpread2({
+				addressN: [...path],
+				primaryType: doc.primaryType,
+				metamaskV4Compat: true
+			}, chainId === void 0 ? {} : { chainId })
+		}, TYPED_DATA_REPLIES)), 0);
+	}
+	var TYPED_DATA_REPLIES = [
+		EthereumTypedDataStructRequestOneKey,
+		EthereumTypedDataValueRequestOneKey,
+		EthereumTypedDataSignatureOneKey
+	];
+	/** Narrows a reply already decoded against the three accepted defs to their union view. */
+	var asTypedDataReply = (response) => response;
+	async function typedDataRound(exchange, doc, response, round) {
+		if (round >= MAX_ROUNDS) throw fault$5("typed-data exchange exceeded the round bound");
+		if (response.signature !== void 0) return signature64(response.signature);
+		if (response.name !== void 0) {
+			const members = doc.types[response.name];
+			if (members === void 0) throw fault$5("device requested an unknown struct name");
+			return typedDataRound(exchange, doc, asTypedDataReply(await call$3(exchange, {
+				def: EthereumTypedDataStructAckOneKey,
+				value: { members: members.map((member) => ({
+					type: wireFieldType(parseType(member.type, doc), doc),
+					name: member.name
+				})) }
+			}, TYPED_DATA_REPLIES)), round + 1);
+		}
+		if (response.memberPath !== void 0) {
+			const { type, value } = resolveMember(doc, response.memberPath);
+			let bytes;
+			if (type.kind === "array") {
+				if (!Array.isArray(value)) throw invalid$5("array member is not an array");
+				bytes = /* @__PURE__ */ new Uint8Array(2);
+				new DataView(bytes.buffer).setUint16(0, value.length);
+			} else bytes = atomicValue(type, value);
+			return typedDataRound(exchange, doc, asTypedDataReply(await call$3(exchange, {
+				def: EthereumTypedDataValueAckOneKey,
+				value: { value: bytes }
+			}, TYPED_DATA_REPLIES)), round + 1);
+		}
+		throw fault$5("typed-data response was none of the expected types");
+	}
+	function signature64(signature) {
+		if (signature.length !== 65) throw fault$5("typed-data signature is not 65 bytes");
+		return new Uint8Array(signature.subarray(0, 64));
+	}
+	// packages/wallet-kernel/src/modules/signers/onekey/protocol/evm.ts
+	init_utils$2();
+	init_objectSpread2();
+	var fault$4 = (message) => new OneKeyError("device-fault", message);
+	var invalid$4 = (message) => new OneKeyError("invalid-input", message);
+	var unsupported$3 = (message) => new OneKeyError("unsupported", message);
+	var UINT32_MAX$3 = 4294967295;
+	var CHUNK = 1024;
+	var FAILURE_DATA_ERROR$1 = 3;
+	function checkPath$4(path) {
+		if (path.length === 0) throw invalid$4("derivation path is empty");
+		for (const element of path) if (!Number.isInteger(element) || element < 0 || element > UINT32_MAX$3) throw invalid$4("derivation path element out of range");
+	}
+	/** The minimal big-endian byte string of a non-negative integer; zero encodes empty. */
+	function minimalBytes(value) {
+		if (value < 0n) throw invalid$4("negative quantity");
+		if (value === 0n) return /* @__PURE__ */ new Uint8Array(0);
+		const out = [];
+		for (let v = value; v > 0n; v /= 256n) out.push(Number(v % 256n));
+		return new Uint8Array(out.reverse());
+	}
+	var quantity = (hex) => minimalBytes(BigInt(hex));
+	var hexBytes = (hex) => {
+		const body = hex.startsWith("0x") ? hex.slice(2) : hex;
+		try {
+			return hexToBytes$4(body);
+		} catch (_unused) {
+			throw invalid$4("malformed hex data");
+		}
+	};
+	/**
+	* Drives the TxRequest/TxAck loop after the sign message is sent: each dataLength request must ask
+	* for 1..min(remaining, 1024) bytes (the schema caps chunks at 1024), and a signature may only
+	* arrive when nothing is left to send. `r`/`s` are exactly 32 bytes; an `eip7702` response must
+	* carry exactly one authorization signature, others must carry none.
+	*/
+	async function finishTransaction(exchange, request, data, sent, expectAuthorization) {
+		const want = request.dataLength;
+		if (want === void 0 || want === 0) {
+			var _request$authorizatio;
+			if (sent < data.length) throw fault$4("device signed before consuming the payload");
+			const { signatureV, signatureR, signatureS } = request;
+			if (signatureV === void 0 || signatureR === void 0 || signatureS === void 0) throw fault$4("signature fields missing from the transaction request");
+			if (signatureR.length !== 32 || signatureS.length !== 32) throw fault$4("signature r/s are not 32 bytes");
+			const signatures = (_request$authorizatio = request.authorizationSignatures) !== null && _request$authorizatio !== void 0 ? _request$authorizatio : [];
+			if (expectAuthorization) {
+				if (signatures.length !== 1) throw fault$4("expected exactly one authorization signature");
+				const [auth] = signatures;
+				if (auth === void 0) throw fault$4("expected exactly one authorization signature");
+				if (auth.yParity !== 0 && auth.yParity !== 1) throw fault$4("authorization yParity is not 0 or 1");
+				if (auth.r.length !== 32 || auth.s.length !== 32) throw fault$4("authorization r/s are not 32 bytes");
+				return {
+					signature: concat$1(signatureR, signatureS),
+					authorization: {
+						yParity: auth.yParity,
+						r: auth.r,
+						s: auth.s
+					}
+				};
+			}
+			if (signatures.length > 0) throw fault$4("unexpected authorization signatures");
+			return { signature: concat$1(signatureR, signatureS) };
+		}
+		if (want > data.length - sent || want > CHUNK) throw fault$4("device requested more payload than remains");
+		return finishTransaction(exchange, await call$3(exchange, {
+			def: EthereumTxAckOneKey,
+			value: { dataChunk: data.subarray(sent, sent + want) }
+		}, EthereumTxRequestOneKey), data, sent + want, expectAuthorization);
+	}
+	var concat$1 = (a, b) => {
+		const out = new Uint8Array(a.length + b.length);
+		out.set(a, 0);
+		out.set(b, a.length);
+		return out;
+	};
+	/**
+	* Signs an EVM transaction. eip2930 has no OneKey message and is `unsupported` before any exchange;
+	* eip7702 needs `evm-7702` and an unregistered delegator refusal (Failure_DataError) maps to
+	* `unsupported` as well.
+	*/
+	async function signEvmTransaction(exchange, info, path, tx, options) {
+		checkPath$4(path);
+		const data = hexBytes(tx.data);
+		const initialChunk = data.subarray(0, CHUNK);
+		try {
+			switch (tx.type) {
+				case "legacy": return await finishTransaction(exchange, await call$3(exchange, {
+					def: EthereumSignTxOneKey,
+					value: _objectSpread2(_objectSpread2({
+						addressN: [...path],
+						nonce: minimalBytes(BigInt(tx.nonce)),
+						gasPrice: quantity(tx.gasPrice),
+						gasLimit: quantity(tx.gas)
+					}, tx.to === void 0 ? {} : { to: tx.to }), {}, {
+						value: quantity(tx.value),
+						chainId: BigInt(tx.chainId)
+					}, data.length === 0 ? {} : {
+						dataInitialChunk: initialChunk,
+						dataLength: data.length
+					})
+				}, EthereumTxRequestOneKey), data.subarray(initialChunk.length), 0, false);
+				case "eip2930": throw unsupported$3("eip2930 transactions have no OneKey message");
+				case "eip1559": return await finishTransaction(exchange, await call$3(exchange, {
+					def: EthereumSignTxEIP1559OneKey,
+					value: _objectSpread2(_objectSpread2({
+						addressN: [...path],
+						nonce: minimalBytes(BigInt(tx.nonce)),
+						maxGasFee: quantity(tx.maxFeePerGas),
+						maxPriorityFee: quantity(tx.maxPriorityFeePerGas),
+						gasLimit: quantity(tx.gas)
+					}, tx.to === void 0 ? {} : { to: tx.to }), {}, {
+						value: quantity(tx.value),
+						dataInitialChunk: initialChunk,
+						dataLength: data.length,
+						chainId: BigInt(tx.chainId),
+						accessList: tx.accessList.map((entry) => ({
+							address: entry.address,
+							storageKeys: entry.storageKeys.map(hexBytes)
+						}))
+					})
+				}, EthereumTxRequestOneKey), data.subarray(initialChunk.length), 0, false);
+				case "eip7702": {
+					if (!supports(info, "evm-7702")) throw unsupported$3("device firmware does not sign eip7702 transactions");
+					const supplied = options === null || options === void 0 ? void 0 : options.authorization;
+					if (supplied !== void 0 && (supplied.yParity !== 0 && supplied.yParity !== 1 || supplied.r.length !== 32 || supplied.s.length !== 32)) throw invalid$4("authorization signature must be { yParity: 0|1, r: 32B, s: 32B }");
+					return await finishTransaction(exchange, await call$3(exchange, {
+						def: EthereumSignTxEIP7702OneKey,
+						value: {
+							addressN: [...path],
+							nonce: minimalBytes(BigInt(tx.nonce)),
+							maxGasFee: quantity(tx.maxFeePerGas),
+							maxPriorityFee: quantity(tx.maxPriorityFeePerGas),
+							gasLimit: quantity(tx.gas),
+							to: tx.to,
+							value: quantity(tx.value),
+							dataInitialChunk: initialChunk,
+							dataLength: data.length,
+							chainId: BigInt(tx.chainId),
+							accessList: tx.accessList.map((entry) => ({
+								address: entry.address,
+								storageKeys: entry.storageKeys.map(hexBytes)
+							})),
+							authorizationList: [_objectSpread2(_objectSpread2({}, supplied === void 0 ? { addressN: [...path] } : {}), {}, {
+								chainId: BigInt(tx.chainId),
+								address: tx.authorization.address,
+								nonce: minimalBytes(BigInt(tx.nonce) + 1n)
+							}, supplied === void 0 ? {} : { signature: supplied })]
+						}
+					}, EthereumTxRequestOneKey), data.subarray(initialChunk.length), 0, true);
+				}
+			}
+		} catch (error) {
+			if (tx.type === "eip7702" && error instanceof OneKeyError && error.code === "device-error" && error.failure === FAILURE_DATA_ERROR$1) throw unsupported$3("device refused the delegation");
+			throw error;
+		}
+	}
+	/**
+	* EIP-191 personal_sign. The device's 65-byte answer is r‖s‖v (`signature[1:] + signature[0:1]` in
+	* sign_message.py); only r‖s returns — assemble recomputes the recovery id.
+	*/
+	async function signEvmPersonalMessage(exchange, path, message, chainId) {
+		checkPath$4(path);
+		const { signature } = await call$3(exchange, {
+			def: EthereumSignMessageOneKey,
+			value: _objectSpread2({
+				addressN: [...path],
+				message
+			}, chainId === void 0 ? {} : { chainId })
+		}, EthereumMessageSignatureOneKey);
+		if (signature.length !== 65) throw fault$4("personal-message signature is not 65 bytes");
+		return new Uint8Array(signature.subarray(0, 64));
+	}
+	var APPROVE_SELECTORS = /* @__PURE__ */ new Set(["095ea7b3", "39509351"]);
+	/**
+	* "clear" when the device renders the request's semantics, "blind" when it signs a digest or raw
+	* bytes the user cannot fully verify on screen.
+	*/
+	function evmDisplay(info, request) {
+		switch (request.kind) {
+			case "evm.personal-message": return "clear";
+			case "evm.typed-data": return typedDataMode(info, request.typedData) === "stream" ? "clear" : "blind";
+			case "evm.transaction": {
+				const { tx } = request;
+				if (tx.type === "eip2930") return "unsupported";
+				if (tx.type === "eip7702") return supports(info, "evm-7702") ? "clear" : "unsupported";
+				const data = tx.data.startsWith("0x") ? tx.data.slice(2) : tx.data;
+				if (data.length === 0) return "clear";
+				if (data.length === 136 && APPROVE_SELECTORS.has(data.slice(0, 8))) return "clear";
+				return "blind";
+			}
+		}
+	}
+	// packages/wallet-kernel/src/modules/signers/onekey/protocol/keys.ts
+	/**
+	* Pinned public material: BIP-32 account nodes and first-hop addresses the caller pins a device to.
+	* Every response field is verified against the request — the node echoes the derivation path (depth
+	* and child number), the xpub serialization must carry the same depth, parent fingerprint, child
+	* number, chain code and public key, and keys must be on-curve points of the exact wire size.
+	* Anything that fails is `device-fault`; anything the caller got wrong is `invalid-input`. The
+	* shapes deliberately mirror the signer foundation's PinnedNode/PinnedEd25519 without importing
+	* it.
+	*/
+	init_secp256k1();
+	init_sha2();
+	init_base();
+	init_objectSpread2();
+	var base58check = createBase58check(sha256$1);
+	var HARDENED$4 = 2147483648;
+	var UINT32_MAX$2 = 4294967295;
+	var XPUB_PAYLOAD = 78;
+	var MAX_ADDRESS = 128;
+	var fault$3 = (message) => new OneKeyError("device-fault", message);
+	var invalid$3 = (message) => new OneKeyError("invalid-input", message);
+	function checkPath$3(path) {
+		if (path.length === 0) throw invalid$3("derivation path is empty");
+		for (const element of path) if (!Number.isInteger(element) || element < 0 || element > UINT32_MAX$2) throw invalid$3("derivation path element out of range");
+	}
+	/** InputScriptType (messages-bitcoin.proto) has values 0..5; anything else is a caller bug. */
+	function checkScriptType(scriptType) {
+		if (!Number.isInteger(scriptType) || scriptType < 0 || scriptType > 5) throw invalid$3("script type out of range");
+	}
+	function checkNode(path, node) {
+		if (node.depth !== path.length) throw fault$3("node depth does not match the requested path");
+		if (node.childNum !== path.at(-1)) throw fault$3("node child number does not match the requested path");
+		if (node.privateKey !== void 0) throw fault$3("device returned private key material");
+		if (node.chainCode.length !== 32) throw fault$3("chain code is not 32 bytes");
+		if (node.publicKey.length !== 33 || node.publicKey[0] !== 2 && node.publicKey[0] !== 3 || !validPoint(node.publicKey)) throw fault$3("public key is not a compressed secp256k1 point");
+		return node;
+	}
+	function validPoint(bytes) {
+		try {
+			secp256k1.Point.fromBytes(bytes);
+			return true;
+		} catch (_unused) {
+			return false;
+		}
+	}
+	/**
+	* Parses the device's xpub and returns the parent fingerprint it claims. The 4-byte version is not
+	* checked — the magic varies by script type (xpub/ypub/zpub); the payload fields must equal the
+	* node's.
+	*/
+	function checkXpub(xpub, node) {
+		let payload;
+		try {
+			payload = base58check.decode(xpub);
+		} catch (_unused2) {
+			throw fault$3("xpub is not base58check");
+		}
+		if (payload.length !== XPUB_PAYLOAD) throw fault$3("xpub payload is not 78 bytes");
+		if (payload[4] !== node.depth) throw fault$3("xpub depth does not match the node");
+		const view = new DataView(payload.buffer, payload.byteOffset, payload.length);
+		if (view.getUint32(5) !== node.fingerprint) throw fault$3("xpub parent fingerprint does not match the node");
+		if (view.getUint32(9) !== node.childNum) throw fault$3("xpub child number does not match the node");
+		if (!equal(payload.subarray(13, 45), node.chainCode)) throw fault$3("xpub chain code does not match the node");
+		if (!equal(payload.subarray(45, 78), node.publicKey)) throw fault$3("xpub public key does not match the node");
+		return new Uint8Array(payload.subarray(5, 9));
+	}
+	function equal(a, b) {
+		if (a.length !== b.length) return false;
+		for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+		return true;
+	}
+	var u32be = (value) => {
+		const out = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(out.buffer).setUint32(0, value);
+		return out;
+	};
+	/**
+	* The account node at `path` via bitcoin GetPublicKey (coin "Bitcoin"; `scriptType` only changes
+	* the xpub version magic, which is not checked).
+	*/
+	async function publicNode(exchange, path, options) {
+		checkPath$3(path);
+		if ((options === null || options === void 0 ? void 0 : options.scriptType) !== void 0) checkScriptType(options.scriptType);
+		const response = await call$3(exchange, {
+			def: GetPublicKey,
+			value: _objectSpread2({
+				addressN: [...path],
+				coinName: "Bitcoin"
+			}, (options === null || options === void 0 ? void 0 : options.scriptType) === void 0 ? {} : { scriptType: options.scriptType })
+		}, PublicKey);
+		const node = checkNode(path, response.node);
+		return {
+			path: [...path],
+			publicKey: new Uint8Array(node.publicKey),
+			chainCode: new Uint8Array(node.chainCode),
+			parent: checkXpub(response.xpub, node),
+			rootFingerprint: response.rootFingerprint === void 0 ? void 0 : u32be(response.rootFingerprint)
+		};
+	}
+	/**
+	* The address string the device derives at `path` for the family. Only the wire format is checked
+	* (non-empty printable ASCII within the message-size budget); the driver compares the value against
+	* a locally derived address.
+	*/
+	async function address(exchange, family, path, options) {
+		checkPath$3(path);
+		let value;
+		switch (family) {
+			case "bitcoin":
+				if (options.scriptType !== void 0) checkScriptType(options.scriptType);
+				value = (await call$3(exchange, {
+					def: GetAddress,
+					value: _objectSpread2({
+						addressN: [...path],
+						coinName: options.network === "testnet" ? "Testnet" : "Bitcoin",
+						showDisplay: options.showDisplay
+					}, options.scriptType === void 0 ? {} : { scriptType: options.scriptType })
+				}, Address)).address;
+				break;
+			case "evm":
+				value = (await call$3(exchange, {
+					def: EthereumGetAddressOneKey,
+					value: _objectSpread2({
+						addressN: [...path],
+						showDisplay: options.showDisplay
+					}, options.chainId === void 0 ? {} : { chainId: options.chainId })
+				}, EthereumAddressOneKey)).address;
+				break;
+			case "solana":
+				value = (await call$3(exchange, {
+					def: SolanaGetAddress,
+					value: {
+						addressN: [...path],
+						showDisplay: options.showDisplay
+					}
+				}, SolanaAddress)).address;
+				break;
+			case "tron": value = (await call$3(exchange, {
+				def: TronGetAddress,
+				value: {
+					addressN: [...path],
+					showDisplay: options.showDisplay
+				}
+			}, TronAddress)).address;
+		}
+		if (value === void 0 || value.length === 0 || value.length > MAX_ADDRESS) throw fault$3("device returned no usable address");
+		for (const char of value) {
+			const code = char.codePointAt(0);
+			if (code === void 0 || code < 33 || code > 126) throw fault$3("address is not printable ASCII");
+		}
+		return value;
+	}
+	/**
+	* The SLIP-10 ed25519 public key at `path`, carried in the base58 SolanaAddress. Every element must
+	* be hardened — SLIP-10 has no public derivation — and the decoded point must be a valid 32-byte
+	* ed25519 key.
+	*/
+	async function solanaPublicKey(exchange, path, showDisplay) {
+		checkPath$3(path);
+		for (const element of path) if (element < HARDENED$4) throw invalid$3("solana path elements must be hardened");
+		const response = await call$3(exchange, {
+			def: SolanaGetAddress,
+			value: {
+				addressN: [...path],
+				showDisplay
+			}
+		}, SolanaAddress);
+		let key;
+		try {
+			key = base58.decode(response.address);
+		} catch (_unused3) {
+			throw fault$3("solana address is not base58");
+		}
+		if (key.length !== 32) throw fault$3("solana public key is not 32 bytes");
+		try {
+			ed25519.Point.fromBytes(key);
+		} catch (_unused4) {
+			throw fault$3("solana public key is not an ed25519 point");
+		}
+		return key;
+	}
+	// packages/wallet-kernel/src/modules/signers/onekey/protocol/solana.ts
+	/**
+	* Solana signing over the OneKey V1 schema. The compiled transaction message is handed to the
+	* device as `raw_tx` — the device parses it itself, decides between the described and blind
+	* screens, and ed25519-signs those bytes (firmware-pro core/src/apps/solana/sign_tx.py
+	* `ed25519.sign(node.private_key(), msg.raw_tx)`, firmware-classic1s legacy/firmware/solana.c
+	* `ed25519_sign(msg->raw_tx.bytes, msg->raw_tx.size, …)`). Raw messages go through
+	* SolanaSignUnsafeMessage, which both firmwares refuse when the bytes parse as a transaction
+	* message (a raw signature over them would authorise the transaction).
+	*/
+	var fault$2 = (message) => new OneKeyError("device-fault", message);
+	var invalid$2 = (message) => new OneKeyError("invalid-input", message);
+	var unsupported$2 = (message) => new OneKeyError("unsupported", message);
+	var HARDENED$3 = 2147483648;
+	var FAILURE_DATA_ERROR = 3;
+	var CLEAR_PROGRAM_IDS = /* @__PURE__ */ new Set([
+		"11111111111111111111111111111111",
+		"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+		"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+		"MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+		"ComputeBudget111111111111111111111111111111"
+	]);
+	function checkPath$2(path) {
+		if (path.length === 0) throw invalid$2("derivation path is empty");
+		for (const element of path) if (!Number.isInteger(element) || element < HARDENED$3) throw invalid$2("solana path elements must be hardened");
+	}
+	function dataError(error) {
+		if (error instanceof OneKeyError && error.code === "device-error" && error.failure === FAILURE_DATA_ERROR) return unsupported$2("the device refused the message (for example blind signing is disabled on the device)");
+		if (error instanceof OneKeyError) return error;
+		throw error;
+	}
+	function prepareMessage(message, publicKey) {
+		let parsed;
+		try {
+			parsed = parseCompiledMessage(message);
+		} catch (error) {
+			if (error instanceof ChainError && error.code === "unsupported") throw unsupported$2(error.message);
+			throw invalid$2("solana message failed to parse");
+		}
+		if (parsed.version !== "legacy" && parsed.version !== 0) throw unsupported$2("firmware does not sign version-1 Solana messages");
+		const signer = solanaAddressFromPublicKey(publicKey);
+		if (!parsed.staticAccounts.slice(0, parsed.numRequiredSignatures).includes(signer)) throw invalid$2("signing key is not a required signer of the message");
+		return parsed;
+	}
+	/**
+	* Sign a compiled transaction message. The message must parse (`parseCompiledMessage` — the same
+	* bound the network applies) and be legacy or v0: both firmwares refuse version 1 — Pro at
+	* Message.deserialize ("Expected versioned message with version 0", sign_tx.py:57 via
+	* message.py:70), the Classic 1S by misreading the shifted v1 layout so its signer check never
+	* finds the key — so the refusal is made before any exchange.
+	*/
+	async function signSolanaTransaction(exchange, path, message, publicKey) {
+		checkPath$2(path);
+		prepareMessage(message, publicKey);
+		try {
+			const response = await call$3(exchange, {
+				def: SolanaSignTx,
+				value: {
+					addressN: [...path],
+					rawTx: message
+				}
+			}, SolanaSignedTx);
+			if (response.signature.length !== 64) throw fault$2("solana signature is not 64 bytes");
+			return response.signature;
+		} catch (error) {
+			throw dataError(error);
+		}
+	}
+	/**
+	* Sign a raw message (SolanaSignUnsafeMessage). A message that parses as a transaction is refused
+	* before the exchange — the signature would authorise it (`mayBeTransactionMessage`, mirroring both
+	* firmwares' own check: sign_unsafe_message.py sanitize_message, fsm_msg_solana.h "Valid
+	* transaction message format is not allowed").
+	*/
+	async function signSolanaRawMessage(exchange, path, message) {
+		checkPath$2(path);
+		if (mayBeTransactionMessage(message)) throw invalid$2("solana message is a transaction message");
+		try {
+			const response = await call$3(exchange, {
+				def: SolanaSignUnsafeMessage,
+				value: {
+					addressN: [...path],
+					message
+				}
+			}, SolanaMessageSignature);
+			if (response.signature.length !== 64) throw fault$2("solana message signature is not 64 bytes");
+			return response.signature;
+		} catch (error) {
+			throw dataError(error);
+		}
+	}
+	var utf8 = new TextDecoder("utf-8", { fatal: true });
+	function showsText(message) {
+		let text;
+		try {
+			text = utf8.decode(message);
+		} catch (_unused) {
+			return false;
+		}
+		let printable = false;
+		for (const c of text) {
+			var _c$codePointAt;
+			const code = (_c$codePointAt = c.codePointAt(0)) !== null && _c$codePointAt !== void 0 ? _c$codePointAt : 0;
+			if (code < 32 && c !== "	" && c !== "\n" && c !== "\r" || code === 127) return false;
+			if (code >= 32 && code <= 126) printable = true;
+		}
+		return printable;
+	}
+	/**
+	* "clear" when the device renders the request's semantics, "blind" when it shows a hash or hex.
+	* Transactions: only an unversioned (legacy) message whose every instruction runs one of the
+	* program ids the Pro firmware renders (CURRENT_ALLOWED_PROGRAM_IDS — the Classic set is a
+	* superset). Raw messages: only printable text both firmwares show in full.
+	*/
+	function solanaDisplay(request, publicKey) {
+		if (request.kind === "solana.message") return showsText(request.message) ? "clear" : "blind";
+		let parsed;
+		try {
+			parsed = prepareMessage(request.message, publicKey);
+		} catch (error) {
+			if (error instanceof OneKeyError) return error.code === "unsupported" ? "unsupported" : "blind";
+			throw error;
+		}
+		if (parsed.version !== "legacy") return "blind";
+		return parsed.instructions.every((ix) => {
+			var _parsed$staticAccount;
+			return CLEAR_PROGRAM_IDS.has((_parsed$staticAccount = parsed.staticAccounts[ix.programAddressIndex]) !== null && _parsed$staticAccount !== void 0 ? _parsed$staticAccount : "");
+		}) ? "clear" : "blind";
+	}
+	// packages/wallet-kernel/src/modules/signers/onekey/protocol/tron.ts
+	/**
+	* TRON signing over the OneKey V1 schema. The device does not sign the host's raw_data: it rebuilds
+	* it from the TronSignTx fields, substituting its own derived owner address (firmware-pro
+	* core/src/apps/tron/serialize.py serialize/pack_contract, firmware-classic1s
+	* legacy/firmware/tron.c serialize/pack_contract), and echoes the rebuild in
+	* `TronSignedTx.serialized_tx`. So the client maps only the shapes the firmware can reproduce
+	* byte-for-byte and then requires the echo to equal the request — a mismatch means the signed
+	* digest covers a transaction other than the one asked for.
+	*/
+	init_objectSpread2();
+	var fault$1 = (message) => new OneKeyError("device-fault", message);
+	var invalid$1 = (message) => new OneKeyError("invalid-input", message);
+	var unsupported$1 = (message) => new OneKeyError("unsupported", message);
+	var UINT32_MAX$1 = 4294967295;
+	function checkPath$1(path) {
+		if (path.length === 0) throw invalid$1("derivation path is empty");
+	}
+	var equalBytes = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
+	function mapContract(contract) {
+		switch (contract.type) {
+			case "TransferContract":
+				if (contract.amount === 0n) throw unsupported$1("zero-amount transfer cannot be rebuilt by the device");
+				return { transferContract: {
+					toAddress: contract.to,
+					amount: contract.amount
+				} };
+			case "VoteWitnessContract":
+				for (const vote of contract.votes) if (vote.count === 0n || vote.count > BigInt(UINT32_MAX$1)) throw unsupported$1("vote count the device cannot rebuild");
+				return { voteWitnessContract: _objectSpread2({ votes: contract.votes.map((v) => ({
+					voteAddress: v.witness,
+					voteCount: Number(v.count)
+				})) }, contract.support ? { support: true } : {}) };
+			case "WithdrawBalanceContract": return { withdrawBalanceContract: {} };
+			case "TriggerSmartContract":
+				if (contract.data.length < 4) throw unsupported$1("contract call data under 4 bytes");
+				if (contract.callTokenValue === 0n && contract.tokenId !== 0n) throw unsupported$1("token id without a call token value cannot be rebuilt by the device");
+				return { triggerSmartContract: _objectSpread2(_objectSpread2({ contractAddress: contract.contract }, contract.callValue === 0n ? {} : { callValue: contract.callValue }), {}, { data: contract.data }, contract.callTokenValue === 0n ? {} : {
+					callTokenValue: contract.callTokenValue,
+					assetId: contract.tokenId
+				}) };
+			case "FreezeBalanceV2Contract":
+				if (contract.amount === 0n) throw unsupported$1("zero freeze balance cannot be rebuilt by the device");
+				return { freezeBalanceV2Contract: _objectSpread2({ frozenBalance: contract.amount }, contract.resource === 0 ? {} : { resource: contract.resource }) };
+			case "UnfreezeBalanceV2Contract":
+				if (contract.amount === 0n) throw unsupported$1("zero unfreeze balance cannot be rebuilt by the device");
+				return { unfreezeBalanceV2Contract: _objectSpread2({ unfreezeBalance: contract.amount }, contract.resource === 0 ? {} : { resource: contract.resource }) };
+			case "WithdrawExpireUnfreezeContract": return { withdrawExpireUnfreezeContract: {} };
+			case "DelegateResourceContract":
+				if (contract.balance === 0n) throw unsupported$1("zero delegate balance cannot be rebuilt by the device");
+				return { delegateResourceContract: _objectSpread2(_objectSpread2(_objectSpread2({}, contract.resource === 0 ? {} : { resource: contract.resource }), {}, {
+					balance: contract.balance,
+					receiverAddress: contract.receiver
+				}, contract.lock ? { lock: true } : {}), contract.lockPeriod === 0n ? {} : { lockPeriod: contract.lockPeriod }) };
+			case "UnDelegateResourceContract":
+				if (contract.balance === 0n) throw unsupported$1("zero undelegate balance cannot be rebuilt by the device");
+				return { undelegateResourceContract: _objectSpread2(_objectSpread2({}, contract.resource === 0 ? {} : { resource: contract.resource }), {}, {
+					balance: contract.balance,
+					receiverAddress: contract.receiver
+				}) };
+			case "CancelAllUnfreezeV2Contract": return { cancelAllUnfreezeV2Contract: {} };
+			default: throw unsupported$1(`contract type ${contract.type} is not in the firmware contract set`);
+		}
+	}
+	function mapTx(raw, publicKey) {
+		if (raw.extra.length > 0) throw unsupported$1("raw_data carries fields the device cannot rebuild");
+		if (raw.timestamp === void 0 || raw.timestamp === 0n) throw unsupported$1("raw_data without a timestamp cannot be rebuilt by the device");
+		let provider;
+		let contractName;
+		for (const extra of raw.contract.extra) if (extra.wire === 2 && extra.data !== void 0 && extra.field === 3 && provider === void 0) provider = extra.data;
+		else if (extra.wire === 2 && extra.data !== void 0 && extra.field === 4 && contractName === void 0) contractName = extra.data;
+		else throw unsupported$1("contract carries fields the device cannot rebuild");
+		const decoded = decodeTronContract(raw.contract.typeId, raw.contract.value);
+		if (decoded === void 0) throw unsupported$1(`contract type id ${raw.contract.typeId} cannot be mapped for the device`);
+		if (decoded.extra.length > 0) throw unsupported$1("contract value carries fields the device cannot rebuild");
+		const contract = mapContract(decoded.contract);
+		if (decoded.contract.owner !== tronAddressFromPublicKey(publicKey)) throw invalid$1("contract owner does not match the signing key");
+		return _objectSpread2(_objectSpread2({
+			refBlockBytes: raw.refBlockBytes,
+			refBlockHash: raw.refBlockHash,
+			expiration: raw.expiration
+		}, raw.memo === void 0 ? {} : { data: raw.memo }), {}, {
+			contract: _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, contract), provider === void 0 ? {} : { provider }), contractName === void 0 ? {} : { contractName }), raw.contract.permissionId === 0 ? {} : { permissionId: raw.contract.permissionId }),
+			timestamp: raw.timestamp
+		}, raw.feeLimit === void 0 || raw.feeLimit === 0n ? {} : { feeLimit: raw.feeLimit });
+	}
+	/**
+	* Sign a TRON transaction from its `Transaction.raw` bytes. The bytes must decode canonically
+	* (`decodeTronRawData`) and be one the firmware can rebuild exactly; the device's `serialized_tx`
+	* echo must then equal the request byte-for-byte.
+	*/
+	function tronPrepare(rawData, publicKey) {
+		let raw;
+		try {
+			raw = decodeTronRawData(rawData);
+		} catch (error) {
+			if (error instanceof ChainError) throw invalid$1(`malformed tron raw_data: ${error.message}`);
+			throw error;
+		}
+		let value;
+		try {
+			value = mapTx(raw, publicKey);
+		} catch (error) {
+			if (error instanceof ChainError) throw invalid$1(`malformed tron contract: ${error.message}`);
+			throw error;
+		}
+		return {
+			value,
+			typeId: raw.contract.typeId
+		};
+	}
+	async function signTronTransaction(exchange, path, rawData, publicKey) {
+		checkPath$1(path);
+		const { value } = tronPrepare(rawData, publicKey);
+		const response = await call$3(exchange, {
+			def: TronSignTx,
+			value: _objectSpread2({ addressN: [...path] }, value)
+		}, TronSignedTx);
+		if (response.signature.length !== 65) throw fault$1("tron signature is not 65 bytes");
+		if (response.serializedTx === void 0 || !equalBytes(response.serializedTx, rawData)) throw fault$1("device signed a different transaction than requested");
+		return response.signature.slice(0, 64);
+	}
+	/**
+	* Sign a TRON message (TronMessageType V2 — the raw-message digest keccak("\x19TRON Signed
+	* Message:\n" + len + message), identical on both firmwares: sign_message.py make_message_digest,
+	* tron.c tron_message_hash). Gated by firmware support.
+	*/
+	async function signTronMessage(exchange, info, path, message) {
+		checkPath$1(path);
+		if (!supports(info, "tron-message-v2")) throw unsupported$1("firmware does not sign TRON V2 messages");
+		const response = await call$3(exchange, {
+			def: TronSignMessage,
+			value: {
+				addressN: [...path],
+				message,
+				messageType: 2
+			}
+		}, TronMessageSignature);
+		if (response.signature.length !== 65) throw fault$1("tron message signature is not 65 bytes");
+		return response.signature.slice(0, 64);
+	}
+	var CLEAR_CONTRACTS = /* @__PURE__ */ new Set([
+		1,
+		4,
+		11,
+		12,
+		13,
+		54,
+		55,
+		56,
+		57,
+		58,
+		59
+	]);
+	/**
+	* "clear" when the device renders the request's semantics. A transaction is clear only for the
+	* contract types both firmwares lay out field-by-field; a message is clear (both show it, as text
+	* or a hex dump); typed data has no OneKey message.
+	*/
+	function tronDisplay(request, publicKey) {
+		if (request.kind === "tron.typed-data") throw unsupported$1("firmware has no TRON typed-data message");
+		if (request.kind === "tron.message") return "clear";
+		let typeId;
+		try {
+			({typeId} = tronPrepare(request.rawData, publicKey));
+		} catch (error) {
+			if (error instanceof OneKeyError) return error.code === "unsupported" ? "unsupported" : "blind";
+			throw error;
+		}
+		return CLEAR_CONTRACTS.has(typeId) ? "clear" : "blind";
+	}
+	// packages/wallet-kernel/src/modules/signers/onekey/protocol/bitcoin.ts
+	init_secp256k1();
+	init_payment();
+	init_transaction();
+	init_utils();
+	init_objectSpread2();
+	var fault = (message) => new OneKeyError("device-fault", message);
+	var invalid = (message) => new OneKeyError("invalid-input", message);
+	var unsupported = (message) => new OneKeyError("unsupported", message);
+	var SPENDADDRESS$1 = 0;
+	var SPENDWITNESS$1 = 3;
+	var SPENDP2SHWITNESS$1 = 4;
+	var SPENDTAPROOT$1 = 5;
+	var SIGN_SCRIPT_TYPES = /* @__PURE__ */ new Set([
+		SPENDADDRESS$1,
+		SPENDWITNESS$1,
+		SPENDP2SHWITNESS$1,
+		SPENDTAPROOT$1
+	]);
+	var PAYTOOPRETURN = 3;
+	var CHANGE_OUTPUT_SCRIPT_TYPES = /* @__PURE__ */ new Map([
+		[SPENDADDRESS$1, 0],
+		[SPENDWITNESS$1, 4],
+		[SPENDP2SHWITNESS$1, 5],
+		[SPENDTAPROOT$1, 6]
+	]);
+	var TXINPUT = 0;
+	var TXOUTPUT = 1;
+	var TXMETA = 2;
+	var TXFINISHED = 3;
+	var SIGHASH_ALL = 1;
+	var SIGHASH_DEFAULT = 0;
+	var u64 = (v) => BigInt.asUintN(64, v);
+	var need = (value, message) => {
+		if (value === void 0) throw invalid(message);
+		return value;
+	};
+	function checkPath(path) {
+		if (path.length === 0) throw invalid("derivation path is empty");
+		for (const element of path) if (!Number.isInteger(element) || element < 0) throw invalid("derivation path element out of range");
+	}
+	function prevoutOf(tx, i) {
+		const input = tx.getInput(i);
+		if (input.witnessUtxo !== void 0) return {
+			amount: input.witnessUtxo.amount,
+			script: input.witnessUtxo.script
+		};
+		const prev = input.nonWitnessUtxo;
+		const out = prev === null || prev === void 0 ? void 0 : prev.outputs[need(input.index, `input ${i} has no prevout index`)];
+		if (out !== void 0) return {
+			amount: out.amount,
+			script: out.script
+		};
+		throw invalid(`input ${i} carries no prevout data`);
+	}
+	function decodePrevTx(rawTx) {
+		return {
+			meta: {
+				version: rawTx.version,
+				lockTime: rawTx.lockTime,
+				inputsCount: rawTx.inputs.length,
+				outputsCount: rawTx.outputs.length,
+				extraDataLen: 0
+			},
+			inputs: rawTx.inputs.map((input) => {
+				var _input$finalScriptSig, _input$sequence;
+				return {
+					prevHash: input.txid,
+					prevIndex: input.index,
+					scriptSig: (_input$finalScriptSig = input.finalScriptSig) !== null && _input$finalScriptSig !== void 0 ? _input$finalScriptSig : /* @__PURE__ */ new Uint8Array(),
+					sequence: (_input$sequence = input.sequence) !== null && _input$sequence !== void 0 ? _input$sequence : 4294967295
+				};
+			}),
+			outputs: rawTx.outputs.map((out) => ({
+				amount: u64(out.amount),
+				scriptPubkey: out.script
+			}))
+		};
+	}
+	/**
+	* Turn a PSBT into the wire plan for the streaming SignTx protocol. Everything the device cannot
+	* honor is refused before any exchange: foreign inputs (they need SLIP-19 ownership proofs),
+	* sighashes the firmware cannot produce, script types outside its list, missing prevout data,
+	* unaddressable outputs, stray OP_RETURNs.
+	*/
+	function bitcoinPrepare(psbt, sign, network, change) {
+		let tx;
+		try {
+			tx = Transaction.fromPSBT(psbt);
+		} catch (_unused) {
+			throw invalid("PSBT failed to decode");
+		}
+		const net = network === "testnet" ? TEST_NETWORK : NETWORK;
+		const coinName = network === "testnet" ? "Testnet" : "Bitcoin";
+		const signByIndex = /* @__PURE__ */ new Map();
+		for (const entry of sign) {
+			if (!SIGN_SCRIPT_TYPES.has(entry.scriptType)) throw unsupported(`script type ${entry.scriptType} is not signable by the device`);
+			checkPath(entry.path);
+			if (entry.index >= tx.inputsLength) throw invalid(`sign index ${entry.index} out of range`);
+			if (signByIndex.has(entry.index)) throw invalid(`sign index ${entry.index} listed twice`);
+			signByIndex.set(entry.index, entry);
+		}
+		const changeByIndex = /* @__PURE__ */ new Map();
+		for (const entry of change) {
+			checkPath(entry.path);
+			if (entry.index >= tx.outputsLength) throw invalid(`change index ${entry.index} out of range`);
+			if (changeByIndex.has(entry.index)) throw invalid(`change index ${entry.index} listed twice`);
+			changeByIndex.set(entry.index, entry);
+		}
+		const inputs = [];
+		const taproot = [];
+		const prevTxs = /* @__PURE__ */ new Map();
+		const taprootOnly = tx.inputsLength > 0 && [...signByIndex.values()].every((entry) => entry.scriptType === SPENDTAPROOT$1);
+		for (let i = 0; i < tx.inputsLength; i++) {
+			const input = tx.getInput(i);
+			const entry = signByIndex.get(i);
+			if (entry === void 0) throw unsupported(`input ${i} is foreign (needs an ownership proof)`);
+			const taprootInput = entry.scriptType === SPENDTAPROOT$1;
+			const sighash = input.sighashType;
+			if (!(sighash === void 0 || sighash === SIGHASH_ALL || taprootInput && sighash === SIGHASH_DEFAULT)) throw unsupported(`input ${i} uses a sighash the device cannot produce`);
+			const prevOut = prevoutOf(tx, i);
+			if (input.nonWitnessUtxo === void 0 && !taprootOnly) throw unsupported(`input ${i} has no non_witness_utxo for the device to verify`);
+			const txid = need(input.txid, `input ${i} has no prev txid`);
+			const prevIndex = need(input.index, `input ${i} has no prevout index`);
+			if (input.nonWitnessUtxo !== void 0) {
+				var _prevTxs$get;
+				const key = bytesHex(txid);
+				if (!prevTxs.has(key)) prevTxs.set(key, decodePrevTx(input.nonWitnessUtxo));
+				const prevOut = (_prevTxs$get = prevTxs.get(key)) === null || _prevTxs$get === void 0 ? void 0 : _prevTxs$get.outputs[prevIndex];
+				if (prevOut !== void 0 && input.witnessUtxo !== void 0 && (prevOut.amount !== u64(input.witnessUtxo.amount) || !equalBytes$4(prevOut.scriptPubkey, input.witnessUtxo.script))) throw invalid(`input ${i} witness_utxo disagrees with non_witness_utxo`);
+			}
+			inputs.push(_objectSpread2(_objectSpread2({
+				addressN: [...entry.path],
+				prevHash: txid,
+				prevIndex
+			}, input.sequence === void 0 ? {} : { sequence: input.sequence }), {}, {
+				scriptType: entry.scriptType,
+				amount: u64(prevOut.amount)
+			}));
+			taproot.push(taprootInput);
+		}
+		let opReturns = 0;
+		const outputs = [];
+		for (let i = 0; i < tx.outputsLength; i++) {
+			const out = tx.getOutput(i);
+			const changeEntry = changeByIndex.get(i);
+			const amount = need(out.amount, `output ${i} has no amount`);
+			const script = need(out.script, `output ${i} has no script`);
+			if (changeEntry !== void 0) {
+				const outputScriptType = CHANGE_OUTPUT_SCRIPT_TYPES.get(changeEntry.scriptType);
+				if (outputScriptType === void 0) throw unsupported(`script type ${changeEntry.scriptType} is not a change output type`);
+				outputs.push({
+					addressN: [...changeEntry.path],
+					amount: u64(amount),
+					scriptType: outputScriptType
+				});
+				continue;
+			}
+			if (script[0] === 106) {
+				opReturns += 1;
+				if (opReturns > 1 || amount !== 0n) throw unsupported("output carries an unsupported OP_RETURN");
+				outputs.push({
+					amount: 0n,
+					scriptType: PAYTOOPRETURN,
+					opReturnData: script.slice(1)
+				});
+				continue;
+			}
+			let address;
+			try {
+				address = Address$1(net).encode(OutScript.decode(script));
+			} catch (_unused2) {
+				throw unsupported(`output ${i} script has no address form`);
+			}
+			outputs.push({
+				address,
+				amount: u64(amount),
+				scriptType: 0
+			});
+		}
+		return {
+			coinName,
+			version: tx.version,
+			lockTime: tx.lockTime,
+			inputs,
+			outputs,
+			prevTxs,
+			sign: [...sign].sort((a, b) => a.index - b.index),
+			taproot
+		};
+	}
+	var bytesHex = (data) => {
+		let hex = "";
+		for (const byte of data) hex += (byte !== null && byte !== void 0 ? byte : 0).toString(16).padStart(2, "0");
+		return hex;
+	};
+	var ecdsaToCompact = (der) => {
+		try {
+			return secp256k1.Signature.fromBytes(der, "der").toBytes("compact");
+		} catch (_unused3) {
+			throw fault("ecdsa signature is not strict DER");
+		}
+	};
+	var schnorrToCompact = (signature) => {
+		if (signature.length !== 64) throw fault("schnorr signature is not 64 bytes");
+		return signature;
+	};
+	/**
+	* Drive the streaming loop: SignTx, then answer each TxRequest with the matching TxAck until
+	* TXFINISHED. Returns one 64-byte signature per `sign` entry, in sign order.
+	*/
+	async function signBitcoinTransaction(exchange, info, prepared) {
+		const { inputs, outputs, prevTxs, sign, taproot } = prepared;
+		const signatures = inputs.map(() => void 0);
+		let prevTotal = 0;
+		for (const prev of prevTxs.values()) prevTotal += prev.inputs.length + prev.outputs.length;
+		const maxRounds = 8 * (inputs.length + outputs.length + prevTotal) + 32;
+		let request = await call$3(exchange, {
+			def: BtcSignTx,
+			value: {
+				outputsCount: outputs.length,
+				inputsCount: inputs.length,
+				coinName: prepared.coinName,
+				version: prepared.version,
+				lockTime: prepared.lockTime
+			}
+		}, BtcTxRequest);
+		for (let round = 0;; round++) {
+			var _details$extraDataLen;
+			if (round > maxRounds) throw fault("bitcoin signing exceeded the round bound");
+			const { serialized } = request;
+			if ((serialized === null || serialized === void 0 ? void 0 : serialized.signature) !== void 0) {
+				const index = serialized.signatureIndex;
+				if (index === void 0 || index >= inputs.length || signatures[index] !== void 0) throw fault("device returned an unexpected signature index");
+				signatures[index] = taproot[index] === true ? schnorrToCompact(serialized.signature) : ecdsaToCompact(serialized.signature);
+			}
+			if (request.requestType === TXFINISHED) break;
+			const { details } = request;
+			const index = details === null || details === void 0 ? void 0 : details.requestIndex;
+			if (details !== void 0 && ((_details$extraDataLen = details.extraDataLen) !== null && _details$extraDataLen !== void 0 ? _details$extraDataLen : 0) !== 0) throw fault("device requested extra data");
+			if (request.requestType === TXINPUT) {
+				if (index === void 0) throw fault("device requested an input without an index");
+				if ((details === null || details === void 0 ? void 0 : details.txHash) === void 0) {
+					const input = inputs[index];
+					if (input === void 0) throw fault("device requested an out-of-range input");
+					request = await call$3(exchange, {
+						def: BtcTxAckInput,
+						value: { tx: { input } }
+					}, BtcTxRequest);
+				} else {
+					const prev = prevTxs.get(bytesHex(details.txHash));
+					const input = prev === null || prev === void 0 ? void 0 : prev.inputs[index];
+					if (prev === void 0 || input === void 0) throw fault("device requested an unknown previous input");
+					request = await call$3(exchange, {
+						def: BtcTxAckPrevInput,
+						value: { tx: { input } }
+					}, BtcTxRequest);
+				}
+			} else if (request.requestType === TXOUTPUT) {
+				if (index === void 0) throw fault("device requested an output without an index");
+				if ((details === null || details === void 0 ? void 0 : details.txHash) === void 0) {
+					const output = outputs[index];
+					if (output === void 0) throw fault("device requested an out-of-range output");
+					request = await call$3(exchange, {
+						def: BtcTxAckOutput,
+						value: { tx: { output } }
+					}, BtcTxRequest);
+				} else {
+					const prev = prevTxs.get(bytesHex(details.txHash));
+					const output = prev === null || prev === void 0 ? void 0 : prev.outputs[index];
+					if (prev === void 0 || output === void 0) throw fault("device requested an unknown previous output");
+					request = await call$3(exchange, {
+						def: BtcTxAckPrevOutput,
+						value: { tx: { output } }
+					}, BtcTxRequest);
+				}
+			} else if (request.requestType === TXMETA) {
+				const txHash = details === null || details === void 0 ? void 0 : details.txHash;
+				if (txHash === void 0) throw fault("device requested transaction metadata without a hash");
+				const prev = prevTxs.get(bytesHex(txHash));
+				if (prev === void 0) throw fault("device requested an unknown previous transaction");
+				request = await call$3(exchange, {
+					def: BtcTxAckPrevMeta,
+					value: { tx: prev.meta }
+				}, BtcTxRequest);
+			} else {
+				var _request$requestType;
+				throw fault(`device sent unhandled request type ${(_request$requestType = request.requestType) !== null && _request$requestType !== void 0 ? _request$requestType : -1}`);
+			}
+		}
+		return sign.map((entry) => {
+			const signature = signatures[entry.index];
+			if (signature === void 0) throw fault("device finished without a signature for every input");
+			return signature;
+		});
+	}
+	/**
+	* Every request `bitcoinPrepare` accepts is rendered field-by-field by the device — each non-change
+	* output address and amount plus the fee (firmware-pro core/src/apps/bitcoin/sign_tx/layout.py,
+	* classic1s legacy/firmware/signing.c) — so the classification is "clear" for anything preparable,
+	* "unsupported" for what it refuses. Messages are always shown in full.
+	*/
+	function bitcoinDisplay(info, request) {
+		if (request.kind === "bitcoin.message") return request.format === "bip322-simple" && !supports(info, "btc-bip322") ? "unsupported" : "clear";
+		try {
+			bitcoinPrepare(request.psbt, request.sign, request.network, request.change);
+			return "clear";
+		} catch (error) {
+			if (error instanceof OneKeyError) return "unsupported";
+			throw error;
+		}
+	}
+	/**
+	* Sign a bitcoin message. `legacy` produces the 65-byte header‖r‖s compact signature and returns
+	* r‖s; `bip322-simple` is gated by firmware support (pro ≥ 4.9.3 — SDK api/btc/BTCSignMessage.ts)
+	* and returns the single embedded signature.
+	*/
+	async function signBitcoinMessage(exchange, info, path, message, options) {
+		checkPath(path);
+		const bip322 = options.format === "bip322-simple";
+		if (bip322 && !supports(info, "btc-bip322")) throw unsupported("firmware does not sign BIP-322 messages");
+		const response = await call$3(exchange, {
+			def: BtcSignMessage,
+			value: _objectSpread2(_objectSpread2({
+				addressN: [...path],
+				message,
+				coinName: options.network === "testnet" ? "Testnet" : "Bitcoin",
+				scriptType: options.scriptType
+			}, options.format === "legacy" ? { noScriptType: true } : {}), bip322 ? { isBip322Simple: true } : {})
+		}, BtcMessageSignature);
+		if (bip322) return extractBip322Signature(response.signature, options.scriptType);
+		if (response.signature.length !== 65) throw fault("bitcoin message signature is not 65 bytes");
+		return response.signature.slice(1);
+	}
+	/**
+	* Extract the single signature from a BIP-322 simple witness serialization: P2WPKH carries DER+0x01
+	* (→ compact r‖s), P2TR carries a raw 64-byte schnorr (a 65-byte trailing-0x01 form is refused).
+	*/
+	function extractBip322Signature(signature, scriptType) {
+		let offset = 0;
+		const readVarint = () => {
+			let result = 0;
+			let shift = 0;
+			for (;;) {
+				var _signature$offset;
+				if (offset >= signature.length || shift > 28) throw fault("bip322 witness truncated varint");
+				const byte = (_signature$offset = signature[offset]) !== null && _signature$offset !== void 0 ? _signature$offset : 0;
+				offset += 1;
+				result += byte % 128 * 2 ** shift;
+				if (byte < 128) return result;
+				shift += 7;
+			}
+		};
+		const itemCount = readVarint();
+		if (itemCount < 1 || itemCount > 8) throw fault("bip322 signature has no usable stack items");
+		const items = [];
+		for (let i = 0; i < itemCount; i++) {
+			const length = readVarint();
+			if (length < 1 || offset + length > signature.length) throw fault("bip322 witness item out of range");
+			items.push(signature.slice(offset, offset + length));
+			offset += length;
+		}
+		const [item] = items;
+		if (scriptType === SPENDTAPROOT$1) {
+			if (item === void 0 || item.length !== 64 || items.length !== 1) throw fault("bip322 schnorr signature is not a single 64-byte item");
+			return item;
+		}
+		if (item === void 0 || item.length < 9) throw fault("bip322 signature item is empty");
+		return ecdsaToCompact(item.slice(0, -1));
+	}
+	// packages/wallet-kernel/src/modules/signers/onekey/errors.ts
+	/**
+	* OneKey protocol errors into kernel errors: the `OneKeyError` codes the protocol client throws map
+	* onto the signer module's contract codes — `user-rejected` maps to `device-rejected` like every
+	* other refusal, everything transport-side is `integrity`. The throwers `integrity` and
+	* `wrongDevice` are the never-returning guards the driver files share.
+	*/
+	var KERNEL_CODE = {
+		frame: "integrity",
+		"device-fault": "integrity",
+		"device-error": "integrity",
+		"user-rejected": "device-rejected",
+		"pin-invalid": "device-locked",
+		"device-locked": "device-locked",
+		"not-initialized": "unsupported",
+		unsupported: "unsupported",
+		"invalid-input": "invalid-input"
+	};
+	function integrity$1(message) {
+		throw new KernelError("integrity", message);
+	}
+	function wrongDevice() {
+		throw new KernelError("wrong-device", "the device answered with different keys");
+	}
+	/** OneKeyError → KernelError. OneKeyError messages are static by contract — reuse them as-is. */
+	function kernelError(error) {
+		if (error instanceof OneKeyError) return new KernelError(KERNEL_CODE[error.code], error.message);
+		return error instanceof Error ? error : integrity$1("the device exchange failed");
+	}
+	var SCRIPT_TYPE = {
+		"btc.bip44": 0,
+		"btc.bip49": 4,
+		"btc.bip84": 3,
+		"btc.bip86": 5
+	};
+	/** `mainnet` | `testnet` — the only coin names the wire messages know. */
+	var btcCoinName = (network) => bitcoinNetwork(network).coinType === 0 ? "mainnet" : "testnet";
+	/**
+	* The wire sign list of a bitcoin.psbt stage: `inputs`/`tasks` are aligned by the planner, so entry
+	* i takes the PSBT index of input i, the path of task i and the template of the request's `sign`
+	* row for that index. A plan whose rows do not line up is `integrity` — the signer must never sign
+	* under a different key than the plan claimed.
+	*/
+	var psbtEntries = (request, stage) => {
+		const scriptType = /* @__PURE__ */ new Map();
+		for (const entry of request.sign) {
+			const type = SCRIPT_TYPE[entry.template];
+			if (type === void 0) integrity$1(`unknown bitcoin template ${entry.template}`);
+			scriptType.set(entry.index, type);
+		}
+		return stage.inputs.map((input, i) => {
+			const type = scriptType.get(input.index);
+			const task = stage.tasks[i];
+			if (type === void 0 || task === void 0) integrity$1("the plan's inputs and tasks disagree");
+			return {
+				index: input.index,
+				path: task.path,
+				scriptType: type
+			};
+		});
+	};
+	// packages/wallet-kernel/src/modules/signers/onekey/display.ts
+	var MODEL = {
+		classic: "classic",
+		classic1s: "classic1s",
+		pure: "pure",
+		mini: "mini",
+		touch: "touch",
+		pro: "pro"
+	};
+	var CAPABILITY_ETHEREUM_TYPED_DATA = 1e3;
+	var atLeast = (firmware, version) => firmware[0] === version[0] ? firmware[1] === version[1] ? firmware[2] >= version[2] : firmware[1] > version[1] : firmware[0] > version[0];
+	/**
+	* The DeviceInfo a paired record can promise: model and firmware come from the claim stored at
+	* pairing; capabilities are never stored, so the classic family's typed-data stream flag is derived
+	* from firmware alone — SDK `api/evm/EVMSignTypedData.ts` supportEip712OnClassic advertises
+	* Capability_EthereumTypedData only on Classic 1S/Pure from 3.14.0 (classic/mini never do;
+	* touch/pro stream unconditionally).
+	*/
+	var infoOf = (identity) => {
+		var _identity$model, _identity$firmware;
+		const model = MODEL[(_identity$model = identity.model) !== null && _identity$model !== void 0 ? _identity$model : ""];
+		const match = /^(\d+)\.(\d+)\.(\d+)$/.exec((_identity$firmware = identity.firmware) !== null && _identity$firmware !== void 0 ? _identity$firmware : "");
+		if (model === void 0 || match === null) return;
+		const version = [
+			Number(match[1]),
+			Number(match[2]),
+			Number(match[3])
+		];
+		return {
+			model,
+			firmware: version,
+			deviceId: "",
+			capabilities: (model === "classic1s" || model === "pure") && atLeast(version, [
+				3,
+				14,
+				0
+			]) ? [CAPABILITY_ETHEREUM_TYPED_DATA] : [],
+			bitcoinOnly: false,
+			pinProtection: false,
+			passphraseProtection: false,
+			unlocked: true,
+			sessionId: void 0
+		};
+	};
+	/** Family display functions take the signing key from the plan's first task. */
+	var displayFor = (request, stage, info) => {
+		const [task] = stage.tasks;
+		switch (stage.kind) {
+			case "evm.transaction":
+				if (request.kind !== "evm.transaction") integrity$1("the request is not an evm transaction");
+				return evmDisplay(info, {
+					kind: "evm.transaction",
+					tx: request.tx
+				});
+			case "evm.personal-message":
+			case "evm.fiat24-session":
+				if (request.kind !== stage.kind) integrity$1("the request and stage kinds disagree");
+				return "clear";
+			case "evm.typed-data":
+				if (request.kind !== "evm.typed-data") integrity$1("the request is not evm typed data");
+				return evmDisplay(info, {
+					kind: "evm.typed-data",
+					typedData: request.typedData
+				});
+			case "solana.transaction":
+				if (request.kind !== "solana.transaction" || task === void 0) integrity$1("the request is not a solana transaction");
+				return solanaDisplay({
+					kind: "solana.transaction",
+					message: request.message
+				}, task.publicKey);
+			case "solana.message":
+				if (request.kind !== "solana.message" || task === void 0) integrity$1("the request is not a solana message");
+				return solanaDisplay({
+					kind: "solana.message",
+					message: request.message
+				}, task.publicKey);
+			case "tron.transaction":
+				if (request.kind !== "tron.transaction" || task === void 0) integrity$1("the request is not a tron transaction");
+				return tronDisplay({
+					kind: "tron.transaction",
+					rawData: request.rawData
+				}, task.publicKey);
+			case "tron.message":
+				if (request.kind !== "tron.message" || task === void 0) integrity$1("the request is not a tron message");
+				return tronDisplay({ kind: "tron.message" }, task.publicKey);
+			case "tron.typed-data": return "unsupported";
+			case "bitcoin.psbt":
+				if (request.kind !== "bitcoin.psbt") integrity$1("the request is not a bitcoin psbt");
+				return bitcoinDisplay(info, {
+					kind: "bitcoin.psbt",
+					psbt: request.psbt,
+					network: btcCoinName(request.network),
+					sign: psbtEntries(request, stage),
+					change: []
+				});
+			case "bitcoin.message":
+				if (request.kind !== "bitcoin.message") integrity$1("the request is not a bitcoin message");
+				return bitcoinDisplay(info, {
+					kind: "bitcoin.message",
+					format: request.format
+				});
+		}
+	};
+	var display = (request, plan, identity) => {
+		const info = infoOf(identity);
+		if (info === void 0) return "unsupported";
+		return displayFor(request, plan, info);
+	};
+	// packages/wallet-kernel/src/modules/signers/onekey/link.ts
+	/**
+	* The link adapter every OneKey operation uses: one framed Protocol-V1 command is one `message`
+	* request on the `DeviceLink`, and the answer must be a `message` too — any other response kind
+	* means the host lied about the exchange it ran: `integrity`.
+	*/
+	/** The Protocol-V1 exchange over the generic message transport: `message` answers only. */
+	var exchangeOf = (link) => {
+		return async (data) => {
+			const response = await link.exchange({
+				kind: "message",
+				data
+			});
+			if (response.kind !== "message") throw new KernelError("integrity", "the device answer is not a message");
+			return response.data;
+		};
+	};
+	// packages/wallet-kernel/src/modules/signers/onekey/pair.ts
+	/**
+	* Pairing and account fetch. `pair` initializes the session, pins the four bitcoin purposes at
+	* mainnet coin 0' plus the EVM and TRON account nodes through GetPublicKey — every answer carries
+	* root_fingerprint and they must all agree on one master — and the SLIP-10 Solana leaf, then
+	* cross-checks one derived leaf address per family against the pinned nodes locally. `accounts`
+	* fetches the paths the caller still needs; every secp256k1 node must carry the pin's master
+	* fingerprint, and an ed25519-only fetch re-probes a pinned secp256k1 node so a foreign device
+	* cannot slip its keys into the pin (`wrong-device` on any mismatch).
+	*/
+	init_bip32();
+	var HARDENED$2 = 2147483648;
+	/**
+	* The account paths pairing pins: the four bitcoin purposes at mainnet coin 0', the EVM and TRON
+	* account nodes (all through GetPublicKey — it accepts any path), and the SLIP-10 Solana leaf.
+	* Every GetPublicKey answer carries root_fingerprint; they must all agree on one device identity.
+	*/
+	var BIP84_ACCOUNT = [
+		2147483732,
+		HARDENED$2,
+		HARDENED$2
+	];
+	var EVM_ACCOUNT = [
+		2147483692,
+		2147483708,
+		HARDENED$2
+	];
+	var TRON_ACCOUNT = [
+		2147483692,
+		2147483843,
+		HARDENED$2
+	];
+	var PAIR_SECP256K1 = [
+		{
+			path: [
+				2147483692,
+				HARDENED$2,
+				HARDENED$2
+			],
+			scriptType: 0
+		},
+		{
+			path: [
+				2147483697,
+				HARDENED$2,
+				HARDENED$2
+			],
+			scriptType: 4
+		},
+		{
+			path: BIP84_ACCOUNT,
+			scriptType: 3
+		},
+		{
+			path: [
+				2147483734,
+				HARDENED$2,
+				HARDENED$2
+			],
+			scriptType: 5
+		},
+		{ path: EVM_ACCOUNT },
+		{ path: TRON_ACCOUNT }
+	];
+	var PAIR_SOLANA = [
+		2147483692,
+		2147484149,
+		HARDENED$2,
+		HARDENED$2
+	];
+	var BTC_MAINNET = "bip122:000000000019d6689c085ae165831e93";
+	/** `m/44'/{coin}'/0'/0/0` — the leaf pairing cross-checks on. */
+	var leafPath0 = (family) => [
+		2147483692,
+		(family === "tron" ? 195 : 60) + HARDENED$2,
+		HARDENED$2,
+		0,
+		0
+	];
+	/** Public-derive `tail` under `node` — the local half of the pairing cross-checks. */
+	var deriveLeaf = (node, tail) => {
+		const root = new HDKey$1({
+			publicKey: node.publicKey,
+			chainCode: node.chainCode
+		});
+		const child = tail.length === 0 ? root : root.derive(`m/${tail.join("/")}`);
+		if (child.publicKey === null) integrity$1("public derivation under the account node failed");
+		return child.publicKey;
+	};
+	/** The account node's serialized xpub — the same fields the pinned material serializes. */
+	var xpubOf = (node, versions) => {
+		var _node$path$at;
+		if (node.parent === void 0) integrity$1("the pinned node carries no parent fingerprint");
+		return new HDKey$1({
+			versions,
+			depth: node.path.length,
+			index: (_node$path$at = node.path.at(-1)) !== null && _node$path$at !== void 0 ? _node$path$at : 0,
+			parentFingerprint: fingerprintNumber$1(node.parent),
+			chainCode: node.chainCode,
+			publicKey: node.publicKey
+		}).publicExtendedKey;
+	};
+	/** The deepest pinned node that prefixes `path` — the account node the leaf derives under. */
+	var ancestorOf = (pin, path) => pin.nodes.filter((node) => node.path.length < path.length && node.path.every((v, i) => path[i] === v)).sort((a, b) => b.path.length - a.path.length)[0];
+	var pair = async (link) => {
+		const exchange = exchangeOf(link);
+		try {
+			const info = await initialize(exchange);
+			const nodes = [];
+			let fingerprint;
+			for (const { path, scriptType } of PAIR_SECP256K1) {
+				const node = await publicNode(exchange, path, scriptType === void 0 ? {} : { scriptType });
+				if (node.rootFingerprint === void 0) integrity$1("the device reports no master fingerprint");
+				if (fingerprint === void 0) fingerprint = node.rootFingerprint;
+				else if (!equalBytes$10(fingerprint, node.rootFingerprint)) integrity$1("the device reports inconsistent master fingerprints");
+				nodes.push({
+					path: node.path,
+					publicKey: node.publicKey,
+					chainCode: node.chainCode,
+					parent: node.parent
+				});
+			}
+			const solana = await solanaPublicKey(exchange, PAIR_SOLANA, false);
+			const evmLeaf = await address(exchange, "evm", leafPath0("evm"), { showDisplay: false });
+			const tronLeaf = await address(exchange, "tron", leafPath0("tron"), { showDisplay: false });
+			const btcLeaf = await address(exchange, "bitcoin", [
+				2147483732,
+				HARDENED$2,
+				HARDENED$2,
+				0,
+				0
+			], {
+				showDisplay: false,
+				scriptType: 3
+			});
+			if (fingerprint === void 0) integrity$1("pairing collected no account nodes");
+			const nodeFor = (path) => {
+				var _nodes$find;
+				return (_nodes$find = nodes.find((n) => samePath(n.path, path))) !== null && _nodes$find !== void 0 ? _nodes$find : integrity$1("pairing collected too few account nodes");
+			};
+			if (evmLeaf !== evmAddressFromPublicKey(deriveLeaf(nodeFor(EVM_ACCOUNT), [0, 0]))) integrity$1("the device derives a different evm address than its node");
+			if (tronLeaf !== tronAddressFromPublicKey(deriveLeaf(nodeFor(TRON_ACCOUNT), [0, 0]))) integrity$1("the device derives a different tron address than its node");
+			const net = bitcoinNetwork(BTC_MAINNET);
+			if (btcLeaf !== bitcoinAddressFromXpub(xpubOf(nodeFor(BIP84_ACCOUNT), net.bip32), "btc.bip84", BTC_MAINNET, 0, 0)) integrity$1("the device derives a different bitcoin address than its node");
+			return {
+				fingerprint,
+				model: info.model,
+				firmware: info.firmware.join("."),
+				nodes,
+				ed25519: [{
+					path: PAIR_SOLANA,
+					publicKey: solana
+				}]
+			};
+		} catch (error) {
+			throw kernelError(error);
+		}
+	};
+	var accounts = async (link, need, pin) => {
+		const exchange = exchangeOf(link);
+		try {
+			await initialize(exchange);
+			const nodes = [];
+			for (const path of need.secp256k1) {
+				const node = await publicNode(exchange, path);
+				if (node.rootFingerprint === void 0 || !equalBytes$10(node.rootFingerprint, pin.fingerprint)) wrongDevice();
+				nodes.push({
+					path: node.path,
+					publicKey: node.publicKey,
+					chainCode: node.chainCode,
+					parent: node.parent
+				});
+			}
+			const ed25519 = [];
+			for (const path of need.ed25519) ed25519.push({
+				path: [...path],
+				publicKey: await solanaPublicKey(exchange, path, false)
+			});
+			if (need.secp256k1.length === 0 && need.ed25519.length > 0) {
+				const [first] = pin.nodes;
+				if (first === void 0) integrity$1("the pin carries no node to verify the device against");
+				const node = await publicNode(exchange, first.path);
+				if (!equalBytes$10(node.publicKey, first.publicKey) || !equalBytes$10(node.chainCode, first.chainCode)) wrongDevice();
+			}
+			return {
+				fingerprint: pin.fingerprint,
+				nodes,
+				ed25519
+			};
+		} catch (error) {
+			throw kernelError(error);
+		}
+	};
+	// packages/wallet-kernel/src/modules/signers/onekey/sign.ts
+	/**
+	* Signing: `sign` proves the answering device holds the pinned material above the first task's path
+	* (the account node re-fetched byte-for-byte, or the pinned ed25519 leaf key), refuses the exchange
+	* when the live Features can no longer show the confirmed request, and dispatches each stage to its
+	* family signer. `dispatch` returns one 64-byte r‖s per task, in order — the assembler re-derives
+	* recovery bits; stage/request kind agreement is asserted per case: a mismatch is a kernel
+	* inconsistency, never a device question.
+	*/
+	init_utils$2();
+	/**
+	* Proof the answering device holds the pinned material: the account node above `path` must come
+	* back byte-identical (`wrong-device` otherwise). A path no pinned node prefixes is a kernel
+	* inconsistency — `prepare` could not have derived from the pin.
+	*/
+	var checkSecp256k1 = async (exchange, pin, path) => {
+		const ancestor = ancestorOf(pin, path);
+		if (ancestor === void 0) integrity$1("no pinned account node covers the signing path");
+		const node = await publicNode(exchange, ancestor.path);
+		if (!equalBytes$10(node.publicKey, ancestor.publicKey) || !equalBytes$10(node.chainCode, ancestor.chainCode)) wrongDevice();
+	};
+	var checkEd25519 = async (exchange, pin, path) => {
+		const key = pin.ed25519.find((k) => samePath(k.path, path));
+		if (key === void 0) integrity$1("no pinned ed25519 key covers the signing path");
+		if (!equalBytes$10(await solanaPublicKey(exchange, path, false), key.publicKey)) wrongDevice();
+	};
+	/** The plan's stored stage-1 authorization: 65-byte r‖s‖v with v = 27 + yParity. */
+	var yParityOf = (authorization) => {
+		const v = authorization.at(-1);
+		if (authorization.length !== 65 || v !== 27 && v !== 28) integrity$1("the planned authorization signature is not 65-byte r‖s‖v");
+		return v === 27 ? 0 : 1;
+	};
+	var dispatch = async (exchange, info, context) => {
+		const { request, stage } = context;
+		const [task] = stage.tasks;
+		switch (stage.kind) {
+			case "evm.transaction": {
+				if (request.kind !== "evm.transaction" || task === void 0) integrity$1("the request is not an evm transaction");
+				if (request.tx.type === "eip7702" && stage.authorization === void 0) {
+					const { authorization } = await signEvmTransaction(exchange, info, task.path, request.tx);
+					if (authorization === void 0) integrity$1("the device signed no authorization");
+					return [concatBytes$3(authorization.r, authorization.s)];
+				}
+				const options = stage.authorization === void 0 ? void 0 : { authorization: {
+					yParity: yParityOf(stage.authorization),
+					r: stage.authorization.subarray(0, 32),
+					s: stage.authorization.subarray(32, 64)
+				} };
+				const { signature } = await signEvmTransaction(exchange, info, task.path, request.tx, options);
+				return [signature];
+			}
+			case "evm.personal-message":
+			case "evm.fiat24-session": {
+				if (request.kind !== stage.kind || task === void 0) integrity$1("the request and stage kinds disagree");
+				const message = request.kind === "evm.fiat24-session" ? utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline)) : request.message;
+				return [await signEvmPersonalMessage(exchange, task.path, message, BigInt(networkChainId(request.network)))];
+			}
+			case "evm.typed-data":
+				if (request.kind !== "evm.typed-data" || task === void 0) integrity$1("the request is not evm typed data");
+				return [await signTypedData(exchange, info, task.path, request.typedData, BigInt(networkChainId(request.network)))];
+			case "solana.transaction":
+				if (request.kind !== "solana.transaction" || task === void 0) integrity$1("the request is not a solana transaction");
+				return [await signSolanaTransaction(exchange, task.path, request.message, task.publicKey)];
+			case "solana.message":
+				if (request.kind !== "solana.message" || task === void 0) integrity$1("the request is not a solana message");
+				return [await signSolanaRawMessage(exchange, task.path, request.message)];
+			case "tron.transaction":
+				if (request.kind !== "tron.transaction" || task === void 0) integrity$1("the request is not a tron transaction");
+				return [await signTronTransaction(exchange, task.path, request.rawData, task.publicKey)];
+			case "tron.message":
+				if (request.kind !== "tron.message" || task === void 0) integrity$1("the request is not a tron message");
+				return [await signTronMessage(exchange, info, task.path, request.message)];
+			case "bitcoin.psbt":
+				if (request.kind !== "bitcoin.psbt") integrity$1("the request is not a bitcoin psbt");
+				return signBitcoinTransaction(exchange, info, bitcoinPrepare(request.psbt, psbtEntries(request, stage), btcCoinName(request.network), []));
+			case "bitcoin.message": {
+				if (request.kind !== "bitcoin.message" || request.format !== stage.format || task === void 0) integrity$1("the request is not a matching bitcoin message");
+				const scriptType = request.account.kind === "hd" ? SCRIPT_TYPE[request.account.template] : void 0;
+				if (scriptType === void 0) integrity$1("a hardware bitcoin message signs under an hd account template");
+				return [await signBitcoinMessage(exchange, info, task.path, utf8ToBytes$1(request.message), {
+					format: request.format,
+					scriptType,
+					network: btcCoinName(request.network)
+				})];
+			}
+			default: integrity$1("the stage kind cannot be signed");
+		}
+	};
+	var sign = async (link, context) => {
+		const exchange = exchangeOf(link);
+		try {
+			const info = await initialize(exchange);
+			const [task] = context.stage.tasks;
+			if (task === void 0) integrity$1("the stage carries no signing task");
+			await (task.scheme === "ed25519" ? checkEd25519 : checkSecp256k1)(exchange, context.pin, task.path);
+			if (displayFor(context.request, context.stage, info) !== context.display) throw new KernelError("unsupported", "the device can no longer show the confirmed request");
+			return await dispatch(exchange, info, context);
+		} catch (error) {
+			throw kernelError(error);
+		}
+	};
+	// packages/wallet-kernel/src/modules/signers/onekey/verify.ts
+	/**
+	* On-device address verification: the device shows the address and the kernel compares its answer
+	* against the request. Every check first proves the answering device holds the pin — the pinned
+	* secp256k1 account node re-fetched byte-for-byte, or for Solana the pinned leaf key itself
+	* (SolanaGetAddress shows the address and returns the key, so one exchange both proves the device
+	* and displays the check). A user rejection on the device surfaces as `device-rejected`; only a
+	* shown address that differs is a negative verdict — `matched: false`.
+	*/
+	init_objectSpread2();
+	var verifyAddress = async (link, target, pin) => {
+		const exchange = exchangeOf(link);
+		try {
+			await initialize(exchange);
+			const family = target.template === "evm.bip44" ? "evm" : target.template === "tron.bip44" ? "tron" : target.template === "solana.bip44-change" ? "solana" : "bitcoin";
+			if (family === "solana") {
+				const key = pin.ed25519.find((k) => samePath(k.path, target.path));
+				if (key === void 0) integrity$1("no pinned ed25519 key covers the verify path");
+				const shown = await solanaPublicKey(exchange, target.path, true);
+				if (!equalBytes$10(shown, key.publicKey)) wrongDevice();
+				return {
+					method: "device",
+					matched: solanaAddressFromPublicKey(shown) === target.address
+				};
+			}
+			const scriptType = SCRIPT_TYPE[target.template];
+			if (family === "bitcoin" && scriptType === void 0) integrity$1(`unknown bitcoin template ${target.template}`);
+			const ancestor = ancestorOf(pin, target.path);
+			if (ancestor === void 0) integrity$1("no pinned account node covers the verify path");
+			const node = await publicNode(exchange, ancestor.path);
+			if (!equalBytes$10(node.publicKey, ancestor.publicKey) || !equalBytes$10(node.chainCode, ancestor.chainCode)) wrongDevice();
+			return {
+				method: "device",
+				matched: await address(exchange, family, target.path, _objectSpread2(_objectSpread2(_objectSpread2({ showDisplay: true }, scriptType === void 0 ? {} : { scriptType }), family === "bitcoin" ? { network: btcCoinName(target.network) } : {}), family === "evm" ? { chainId: BigInt(networkChainId(target.network)) } : {})) === target.address
+			};
+		} catch (error) {
+			throw kernelError(error);
+		}
+	};
 	// packages/wallet-kernel/src/modules/signers/drivers.ts
 	var DRIVERS = {
 		keystone: KEYSTONE_DRIVER,
-		ledger: {
+		ledger: LEDGER_DRIVER,
+		onekey: {
 			pair,
-			display,
-			sign,
 			accounts,
-			verifyAddress
+			verifyAddress,
+			display,
+			sign
 		}
 	};
 	// packages/wallet-kernel/src/modules/signers/operation.ts
@@ -55785,7 +59771,8 @@ zoo`.split("\n"));
 	// packages/wallet-kernel/src/modules/signers/prompt.ts
 	var DEVICE_NAME = {
 		keystone: "Keystone",
-		ledger: "Ledger"
+		ledger: "Ledger",
+		onekey: "OneKey"
 	};
 	var LINES = {
 		"zh-Hans": {
@@ -55958,7 +59945,6 @@ zoo`.split("\n"));
 		parseHardwareBody(body);
 		return body;
 	};
-	var samePath = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 	/**
 	* The live pin for a record: the authenticated body's keys under the claimed header fingerprint. An
 	* existing record with no claimed body means the vault lied about its records — `integrity`.
@@ -56110,7 +60096,7 @@ zoo`.split("\n"));
 						secp256k1,
 						ed25519
 					}, pin);
-					if (!equalBytes$9(fetched.fingerprint, pin.fingerprint)) throw new KernelError("wrong-device", "the answering device is not the paired one");
+					if (!equalBytes$10(fetched.fingerprint, pin.fingerprint)) throw new KernelError("wrong-device", "the answering device is not the paired one");
 					pin = mergePin(pin, fetched);
 					const body = authenticatedBody(pin);
 					await ctx.commit([{
@@ -56192,13 +60178,13 @@ zoo`.split("\n"));
 			const { request } = op;
 			if (request.account.kind === "imported") throw new KernelError("invalid-input", "an imported key is not a hardware wallet");
 			const record = hardwareRecord(ctx, request.account.walletId);
-			const { driver, device } = driverFor(record);
+			const { driver, device, header } = driverFor(record);
 			const pin = pinAt(pins, record);
 			const prepared = await prepareApproval(ctx, request, pinnedMaterial({
 				fingerprint: pin.fingerprint,
 				keys: pin
 			}), dek);
-			const display = driver.display(request, prepared.plan);
+			const display = driver.display(request, prepared.plan, header);
 			if (display === "unsupported") throw new KernelError("unsupported", "the device cannot sign this request");
 			const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
 			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => devicePrompt(chainPrompt(locale, prepared.prompt), locale, display, device));
@@ -56210,6 +60196,7 @@ zoo`.split("\n"));
 					request,
 					stage,
 					pin,
+					display,
 					random: ctx.platform.random
 				}))
 			}));
@@ -63253,7 +67240,7 @@ zoo`.split("\n"));
 	*/
 	function bitcoinAddressScript(address, network) {
 		try {
-			return OutScript.encode(Address(btcNetwork(network)).decode(address));
+			return OutScript.encode(Address$1(btcNetwork(network)).decode(address));
 		} catch (error) {
 			throw new SparkInputError(`address: not a ${network} Bitcoin address`, { cause: error });
 		}
@@ -65931,13 +69918,13 @@ zoo`.split("\n"));
 	* matching it exactly per the E1-b table — single-use kinds consume, lightning/exit spend a
 	* cumulative budget deduped by leaf public key.
 	*/
-	var transferCovered = (outflow, intent) => outflow.receivers.length > 0 && outflow.receivers.every((receiver) => intent.receivers.some((wanted) => equalBytes$9(wanted.identityPublicKey, receiver.identityPublicKey) && receiver.amountSats <= wanted.amountSats));
+	var transferCovered = (outflow, intent) => outflow.receivers.length > 0 && outflow.receivers.every((receiver) => intent.receivers.some((wanted) => equalBytes$10(wanted.identityPublicKey, receiver.identityPublicKey) && receiver.amountSats <= wanted.amountSats));
 	var lightningCovered = async (state, rt, key, network, outflow, approval, intent) => {
 		const signer = state.signers.get(key);
 		const { paymentHash } = approval.decoded;
 		const budget = approval.decoded.invoiceAmountSats;
 		if (signer === void 0 || paymentHash === void 0 || budget === void 0) return false;
-		if (!equalBytes$9(rt.lightningSendHtlcScript({
+		if (!equalBytes$10(rt.lightningSendHtlcScript({
 			paymentHash,
 			sspIdentityPublicKey: rt.sparkNetworkConfig(network).ssp.identityPublicKey,
 			identityPublicKey: await signer.identityPublicKey()
@@ -65950,7 +69937,7 @@ zoo`.split("\n"));
 	var exitCovered = (outflow, approval, intent) => {
 		const { addressScript } = approval.decoded;
 		if (addressScript === void 0) return false;
-		if (!outflow.exitOutputs.some((output) => equalBytes$9(output.script, addressScript) && output.amountSats >= intent.amountSats)) return false;
+		if (!outflow.exitOutputs.some((output) => equalBytes$10(output.script, addressScript) && output.amountSats >= intent.amountSats)) return false;
 		const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$5(leaf.publicKey)));
 		if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > intent.amountSats + intent.maxFeeSats) return false;
 		for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$5(leaf.publicKey), leaf.amountSats);
@@ -65959,7 +69946,7 @@ zoo`.split("\n"));
 	var onchainCovered = (rt, outflow, approval, intent) => {
 		const { addressScript } = approval.decoded;
 		if (addressScript === void 0) return false;
-		if (!outflow.outputs.every((output) => equalBytes$9(output.script, rt.EPHEMERAL_ANCHOR_SCRIPT) || equalBytes$9(output.script, addressScript))) return false;
+		if (!outflow.outputs.every((output) => equalBytes$10(output.script, rt.EPHEMERAL_ANCHOR_SCRIPT) || equalBytes$10(output.script, addressScript))) return false;
 		return outflow.inputSats - outflow.totalSats <= intent.maxFeeSats;
 	};
 	/**
@@ -65977,8 +69964,8 @@ zoo`.split("\n"));
 		const spent = /* @__PURE__ */ new Map();
 		for (const output of outputs) {
 			var _spent$get;
-			if (equalBytes$9(output.ownerPublicKey, identity)) continue;
-			if (!equalBytes$9(output.tokenIdentifier, intent.tokenIdentifier)) return false;
+			if (equalBytes$10(output.ownerPublicKey, identity)) continue;
+			if (!equalBytes$10(output.tokenIdentifier, intent.tokenIdentifier)) return false;
 			const owner = bytesToHex$5(output.ownerPublicKey);
 			spent.set(owner, ((_spent$get = spent.get(owner)) !== null && _spent$get !== void 0 ? _spent$get : 0n) + output.amount);
 		}
@@ -66354,7 +70341,7 @@ zoo`.split("\n"));
 					});
 					else {
 						before.delete(`${record.kind}/${record.id}`);
-						if (prior.header !== record.header || !equalBytes$9(prior.sealed, record.sealed)) opened.push({
+						if (prior.header !== record.header || !equalBytes$10(prior.sealed, record.sealed)) opened.push({
 							kind: record.kind,
 							id: record.id,
 							header: record.header,
@@ -66370,7 +70357,7 @@ zoo`.split("\n"));
 				const priorFactors = new Map(prev.factors.map((factor) => [factor.id, factor]));
 				for (const factor of next.factors) {
 					const prior = priorFactors.get(factor.id);
-					if ((prior === void 0 || prior.header !== factor.header || !equalBytes$9(prior.sealed, factor.sealed)) && !factorBindingOk(dek, factor)) throw new KernelError("integrity", "factor binding does not match the vault", void 0, true);
+					if ((prior === void 0 || prior.header !== factor.header || !equalBytes$10(prior.sealed, factor.sealed)) && !factorBindingOk(dek, factor)) throw new KernelError("integrity", "factor binding does not match the vault", void 0, true);
 				}
 			} catch (_unused) {
 				if (!handedOff) for (const record of opened) wipe$1(record.plaintext);
