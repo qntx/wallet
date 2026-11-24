@@ -8,6 +8,8 @@
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { nobleBackend } from "@qntx/nostr";
 
+import { bindNativeAnchor } from "../../../packages/wallet-native/kernel/anchor.ts";
+import type { KernelAnchorNative } from "../../../packages/wallet-native/kernel/anchor.ts";
 import { bindNativeCardReader } from "../../../packages/wallet-native/kernel/card.ts";
 import { startKernel } from "../../../packages/wallet-kernel/src/kernel.ts";
 import { shortId } from "../../../packages/wallet-kernel/src/modules/card/protocol/identity.ts";
@@ -26,6 +28,7 @@ declare const __qntx: {
   readonly elapsed: () => number;
   readonly setTimer: (delayMs: number, fn: () => void) => () => void;
   readonly cardReader: Parameters<typeof bindNativeCardReader>[0];
+  readonly anchor: KernelAnchorNative;
   readonly pbkdf2: (
     hash: "sha256" | "sha512",
     password: Uint8Array,
@@ -110,6 +113,7 @@ const platform: KernelPlatform = {
       );
     }),
   store: createMemoryStore(),
+  anchor: bindNativeAnchor(__qntx.anchor),
   keystore: undefined,
   passkey: undefined,
   card: {
