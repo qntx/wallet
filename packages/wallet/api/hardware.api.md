@@ -45,6 +45,12 @@ type BackupInfo = {
     readonly createdAt: number;
 };
 
+// @public
+export type BlePort = {
+    write: (frame: Uint8Array) => Promise<void>;
+    read: () => Promise<Uint8Array>;
+};
+
 // @public (undocumented)
 type CardInfo = {
     readonly cardId: string;
@@ -382,6 +388,12 @@ type HardwareWalletInfo = {
 };
 
 // @public
+export type HidPort = {
+    write: (report: Uint8Array) => Promise<void>;
+    read: () => Promise<Uint8Array>;
+};
+
+// @public
 type InitialFactor = {
     readonly kind: "passkey";
     readonly name: string;
@@ -407,22 +419,10 @@ type KeysApi = {
 };
 
 // @public
-export function ledgerBleExchange(port: LedgerBlePort): Promise<(apdu: Uint8Array) => Promise<Uint8Array>>;
+export function ledgerBleExchange(port: BlePort): Promise<(apdu: Uint8Array) => Promise<Uint8Array>>;
 
 // @public
-export type LedgerBlePort = {
-    write: (frame: Uint8Array) => Promise<void>;
-    read: () => Promise<Uint8Array>;
-};
-
-// @public
-export function ledgerHidExchange(port: LedgerHidPort, channel: number): (apdu: Uint8Array) => Promise<Uint8Array>;
-
-// @public
-export type LedgerHidPort = {
-    write: (report: Uint8Array) => Promise<void>;
-    read: () => Promise<Uint8Array>;
-};
+export function ledgerHidExchange(port: HidPort, channel: number): (apdu: Uint8Array) => Promise<Uint8Array>;
 
 // @public
 export function ledgerIo(apdu: (apdu: Uint8Array) => Promise<Uint8Array>): DeviceIo;
@@ -455,7 +455,13 @@ type NostrKeyRef = {
 };
 
 // @public
-export const oneKeyAnswerLength: (firstChunk: Uint8Array, transport: "usb" | "ble") => number;
+export function oneKeyBleExchange(port: BlePort, mtu: number): (data: Uint8Array) => Promise<Uint8Array>;
+
+// @public
+export function oneKeyHidExchange(port: HidPort): (data: Uint8Array) => Promise<Uint8Array>;
+
+// @public
+export function oneKeyIo(exchange: (data: Uint8Array) => Promise<Uint8Array>): DeviceIo;
 
 // @public
 export const qrParts: (payload: QrPayload, options?: {

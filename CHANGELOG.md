@@ -1100,8 +1100,9 @@ Gateway (operators):
   signing exchange. EVM legacy/EIP-1559/EIP-7702 (both stages)/personal/typed-data, Solana
   transaction/message, TRON transaction/message, Bitcoin PSBT (streaming `SignTx`, incl.
   taproot) and legacy/BIP-322 messages (BIP-322 on Pro ≥ 4.9.3). `@qntx/wallet/hardware` exports
-  `oneKeyAnswerLength` — the byte count of one device answer for USB report or BLE stream reads,
-  with the transport contract in its doc comment. `vectors/onekey/` pins emulator recordings at
+  `oneKeyHidExchange` (64-byte report writes, whole-sequence answers), `oneKeyBleExchange`
+  (MTU-split writes, concatenated notifications) and `oneKeyIo` — the host half of the OneKey
+  transport. `vectors/onekey/` pins emulator recordings at
   protocol and driver level for Classic 1S 3.21.0 and Pro 4.21.0; `onekey.yml` re-records them
   in CI.
 - `@qntx/wallet-chains/evm`: `evmSigningPreimage` — the unsigned EIP-155/EIP-2718 bytes whose

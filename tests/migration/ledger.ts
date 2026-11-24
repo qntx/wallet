@@ -1,7 +1,7 @@
 import type { HardwareWalletInfo, VerifyFactor, Wallet, WalletErrorCode } from "@qntx/wallet";
 import { WalletError } from "@qntx/wallet";
 import { hardware, ledgerBleExchange, ledgerHidExchange, ledgerIo } from "@qntx/wallet/hardware";
-import type { DeviceIo, LedgerBlePort, LedgerHidPort } from "@qntx/wallet/hardware";
+import type { DeviceIo, BlePort, HidPort } from "@qntx/wallet/hardware";
 import type { ChainSignRequest } from "@qntx/wallet/protocol";
 
 /**
@@ -51,7 +51,7 @@ export async function pairLedgerHid(wallet: Wallet, hid: HidApi): Promise<Hardwa
   if (device === undefined) {
     throw new WalletError("device-required", "no Ledger selected");
   }
-  const port: LedgerHidPort = {
+  const port: HidPort = {
     write: async (report) => device.sendReport(0, report),
     read: async () =>
       new Promise<Uint8Array>((resolve) => {
@@ -94,7 +94,7 @@ const bleUuid = (model: LedgerBleModel, characteristic: "0000" | "0001" | "0002"
 export async function ledgerBlePort(
   device: LedgerBleDevice,
   model: LedgerBleModel,
-): Promise<LedgerBlePort> {
+): Promise<BlePort> {
   const server = await device.gatt?.connect();
   if (server === undefined) {
     throw new WalletError("device-required", "the Ledger exposes no GATT server");

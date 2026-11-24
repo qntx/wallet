@@ -18,6 +18,7 @@
  */
 import type { DeviceIo, DeviceRequest, DeviceResponse } from "../protocol/hardware.ts";
 import { WalletError } from "../types.ts";
+import type { BlePort, HidPort } from "./ports.ts";
 
 export const HID_REPORT_SIZE = 64;
 
@@ -207,24 +208,12 @@ export function bleAssembler(mtu: number): Assembler {
   };
 }
 
-/** A byte-oriented HID port: 64-byte report writes and reads. */
-export type LedgerHidPort = {
-  write: (report: Uint8Array) => Promise<void>;
-  read: () => Promise<Uint8Array>;
-};
-
-/** A byte-oriented BLE port: characteristic writes and notification reads. */
-export type LedgerBlePort = {
-  write: (frame: Uint8Array) => Promise<void>;
-  read: () => Promise<Uint8Array>;
-};
-
 /**
  * One APDU exchange over HID: frames the request, reassembles the response. One call at a time — an
  * interleaved call while a previous one is in flight is `invalid-input`.
  */
 export function ledgerHidExchange(
-  port: LedgerHidPort,
+  port: HidPort,
   channel: number,
 ): (apdu: Uint8Array) => Promise<Uint8Array> {
   if (!Number.isSafeInteger(channel) || channel < 0 || channel > 0xffff) {
@@ -257,7 +246,7 @@ export function ledgerHidExchange(
 
 /** Negotiates the BLE MTU once, then returns the framed exchange. */
 export async function ledgerBleExchange(
-  port: LedgerBlePort,
+  port: BlePort,
 ): Promise<(apdu: Uint8Array) => Promise<Uint8Array>> {
   await port.write(BLE_MTU_REQUEST);
   const mtu = bleMtu(await port.read());

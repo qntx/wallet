@@ -1616,7 +1616,7 @@ vault alongside them.
 5. **Ledger.** `HARDWARE_DEVICES` gains `"ledger"`; an exhaustive switch over `HardwareDevice`
    needs the new arm. The kernel exchanges one APDU per `{ kind: "message", data }` request and
    the host frames it: `ledgerHidExchange(port, channel)` for USB (WebHID / RN HID — a
-   `LedgerHidPort` that writes and reads 64-byte reports) or `await ledgerBleExchange(port)` for
+   `HidPort` that writes and reads 64-byte reports) or `await ledgerBleExchange(port)` for
    Bluetooth (Nano X, Stax, Flex), then `ledgerIo(apdu, signal)` turns either into the `DeviceIo`
    every `hardware(wallet)` call takes. Ledger has no secure channel: whatever carries the frames
    can read them, so prefer a transport the host itself controls and tell the user that the
@@ -1639,16 +1639,17 @@ vault alongside them.
    resolves with a `HardwareWalletInfo` whose `device` is `"onekey"` and whose `model`/`firmware`
    are filled (`"classic1s"`/`"3.21.0"`, `"pro"`/`"4.21.0"`). The transport is byte-framed, not
    QR: a OneKey's `exchange` sees only `message` requests — `request.data` is one framed command
-   the host writes verbatim; the device answers one framed message. USB: 64-byte HID reports —
-   the first carries `3f 23 23` + BE u16 type + BE u32 payload length + 55 payload bytes, each
-   continuation is `3f`-prefixed with 63 — collect reports until
-   `oneKeyAnswerLength(firstReport, "usb")` bytes have arrived (the final report's padding may be
-   stale; only the declared payload matters). BLE: GATT service
+   the host writes verbatim; the device answers one framed message. `oneKeyHidExchange(port)`
+   runs USB — 64-byte HID reports, the first carrying `3f 23 23` + BE u16 type + BE u32 payload
+   length + 55 payload bytes, each continuation `3f`-prefixed with 63 — writing the request
+   report by report and collecting reports until the announced payload length (the final
+   report's padding may be stale; only the declared payload matters).
+   `oneKeyBleExchange(port, mtu)` runs BLE — GATT service
    `00000001-0000-1000-8000-00805f9b34fb`, write characteristic `…0002…` (the same report
-   sequence, split at or below the negotiated MTU), notify characteristic `…0003…` whose
-   notifications concatenate into a `9 + length` stream. `oneKeyAnswerLength` throws
-   `invalid-input` on a chunk that is not a OneKey frame. `oneKeyIo` in the snippet is the
-   `DeviceIo` shape; `pairOneKey` the call.
+   sequence, split at or below `mtu`), notify characteristic `…0003…` whose notifications
+   concatenate into a `9 + length` stream. A first chunk that is not a OneKey frame is
+   `invalid-input`. `oneKeyIo(exchange)` adapts either into the `DeviceIo` shape;
+   `oneKeyUsbIo`/`oneKeyBleIo` in the snippet show the wiring, `pairOneKey` the call.
 10. **Driver interface (kernel-private; noted for downstream driver authors).**
     `Driver.display(request, plan, identity)` takes the record header's
     `{ fingerprint, model, firmware }`, and `SignContext.display` carries the value the user was

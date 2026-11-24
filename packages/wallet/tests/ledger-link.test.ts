@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { ledgerBleExchange, ledgerHidExchange, ledgerIo } from "../src/hardware/ledger.ts";
-import type { LedgerBlePort, LedgerHidPort } from "../src/hardware/ledger.ts";
+import type { BlePort, HidPort } from "../src/hardware/ports.ts";
 import type { DeviceRequest } from "../src/protocol/hardware.ts";
 import { WalletError } from "../src/types.ts";
 
@@ -21,8 +21,8 @@ const code = async (job: Promise<unknown>): Promise<string> => {
   throw new Error("expected WalletError");
 };
 
-/** A LedgerHidPort that records writes and serves the queued reads (then errors on exhaustion). */
-const hidQueue = (reads: Uint8Array[]): { port: LedgerHidPort; written: Uint8Array[] } => {
+/** A HidPort that records writes and serves the queued reads (then errors on exhaustion). */
+const hidQueue = (reads: Uint8Array[]): { port: HidPort; written: Uint8Array[] } => {
   const written: Uint8Array[] = [];
   return {
     written,
@@ -41,8 +41,8 @@ const hidQueue = (reads: Uint8Array[]): { port: LedgerHidPort; written: Uint8Arr
   };
 };
 
-/** A LedgerBlePort that records writes and serves the queued reads (then errors on exhaustion). */
-const bleQueue = (reads: Uint8Array[]): { port: LedgerBlePort; written: Uint8Array[] } => {
+/** A BlePort that records writes and serves the queued reads (then errors on exhaustion). */
+const bleQueue = (reads: Uint8Array[]): { port: BlePort; written: Uint8Array[] } => {
   const written: Uint8Array[] = [];
   return {
     written,
@@ -61,8 +61,8 @@ const bleQueue = (reads: Uint8Array[]): { port: LedgerBlePort; written: Uint8Arr
   };
 };
 
-/** A LedgerBlePort that answers the MTU handshake, then leaves every later read pending. */
-const bleMtuThenHang = (): LedgerBlePort => {
+/** A BlePort that answers the MTU handshake, then leaves every later read pending. */
+const bleMtuThenHang = (): BlePort => {
   let reads = 0;
   return {
     write: async () => Promise.resolve(),
@@ -90,7 +90,7 @@ describe("ledger link", () => {
   });
 
   it("forbids a second exchange while one is in flight", async () => {
-    const slow: LedgerHidPort = {
+    const slow: HidPort = {
       write: async () => Promise.resolve(),
       read: async () => new Promise<Uint8Array>(() => {}),
     };

@@ -40,7 +40,8 @@ export type {
 } from "../protocol/hardware.ts";
 
 export { ledgerBleExchange, ledgerHidExchange, ledgerIo } from "./ledger.ts";
-export type { LedgerBlePort, LedgerHidPort } from "./ledger.ts";
+export { oneKeyBleExchange, oneKeyHidExchange, oneKeyIo } from "./onekey.ts";
+export type { BlePort, HidPort } from "./ports.ts";
 
 /** One running device operation: observe every exchange (and the verified `done`), cancel ends it. */
 export type HardwareTask = SignerTask<HardwareStep, HardwareResult>;
@@ -224,50 +225,6 @@ export function hardware(wallet: Wallet): HardwareApi {
   }
   return api;
 }
-
-/**
- * OneKey Protocol-V1 transport — the host contract for `device: "onekey"` operations. Every
- * `message` exchange carries one framed command in `request.data` and the device answers one framed
- * message back; the kernel owns the protobuf layer, the host only moves bytes.
- *
- * USB: both directions travel in 64-byte HID reports. The first report carries a 9-byte header —
- * `3f 23 23`, BE u16 message type, BE u32 payload length — and 55 payload bytes; every continuation
- * report starts with `3f` and carries 63. Write `request.data` report by report; to read an answer,
- * collect reports until `oneKeyAnswerLength(firstReport, "usb")` bytes have arrived and hand the
- * whole sequence back. The firmware may leave stale bytes in the final report's padding — only the
- * declared payload is meaningful, and the kernel reads only that.
- *
- * BLE: GATT service `00000001-0000-1000-8000-00805f9b34fb`, write characteristic
- * `00000002-0000-1000-8000-00805f9b34fb`, notify characteristic
- * `00000003-0000-1000-8000-00805f9b34fb`. Write `request.data` — the same 64-byte report sequence;
- * the BLE chip counts reports, not write calls — split into writes at or below the negotiated MTU.
- * The answer arrives as notifications of up to MTU bytes forming one stream: `3f 23 23` + type +
- * length + exactly `length` payload bytes (the chip strips the USB continuation markers), so
- * concatenate notifications until `oneKeyAnswerLength(first, "ble")`.
- *
- * `oneKeyAnswerLength` returns the total byte count to collect for one device answer from its first
- * chunk — USB report count times 64, or the BLE header-plus-payload size — and throws on a chunk
- * that is not a OneKey frame.
- */
-export const oneKeyAnswerLength = (firstChunk: Uint8Array, transport: "usb" | "ble"): number => {
-  if (
-    firstChunk.length < 9 ||
-    firstChunk[0] !== 0x3f ||
-    firstChunk[1] !== 0x23 ||
-    firstChunk[2] !== 0x23
-  ) {
-    throw new WalletError(
-      "invalid-input",
-      "the device answer does not start with the OneKey header",
-    );
-  }
-  const length = new DataView(
-    firstChunk.buffer,
-    firstChunk.byteOffset,
-    firstChunk.length,
-  ).getUint32(5);
-  return transport === "usb" ? 64 * Math.max(1, Math.ceil((8 + length) / 63)) : 9 + length;
-};
 
 /**
  * Firmware 3.2.2 `FRAGMENT_MAX_LENGTH_DEFAULT` (rust_c/src/common/ur.rs) — the fragment size the
