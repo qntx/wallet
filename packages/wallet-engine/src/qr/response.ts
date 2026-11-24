@@ -12,7 +12,7 @@ import { ethSignatureCodec, solSignatureCodec, tronSignatureCodec } from "@qntx/
 import { cryptoPsbtCodec, psbtCodec } from "@qntx/ur/registry";
 import { toUr } from "@qntx/ur/typed";
 import type { UrCodec } from "@qntx/ur/typed";
-import type { SignRequest } from "@qntx/wallet-chains";
+import type { EvmTransaction, SignRequest } from "@qntx/wallet-chains";
 import { samePsbtContent } from "@qntx/wallet-chains/bitcoin";
 import { recoverEvmSigner } from "@qntx/wallet-chains/evm";
 import { verifySolanaSignature } from "@qntx/wallet-chains/solana";
@@ -20,12 +20,8 @@ import { recoverTronMessageSigner, recoverTronTransactionSigner } from "@qntx/wa
 import type { QrPayload } from "@qntx/wallet/hardware";
 import type { ChainSignResult } from "@qntx/wallet/protocol";
 
-import { QrError, qrGuard } from "./errors.ts";
+import { qrGuard, resultMismatch as mismatch } from "./errors.ts";
 import type { QrRequest } from "./request.ts";
-
-function mismatch(detail: string): never {
-  throw new QrError("result-mismatch", detail);
-}
 
 /** The account the response claims — the request's address is untrusted, the caller's is not. */
 export type QrSigner = { readonly address: string };
@@ -50,20 +46,24 @@ const minimalInt = (value: number): Uint8Array => {
   return hexToBytes(hex.length % 2 === 0 ? hex : `0${hex}`);
 };
 
+/** The evm fields a probe reads — both `QrRequest` and the counterpart's `QrSignInput` fit. */
+export type EvmProbeInput =
+  | { readonly kind: "transaction"; readonly tx: EvmTransaction; readonly chainId?: number }
+  | { readonly kind: "typed-data"; readonly typedData: string; readonly chainId?: number }
+  | { readonly kind: "personal-message"; readonly message: Uint8Array; readonly chainId?: number };
+
 /** A `chain.sign`-shaped request for `recoverEvmSigner`; account/network fields are unused there. */
-const evmProbe = (request: QrRequest): SignRequest => {
-  const network = `eip155:${"chainId" in request && request.chainId !== undefined ? request.chainId : request.family === "evm" && request.kind === "transaction" ? request.tx.chainId : 1}`;
+export const evmProbe = (request: EvmProbeInput): SignRequest => {
+  const chainId = request.kind === "transaction" ? request.tx.chainId : request.chainId;
+  const network = `eip155:${chainId ?? 1}`;
   const account = { kind: "hd" as const, walletId: "", groupIndex: 0, template: "evm.bip44" };
-  if (request.family === "evm" && request.kind === "transaction") {
+  if (request.kind === "transaction") {
     return { kind: "evm.transaction", network, account, tx: request.tx };
   }
-  if (request.family === "evm" && request.kind === "typed-data") {
+  if (request.kind === "typed-data") {
     return { kind: "evm.typed-data", network, account, typedData: request.typedData };
   }
-  if (request.family === "evm" && request.kind === "personal-message") {
-    return { kind: "evm.personal-message", network, account, message: request.message };
-  }
-  return mismatch("not an EVM request");
+  return { kind: "evm.personal-message", network, account, message: request.message };
 };
 
 const evmResponse = (request: QrRequest, result: ChainSignResult, signer: QrSigner): QrPayload => {

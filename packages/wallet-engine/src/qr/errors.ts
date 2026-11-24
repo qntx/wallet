@@ -40,3 +40,18 @@ export const qrGuard = <T>(code: QrErrorCode, run: () => T): T => {
     throw new QrError(code, error instanceof Error ? error.message : "decode failed");
   }
 };
+
+/** Throw the `malformed` variant — a payload or record that cannot parse. */
+export function malformed(detail: string): never {
+  throw new QrError("malformed", detail);
+}
+
+/** Throw the `unsupported` variant — a well-formed payload outside what the qr layer serves. */
+export function unsupported(detail: string): never {
+  throw new QrError("unsupported", detail);
+}
+
+/** Throw the `result-mismatch` variant — a response or export that does not match its request. */
+export function resultMismatch(detail: string): never {
+  throw new QrError("result-mismatch", detail);
+}

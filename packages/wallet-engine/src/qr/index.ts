@@ -14,5 +14,7 @@ export { BITCOIN_MAINNET, bindQrRequest } from "./bind.ts";
 export type { QrAccountFacts } from "./bind.ts";
 export { qrSigner } from "./signer.ts";
 export type { QrAccount, QrEngineSurface, QrExportParams } from "./signer.ts";
+export { readQrExport, qrSignRequest, readQrSignature } from "./counterpart.ts";
+export type { QrLink, QrSentRequest, QrSignature, QrSignInput } from "./counterpart.ts";
 export { qrParts as qrFrames } from "@qntx/wallet/hardware";
 export type { QrPayload } from "@qntx/wallet/hardware";

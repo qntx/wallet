@@ -1004,6 +1004,15 @@ export type QrInspection = {
 };
 
 // @public
+export type QrLink = {
+    readonly family: "evm" | "solana" | "tron" | "bitcoin";
+    readonly fingerprint: string;
+    readonly path: string;
+    readonly address: string;
+    readonly xpub?: string;
+};
+
+// @public
 type QrOrigin = {
     readonly kind: "qr";
     readonly declared?: string;
@@ -1075,6 +1084,32 @@ export type QrScanOutcome = {
     readonly payload: QrPayload;
 };
 
+// @public (undocumented)
+export type QrSentRequest = {
+    readonly link: QrLink;
+    readonly input: QrSignInput;
+    readonly requestId?: Uint8Array;
+    readonly payload: QrPayload;
+};
+
+// @public (undocumented)
+export type QrSignature = {
+    readonly kind: "evm.transaction";
+    readonly signedTransaction: Uint8Array;
+} | {
+    readonly kind: "evm.signature";
+    readonly signature: Uint8Array;
+} | {
+    readonly kind: "solana.signature";
+    readonly signature: Uint8Array;
+} | {
+    readonly kind: "tron.signature";
+    readonly signature: Uint8Array;
+} | {
+    readonly kind: "bitcoin.psbt";
+    readonly psbt: Uint8Array;
+};
+
 // @public
 export type QrSigner = {
     readonly address: string;
@@ -1091,7 +1126,48 @@ export const qrSigner: (deps: {
 };
 
 // @public (undocumented)
+export type QrSignInput = {
+    readonly family: "evm";
+    readonly kind: "transaction";
+    readonly tx: EvmTransaction;
+} | {
+    readonly family: "evm";
+    readonly kind: "typed-data";
+    readonly typedData: string;
+    readonly chainId?: number;
+} | {
+    readonly family: "evm";
+    readonly kind: "personal-message";
+    readonly message: Uint8Array;
+    readonly chainId?: number;
+} | {
+    readonly family: "solana";
+    readonly kind: "transaction" | "message";
+    readonly data: Uint8Array;
+} | {
+    readonly family: "tron";
+    readonly kind: "transaction" | "message";
+    readonly data: Uint8Array;
+} | {
+    readonly family: "bitcoin";
+    readonly kind: "psbt";
+    readonly psbt: Uint8Array;
+};
+
+// @public
+export const qrSignRequest: (link: QrLink, input: QrSignInput, options: {
+    readonly random: (n: number) => Uint8Array;
+    readonly origin?: string;
+}) => QrSentRequest;
+
+// @public
+export const readQrExport: (payload: QrPayload) => ReadonlyArray<QrLink>;
+
+// @public (undocumented)
 export const readQrRequest: (payload: QrPayload) => QrRequest;
+
+// @public (undocumented)
+export const readQrSignature: (sent: QrSentRequest, payload: QrPayload) => QrSignature;
 
 // @public
 type RequestAcknowledgement = {

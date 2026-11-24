@@ -6,7 +6,7 @@
  * `device`/`name`, where a reader expects one, is the constant `"qntx"`.
  */
 import { cryptoMultiAccountsCodec } from "@qntx/ur/interop";
-import type { DerivedHdKey, Keypath, MultiAccounts, MultiAccountsKey } from "@qntx/ur/interop";
+import type { DerivedHdKey, MultiAccounts, MultiAccountsKey } from "@qntx/ur/interop";
 import { CoinType, Network, cryptoAccountCodec, cryptoHdKeyCodec } from "@qntx/ur/registry";
 import type { AccountDescriptor } from "@qntx/ur/registry";
 import { toUr } from "@qntx/ur/typed";
@@ -14,42 +14,14 @@ import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import type { QrPayload } from "@qntx/wallet/hardware";
 import type { ChainExportedKey, ChainExportResult } from "@qntx/wallet/protocol";
 
-import { QrError, qrGuard } from "./errors.ts";
+import { qrGuard, resultMismatch as mismatch, unsupported } from "./errors.ts";
+import { keypath } from "./link.ts";
 
 export type QrExportForm = "crypto-hdkey" | "crypto-account" | "crypto-multi-accounts";
 
 export type QrExport = {
   readonly payload: QrPayload;
   readonly discloses: "evm-all-addresses" | "account-addresses" | "single-addresses";
-};
-
-function mismatch(detail: string): never {
-  throw new QrError("result-mismatch", detail);
-}
-
-function unsupported(detail: string): never {
-  throw new QrError("unsupported", detail);
-}
-
-const HARDENED = 0x80000000;
-
-/** `"m/44'/60'/0'"` → the registry `Keypath`; a non-`m/` path or `*` step cannot appear here. */
-const keypath = (path: string, sourceFingerprint: number): Keypath => {
-  if (!path.startsWith("m/")) {
-    mismatch("export path must start at the master");
-  }
-  const components = path
-    .slice(2)
-    .split("/")
-    .map((step) => {
-      const hardened = step.endsWith("'");
-      const index = Number(hardened ? step.slice(0, -1) : step);
-      if (!Number.isSafeInteger(index) || index < 0 || index >= HARDENED) {
-        mismatch(`bad path step ${step}`);
-      }
-      return { kind: "index" as const, index, hardened };
-    });
-  return { components, sourceFingerprint, depth: components.length };
 };
 
 const fingerprint = (hex: string): number => {

@@ -27,6 +27,9 @@ import type { QrRequest } from "./request.ts";
 /** The Bitcoin mainnet CAIP-2 id — the only network a QR PSBT maps deterministically. */
 export const BITCOIN_MAINNET = "bip122:000000000019d6689c085ae165831e93";
 
+/** The Bitcoin testnet CAIP-2 id — the one testnet genesis an export's coin type can name. */
+export const BITCOIN_TESTNET = "bip122:00000000da84f2bafbbc53dee25a72ae";
+
 /**
  * Everything binding checks against: the selected account's authenticated facts — the master
  * fingerprint (hardware's is authenticated device info; a vault's comes from its Bitcoin account),
@@ -291,7 +294,7 @@ const SIGHASH_DEFAULT = 0;
 const SIGHASH_SINGLE_ANYONECANPAY = 0x83;
 
 /** The `p` of an account path `m/p'/coin'/g'/c/i` gives the template it must be. */
-const PURPOSE_TEMPLATE: Record<number, BitcoinTemplate> = {
+export const PURPOSE_TEMPLATE: Record<number, BitcoinTemplate> = {
   44: "btc.bip44",
   49: "btc.bip49",
   84: "btc.bip84",
@@ -306,14 +309,14 @@ const PURPOSE_SCRIPT: Record<number, "pkh" | "sh" | "wpkh" | "tr"> = {
   86: "tr",
 };
 
-type PsbtEntry = {
+export type PsbtEntry = {
   readonly fingerprint: number;
   readonly path: ReadonlyArray<number>;
   readonly tap: boolean;
   readonly leafHashes: number;
 };
 
-const inputEntries = (input: {
+export const inputEntries = (input: {
   readonly bip32Derivation?: ReadonlyArray<
     readonly [Uint8Array, { readonly fingerprint: number; readonly path: ReadonlyArray<number> }]
   >;

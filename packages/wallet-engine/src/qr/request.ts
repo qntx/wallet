@@ -24,7 +24,7 @@ import { isTronAddress, tronAddressFromBytes } from "@qntx/wallet-chains/tron";
 import type { QrPayload } from "@qntx/wallet/hardware";
 
 import { safeDisplayText } from "../display.ts";
-import { QrError, qrGuard } from "./errors.ts";
+import { QrError, malformed, qrGuard, unsupported } from "./errors.ts";
 
 const HARDENED = 0x80000000;
 
@@ -76,14 +76,6 @@ export type QrRequest =
       readonly urType: "crypto-psbt" | "psbt";
       readonly psbt: Uint8Array;
     };
-
-function malformed(detail: string): never {
-  throw new QrError("malformed", detail);
-}
-
-function unsupported(detail: string): never {
-  throw new QrError("unsupported", detail);
-}
 
 /** `ur`'s body decoded by `codec`; the codec's own tag must name the payload type. */
 const decode = <T>(payload: QrPayload, codec: UrCodec<T>): T =>

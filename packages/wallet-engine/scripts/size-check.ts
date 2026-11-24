@@ -155,10 +155,11 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "qr",
     source: "src/qr/index.ts",
-    /* Measured 71723 B: the bounded scanner, request/response/export codecs and the inspect-only
+    /* Measured 78281 B: the bounded scanner, request/response/export codecs, the watch-only
+       counterpart (export reader, request writer, signature verifier) and the inspect-only
        digest helpers plus their bundled viem/ox/dcbor closure — the @qntx/* workspace packages
        (ur, wallet, wallet-chains) are the host's peer deps and stay external. */
-    budget: 76 * 1024,
+    budget: 80 * 1024,
     external: ["@qntx/*"],
     forbidden: [],
   },
