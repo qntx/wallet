@@ -40,6 +40,7 @@ import {
   lowestTries,
   PLAN_MARGIN_MS,
   pinnedShortId,
+  savedAccess,
   tapRetry,
   walletOf,
 } from "./shared.ts";
@@ -164,7 +165,7 @@ export const signOp = (
     let code: Uint8Array | undefined;
     try {
       const material = env.ctx.externalMaterial(walletOf(env, walletId).record);
-      const saved = (): Readonly<Record<string, string>> => env.bodies.get(walletId)?.access ?? {};
+      const saved = (): Readonly<Record<string, string>> => savedAccess(env, walletId);
       {
         const { header } = walletOf(env, walletId);
         if (!header.members.every((id) => saved()[id] !== undefined)) {

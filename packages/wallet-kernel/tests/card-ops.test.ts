@@ -2991,6 +2991,51 @@ describe("card sign (fake card)", () => {
     ok(await r.h.call("card.cancel", { opId: again.opId }, r.session));
   });
 
+  it("the app lock off suspends the remembered hash; relocking re-arms it", async () => {
+    const r = await keystoreRig();
+    ok(await r.h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, r.session));
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    signResult(
+      await drive(
+        r,
+        { kind: "sign", request: evmMsg(walletId), remember: true },
+        { codes: [freshCode()], cards: taps(card) },
+        HARDWARE,
+      ),
+    );
+    const accounts = {
+      kind: "accounts",
+      walletId,
+      groupIndex: 1, // uncached — the op must tap and VERIFY
+      templates: ["btc.bip84"],
+      network: BTC_NETWORK,
+    };
+    const remembered = ok(await r.h.call("card.begin", { op: accounts }, r.session)) as {
+      opId: string;
+      step: Step;
+    };
+    expect(remembered.step.kind).toBe("tap"); // no code ask while the hash is remembered
+    ok(await r.h.call("card.cancel", { opId: remembered.opId }, r.session));
+    /* The lock off restores the silent device factor — a saved hash would VERIFY with no
+       presence at all, so the op asks for the code instead. */
+    ok(await r.h.call("vault.setAppLock", { enabled: false, verify: HARDWARE }, r.session));
+    const unlocked = ok(await r.h.call("card.begin", { op: accounts }, r.session)) as {
+      opId: string;
+      step: Step;
+    };
+    expect(unlocked.step.kind).toBe("input");
+    ok(await r.h.call("card.cancel", { opId: unlocked.opId }, r.session));
+    // Turning the lock back on — itself a presence ceremony — re-arms the saved hash.
+    ok(await r.h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, r.session));
+    const relocked = ok(await r.h.call("card.begin", { op: accounts }, r.session)) as {
+      opId: string;
+      step: Step;
+    };
+    expect(relocked.step.kind).toBe("tap");
+    ok(await r.h.call("card.cancel", { opId: relocked.opId }, r.session));
+  });
+
   it("a sign prompt over the reader text cap is card-unsupported before any tap", async () => {
     const r = await rig();
     const card = await loadedCard();

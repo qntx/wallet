@@ -15,6 +15,7 @@ import {
   lowestTries,
   missingIn,
   neededPaths,
+  savedAccess,
   tapRetry,
   walletOf,
 } from "./shared.ts";
@@ -30,7 +31,7 @@ export async function* accountsOp(
   let code: Uint8Array | undefined;
   try {
     const wallet = walletOf(env, walletId);
-    const saved = wallet.body.access ?? {};
+    const saved = savedAccess(env, walletId);
     if (!wallet.header.members.every((m) => saved[m] !== undefined)) {
       const remaining = lowestTries(wallet.header, wallet.header.members);
       code = yield* ask({
@@ -60,7 +61,7 @@ export async function* accountsOp(
             const id = bytesToHex(tap.cardId);
             let hash = hashes.get(id);
             if (hash === undefined) {
-              const remembered = (env.bodies.get(walletId)?.access ?? {})[id];
+              const remembered = savedAccess(env, walletId)[id];
               if (remembered !== undefined) {
                 hash = hexToBytes(remembered);
                 hashes.set(id, hash);

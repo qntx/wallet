@@ -43075,6 +43075,15 @@ zoo`.split("\n"));
 			record
 		};
 	};
+	/**
+	* The remembered access hashes, live only while the app lock guards them — a `device` factor
+	* means the lock is off and a saved hash would VERIFY with no presence at all, so the op asks
+	* for the code instead. The map itself stays: turning the lock back on re-arms it.
+	*/
+	var savedAccess = (env, walletId) => {
+		var _env$bodies$get$acces, _env$bodies$get;
+		return env.ctx.image.factors.some((f) => f.kind === "device") ? {} : (_env$bodies$get$acces = (_env$bodies$get = env.bodies.get(walletId)) === null || _env$bodies$get === void 0 ? void 0 : _env$bodies$get.access) !== null && _env$bodies$get$acces !== void 0 ? _env$bodies$get$acces : {};
+	};
 	/** The pinned-cert short ID of a card entry, when this kernel has seen the card. */
 	var pinnedShortId = (header, cardIdHex) => {
 		var _header$cards$find;
@@ -43289,9 +43298,8 @@ zoo`.split("\n"));
 			const hashes = /* @__PURE__ */ new Map();
 			let code;
 			try {
-				var _wallet$body$access;
 				const wallet = walletOf(env, walletId);
-				const saved = (_wallet$body$access = wallet.body.access) !== null && _wallet$body$access !== void 0 ? _wallet$body$access : {};
+				const saved = savedAccess(env, walletId);
 				if (!wallet.header.members.every((m) => saved[m] !== void 0)) {
 					const remaining = lowestTries(wallet.header, wallet.header.members);
 					code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
@@ -43318,8 +43326,7 @@ zoo`.split("\n"));
 								const id = bytesToHex$5(tap.cardId);
 								let hash = hashes.get(id);
 								if (hash === void 0) {
-									var _env$bodies$get$acces, _env$bodies$get;
-									const remembered = ((_env$bodies$get$acces = (_env$bodies$get = env.bodies.get(walletId)) === null || _env$bodies$get === void 0 ? void 0 : _env$bodies$get.access) !== null && _env$bodies$get$acces !== void 0 ? _env$bodies$get$acces : {})[id];
+									const remembered = savedAccess(env, walletId)[id];
 									if (remembered !== void 0) {
 										hash = hexToBytes$4(remembered);
 										hashes.set(id, hash);
@@ -45931,10 +45938,7 @@ zoo`.split("\n"));
 		let code;
 		try {
 			const material = env.ctx.externalMaterial(walletOf(env, walletId).record);
-			const saved = () => {
-				var _env$bodies$get$acces, _env$bodies$get;
-				return (_env$bodies$get$acces = (_env$bodies$get = env.bodies.get(walletId)) === null || _env$bodies$get === void 0 ? void 0 : _env$bodies$get.access) !== null && _env$bodies$get$acces !== void 0 ? _env$bodies$get$acces : {};
-			};
+			const saved = () => savedAccess(env, walletId);
 			{
 				const { header } = walletOf(env, walletId);
 				if (!header.members.every((id) => saved()[id] !== void 0)) code = yield* _asyncGeneratorDelegate(_asyncIterator(ask({
