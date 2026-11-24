@@ -55835,8 +55835,8 @@ zoo`.split("\n"));
 	* derivation under the wallet's fingerprint on the policy's change chain, with no index bound —
 	* while the kernel's own rule shows the unusual entries by address. Strip the wallet's derivation
 	* pairs from every output the kernel did not hide as change so the device displays it too; pairs
-	* under a foreign fingerprint stay. Output derivations are not signed, so the signatures the
-	* device yields are unaffected. `hiddenChange` holds the script hexes the kernel classified.
+	* under a foreign fingerprint stay. Output derivations are not signed, so the signatures the device
+	* yields are unaffected. `hiddenChange` holds the script hexes the kernel classified.
 	*/
 	var stripUnhiddenDerivations = (psbt, hiddenChange, fingerprint) => {
 		const maps = psbtV2Maps(psbt);
@@ -61532,8 +61532,10 @@ zoo`.split("\n"));
 		lines: bound.lines - 1,
 		characters: bound.characters - codePoints(line) - 1
 	});
-	/** The verification prompt's device line, ahead of every chain-prompt row — it is the most
-	important instruction (blind is itself a warning; clear says where the real check happens). */
+	/**
+	* The verification prompt's device line, ahead of every chain-prompt row — it is the most important
+	* instruction (blind is itself a warning; clear says where the real check happens).
+	*/
 	var devicePrompt = (base, locale, display, device) => ({
 		title: base.title,
 		description: `${devicePromptLine(locale, display, device)}\n${base.description}`
