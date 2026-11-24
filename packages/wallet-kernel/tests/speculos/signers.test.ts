@@ -483,7 +483,7 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
     }
   }, 300_000);
 
-  it("maps a device-side address rejection to wrong-device", async () => {
+  it("maps a device-side address rejection to device-rejected", async () => {
     const res = await runOp(
       h,
       session,
@@ -500,7 +500,7 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
       screen("solana"),
       "reject",
     );
-    expect(errCode(res)).toBe("wrong-device");
+    expect(errCode(res)).toBe("device-rejected");
   }, 120_000);
 
   const sign = async (
