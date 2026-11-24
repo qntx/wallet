@@ -1070,7 +1070,7 @@ export type QrRequest = (QrBase & {
 };
 
 // @public (undocumented)
-export const qrResponse: (request: QrRequest, result: ChainSignResult, signer: QrSigner) => QrPayload;
+export const qrResponse: (request: QrRequest, result: ChainSignResult, signer: QrSigner | undefined) => QrPayload;
 
 // @public (undocumented)
 export type QrScanLimits = {

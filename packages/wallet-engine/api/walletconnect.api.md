@@ -3743,6 +3743,11 @@ type WalletEngine = {
             readonly family: "evm" | "solana" | "bitcoin" | "tron";
             readonly address: string;
             readonly name?: string;
+            readonly qr?: {
+                readonly fingerprint: string;
+                readonly path: string;
+                readonly xpub?: string;
+            };
         }) => Promise<WatchAccount>;
         readonly rename: (id: string, name: string) => Promise<void>;
         readonly remove: (id: string) => Promise<void>;
