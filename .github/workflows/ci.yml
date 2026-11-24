@@ -20,6 +20,7 @@ jobs:
       contents: read
     with:
       scripts: "check:pkg test:coverage"
+      timeout-minutes: 30
     # bun run lint → build + vp check + check-version + check-cycles + build-provider + check-lint-boundaries
     # bun run test → vp run -r test (per-package vp test)
     # scripts → bun run check:pkg && bun run test:coverage
