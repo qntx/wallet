@@ -15130,7 +15130,7 @@
 	* @param values - The {@link ox#Hex.Hex} values to concatenate.
 	* @returns The concatenated {@link ox#Hex.Hex} value.
 	*/
-	function concat$7(...values) {
+	function concat$8(...values) {
 		if (values.length === 0) return "0x";
 		if (values.length === 1) return values[0];
 		if (values.length === 2) return `0x${values[0].slice(2)}${values[1].slice(2)}`;
@@ -17365,7 +17365,7 @@
 			const value = values[i];
 			data.push(encodePacked.encode(type, value));
 		}
-		return concat$7(...data);
+		return concat$8(...data);
 	}
 	(function(encodePacked) {
 		function encode(type, value, isArray = false) {
@@ -17409,7 +17409,7 @@
 				const data = [];
 				for (let i = 0; i < value.length; i++) data.push(encode(childType, value[i], true));
 				if (data.length === 0) return "0x";
-				return concat$7(...data);
+				return concat$8(...data);
 			}
 			throw new InvalidTypeError$1(type);
 		}
@@ -18985,7 +18985,7 @@
 			types,
 			typeHashes
 		}));
-		return concat$7(...parts);
+		return concat$8(...parts);
 	}
 	/**
 	* Encodes [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) schema for the provided primaryType.
@@ -21397,7 +21397,7 @@
 	*/
 	function toHex(signature) {
 		assert$5(signature);
-		return concat$7(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber$1(yParityToV(signature.yParity), { size: 1 }) : "0x");
+		return concat$8(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber$1(yParityToV(signature.yParity), { size: 1 }) : "0x");
 	}
 	/**
 	* Converts a {@link ox#Signature.Signature} to a serialized {@link ox#Signature.Tuple} to be used for signatures in Transaction Envelopes, EIP-7702 Authorization Lists, etc.
@@ -21582,7 +21582,7 @@
 	*/
 	function hash$4(authorization, options = {}) {
 		const { presign } = options;
-		return keccak256(concat$7("0x05", fromHex$1(toTuple(presign ? {
+		return keccak256(concat$8("0x05", fromHex$1(toTuple(presign ? {
 			address: authorization.address,
 			chainId: authorization.chainId,
 			nonce: authorization.nonce
@@ -21713,7 +21713,7 @@
 	*/
 	function encode$1(data) {
 		const message = from$6(data);
-		return concat$7(erc191PrefixHex, fromString$2(String(size$1(message))), message);
+		return concat$8(erc191PrefixHex, fromString$2(String(size$1(message))), message);
 	}
 	/**
 	* Gets the payload to use for signing an [ERC-191 formatted](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e) personal message.
@@ -21959,7 +21959,7 @@
 		assert$4(envelope);
 		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
-		return concat$7("0x01", fromHex$1([
+		return concat$8("0x01", fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(gasPrice),
@@ -22156,7 +22156,7 @@
 		const accessTupleList = toTupleList(accessList);
 		const authorizationTupleList = toTupleList$1(authorizationList);
 		const signature = extract(options.signature || envelope);
-		return concat$7(serializedType$1, fromHex$1([
+		return concat$8(serializedType$1, fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
@@ -22689,7 +22689,7 @@
 		assert$1(envelope);
 		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
-		return concat$7(serializedType, fromHex$1([
+		return concat$8(serializedType, fromHex$1([
 			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
@@ -28573,7 +28573,7 @@ zoo`.split("\n"));
 		}, blind === void 0 ? {} : { blind }), request.network, EVM_NATIVE_ASSET, 18);
 	};
 	var utf8$6 = new TextEncoder();
-	function concat$6(...chunks) {
+	function concat$7(...chunks) {
 		let length = 0;
 		for (const chunk of chunks) length += chunk.length;
 		const out = new Uint8Array(length);
@@ -28610,34 +28610,34 @@ zoo`.split("\n"));
 		if (value >= 0) {
 			if (value <= 127) return new Uint8Array([value]);
 			if (value <= 255) return new Uint8Array([204, value]);
-			if (value <= 65535) return concat$6(new Uint8Array([205]), u16be(value));
-			if (value <= 4294967295) return concat$6(new Uint8Array([206]), u32be$1(value));
-			return concat$6(new Uint8Array([207]), u64be(BigInt(value)));
+			if (value <= 65535) return concat$7(new Uint8Array([205]), u16be(value));
+			if (value <= 4294967295) return concat$7(new Uint8Array([206]), u32be$1(value));
+			return concat$7(new Uint8Array([207]), u64be(BigInt(value)));
 		}
 		if (value >= -32) return new Uint8Array([value + 256]);
 		if (value >= -128) return new Uint8Array([208, value + 256]);
-		if (value >= -32768) return concat$6(new Uint8Array([209]), u16be(value + 65536));
-		if (value >= -2147483648) return concat$6(new Uint8Array([210]), u32be$1(value + 4294967296));
-		return concat$6(new Uint8Array([211]), i64be(BigInt(value)));
+		if (value >= -32768) return concat$7(new Uint8Array([209]), u16be(value + 65536));
+		if (value >= -2147483648) return concat$7(new Uint8Array([210]), u32be$1(value + 4294967296));
+		return concat$7(new Uint8Array([211]), i64be(BigInt(value)));
 	}
 	function packStr(value) {
 		const bytes = utf8$6.encode(value);
 		const { length } = bytes;
-		if (length < 32) return concat$6(new Uint8Array([160 | length]), bytes);
-		if (length < 256) return concat$6(new Uint8Array([217, length]), bytes);
-		if (length < 65536) return concat$6(new Uint8Array([218]), u16be(length), bytes);
-		return concat$6(new Uint8Array([219]), u32be$1(length), bytes);
+		if (length < 32) return concat$7(new Uint8Array([160 | length]), bytes);
+		if (length < 256) return concat$7(new Uint8Array([217, length]), bytes);
+		if (length < 65536) return concat$7(new Uint8Array([218]), u16be(length), bytes);
+		return concat$7(new Uint8Array([219]), u32be$1(length), bytes);
 	}
 	function packBool(value) {
 		return new Uint8Array([value ? 195 : 194]);
 	}
 	function packArray(items) {
-		return concat$6(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$6(new Uint8Array([220]), u16be(items.length)) : (() => {
+		return concat$7(items.length < 16 ? new Uint8Array([144 | items.length]) : items.length < 65536 ? concat$7(new Uint8Array([220]), u16be(items.length)) : (() => {
 			throw new ChainError("invalid-request", "unreachable: msgpack array over 65535 items");
 		})(), ...items);
 	}
 	function packMap(entries) {
-		return concat$6(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$6(new Uint8Array([222]), u16be(entries.length)) : (() => {
+		return concat$7(entries.length < 16 ? new Uint8Array([128 | entries.length]) : entries.length < 65536 ? concat$7(new Uint8Array([222]), u16be(entries.length)) : (() => {
 			throw new ChainError("invalid-request", "unreachable: msgpack map over 65535 entries");
 		})(), ...entries.flatMap(([key, value]) => [packStr(key), value]));
 	}
@@ -28704,9 +28704,9 @@ zoo`.split("\n"));
 	}
 	function l1ConnectionId(args) {
 		const packed = encodeL1Action(args.action);
-		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$6(new Uint8Array([1]), hexToBytes$4(args.vaultAddress.slice(2)));
-		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$6(new Uint8Array([0]), u64be(BigInt(args.expiresAfter)));
-		return keccak_256(concat$6(packed, u64be(BigInt(args.nonce)), vault, expiry));
+		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$7(new Uint8Array([1]), hexToBytes$4(args.vaultAddress.slice(2)));
+		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$7(new Uint8Array([0]), u64be(BigInt(args.expiresAfter)));
+		return keccak_256(concat$7(packed, u64be(BigInt(args.nonce)), vault, expiry));
 	}
 	function phantomAgentTypedData(connectionId, network) {
 		return JSON.stringify({
@@ -31988,7 +31988,7 @@ zoo`.split("\n"));
 		}
 		return fields;
 	};
-	var concat$5 = (parts) => {
+	var concat$6 = (parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let at = 0;
 		for (const p of parts) {
@@ -32002,11 +32002,11 @@ zoo`.split("\n"));
 	* One encoded field, or undefined when its value is a proto3 default (0, false, empty bytes or
 	* string) and canonical encoding omits it entirely.
 	*/
-	var varintField = (field, value) => BigInt(value) === 0n ? void 0 : concat$5([tag(field, 0), writeVarint(BigInt(value))]);
+	var varintField = (field, value) => BigInt(value) === 0n ? void 0 : concat$6([tag(field, 0), writeVarint(BigInt(value))]);
 	/** A varint field that is emitted even when 0 — required presence, e.g. `lock = false`. */
-	var requiredVarintField = (field, value) => concat$5([tag(field, 0), writeVarint(BigInt(value))]);
+	var requiredVarintField = (field, value) => concat$6([tag(field, 0), writeVarint(BigInt(value))]);
 	var bytesField = (field, data) => data.length === 0 ? void 0 : requiredBytesField(field, data);
-	var requiredBytesField = (field, data) => concat$5([
+	var requiredBytesField = (field, data) => concat$6([
 		tag(field, 2),
 		writeVarint(BigInt(data.length)),
 		data
@@ -32020,7 +32020,7 @@ zoo`.split("\n"));
 	var encodeMessage$1 = (fields) => {
 		const present = fields.filter((f) => f.bytes !== void 0);
 		present.sort((a, b) => a.field - b.field);
-		return concat$5(present.map((f) => f.bytes));
+		return concat$6(present.map((f) => f.bytes));
 	};
 	/**
 	* Split a read field list into the decoder's own consumption plus captured unknowns: fields not in
@@ -39690,7 +39690,7 @@ zoo`.split("\n"));
 	var utf8$2 = (s) => new TextEncoder().encode(s);
 	var BIP322_TAG = "BIP0322-signed-message";
 	var LEGACY_MAGIC = utf8$2("Bitcoin Signed Message:\n");
-	var concat$4 = (...parts) => {
+	var concat$5 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let o = 0;
 		for (const p of parts) {
@@ -39705,7 +39705,7 @@ zoo`.split("\n"));
 	/** A length-prefixed push; longer data would need a multi-byte CompactSize this code never emits. */
 	var pushData = (data) => {
 		if (data.length > COMPACT_SIZE_ONE_BYTE_MAX) throw new ChainError("invalid-request", "BIP-322 script data exceeds 252 bytes");
-		return concat$4(varint$1(data.length), data);
+		return concat$5(varint$1(data.length), data);
 	};
 	var u32le = (n) => Uint8Array.of(n % 256, Math.floor(n / 256) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 16777216) % 256);
 	var u64le = (n) => {
@@ -39720,7 +39720,7 @@ zoo`.split("\n"));
 	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
 	var bip322MessageHash = (message) => {
 		const tag = sha256$1(utf8$2(BIP322_TAG));
-		return sha256$1(concat$4(tag, tag, utf8$2(message)));
+		return sha256$1(concat$5(tag, tag, utf8$2(message)));
 	};
 	/**
 	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
@@ -39728,8 +39728,8 @@ zoo`.split("\n"));
 	* digest — internal byte order, the reverse of the displayed hex.
 	*/
 	var toSpend = (scriptPubKey, messageHash) => {
-		const scriptSig = concat$4(Uint8Array.of(0), pushData(messageHash));
-		const raw = concat$4(u32le(0), varint$1(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint$1(1), u64le(0n), pushData(scriptPubKey), u32le(0));
+		const scriptSig = concat$5(Uint8Array.of(0), pushData(messageHash));
+		const raw = concat$5(u32le(0), varint$1(1), /* @__PURE__ */ new Uint8Array(32), u32le(4294967295), pushData(scriptSig), u32le(0), varint$1(1), u64le(0n), pushData(scriptPubKey), u32le(0));
 		return {
 			txid: sha256$1(sha256$1(raw)),
 			raw
@@ -39790,15 +39790,15 @@ zoo`.split("\n"));
 	* each stack item as a pushData — the finalized P2WPKH `[DER‖sighash, pubkey]` or P2TR `[sig]`.
 	*/
 	var encodeBip322Simple = (witness) => {
-		return `smp${base64(concat$4(varint$1(witness.length), ...witness.map(pushData)))}`;
+		return `smp${base64(concat$5(varint$1(witness.length), ...witness.map(pushData)))}`;
 	};
 	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
-	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$4(pushData(LEGACY_MAGIC), pushData(utf8$2(message)))));
+	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$5(pushData(LEGACY_MAGIC), pushData(utf8$2(message)))));
 	/**
 	* The legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
 	* 64-byte compact ECDSA sig), header = 27 + yParity + 4 (compressed pubkey).
 	*/
-	var encodeLegacySignature = (yParity, compact) => base64(concat$4(Uint8Array.of(27 + yParity + 4), compact));
+	var encodeLegacySignature = (yParity, compact) => base64(concat$5(Uint8Array.of(27 + yParity + 4), compact));
 	/**
 	* /bitcoin/plan — the serialisable signing plan of a normalized request. A PSBT plans one task per
 	* listed input (key-path P2TR → BIP-340 over the tweaked output key; P2WPKH/P2SH-P2WPKH/P2PKH →
@@ -41808,7 +41808,7 @@ zoo`.split("\n"));
 		}
 		return {
 			prompt: intent,
-			plan
+			plan: _objectSpread2(_objectSpread2({}, plan), {}, { hiddenChange: own.change })
 		};
 	};
 	/** The message plan: the declared change/index must derive this address, then normalize/plan. */
@@ -43334,9 +43334,9 @@ zoo`.split("\n"));
 		};
 	};
 	/**
-	* The remembered access hashes, live only while the app lock guards them — a `device` factor
-	* means the lock is off and a saved hash would VERIFY with no presence at all, so the op asks
-	* for the code instead. The map itself stays: turning the lock back on re-arms it.
+	* The remembered access hashes, live only while the app lock guards them — a `device` factor means
+	* the lock is off and a saved hash would VERIFY with no presence at all, so the op asks for the
+	* code instead. The map itself stays: turning the lock back on re-arms it.
 	*/
 	var savedAccess = (env, walletId) => {
 		var _env$bodies$get$acces, _env$bodies$get;
@@ -48627,6 +48627,10 @@ zoo`.split("\n"));
 		}
 		throw new KernelError("integrity", "could not draw a valid session key");
 	};
+	var assertSeedCustody = (image, walletId) => {
+		const record = findWalletRecord(image, walletId);
+		if (record !== void 0 && EXTERNAL_CUSTODY_KINDS.has(record.kind)) throw new KernelError("unsupported", "this wallet is signed outside the vault");
+	};
 	/**
 	* On a keystore host a `device` factor means the app lock is off: the vault — and any session in it
 	* — can be used without presence. A value-moving session must never run in that state, so
@@ -48697,6 +48701,7 @@ zoo`.split("\n"));
 	}
 	var createSession = (opened) => async (ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
+		assertSeedCustody(ctx.image, params.owner.walletId);
 		const scheme = schemeOf(params.scheme);
 		if (scheme === void 0) throw new KernelError("unsupported", "unsupported session scheme");
 		const now = ctx.platform.now();
@@ -48807,6 +48812,7 @@ zoo`.split("\n"));
 	var openSession = (opened) => async (ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
 		const { record, header } = sessionOf(ctx.image, params.address);
+		assertSeedCustody(ctx.image, header.walletId);
 		const scheme = schemeOf(header.scheme);
 		if (scheme === void 0) throw new KernelError("unsupported", "this kernel does not support the session's scheme");
 		const { metering } = scheme;
@@ -55582,7 +55588,7 @@ zoo`.split("\n"));
 		return 8 + 6 * (known.preimages.size + cost);
 	};
 	var invalid$9 = (message) => new LedgerError("invalid-response", message);
-	var concat$3 = (...parts) => {
+	var concat$4 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let offset = 0;
 		for (const part of parts) {
@@ -55607,7 +55613,7 @@ zoo`.split("\n"));
 		const count = varint(preimage.length);
 		const payload = Math.min(255 - count.length - 1, preimage.length);
 		for (let i = payload; i < preimage.length; i += 1) state.queue.push(preimage.subarray(i, i + 1));
-		return concat$3(count, Uint8Array.of(payload), preimage.subarray(0, payload));
+		return concat$4(count, Uint8Array.of(payload), preimage.subarray(0, payload));
 	};
 	var leafProofCommand = (state, request) => {
 		const reader = new Reader(request);
@@ -55622,7 +55628,7 @@ zoo`.split("\n"));
 		const proof = merkleProof(tree, index);
 		const answer = Math.min(Math.floor(221 / 32), proof.length);
 		for (const hash of proof.slice(answer)) state.queue.push(hash);
-		return concat$3(...tree.slice(index, index + 1), Uint8Array.of(proof.length), Uint8Array.of(answer), ...proof.slice(0, answer));
+		return concat$4(...tree.slice(index, index + 1), Uint8Array.of(proof.length), Uint8Array.of(answer), ...proof.slice(0, answer));
 	};
 	var leafIndexCommand = (state, request) => {
 		const reader = new Reader(request);
@@ -55633,7 +55639,7 @@ zoo`.split("\n"));
 		if (tree === void 0) throw invalid$9("GET_MERKLE_LEAF_INDEX asked for an unknown root");
 		if (state.queue.length > 0) throw invalid$9("GET_MERKLE_LEAF_INDEX arrived with a pending queue");
 		const index = tree.findIndex((hash) => equalBytes$3(hash, leaf));
-		return concat$3(Uint8Array.of(index === -1 ? 0 : 1), varint(Math.max(index, 0)));
+		return concat$4(Uint8Array.of(index === -1 ? 0 : 1), varint(Math.max(index, 0)));
 	};
 	var moreElementsCommand = (state, request) => {
 		if (request.length > 0) throw invalid$9("GET_MORE_ELEMENTS carries trailing bytes");
@@ -55641,7 +55647,7 @@ zoo`.split("\n"));
 		if (first === void 0) throw invalid$9("GET_MORE_ELEMENTS has an empty queue");
 		const count = Math.min(Math.floor(253 / first.length), state.queue.length);
 		const returned = state.queue.splice(0, count);
-		return concat$3(Uint8Array.of(count), Uint8Array.of(first.length), ...returned);
+		return concat$4(Uint8Array.of(count), Uint8Array.of(first.length), ...returned);
 	};
 	var dispatch$1 = (state, request) => {
 		const [code] = request;
@@ -55685,11 +55691,15 @@ zoo`.split("\n"));
 		}
 	}
 	// packages/wallet-kernel/src/modules/signers/ledger/protocol/bitcoin/psbt.ts
+	init_utils$2();
 	init_transaction();
 	var MAGIC = Uint8Array.of(112, 115, 98, 116, 255);
 	var KEY_INPUT_COUNT = 4;
 	var KEY_OUTPUT_COUNT = 5;
 	var KEY_VERSION = 251;
+	var OUT_BIP32_DERIVATION = 2;
+	var OUT_SCRIPT = 4;
+	var OUT_TAP_BIP32_DERIVATION = 7;
 	var invalid$8 = (message) => input(message);
 	var equalBytes$2 = (a, b) => a.length === b.length && a.every((byte, i) => byte === b[i]);
 	var compareKeys = (a, b) => {
@@ -55800,6 +55810,54 @@ zoo`.split("\n"));
 			outputs: maps.slice(1 + inputCount).map(sortMap)
 		};
 	}
+	var concat$3 = (...parts) => {
+		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+		let offset = 0;
+		for (const part of parts) {
+			out.set(part, offset);
+			offset += part.length;
+		}
+		return out;
+	};
+	/** One map's wire form: `varint keyLen ‖ key ‖ varint valLen ‖ value` records, then `0x00`. */
+	var encodeMap$1 = (kvs) => concat$3(...kvs.map((kv) => concat$3(varint(kv.key.length), kv.key, varint(kv.value.length), kv.value)), Uint8Array.of(0));
+	/** The v2 wire form back: `MAGIC ‖ (map ‖ 0x00)×` — the inverse of what psbtV2Maps reads. */
+	var encodePsbtV2 = (maps) => concat$3(MAGIC, encodeMap$1(maps.global), ...maps.inputs.map(encodeMap$1), ...maps.outputs.map(encodeMap$1));
+	var derivationFingerprint = (kv) => {
+		if (kv.key[0] === OUT_BIP32_DERIVATION) return kv.value.subarray(0, 4);
+		if (kv.key[0] === OUT_TAP_BIP32_DERIVATION) {
+			const [count] = kv.value;
+			return count === void 0 || count >= 253 ? void 0 : kv.value.subarray(1 + 32 * count, 1 + 32 * count + 4);
+		}
+	};
+	/**
+	* The PSBT as the device should see it. app-bitcoin-new hides as change every output carrying a
+	* derivation under the wallet's fingerprint on the policy's change chain, with no index bound —
+	* while the kernel's own rule shows the unusual entries by address. Strip the wallet's derivation
+	* pairs from every output the kernel did not hide as change so the device displays it too; pairs
+	* under a foreign fingerprint stay. Output derivations are not signed, so the signatures the
+	* device yields are unaffected. `hiddenChange` holds the script hexes the kernel classified.
+	*/
+	var stripUnhiddenDerivations = (psbt, hiddenChange, fingerprint) => {
+		const maps = psbtV2Maps(psbt);
+		let stripped = false;
+		const outputs = maps.outputs.map((kvs) => {
+			var _kvs$find;
+			const script = (_kvs$find = kvs.find((kv) => kv.key.length === 1 && kv.key[0] === OUT_SCRIPT)) === null || _kvs$find === void 0 ? void 0 : _kvs$find.value;
+			if (script === void 0 || hiddenChange.has(bytesToHex$5(script))) return kvs;
+			const kept = kvs.filter((kv) => {
+				const at = derivationFingerprint(kv);
+				return at === void 0 || !equalBytes$2(at, fingerprint);
+			});
+			stripped || (stripped = kept.length !== kvs.length);
+			return kept;
+		});
+		return stripped ? encodePsbtV2({
+			global: maps.global,
+			inputs: maps.inputs,
+			outputs
+		}) : psbt;
+	};
 	/**
 	* `varint n ‖ merkleRoot(keys) ‖ merkleRoot(values)` — the 65–73 byte commitment of doc/merkle.md
 	* (MerkleMap.commitment). `kvs` must already be the sorted map psbtV2Maps returns.
@@ -57014,7 +57072,8 @@ zoo`.split("\n"));
 			keys: context.pin
 		}).extendedPublicKey(account, net.bip32);
 		const policy = defaultPolicy(template, context.pin.fingerprint, account, xpub);
-		const yielded = await call$4(async () => btcSignPsbt(exchange, stage.psbt, policy));
+		const psbt = stage.hiddenChange === void 0 ? stage.psbt : stripUnhiddenDerivations(stage.psbt, stage.hiddenChange, context.pin.fingerprint);
+		const yielded = await call$4(async () => btcSignPsbt(exchange, psbt, policy));
 		return stage.tasks.map((task, index) => {
 			const planned = stage.inputs[index];
 			if (planned === void 0) return integrity$2();
@@ -61467,16 +61526,17 @@ zoo`.split("\n"));
 		nodes: [...pin.nodes, ...fetched.nodes.filter((n) => !pin.nodes.some((have) => samePath(have.path, n.path)))],
 		ed25519: [...pin.ed25519, ...fetched.ed25519.filter((k) => !pin.ed25519.some((have) => samePath(have.path, k.path)))]
 	});
-	/** The bound for a prompt that gains one appended line: the line's cost comes off the top. */
+	/** The bound for a prompt that gains one prepended line: the line's cost comes off the top. */
 	var shrinkBound = (bound, line) => ({
 		title: bound.title,
 		lines: bound.lines - 1,
 		characters: bound.characters - codePoints(line) - 1
 	});
-	/** The verification prompt's device line, appended to the chain prompt's description (I2). */
+	/** The verification prompt's device line, ahead of every chain-prompt row — it is the most
+	important instruction (blind is itself a warning; clear says where the real check happens). */
 	var devicePrompt = (base, locale, display, device) => ({
 		title: base.title,
-		description: `${base.description}\n${devicePromptLine(locale, display, device)}`
+		description: `${devicePromptLine(locale, display, device)}\n${base.description}`
 	});
 	function createSignersModule(drivers) {
 		const pins = /* @__PURE__ */ new Map();
@@ -74763,8 +74823,9 @@ zoo`.split("\n"));
 	function validFor(kind, value) {
 		if (kind === "access-code") return value.length > 0 && value.length <= 64 && value.every((byte) => byte >= 32 && byte <= 126);
 		if (kind === "short-id") return value.length === 8 && value.every((byte) => byte >= 48 && byte <= 57 || byte >= 65 && byte <= 70);
+		if (kind === "backup-password") return value.length > 0 && value.length <= 1024 && isValidUtf8(value);
 		if (kind === "session-approval") return value.length === 4 && value.every((byte) => byte >= 48 && byte <= 57);
-		return value.length > 0 && value.length <= 1024 && isValidUtf8(value);
+		return false;
 	}
 	function bindNativeSecureInput(raw) {
 		return {
