@@ -39,7 +39,7 @@ export async function sessionKeys(wallet: Wallet, walletId: string): Promise<Ses
   return agents;
 }
 
-/** `PendingRequest.origin` gained `{ kind: "app", id }` — a renderer covers all four shapes. */
+/** `PendingRequest.origin` gained `{ kind: "app", id }` — a renderer covers all five shapes. */
 export function requestOriginLabel(origin: PendingRequest["origin"]): string {
   if (origin.kind === "internal") {
     return "this app";
@@ -49,6 +49,9 @@ export function requestOriginLabel(origin: PendingRequest["origin"]): string {
   }
   if (origin.kind === "browser") {
     return origin.origin;
+  }
+  if (origin.kind === "qr") {
+    return origin.declared ?? "scanned request";
   }
   // kind === "walletconnect" — a future origin kind stops compiling here until it is rendered.
   return `${origin.name} <${origin.url}>`;

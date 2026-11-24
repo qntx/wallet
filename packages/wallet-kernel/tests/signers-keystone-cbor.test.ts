@@ -1,112 +1,68 @@
-// oxlint-disable vitest/expect-expect -- assertions live in the decodes/integrity/code helpers
+// oxlint-disable vitest/expect-expect -- assertions live in the integrity/code helpers
 /**
- * The strict CBOR subset: canonical encodings of every supported type decode, and every deviation —
- * truncated or non-shortest heads, indefinite containers, duplicate map keys, trailing bytes,
- * over-deep nesting, over-wide containers, invalid UTF-8, unsupported majors — is `integrity`,
- * never another error. Random bytes can only produce a value or a KernelError, and encoding
- * re-reads byte-identically.
+ * The driver's UR decode edge: every malformed or hostile device answer — truncated or non-shortest
+ * heads, indefinite containers, duplicate or misordered map keys, trailing bytes, hostile nesting,
+ * invalid or non-canonical UTF-8, oversized input, random garbage — ends in a typed
+ * `KernelError("integrity")`, never an untyped error. The decoders are `@qntx/ur`'s dCBOR codecs
+ * behind `decodeUr`; these cases run through the sync answer entry (`parseSync`) and the
+ * signature/psbt codecs exactly as the sign exchange calls them.
  */
-import { hexToBytes } from "@noble/hashes/utils.js";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
-import { KernelError } from "../src/errors.ts";
-import type { Cbor } from "../src/modules/signers/keystone/cbor.ts";
-import { decodeCbor, encodeCbor } from "../src/modules/signers/keystone/cbor.ts";
+import {
+  cryptoMultiAccountsCodec,
+  ethSignatureCodec,
+  solSignatureCodec,
+  tronSignatureCodec,
+} from "@qntx/ur/interop";
+import { cryptoPsbtCodec } from "@qntx/ur/registry";
+import type { UrCodec } from "@qntx/ur/typed";
+import type { DeviceResponse } from "@qntx/wallet/protocol";
 
-const code = (bytes: Uint8Array): string => {
+import { KernelError } from "../src/errors.ts";
+import { parseSync } from "../src/modules/signers/keystone/sync.ts";
+import { btcSignatureCodec, decodeUr } from "../src/modules/signers/keystone/ur.ts";
+
+const qrResponse = (cbor: Uint8Array, type = "crypto-multi-accounts"): DeviceResponse => ({
+  kind: "qr",
+  ur: { type, cbor },
+});
+
+const code = (run: () => unknown): string => {
   try {
-    decodeCbor(bytes);
+    run();
     return "no-error";
   } catch (error) {
     return error instanceof KernelError ? error.code : "not-a-kernel-error";
   }
 };
 
-const decodes = (hex: string, want: Cbor): void => {
-  expect(decodeCbor(hexToBytes(hex))).toStrictEqual(want);
-};
-
-const integrity = (hex: string): void => {
-  expect(code(hexToBytes(hex))).toBe("integrity");
-};
-
-const depth = (tree: Cbor): number => {
-  switch (tree.kind) {
-    case "array":
-      return 1 + Math.max(0, ...tree.items.map(depth));
-    case "map":
-      return 1 + Math.max(0, ...tree.entries.flatMap(([k, v]) => [depth(k), depth(v)]));
-    case "tag":
-      return 1 + depth(tree.item);
-    default:
-      return 1;
+const hex = (s: string): Uint8Array => {
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = Number.parseInt(s.slice(i * 2, i * 2 + 2), 16);
   }
+  return out;
 };
 
-/** Map entries with duplicate keys removed — the arbitrary may generate them. */
-const deduped = (pairs: ReadonlyArray<readonly [number, Cbor]>): Cbor => {
-  const seen = new Set<number>();
-  const entries: Array<[Cbor, Cbor]> = [];
-  for (const [key, value] of pairs) {
-    if (!seen.has(key)) {
-      seen.add(key);
-      entries.push([{ kind: "uint", value: key }, value]);
-    }
-  }
-  return { kind: "map", entries };
+const decode = (bytes: Uint8Array): unknown =>
+  decodeUr("crypto-multi-accounts", bytes, cryptoMultiAccountsCodec);
+
+const integrity = (hexBytes: string): void => {
+  expect(code(() => decode(hex(hexBytes)))).toBe("integrity");
+  expect(code(() => parseSync(qrResponse(hex(hexBytes))))).toBe("integrity");
 };
 
-describe("decodeCbor canonical values", () => {
-  it("decodes the head boundary values", () => {
-    decodes("00", { kind: "uint", value: 0 });
-    decodes("17", { kind: "uint", value: 23 });
-    decodes("1818", { kind: "uint", value: 24 });
-    decodes("18ff", { kind: "uint", value: 255 });
-    decodes("190100", { kind: "uint", value: 256 });
-    decodes("19ffff", { kind: "uint", value: 65535 });
-    decodes("1a00010000", { kind: "uint", value: 65536 });
-    decodes("1affffffff", { kind: "uint", value: 0xffffffff });
-    decodes("1b0000000100000000", { kind: "uint", value: 2 ** 32 });
-    decodes("1b001fffffffffffff", { kind: "uint", value: Number.MAX_SAFE_INTEGER });
-  });
-
-  it("decodes bytes, text, arrays, maps, tags and booleans", () => {
-    decodes("40", { kind: "bytes", value: new Uint8Array(0) });
-    decodes("42dead", { kind: "bytes", value: hexToBytes("dead") });
-    decodes("60", { kind: "text", value: "" });
-    decodes("62c3a9", { kind: "text", value: "é" });
-    decodes("82f5f4", {
-      kind: "array",
-      items: [
-        { kind: "bool", value: true },
-        { kind: "bool", value: false },
-      ],
-    });
-    decodes("a201020304", {
-      kind: "map",
-      entries: [
-        [
-          { kind: "uint", value: 1 },
-          { kind: "uint", value: 2 },
-        ],
-        [
-          { kind: "uint", value: 3 },
-          { kind: "uint", value: 4 },
-        ],
-      ],
-    });
-    decodes("d9012f00", { kind: "tag", tag: 303, item: { kind: "uint", value: 0 } });
-  });
-});
-
-describe("decodeCbor malformed input is integrity", () => {
-  it("rejects empty and truncated input", () => {
-    expect(code(new Uint8Array(0))).toBe("integrity");
+describe("malformed multi-accounts answers are integrity", () => {
+  it("rejects empty, truncated and trailing input", () => {
+    expect(code(() => decode(new Uint8Array(0)))).toBe("integrity");
     integrity("18");
     integrity("581841");
     integrity("a20102");
     integrity("d8");
+    integrity("a1010000");
+    integrity("a10100ff");
   });
 
   it("rejects non-shortest heads", () => {
@@ -135,159 +91,82 @@ describe("decodeCbor malformed input is integrity", () => {
     integrity("1f20");
   });
 
-  it("rejects types outside the subset", () => {
-    integrity("20"); // negative int
-    integrity("3bffffffffffffffff");
+  it("rejects structures outside the registry shape", () => {
+    // dCBOR decodes negative ints, floats and simple values the retired subset refused; the
+    // closed-map codec still closes on them — every one ends in integrity.
+    integrity("00");
+    integrity("20");
     integrity("f6"); // null
     integrity("f7"); // undefined
-    integrity("f820"); // simple
-    integrity("f93c00"); // half float
-    integrity("fa47c35000"); // float32
-    integrity("fb7ff0000000000000"); // float64
+    integrity("f820");
+    integrity("f93c00");
+    integrity("fb7ff0000000000000");
+    integrity("a1201a01020304"); // negative-int key
   });
 
-  it("rejects duplicate map keys", () => {
+  it("rejects duplicate and misordered map keys", () => {
     integrity("a200000001");
     integrity("a241aa0141aa02");
+    integrity("a2011a01020304011a05060708"); // field 1 twice
+    integrity("a202000100"); // key 2 before key 1 — dCBOR requires canonical order
   });
 
-  it("rejects trailing bytes", () => {
-    integrity("0000");
-    integrity("f500");
-    integrity("410000");
-  });
-
-  it("rejects depth beyond eight and breadth beyond the item cap", () => {
-    // Nine nested one-item arrays: the ninth inner item is depth 9.
-    integrity(`${"81".repeat(9)}00`);
-    decodes(`${"81".repeat(7)}00`, {
-      kind: "array",
-      items: [
-        {
-          kind: "array",
-          items: [
-            {
-              kind: "array",
-              items: [
-                {
-                  kind: "array",
-                  items: [
-                    {
-                      kind: "array",
-                      items: [
-                        {
-                          kind: "array",
-                          items: [
-                            {
-                              kind: "array",
-                              items: [{ kind: "uint", value: 0 }],
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    });
-    integrity("9a00001001"); // array of 4097
-    integrity("ba00001001"); // map of 4097 pairs
-    integrity("9bffffffffffffffff"); // array of 2^64-1
-  });
-
-  it("rejects invalid UTF-8 text and oversized input", () => {
+  it("rejects invalid and non-canonical UTF-8 text", () => {
     integrity("61ff");
     integrity("62c328");
     integrity("62e080");
-    expect(code(new Uint8Array(262145))).toBe("integrity");
+    integrity("a1036565cc81"); // "é" decomposed — dCBOR wants NFC
   });
 
-  it("rejects integer arguments beyond the safe range", () => {
-    integrity("1b0020000000000000"); // 2^53
-    integrity("1bffffffffffffffff");
+  it("rejects hostile nesting and oversized input", () => {
+    integrity(`${"81".repeat(4096)}00`);
+    expect(code(() => decode(new Uint8Array(262_145)))).toBe("integrity");
   });
 });
 
-describe("encodeCbor", () => {
-  it("serialises canonical heads", () => {
-    const cases: ReadonlyArray<[Cbor, string]> = [
-      [{ kind: "uint", value: 0 }, "00"],
-      [{ kind: "uint", value: 23 }, "17"],
-      [{ kind: "uint", value: 24 }, "1818"],
-      [{ kind: "uint", value: 256 }, "190100"],
-      [{ kind: "uint", value: 65536 }, "1a00010000"],
-      [{ kind: "uint", value: 2 ** 32 }, "1b0000000100000000"],
-      [{ kind: "bytes", value: hexToBytes("dead") }, "42dead"],
-      [{ kind: "text", value: "é" }, "62c3a9"],
-      [{ kind: "bool", value: true }, "f5"],
-      [{ kind: "bool", value: false }, "f4"],
-      [{ kind: "tag", tag: 303, item: { kind: "uint", value: 0 } }, "d9012f00"],
-      [
-        {
-          kind: "map",
-          entries: [
-            [
-              { kind: "uint", value: 1 },
-              { kind: "array", items: [{ kind: "bool", value: true }] },
-            ],
-          ],
-        },
-        "a10181f5",
-      ],
-    ];
-    for (const [tree, hex] of cases) {
-      expect(hexToBytes(hex)).toStrictEqual(encodeCbor(tree));
-      expect(decodeCbor(hexToBytes(hex))).toStrictEqual(tree);
+describe("hostile signature and psbt answers are integrity", () => {
+  const SIGNATURE_CODECS: ReadonlyArray<readonly [string, UrCodec<unknown>]> = [
+    ["eth-signature", ethSignatureCodec],
+    ["sol-signature", solSignatureCodec],
+    ["tron-signature", tronSignatureCodec],
+    ["btc-signature", btcSignatureCodec],
+    ["crypto-psbt", cryptoPsbtCodec],
+  ];
+  const SIGNATURE_MAP_CODECS = SIGNATURE_CODECS.filter(([type]) => type !== "crypto-psbt");
+
+  it("random bytes only ever throw KernelError", () => {
+    fc.assert(
+      fc.property(fc.uint8Array({ maxLength: 600 }), (bytes) => {
+        for (const [type, codec] of SIGNATURE_CODECS) {
+          expect(code(() => decodeUr(type, bytes, codec))).not.toBe("not-a-kernel-error");
+        }
+      }),
+    );
+  });
+
+  it("rejects well-formed CBOR under a foreign UR type", () => {
+    // A structurally valid btc-signature map read as an eth-signature: the 64-byte signature
+    // field fails the eth codec's 65..72 bound; as btc-signature it decodes.
+    const signature = hex(
+      `a301d8255000112233445566778899aabbccddeeff025840${"aa".repeat(64)}03582102${"bb".repeat(
+        32,
+      )}`,
+    );
+    expect(code(() => decodeUr("eth-signature", signature, ethSignatureCodec))).toBe("integrity");
+    expect(code(() => decodeUr("btc-signature", signature, btcSignatureCodec))).toBe("no-error");
+  });
+
+  it("rejects maps with keys outside the closed set", () => {
+    // {1: #37(uuid), 2: sig, 4: extra} — key 4 is not a signature field.
+    const extra = hex(`a301d8255000112233445566778899aabbccddeeff025840${"aa".repeat(64)}0441aa`);
+    for (const [type, codec] of SIGNATURE_MAP_CODECS) {
+      expect(code(() => decodeUr(type, extra, codec))).toBe("integrity");
     }
   });
-});
 
-describe("decoder properties", () => {
-  it("random bytes throw only KernelError", () => {
-    fc.assert(
-      fc.property(fc.uint8Array({ maxLength: 256 }), (bytes) => {
-        expect(code(bytes)).not.toBe("not-a-kernel-error");
-      }),
-    );
-  });
-
-  it("encode then decode round-trips every tree", () => {
-    const leaf: fc.Arbitrary<Cbor> = fc.oneof(
-      fc.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }).map((value) => ({
-        kind: "uint" as const,
-        value,
-      })),
-      fc.uint8Array({ maxLength: 64 }).map((value) => ({ kind: "bytes" as const, value })),
-      fc.string().map((value) => ({ kind: "text" as const, value })),
-      fc.boolean().map((value) => ({ kind: "bool" as const, value })),
-    );
-    const { node } = fc.letrec<{ node: Cbor }>((tie) => ({
-      node: fc.oneof(
-        { depthSize: "small" },
-        leaf,
-        fc.array(tie("node"), { maxLength: 4 }).map((items) => ({
-          kind: "array" as const,
-          items,
-        })),
-        fc
-          .array(fc.tuple(fc.integer({ min: 0, max: 0xffffffff }), tie("node")), {
-            maxLength: 4,
-          })
-          .map(deduped),
-        fc
-          .tuple(fc.integer({ min: 0, max: 0xffffffff }), tie("node"))
-          .map(([tag, item]) => ({ kind: "tag" as const, tag, item })),
-      ),
-    }));
-    fc.assert(
-      fc.property(node, (tree) => {
-        fc.pre(depth(tree) <= 8);
-        expect(decodeCbor(encodeCbor(tree))).toStrictEqual(tree);
-      }),
-    );
+  it("rejects a wrapped tag where the bare body belongs", () => {
+    // eth-signature carries its type in the UR name — a #6.402-wrapped body is wrong type.
+    const wrapped = hex(`d90192a1025840${"aa".repeat(64)}`);
+    expect(code(() => decodeUr("eth-signature", wrapped, ethSignatureCodec))).toBe("integrity");
   });
 });

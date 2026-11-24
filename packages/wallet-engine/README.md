@@ -974,6 +974,88 @@ One `createWalletConnect` per JS runtime: Core keeps a global singleton keyed by
 - Upgrade `@reown/walletkit` only together with the `@walletconnect/*` packages — WalletKit pins
   core/utils/types exactly.
 
+## QR signer
+
+`@qntx/wallet-engine/qr` is a separate entry: the wallet side of UR QR signing. Two roles share
+the entry — a phone wallet **answers** the sign requests a watch-only wallet displays as animated
+QR frames, and our Web wallet **asks**: it holds no keys and emits the requests the phone signs.
+The whole exchange is UR over frames: `qrFrames` emits the fountain parts, `createQrScanner`
+receives them inside byte/frame/deadline bounds.
+
+### Signing for a watch-only wallet
+
+The flow is: scan the counterpart's frames into `createQrScanner({ kind: "request" })` (its
+progress ratio is the UI's progress) → `readQrRequest` decodes the payload and re-checks it →
+`qrSigner({ engine, wallet }).prepare(request, account)` binds it and opens an ordinary engine
+request at `awaiting-approval` → the user verifies the decoded intent and approves →
+`respond(id)` waits for the pipeline outcome and encodes the signature as the UR response → the
+host shows `qrFrames(payload)` until the desktop has the parts. `prepare` and `respond` belong to
+one `qrSigner` instance — `respond` refuses a request another instance prepared.
+
+A QR request is one more origin in the existing pipeline — the account's own backend signs: a
+vault key in the kernel, or a hardware wallet through `EngineOptions.devices` (the device
+exchanges inside `signing` are the tap cadence; nothing signs before approval, and the
+counterpart is never told which kind of signer answered). Cancellation and timeout exist at
+every hop: a frame budget and scan deadline in the scanner, rejection or expiry in the pipeline,
+abort through the device io's signal. A lost device mid-flow ends `failed` with no payload and
+nothing half-signed.
+
+### The watch-only side
+
+`readQrExport` reads the phone's `crypto-multi-accounts` export into `QrLink`s (one per family,
+strict path shapes, a bitcoin account by its xpub); `watch.add({ ..., qr })` stores a watch
+account pinned to that fingerprint/path/xpub — it signs only through frames and never reaches an
+`AccountRef`. `qrSignRequest` writes the request our own `readQrRequest` accepts and `prepare`
+binds, refusing what the phone would refuse with the same codes (no EIP-7702, no contract
+creation, a solana message whose required signers exclude the link, a PSBT with no input under
+the link).
+`readQrSignature` verifies the answer cryptographically — sender recovery for EVM/TRON, ed25519
+for Solana, same-content plus a new under-link signature for a PSBT — before handing it back.
+
+### Counterparts
+
+| Counterpart                    | Export                       | Request               | Response            | Verified                                                                                      |
+| ------------------------------ | ---------------------------- | --------------------- | ------------------- | --------------------------------------------------------------------------------------------- |
+| MetaMask / Rabby               | crypto-hdkey, crypto-account | eth-sign-request      | eth-signature       | Differential against the keyring's `@keystonehq/*` codecs; not verified against the app       |
+| BlueWallet / Sparrow / Nunchuk | crypto-account               | crypto-psbt           | crypto-psbt         | Differential at BlueWallet's exact codec pin; Sparrow is source-read only; Nunchuk unverified |
+| Keystone-compatible JS         | crypto-multi-accounts        | sol/tron-sign-request | sol/tron-signature  | Differential against Keystone Rust 1.0.9 and firmware goldens                                 |
+| qntx Web wallet                | crypto-multi-accounts        | all families above    | matching signatures | End to end in Node: two wallets exchanging only frames                                        |
+
+### Binding
+
+A request signs only when it binds to the account and to an enabled network:
+
+- EVM: the chain id of the transaction or the typed-data domain must be an enabled network;
+  EIP-7702, contract creation and self-calls are refused; nonce and fee are signed as sent and
+  the recovered signer is re-checked on the response.
+- Solana: the request carries no cluster — it binds to the first enabled cluster whose blockhash
+  check accepts the message (mainnet first), else refused.
+- TRON: the TaPoS reference block must prove out on an enabled network, else refused.
+- Bitcoin: coin type picks mainnet or the single enabled testnet; single-sig templates only —
+  multisig (witnessScript, redeemScript, taproot-leaf scripts) is refused.
+
+The account must also match: fingerprint, keypath and — where the type carries it — the address
+must equal the pinned account (EVM case-insensitive, TRON/Solana exact), else `account-mismatch`.
+Solana and Bitcoin QR requests are sign-only: `send` is refused and broadcasting stays with the
+watch wallet — every response is a signature or an envelope/PSBT the counterpart broadcasts.
+
+### Export and inspection
+
+`qrSigner.exportAccount` reports what a form `discloses` (`evm-all-addresses`,
+`account-addresses`, `single-addresses`) — the UI should say so before showing the QR.
+`inspectQrRequest(request)` decodes the display intent and the digests a signing device would
+show; it proves what the scanned bytes mean, not that the desktop sent the same bytes to the
+device — compare the digest on the device.
+
+### Limits
+
+- A phone is not an air-gapped device: it is online; the QR path removes the cable and the
+  pairing, not the attack surface.
+- Multisig is not supported — single-sig PSBT templates only.
+- Device digests: `shownBy` lists which device's screen actually displays each digest
+  (`ledger-ethereum`, `ledger-solana`); `tron-txid`, `tron-message-digest` and the digests on
+  the bitcoin path ship `shownBy: []` — unverified, treat them as display-only.
+
 ## React Native hosts
 
 The engine runs on the RN main runtime (Hermes) with no polyfills. Verified on 2026-11-02 in an

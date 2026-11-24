@@ -391,9 +391,71 @@ export const chainAccount: Validator<ChainAccount> = union(
   }),
 );
 
+/**
+ * A node `chain.exportAccount` can serve: the EVM account xpub (`m/44'/60'/0'`, MetaMask's
+ * crypto-hdkey), a group's signing leaf, or a Bitcoin account xpub (`m/p'/coin'/group'`).
+ */
+export type ChainExportNode =
+  | { readonly kind: "evm.account" }
+  | {
+      readonly kind: "leaf";
+      readonly template: "evm.bip44" | "tron.bip44" | "solana.bip44-change";
+    }
+  | {
+      readonly kind: "btc.account";
+      readonly template: "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
+      readonly network: string;
+    };
+
+export type ChainExportParams = {
+  readonly walletId: string;
+  readonly groupIndex: number;
+  readonly nodes: ReadonlyArray<ChainExportNode>;
+  readonly verify: VerifyFactor;
+};
+
+export type ChainExportedKey = {
+  readonly node: ChainExportNode;
+  readonly path: string;
+  readonly curve: "secp256k1" | "ed25519";
+  readonly publicKey: Uint8Array;
+  /** 32 bytes — present iff the node is an account (evm.account / btc.account). */
+  readonly chainCode?: Uint8Array;
+  /** 8 lowercase hex chars — present iff `chainCode` is. */
+  readonly parentFingerprint?: string;
+};
+
+export type ChainExportResult = {
+  /** Master-key fingerprint as 8 lowercase hex chars. */
+  readonly fingerprint: string;
+  /** One key per requested node, in the same order. */
+  readonly keys: ReadonlyArray<ChainExportedKey>;
+};
+
+export const exportNode: Validator<ChainExportNode> = union(
+  obj({ kind: literal("evm.account") }),
+  obj({
+    kind: literal("leaf"),
+    template: union(literal("evm.bip44"), literal("tron.bip44"), literal("solana.bip44-change")),
+  }),
+  obj({ kind: literal("btc.account"), template: btcTemplate, network: caip2 }),
+);
+
+const fingerprint = str(8, /^[0-9a-f]{8}$/);
+
+const exportedKey: Validator<ChainExportedKey> = obj({
+  node: exportNode,
+  path: str(32, /^m\/[0-9'/]+$/),
+  curve: union(literal("secp256k1"), literal("ed25519")),
+  publicKey: union(bytes(33), bytes(32)),
+  chainCode: opt(bytes(32)),
+  parentFingerprint: opt(fingerprint),
+});
+
 export const CHAINS_METHODS: {
   readonly "wallet.accounts": MethodSpec<ChainAccountsParams, ChainAccount>;
   readonly "chain.sign": MethodSpec<ChainSignParams, ChainSignResult>;
+  readonly "chain.exportAccount": MethodSpec<ChainExportParams, ChainExportResult>;
 } = {
   "wallet.accounts": {
     session: true,
@@ -406,5 +468,11 @@ export const CHAINS_METHODS: {
     presence: true,
     params: obj({ request: signRequest, verify: verifier }),
     result: signResult,
+  },
+  "chain.exportAccount": {
+    session: true,
+    presence: true,
+    params: obj({ walletId, groupIndex, nodes: arr(exportNode, 4, 1), verify: verifier }),
+    result: obj({ fingerprint, keys: arr(exportedKey, 4, 1) }),
   },
 };

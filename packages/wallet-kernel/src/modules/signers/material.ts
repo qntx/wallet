@@ -62,7 +62,8 @@ export const pinnedMaterial = (pin: HardwarePin): PublicMaterial => ({
     }
     const node = nodeAt(pin, path);
     if (node !== undefined) {
-      return node.publicKey;
+      // A reply transfers its buffers to the host — pinned bytes must outlive every answer.
+      return new Uint8Array(node.publicKey);
     }
     const ancestor = derivingAncestor(pin, path);
     if (ancestor === undefined) {
@@ -75,7 +76,8 @@ export const pinnedMaterial = (pin: HardwarePin): PublicMaterial => ({
     if (key === undefined) {
       throw deviceRequired();
     }
-    return key.publicKey;
+    // A reply transfers its buffers to the host — pinned bytes must outlive every answer.
+    return new Uint8Array(key.publicKey);
   },
   extendedPublicKey: async (path, versions: Versions) => {
     const node = nodeAt(pin, path);
@@ -91,5 +93,5 @@ export const pinnedMaterial = (pin: HardwarePin): PublicMaterial => ({
       publicKey: node.publicKey,
     }).publicExtendedKey;
   },
-  fingerprint: async () => pin.fingerprint,
+  fingerprint: async () => new Uint8Array(pin.fingerprint),
 });

@@ -7,17 +7,16 @@
  * fingerprint is returned unchanged; the module compares it against the pin and maps a mismatch to
  * `wrong-device`.
  */
-import { equalBytes } from "@noble/ciphers/utils.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 
+import { cryptoMultiAccountsCodec } from "@qntx/ur/interop";
 import type { KeyPath } from "@qntx/wallet-chains";
 
 import { KernelError } from "../../../errors.ts";
 import type { DeviceLink, PairingResult, PinnedEd25519, PinnedNode } from "../driver.ts";
 import { pathToString } from "../record.ts";
-import { decodeCbor } from "./cbor.ts";
-import { hardwareCall, multiAccounts } from "./registry.ts";
 import { pathOf, samePath } from "./sync.ts";
+import { decodeUr, encodeUr, fingerprintBytes, qrHardwareCallCodec, requestKeypath } from "./ur.ts";
 
 const HARDENED = 0x80000000;
 const ORIGIN = "qntx";
@@ -80,50 +79,69 @@ export const derive = async (
     kind: "qr",
     show: {
       type: "qr-hardware-call",
-      cbor: hardwareCall({ ...need, fingerprint: pin.fingerprint, origin: ORIGIN }),
+      cbor: encodeUr(
+        {
+          schemas: [
+            ...need.secp256k1.map((path) => ({
+              path: requestKeypath(path, pin.fingerprint),
+              curve: "secp256k1" as const,
+            })),
+            ...need.ed25519.map((path) => ({
+              path: requestKeypath(path, pin.fingerprint),
+              curve: "ed25519" as const,
+            })),
+          ],
+          origin: ORIGIN,
+        },
+        qrHardwareCallCodec,
+      ),
     },
     scan: ["crypto-multi-accounts"],
   });
   if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") {
     integrity();
   }
-  const accounts = multiAccounts(decodeCbor(response.ur.cbor));
+  const accounts = decodeUr("crypto-multi-accounts", response.ur.cbor, cryptoMultiAccountsCodec);
   const nodes: PinnedNode[] = [];
   const ed25519: PinnedEd25519[] = [];
   const answered: KeyPath[] = [];
   for (const key of accounts.keys) {
-    const path = key.origin === undefined ? undefined : pathOf(key.origin);
-    if (key.origin !== undefined) {
-      const source = key.origin.sourceFingerprint;
-      if (source !== undefined && !equalBytes(source, accounts.masterFingerprint)) {
-        integrity();
-      }
+    const { origin } = key.key;
+    const path = origin === undefined ? undefined : pathOf(origin);
+    if (
+      origin?.sourceFingerprint !== undefined &&
+      origin.sourceFingerprint !== accounts.masterFingerprint
+    ) {
+      integrity();
     }
-    if (key.isMaster || key.isPrivate || key.key === undefined || path === undefined) {
+    if (path === undefined) {
       integrity();
     }
     if (need.secp256k1.some((wanted) => samePath(path, wanted))) {
+      if (key.curve !== "secp256k1") {
+        integrity();
+      }
+      const node = key.key;
       if (
-        key.key.length !== 33 ||
-        key.chainCode === undefined ||
-        key.chainCode.length !== 32 ||
-        !secp256k1.utils.isValidPublicKey(key.key)
+        node.chainCode === undefined ||
+        node.chainCode.length !== 32 ||
+        !secp256k1.utils.isValidPublicKey(node.keyData)
       ) {
         integrity();
       }
       nodes.push({
         path,
-        publicKey: new Uint8Array(key.key),
-        chainCode: new Uint8Array(key.chainCode),
-        ...(key.parentFingerprint === undefined
+        publicKey: new Uint8Array(node.keyData),
+        chainCode: new Uint8Array(node.chainCode),
+        ...(node.parentFingerprint === undefined
           ? {}
-          : { parent: new Uint8Array(key.parentFingerprint) }),
+          : { parent: fingerprintBytes(node.parentFingerprint) }),
       });
     } else if (need.ed25519.some((wanted) => samePath(path, wanted))) {
-      if (key.key.length !== 32) {
+      if (key.curve !== "ed25519") {
         integrity();
       }
-      ed25519.push({ path, publicKey: new Uint8Array(key.key) });
+      ed25519.push({ path, publicKey: new Uint8Array(key.key.keyData) });
     }
     answered.push(path);
   }
@@ -136,9 +154,9 @@ export const derive = async (
     integrity();
   }
   return {
-    fingerprint: accounts.masterFingerprint,
+    fingerprint: fingerprintBytes(accounts.masterFingerprint),
     ...(accounts.device === undefined ? {} : { model: accounts.device }),
-    ...(accounts.deviceVersion === undefined ? {} : { firmware: accounts.deviceVersion }),
+    ...(accounts.version === undefined ? {} : { firmware: accounts.version }),
     nodes,
     ed25519,
   };

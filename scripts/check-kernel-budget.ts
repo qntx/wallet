@@ -46,14 +46,14 @@ const SIGNERS_FILES = [
   "operation.ts",
   "prompt.ts",
   "record.ts",
-  "keystone/cbor.ts",
   "keystone/derive.ts",
   "keystone/driver.ts",
-  "keystone/registry.ts",
   "keystone/sign.ts",
   "keystone/sync.ts",
+  "keystone/ur.ts",
 ];
-// measured 63384 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
+// measured 58633 B (rendered, all exports retained); budget from measurement with ≥ 5 %
+// headroom — owner brief 2026-11-23: one UR implementation (@qntx/ur interop) in the kernel
 const SIGNERS_BUDGET = 66_560;
 
 type Unit = {

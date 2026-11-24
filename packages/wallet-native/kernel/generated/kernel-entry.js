@@ -31,7 +31,7 @@
 	* isBytes(new Uint8Array());
 	* ```
 	*/
-	function isBytes$5(a) {
+	function isBytes$6(a) {
 		return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
 	}
 	var atitle$2 = (title) => title ? `"${title}" ` : "";
@@ -86,9 +86,9 @@
 	* ```
 	*/
 	function abytes$3(value, length, title = "") {
-		if (isBytes$5(value) && (length === void 0 || value.length === length)) return value;
+		if (isBytes$6(value) && (length === void 0 || value.length === length)) return value;
 		if (length !== void 0) anumber$3(length, "length");
-		const bytes = isBytes$5(value);
+		const bytes = isBytes$6(value);
 		const ofLen = length !== void 0 ? ` of length ${length}` : "";
 		const got = bytes ? `length=${value.length}` : `type=${typeof value}`;
 		const message = atitle$2(title) + "expected Uint8Array" + ofLen + ", got " + got;
@@ -342,7 +342,7 @@
 			const tagl = params.tagLength;
 			const aadStart = params.nonceLength !== void 0 ? 1 : 0;
 			if (!params.withAAD) {
-				for (let i = aadStart; i < args.length; i++) if (isBytes$5(args[i])) throw new Error("AAD not supported");
+				for (let i = aadStart; i < args.length; i++) if (isBytes$6(args[i])) throw new Error("AAD not supported");
 			}
 			if (params.withAAD && args[aadStart] !== void 0) abytes$3(args[aadStart], void 0, "AAD");
 			const cipher = constructor(key, ...args);
@@ -449,7 +449,7 @@
 	* copyBytes(new Uint8Array([1, 2]));
 	* ```
 	*/
-	function copyBytes$1(bytes) {
+	function copyBytes$2(bytes) {
 		return Uint8Array.from(abytes$3(bytes));
 	}
 	// \0@oxc-project+runtime@0.155.0/helpers/esm/typeof.js
@@ -513,42 +513,42 @@
 			_defineProperty(this, "name", "ValidationError");
 		}
 	};
-	function fail$6() {
+	function fail$5() {
 		throw new ValidationError();
 	}
 	function literal(expected) {
 		return (value) => {
-			if (value !== expected) fail$6();
+			if (value !== expected) fail$5();
 			return expected;
 		};
 	}
 	var nullValue = literal(null);
-	var bool$1 = (value) => {
-		if (typeof value !== "boolean") fail$6();
+	var bool = (value) => {
+		if (typeof value !== "boolean") fail$5();
 		return value;
 	};
 	function int(min, max) {
 		return (value) => {
-			if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) fail$6();
+			if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) fail$5();
 			return value;
 		};
 	}
 	function str(max, pattern) {
 		return (value) => {
-			if (typeof value !== "string" || value.length > max || pattern !== void 0 && !pattern.test(value)) fail$6();
+			if (typeof value !== "string" || value.length > max || pattern !== void 0 && !pattern.test(value)) fail$5();
 			return value;
 		};
 	}
-	function bytes$1(min, max) {
+	function bytes(min, max) {
 		const high = max !== null && max !== void 0 ? max : min;
 		return (value) => {
-			if (!(value instanceof Uint8Array) || value.length < min || value.length > high) fail$6();
+			if (!(value instanceof Uint8Array) || value.length < min || value.length > high) fail$5();
 			return value;
 		};
 	}
 	function arr(item, max, min = 0) {
 		return (value) => {
-			if (!Array.isArray(value) || value.length < min || value.length > max) fail$6();
+			if (!Array.isArray(value) || value.length < min || value.length > max) fail$5();
 			const out = [];
 			for (const element of value) out.push(item(element));
 			return out;
@@ -567,18 +567,18 @@
 	function obj(shape) {
 		const keys = Object.keys(shape);
 		return (value) => {
-			if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) fail$6();
+			if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) fail$5();
 			const record = value;
-			for (const key of Object.keys(record)) if (!Object.hasOwn(shape, key)) fail$6();
+			for (const key of Object.keys(record)) if (!Object.hasOwn(shape, key)) fail$5();
 			const out = {};
 			for (const key of keys) {
 				const field = shape[key];
-				if (field === void 0) fail$6();
+				if (field === void 0) fail$5();
 				const raw = record[key];
 				if (field instanceof Opt) {
 					if (raw !== void 0) out[key] = field.validator(raw);
 				} else {
-					if (!Object.hasOwn(record, key)) fail$6();
+					if (!Object.hasOwn(record, key)) fail$5();
 					out[key] = field(raw);
 				}
 			}
@@ -597,12 +597,12 @@
 	*/
 	function record(key, value, max) {
 		return (input) => {
-			if (typeof input !== "object" || input === null || Array.isArray(input) || input instanceof Uint8Array || Object.getPrototypeOf(input) !== Object.prototype) fail$6();
+			if (typeof input !== "object" || input === null || Array.isArray(input) || input instanceof Uint8Array || Object.getPrototypeOf(input) !== Object.prototype) fail$5();
 			const out = {};
 			const entries = Object.entries(input);
-			if (entries.length > max) fail$6();
+			if (entries.length > max) fail$5();
 			for (const [name, item] of entries) {
-				if (FORBIDDEN_RECORD_KEYS.has(name)) fail$6();
+				if (FORBIDDEN_RECORD_KEYS.has(name)) fail$5();
 				out[key(name)] = value(item);
 			}
 			return out;
@@ -616,7 +616,7 @@
 			} catch (error) {
 				if (!(error instanceof ValidationError)) throw error;
 			}
-			return fail$6();
+			return fail$5();
 		};
 	}
 	/** Validates a value and returns it, or undefined on a shape mismatch. */
@@ -661,19 +661,19 @@
 	var identityIndex = int(0, 2147483646);
 	var factor = union(obj({ kind: literal("device") }), obj({ kind: literal("hardware") }), obj({
 		kind: literal("password"),
-		password: bytes$1(1, 1024)
+		password: bytes(1, 1024)
 	}), obj({
 		kind: literal("passkey"),
-		credentialId: bytes$1(1, 1023),
-		prf: bytes$1(32)
+		credentialId: bytes(1, 1023),
+		prf: bytes(32)
 	}));
 	var verifier = union(obj({ kind: literal("hardware") }), obj({
 		kind: literal("password"),
-		password: bytes$1(1, 1024)
+		password: bytes(1, 1024)
 	}), obj({
 		kind: literal("passkey"),
-		credentialId: bytes$1(1, 1023),
-		prf: bytes$1(32)
+		credentialId: bytes(1, 1023),
+		prf: bytes(32)
 	}));
 	var factorInfo$1 = union(obj({
 		kind: literal("device"),
@@ -697,9 +697,9 @@
 	var label = (max) => str(max, new RegExp("^\\S(?:.*\\S)?$", "su"));
 	var hostEvidence = {
 		ceremony: literal("host"),
-		credentialId: bytes$1(1, 1023),
-		prfWallet: bytes$1(32),
-		synced: bool$1,
+		credentialId: bytes(1, 1023),
+		prfWallet: bytes(32),
+		synced: bool,
 		factor: opt(factor)
 	};
 	var createWithPasskeyParams = union(obj(hostEvidence), obj({
@@ -719,12 +719,12 @@
 	var hostBackupPasskey = obj({
 		kind: literal("passkey"),
 		ceremony: literal("host"),
-		credentialId: bytes$1(1, 1023),
-		prfBackup: bytes$1(32)
+		credentialId: bytes(1, 1023),
+		prfBackup: bytes(32)
 	});
 	var backupPassword = union(obj({
 		kind: literal("password"),
-		password: bytes$1(1, 1024)
+		password: bytes(1, 1024)
 	}), obj({
 		kind: literal("password"),
 		ceremony: literal("kernel")
@@ -751,7 +751,7 @@
 		origin: union(literal("passkey"), literal("mnemonic")),
 		words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
 		backup: union(literal("none"), literal("passkey"), literal("mnemonic")),
-		passphrase: bool$1,
+		passphrase: bool,
 		createdAt: safeTime$1
 	});
 	var walletInfo$1 = union(vaultWalletInfo, obj({
@@ -764,7 +764,7 @@
 		createdAt: safeTime$1
 	}));
 	/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
-	var passphraseBytes = bytes$1(1, 1024);
+	var passphraseBytes = bytes(1, 1024);
 	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("verification-unavailable"), literal("blind-signing-disabled"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("app-lock-required"), literal("limit-exceeded"), literal("crashed"), literal("device-required"), literal("device-locked"), literal("device-app-closed"), literal("device-rejected"), literal("wrong-device"));
 	var createdResult = obj({
 		wallet: vaultWalletInfo,
@@ -817,7 +817,7 @@
 			session: true,
 			presence: true,
 			params: obj({
-				enabled: bool$1,
+				enabled: bool,
 				verify: verifier
 			}),
 			result: nullValue
@@ -826,7 +826,7 @@
 			session: true,
 			presence: true,
 			params: obj({
-				enabled: bool$1,
+				enabled: bool,
 				verify: verifier
 			}),
 			result: nullValue
@@ -852,7 +852,7 @@
 			}),
 			result: obj({
 				draft: draftId,
-				words: bytes$1(16, 1024),
+				words: bytes(16, 1024),
 				quiz: arr(int(0, 23), 3, 3)
 			})
 		},
@@ -861,7 +861,7 @@
 			presence: true,
 			params: obj({
 				draft: draftId,
-				answers: arr(bytes$1(1, 64), 3, 3),
+				answers: arr(bytes(1, 64), 3, 3),
 				passphrase: opt(passphraseBytes)
 			}),
 			result: createdResult
@@ -915,7 +915,7 @@
 			session: false,
 			presence: true,
 			params: obj({
-				mnemonic: bytes$1(1, 1024),
+				mnemonic: bytes(1, 1024),
 				passphrase: opt(passphraseBytes),
 				factor: opt(factor)
 			}),
@@ -929,7 +929,7 @@
 				walletId
 			}),
 			result: obj({
-				mnemonic: bytes$1(16, 1024),
+				mnemonic: bytes(16, 1024),
 				passphrase: opt(passphraseBytes)
 			})
 		},
@@ -946,14 +946,14 @@
 			session: true,
 			presence: false,
 			params: obj({ purpose: str(32, /^[a-z0-9-]{1,32}$/) }),
-			result: bytes$1(32)
+			result: bytes(32)
 		},
 		"keys.import": {
 			session: true,
 			presence: true,
 			params: obj({
 				family: keyFamily,
-				secret: bytes$1(32, 64)
+				secret: bytes(32, 64)
 			}),
 			result: keyInfo
 		},
@@ -979,7 +979,7 @@
 				verify: verifier,
 				keyId
 			}),
-			result: bytes$1(1, 256)
+			result: bytes(1, 256)
 		}
 	};
 	// \0@oxc-project+runtime@0.155.0/helpers/esm/objectSpread2.js
@@ -1007,7 +1007,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-B2rDuyg0.mjs
+	// packages/wallet/dist/protocol-DTUqx_5M.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1121,7 +1121,7 @@
 		kind: literal("evm.personal-message"),
 		network: caip2,
 		account: accountRef,
-		message: bytes$1(0, 65536)
+		message: bytes(0, 65536)
 	}), obj({
 		kind: literal("evm.fiat24-session"),
 		network: caip2,
@@ -1137,7 +1137,7 @@
 		kind: literal("solana.transaction"),
 		network: caip2,
 		account: accountRef,
-		message: bytes$1(1, 4096),
+		message: bytes(1, 4096),
 		lookupTables: opt(arr(obj({
 			address: solanaAddress,
 			addresses: arr(solanaAddress, 256)
@@ -1146,7 +1146,7 @@
 		kind: literal("solana.message"),
 		network: caip2,
 		account: accountRef,
-		message: bytes$1(1, 65536),
+		message: bytes(1, 65536),
 		format: literal("raw")
 	}), obj({
 		kind: literal("bitcoin.psbt"),
@@ -1156,7 +1156,7 @@
 			walletId,
 			groupIndex
 		}),
-		psbt: bytes$1(1, 131072),
+		psbt: bytes(1, 131072),
 		sign: arr(obj({
 			index: int(0, 1024),
 			template: btcTemplate
@@ -1174,12 +1174,12 @@
 		kind: literal("tron.transaction"),
 		network: caip2,
 		account: accountRef,
-		rawData: bytes$1(1, 512e3)
+		rawData: bytes(1, 512e3)
 	}), obj({
 		kind: literal("tron.message"),
 		network: caip2,
 		account: accountRef,
-		message: bytes$1(1, 65536)
+		message: bytes(1, 65536)
 	}), obj({
 		kind: literal("tron.typed-data"),
 		network: caip2,
@@ -1188,22 +1188,22 @@
 	}));
 	var signResult = union(obj({
 		kind: literal("evm.transaction"),
-		signedTransaction: bytes$1(1, 65536)
+		signedTransaction: bytes(1, 65536)
 	}), obj({
 		kind: union(literal("evm.personal-message"), literal("evm.fiat24-session"), literal("evm.typed-data")),
-		signature: bytes$1(65, 65)
+		signature: bytes(65, 65)
 	}), obj({
 		kind: union(literal("solana.transaction"), literal("solana.message")),
-		signature: bytes$1(64, 64)
+		signature: bytes(64, 64)
 	}), obj({
 		kind: literal("bitcoin.psbt"),
-		signedPsbt: bytes$1(1, 131072)
+		signedPsbt: bytes(1, 131072)
 	}), obj({
 		kind: literal("bitcoin.message"),
 		signature: str(512)
 	}), obj({
 		kind: union(literal("tron.transaction"), literal("tron.message"), literal("tron.typed-data")),
-		signature: bytes$1(65, 65)
+		signature: bytes(65, 65)
 	}));
 	var chainAccount = union(addressResult("evm.bip44"), addressResult("solana.bip44-change"), addressResult("tron.bip44", str(34, /^T[1-9A-HJ-NP-Za-km-z]{33}$/)), obj({
 		template: union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84"), literal("btc.bip86")),
@@ -1212,6 +1212,23 @@
 		fingerprint: str(8, /^[0-9a-f]{8}$/),
 		path: str(11, /^m\/[0-9'/]+$/)
 	}));
+	var exportNode = union(obj({ kind: literal("evm.account") }), obj({
+		kind: literal("leaf"),
+		template: union(literal("evm.bip44"), literal("tron.bip44"), literal("solana.bip44-change"))
+	}), obj({
+		kind: literal("btc.account"),
+		template: btcTemplate,
+		network: caip2
+	}));
+	var fingerprint = str(8, /^[0-9a-f]{8}$/);
+	var exportedKey = obj({
+		node: exportNode,
+		path: str(32, /^m\/[0-9'/]+$/),
+		curve: union(literal("secp256k1"), literal("ed25519")),
+		publicKey: union(bytes(33), bytes(32)),
+		chainCode: opt(bytes(32)),
+		parentFingerprint: opt(fingerprint)
+	});
 	var CHAINS_METHODS = {
 		"wallet.accounts": {
 			session: true,
@@ -1232,13 +1249,27 @@
 				verify: verifier
 			}),
 			result: signResult
+		},
+		"chain.exportAccount": {
+			session: true,
+			presence: true,
+			params: obj({
+				walletId,
+				groupIndex,
+				nodes: arr(exportNode, 4, 1),
+				verify: verifier
+			}),
+			result: obj({
+				fingerprint,
+				keys: arr(exportedKey, 4, 1)
+			})
 		}
 	};
 	var UR_TYPE = /^[a-z0-9-]{1,64}$/;
 	var DERIVATION_PATH = /^m(\/[0-9]+'?){1,10}$/;
 	var qrPayload = obj({
 		type: str(64, UR_TYPE),
-		cbor: bytes$1(1, 262144)
+		cbor: bytes(1, 262144)
 	});
 	var deviceRequest = union(obj({
 		kind: literal("qr"),
@@ -1246,7 +1277,7 @@
 		scan: arr(str(64, UR_TYPE), 4, 1)
 	}), obj({
 		kind: literal("message"),
-		data: bytes$1(1, 65536)
+		data: bytes(1, 65536)
 	}), obj({
 		kind: literal("compare"),
 		address: str(128, /^.+$/),
@@ -1257,10 +1288,10 @@
 		ur: qrPayload
 	}), obj({
 		kind: literal("message"),
-		data: bytes$1(1, 65536)
+		data: bytes(1, 65536)
 	}), obj({
 		kind: literal("compare"),
-		matched: bool$1
+		matched: bool
 	}));
 	var deviceDisplay = union(literal("clear"), literal("blind"));
 	var hardwareOperation = union(obj({
@@ -1379,7 +1410,7 @@
 	});
 	var nostrExportFormat = union(obj({ kind: literal("nsec") }), obj({
 		kind: literal("ncryptsec"),
-		password: bytes$1(1, 1024)
+		password: bytes(1, 1024)
 	}));
 	var textParams = obj({
 		publicKey,
@@ -1421,7 +1452,7 @@
 				publicKey,
 				format: nostrExportFormat
 			}),
-			result: bytes$1(16, 4096)
+			result: bytes(16, 4096)
 		},
 		"nostr.signEvent": {
 			session: true,
@@ -1514,7 +1545,7 @@
 	var sessionInfo$1 = obj({
 		address: evmAddress,
 		scheme: schemeId,
-		supported: bool$1,
+		supported: bool,
 		walletId,
 		groupIndex,
 		owner: evmAddress,
@@ -1572,7 +1603,7 @@
 				address: evmAddress,
 				params: paramsValue
 			}),
-			result: obj({ signature: bytes$1(65, 65) })
+			result: obj({ signature: bytes(65, 65) })
 		}
 	};
 	/**
@@ -1602,10 +1633,10 @@
 	var identifier = str(64, /^[0-9a-f]{64}$/);
 	var leafId = str(64);
 	var transferId = str(64);
-	var bytes32$1 = bytes$1(32);
-	var bytes33 = bytes$1(33);
-	var bytes64 = bytes$1(64);
-	var ciphertext = bytes$1(1, MAX_CIPHERTEXT_BYTES);
+	var bytes32$1 = bytes(32);
+	var bytes33 = bytes(33);
+	var bytes64 = bytes(64);
+	var ciphertext = bytes(1, MAX_CIPHERTEXT_BYTES);
 	var sats = int(0, MAX_SATS$1);
 	var sparkLeafKey = union(obj({
 		type: literal("leaf"),
@@ -1633,14 +1664,14 @@
 		commitment: signingCommitment
 	});
 	var signingTarget = obj({
-		transaction: bytes$1(1, MAX_TX_BYTES),
+		transaction: bytes(1, MAX_TX_BYTES),
 		inputIndex: int(0, 2147483647),
 		prevouts: arr(obj({
-			script: bytes$1(0, MAX_SCRIPT_BYTES),
+			script: bytes(0, MAX_SCRIPT_BYTES),
 			amount: sats
 		}), MAX_PREVOUTS)
 	});
-	var adaptorPublicKey = opt(union(bytes$1(0), bytes$1(33)));
+	var adaptorPublicKey = opt(union(bytes(0), bytes(33)));
 	var frostSignJob = obj({
 		key: sparkKey,
 		target: signingTarget,
@@ -1649,8 +1680,8 @@
 		operatorCommitments: arr(operatorCommitment, MAX_OPERATORS),
 		adaptorPublicKey,
 		exit: opt(obj({
-			connectorTx: bytes$1(1, MAX_TX_BYTES),
-			exitTx: bytes$1(1, MAX_TX_BYTES)
+			connectorTx: bytes(1, MAX_TX_BYTES),
+			exitTx: bytes(1, MAX_TX_BYTES)
 		}))
 	});
 	var frostAggregateJob = obj({
@@ -1673,22 +1704,22 @@
 		txid: bytes32$1,
 		vout: int(0, 2147483647),
 		creditAmountSats: sats,
-		sspSignature: bytes$1(1, 1024)
+		sspSignature: bytes(1, 1024)
 	});
 	var identityStatement = union(obj({
 		kind: literal("so-challenge"),
-		challenge: bytes$1(1, 4096)
+		challenge: bytes(1, 4096)
 	}), obj({
 		kind: literal("ssp-challenge"),
 		protectedChallenge: str(8192)
 	}), obj({
 		kind: literal("transfer-package"),
 		transferId,
-		package: bytes$1(1, MAX_PACKAGE_BYTES)
+		package: bytes(1, MAX_PACKAGE_BYTES)
 	}), obj({
 		kind: literal("claim-package"),
 		transferId,
-		package: bytes$1(1, MAX_PACKAGE_BYTES)
+		package: bytes(1, MAX_PACKAGE_BYTES)
 	}), staticDepositClaimStatement, obj({
 		kind: literal("static-deposit-refund"),
 		network,
@@ -1703,10 +1734,10 @@
 		target: signingTarget
 	}), obj({
 		kind: literal("spark-invoice"),
-		invoice: bytes$1(1, 65536)
+		invoice: bytes(1, 65536)
 	}), obj({
 		kind: literal("token-transaction"),
-		partialTransaction: bytes$1(1, MAX_PACKAGE_BYTES)
+		partialTransaction: bytes(1, MAX_PACKAGE_BYTES)
 	}), obj({
 		kind: literal("lightning-address"),
 		action: literal("register"),
@@ -1722,7 +1753,7 @@
 		timestamp: safeTime$1
 	}));
 	var htlcTimeoutRequest = obj({
-		transaction: bytes$1(1, MAX_TX_BYTES),
+		transaction: bytes(1, MAX_TX_BYTES),
 		inputIndex: int(0, 2147483647),
 		prevoutAmountSats: sats,
 		paymentHash: bytes32$1,
@@ -1737,7 +1768,7 @@
 		}), MAX_LEAVES, 1)
 	});
 	var preparedTransfer = obj({
-		operatorPackages: record(identifier, bytes$1(1, MAX_PACKAGE_BYTES), MAX_OPERATORS),
+		operatorPackages: record(identifier, bytes(1, MAX_PACKAGE_BYTES), MAX_OPERATORS),
 		leaves: arr(obj({
 			leafId,
 			newPublicKey: bytes33,
@@ -1752,18 +1783,18 @@
 			secretCipher: ciphertext
 		}), MAX_LEAVES, 1)
 	});
-	var preparedClaim = obj({ operatorPackages: record(identifier, bytes$1(1, MAX_PACKAGE_BYTES), MAX_OPERATORS) });
+	var preparedClaim = obj({ operatorPackages: record(identifier, bytes(1, MAX_PACKAGE_BYTES), MAX_OPERATORS) });
 	var preparedLightningReceive = obj({
 		paymentHash: bytes32$1,
-		operatorPackages: record(identifier, bytes$1(1, MAX_PACKAGE_BYTES), MAX_OPERATORS)
+		operatorPackages: record(identifier, bytes(1, MAX_PACKAGE_BYTES), MAX_OPERATORS)
 	});
 	var staticDepositClaimRequest = obj({
 		index: int(0, 2147483647),
 		statement: staticDepositClaimStatement
 	});
 	var staticDepositClaimResult = obj({
-		encryptedSecretKey: bytes$1(1, MAX_CIPHERTEXT_BYTES),
-		signature: bytes$1(64, 128)
+		encryptedSecretKey: bytes(1, MAX_CIPHERTEXT_BYTES),
+		signature: bytes(64, 128)
 	});
 	var satsAmount = () => int(0, Number.MAX_SAFE_INTEGER);
 	var U128_MAX = 340282366920938463463374607431768211455n;
@@ -1785,9 +1816,9 @@
 		}),
 		obj({
 			kind: literal("token"),
-			tokenIdentifier: bytes$1(32),
+			tokenIdentifier: bytes(32),
 			receivers: arr(obj({
-				ownerPublicKey: bytes$1(33),
+				ownerPublicKey: bytes(33),
 				amount: decimalU128
 			}), 256, 1)
 		})
@@ -1795,7 +1826,7 @@
 	var approveIntent = union(obj({
 		kind: literal("transfer"),
 		receivers: arr(obj({
-			identityPublicKey: bytes$1(33),
+			identityPublicKey: bytes(33),
 			amountSats: satsAmount()
 		}), 256, 1)
 	}), obj({
@@ -1807,12 +1838,12 @@
 	var approvalSummary = union(obj({
 		kind: literal("transfer"),
 		receivers: arr(obj({
-			identityPublicKey: bytes$1(33),
+			identityPublicKey: bytes(33),
 			amountSats: satsAmount()
 		}), 256, 1)
 	}), obj({
 		kind: literal("lightning"),
-		paymentHash: bytes$1(32),
+		paymentHash: bytes(32),
 		invoiceAmountSats: opt(satsAmount()),
 		maxFeeSats: satsAmount()
 	}), ...outflowIntents);
@@ -1875,7 +1906,7 @@
 				account: account$1,
 				statement: identityStatement
 			}),
-			result: bytes$1(64, 128)
+			result: bytes(64, 128)
 		},
 		"spark.signKeySpend": {
 			session: true,
@@ -2026,13 +2057,13 @@
 		protocol: literal(3),
 		vault: union(literal("uninitialized"), literal("locked"), literal("unlocked"), literal("corrupted"), literal("unsupported"), literal("unavailable")),
 		factors: arr(factorInfo$1, MAX_SNAPSHOT_ITEMS),
-		appLock: bool$1,
+		appLock: bool,
 		verification: union(literal("available"), literal("unavailable")),
 		wallets: arr(walletInfo$1, MAX_SNAPSHOT_ITEMS),
 		nostr: nostrStatus$1,
 		importedKeys: arr(keyInfo, MAX_SNAPSHOT_ITEMS),
 		backup: union(backupInfo, nullValue),
-		blindSigning: bool$1
+		blindSigning: bool
 	});
 	var METHODS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: {
 		session: false,
@@ -2057,7 +2088,7 @@
 	}), obj({
 		v: literal(3),
 		event: literal("ceremony"),
-		active: bool$1
+		active: bool
 	});
 	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/utils.js
 	/**
@@ -2070,7 +2101,7 @@
 	* isBytes(new Uint8Array([1, 2, 3]));
 	* ```
 	*/
-	function isBytes$4(a) {
+	function isBytes$5(a) {
 		return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
 	}
 	/**
@@ -2122,9 +2153,9 @@
 	* ```
 	*/
 	function abytes$2(value, length, title = "") {
-		if (isBytes$4(value) && (length === void 0 || value.length === length)) return value;
+		if (isBytes$5(value) && (length === void 0 || value.length === length)) return value;
 		if (length !== void 0) anumber$2(length, "length");
-		const bytes = isBytes$4(value);
+		const bytes = isBytes$5(value);
 		const ofLen = length !== void 0 ? ` of length ${length}` : "";
 		const got = bytes ? `length=${value.length}` : `type=${typeof value}`;
 		const message = atitle$1(title) + "expected Uint8Array" + ofLen + ", got " + got;
@@ -2255,7 +2286,7 @@
 	* rotl(0x12345678, 8);
 	* ```
 	*/
-	function rotl$1(word, shift) {
+	function rotl$2(word, shift) {
 		return word << shift | word >>> 32 - shift >>> 0;
 	}
 	/**
@@ -2298,7 +2329,7 @@
 	* bytesToHex(Uint8Array.from([0xca, 0xfe, 0x01, 0x23])); // 'cafe0123'
 	* ```
 	*/
-	function bytesToHex$4(bytes) {
+	function bytesToHex$5(bytes) {
 		abytes$2(bytes);
 		if (hasHexBuiltin$1) return bytes.toHex();
 		let hex = "";
@@ -2320,7 +2351,7 @@
 	* hexToBytes('cafe0123'); // Uint8Array.from([0xca, 0xfe, 0x01, 0x23])
 	* ```
 	*/
-	function hexToBytes$3(hex) {
+	function hexToBytes$4(hex) {
 		if (typeof hex !== "string") throw new TypeError("hex string expected, got " + typeof hex);
 		if (hasHexBuiltin$1) try {
 			return Uint8Array.fromHex(hex);
@@ -3376,12 +3407,12 @@
 	}));
 	// node_modules/.bun/@scure+base@2.4.0/node_modules/@scure/base/index.js
 	/*! scure-base - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	function isBytes$3(a) {
+	function isBytes$4(a) {
 		return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
 	}
 	/** Asserts something is Uint8Array. */
 	function abytes$1(b) {
-		if (!isBytes$3(b)) throw new TypeError("Uint8Array expected");
+		if (!isBytes$4(b)) throw new TypeError("Uint8Array expected");
 	}
 	function isArrayOf(isString, arr) {
 		if (!Array.isArray(arr)) return false;
@@ -3559,7 +3590,7 @@
 			} catch (e) {}
 		};
 	}
-	function checksum$2(len, fn) {
+	function checksum$3(len, fn) {
 		anumber$1(len);
 		if (len <= 0) throw new RangeError(`checksum length must be positive: ${len}`);
 		afn(fn);
@@ -3655,7 +3686,7 @@
 		function encode(prefix, words, limit = 90) {
 			astr("bech32.encode prefix", prefix);
 			if (limit !== false) anumber$1(limit, "limit");
-			if (isBytes$3(words)) words = u8ToNumArr(words);
+			if (isBytes$4(words)) words = u8ToNumArr(words);
 			anumArr("bech32.encode", words);
 			const plen = prefix.length;
 			if (plen === 0) throw new TypeError(`Invalid prefix length ${plen}`);
@@ -3863,7 +3894,7 @@
 		createBase58check = (sha256) => {
 			afn(sha256);
 			const _sha256 = sha256;
-			return chain(checksum$2(4, (data) => _sha256(_sha256(data))), base58);
+			return chain(checksum$3(4, (data) => _sha256(_sha256(data))), base58);
 		};
 		BECH_ALPHABET = /* @__PURE__ */ alphabet("qpzry9x8gf2tvdw0s3jn54khce6mua7l");
 		BECH_UPPERCASE_PRINTABLE = /^[\x21-\x60\x7b-\x7e]+$/;
@@ -4012,7 +4043,7 @@
 	* safe to use as a record id.
 	*/
 	function keyIdOf(family, publicKey) {
-		return bytesToHex$4(sha256$1(concatBytes$3(utf8ToBytes$1("qntx-wallet/key-id/v1"), Uint8Array.of(KEY_FAMILY_BYTE[family]), publicKey)).slice(0, 8));
+		return bytesToHex$5(sha256$1(concatBytes$3(utf8ToBytes$1("qntx-wallet/key-id/v1"), Uint8Array.of(KEY_FAMILY_BYTE[family]), publicKey)).slice(0, 8));
 	}
 	// packages/wallet-kernel/src/errors.ts
 	init_defineProperty();
@@ -4189,6 +4220,10 @@
 			reset: {
 				title: "重置钱包",
 				description: "验证设备所有者身份以删除本设备上的全部钱包数据"
+			},
+			"export-account": {
+				title: "连接观察钱包",
+				description: "验证身份以共享公开账户密钥——扩展公钥会暴露该账户的全部地址，但不会泄露任何私钥"
 			}
 		},
 		en: {
@@ -4243,6 +4278,10 @@
 			reset: {
 				title: "Reset wallet",
 				description: "Verify you own this device to erase all wallet data on it"
+			},
+			"export-account": {
+				title: "Connect watch-only wallet",
+				description: "Verify your identity to share public account keys — extended keys reveal every address of the account, never a private key"
 			}
 		}
 	};
@@ -4476,7 +4515,7 @@
 	* rotl(0x12345678, 8);
 	* ```
 	*/
-	function rotl(a, b) {
+	function rotl$1(a, b) {
 		return a << b | a >>> 32 - b;
 	}
 	var BLOCK_LEN = 64;
@@ -4560,7 +4599,7 @@
 			let k;
 			let sigma;
 			if (l === 32) {
-				toClean.push(k = copyBytes$1(key));
+				toClean.push(k = copyBytes$2(key));
 				sigma = sigma32_32;
 			} else if (l === 16 && allowShortKeys) {
 				k = /* @__PURE__ */ new Uint8Array(32);
@@ -4572,7 +4611,7 @@
 				abytes$3(key, 32, "arx key");
 				throw new Error("invalid key size");
 			}
-			if (!isLE$1 || !isAligned32(nonce)) toClean.push(nonce = copyBytes$1(nonce));
+			if (!isLE$1 || !isAligned32(nonce)) toClean.push(nonce = copyBytes$2(nonce));
 			let k32 = u32$6(k);
 			if (extendNonceFn) {
 				if (nonce.length !== 24) throw new Error("arx: extended nonce must be 24 bytes");
@@ -4654,7 +4693,7 @@
 			_defineProperty(this, "pos", 0);
 			_defineProperty(this, "finished", false);
 			_defineProperty(this, "destroyed", false);
-			key = copyBytes$1(abytes$3(key, 32, "key"));
+			key = copyBytes$2(abytes$3(key, 32, "key"));
 			const t0 = u8to16(key, 0);
 			const t1 = u8to16(key, 2);
 			const t2 = u8to16(key, 4);
@@ -4832,7 +4871,7 @@
 		update(data) {
 			aexists$1(this);
 			abytes$3(data);
-			data = copyBytes$1(data);
+			data = copyBytes$2(data);
 			const { buffer, blockLen } = this;
 			const len = data.length;
 			for (let pos = 0; pos < len;) {
@@ -4929,69 +4968,69 @@
 		let x00 = y00, x01 = y01, x02 = y02, x03 = y03, x04 = y04, x05 = y05, x06 = y06, x07 = y07, x08 = y08, x09 = y09, x10 = y10, x11 = y11, x12 = y12, x13 = y13, x14 = y14, x15 = y15;
 		for (let r = 0; r < rounds; r += 2) {
 			x00 = x00 + x04 | 0;
-			x12 = rotl(x12 ^ x00, 16);
+			x12 = rotl$1(x12 ^ x00, 16);
 			x08 = x08 + x12 | 0;
-			x04 = rotl(x04 ^ x08, 12);
+			x04 = rotl$1(x04 ^ x08, 12);
 			x00 = x00 + x04 | 0;
-			x12 = rotl(x12 ^ x00, 8);
+			x12 = rotl$1(x12 ^ x00, 8);
 			x08 = x08 + x12 | 0;
-			x04 = rotl(x04 ^ x08, 7);
+			x04 = rotl$1(x04 ^ x08, 7);
 			x01 = x01 + x05 | 0;
-			x13 = rotl(x13 ^ x01, 16);
+			x13 = rotl$1(x13 ^ x01, 16);
 			x09 = x09 + x13 | 0;
-			x05 = rotl(x05 ^ x09, 12);
+			x05 = rotl$1(x05 ^ x09, 12);
 			x01 = x01 + x05 | 0;
-			x13 = rotl(x13 ^ x01, 8);
+			x13 = rotl$1(x13 ^ x01, 8);
 			x09 = x09 + x13 | 0;
-			x05 = rotl(x05 ^ x09, 7);
+			x05 = rotl$1(x05 ^ x09, 7);
 			x02 = x02 + x06 | 0;
-			x14 = rotl(x14 ^ x02, 16);
+			x14 = rotl$1(x14 ^ x02, 16);
 			x10 = x10 + x14 | 0;
-			x06 = rotl(x06 ^ x10, 12);
+			x06 = rotl$1(x06 ^ x10, 12);
 			x02 = x02 + x06 | 0;
-			x14 = rotl(x14 ^ x02, 8);
+			x14 = rotl$1(x14 ^ x02, 8);
 			x10 = x10 + x14 | 0;
-			x06 = rotl(x06 ^ x10, 7);
+			x06 = rotl$1(x06 ^ x10, 7);
 			x03 = x03 + x07 | 0;
-			x15 = rotl(x15 ^ x03, 16);
+			x15 = rotl$1(x15 ^ x03, 16);
 			x11 = x11 + x15 | 0;
-			x07 = rotl(x07 ^ x11, 12);
+			x07 = rotl$1(x07 ^ x11, 12);
 			x03 = x03 + x07 | 0;
-			x15 = rotl(x15 ^ x03, 8);
+			x15 = rotl$1(x15 ^ x03, 8);
 			x11 = x11 + x15 | 0;
-			x07 = rotl(x07 ^ x11, 7);
+			x07 = rotl$1(x07 ^ x11, 7);
 			x00 = x00 + x05 | 0;
-			x15 = rotl(x15 ^ x00, 16);
+			x15 = rotl$1(x15 ^ x00, 16);
 			x10 = x10 + x15 | 0;
-			x05 = rotl(x05 ^ x10, 12);
+			x05 = rotl$1(x05 ^ x10, 12);
 			x00 = x00 + x05 | 0;
-			x15 = rotl(x15 ^ x00, 8);
+			x15 = rotl$1(x15 ^ x00, 8);
 			x10 = x10 + x15 | 0;
-			x05 = rotl(x05 ^ x10, 7);
+			x05 = rotl$1(x05 ^ x10, 7);
 			x01 = x01 + x06 | 0;
-			x12 = rotl(x12 ^ x01, 16);
+			x12 = rotl$1(x12 ^ x01, 16);
 			x11 = x11 + x12 | 0;
-			x06 = rotl(x06 ^ x11, 12);
+			x06 = rotl$1(x06 ^ x11, 12);
 			x01 = x01 + x06 | 0;
-			x12 = rotl(x12 ^ x01, 8);
+			x12 = rotl$1(x12 ^ x01, 8);
 			x11 = x11 + x12 | 0;
-			x06 = rotl(x06 ^ x11, 7);
+			x06 = rotl$1(x06 ^ x11, 7);
 			x02 = x02 + x07 | 0;
-			x13 = rotl(x13 ^ x02, 16);
+			x13 = rotl$1(x13 ^ x02, 16);
 			x08 = x08 + x13 | 0;
-			x07 = rotl(x07 ^ x08, 12);
+			x07 = rotl$1(x07 ^ x08, 12);
 			x02 = x02 + x07 | 0;
-			x13 = rotl(x13 ^ x02, 8);
+			x13 = rotl$1(x13 ^ x02, 8);
 			x08 = x08 + x13 | 0;
-			x07 = rotl(x07 ^ x08, 7);
+			x07 = rotl$1(x07 ^ x08, 7);
 			x03 = x03 + x04 | 0;
-			x14 = rotl(x14 ^ x03, 16);
+			x14 = rotl$1(x14 ^ x03, 16);
 			x09 = x09 + x14 | 0;
-			x04 = rotl(x04 ^ x09, 12);
+			x04 = rotl$1(x04 ^ x09, 12);
 			x03 = x03 + x04 | 0;
-			x14 = rotl(x14 ^ x03, 8);
+			x14 = rotl$1(x14 ^ x03, 8);
 			x09 = x09 + x14 | 0;
-			x04 = rotl(x04 ^ x09, 7);
+			x04 = rotl$1(x04 ^ x09, 7);
 		}
 		let oi = 0;
 		out[oi++] = y00 + x00 | 0;
@@ -5415,7 +5454,7 @@
 	* ```
 	*/
 	function bytesToNumberBE(bytes) {
-		return hexToNumber(bytesToHex$4(bytes));
+		return hexToNumber(bytesToHex$5(bytes));
 	}
 	/**
 	* Parses little-endian bytes into bigint.
@@ -5430,7 +5469,7 @@
 	* ```
 	*/
 	function bytesToNumberLE(bytes) {
-		return hexToNumber(bytesToHex$4(copyBytes(abytes$2(bytes)).reverse()));
+		return hexToNumber(bytesToHex$5(copyBytes$1(abytes$2(bytes)).reverse()));
 	}
 	/**
 	* Encodes a bigint into fixed-length big-endian bytes.
@@ -5453,7 +5492,7 @@
 		const expectedLen = len * 2;
 		const hex = n.toString(16);
 		if (hex.length > expectedLen) throw new RangeError("number is too large");
-		return hexToBytes$3(hex.padStart(expectedLen, "0"));
+		return hexToBytes$4(hex.padStart(expectedLen, "0"));
 	}
 	/**
 	* Encodes a bigint into fixed-length little-endian bytes.
@@ -5504,7 +5543,7 @@
 	* copyBytes(Uint8Array.of(1, 2, 3));
 	* ```
 	*/
-	function copyBytes(bytes) {
+	function copyBytes$1(bytes) {
 		return Uint8Array.from(abytes(bytes));
 	}
 	/**
@@ -5699,15 +5738,15 @@
 		iter(fields, false);
 		iter(optFields, true);
 	}
-	var abytes, anumber, bytesToHex$3, concatBytes$2, hexToBytes$2, isBytes$2, randomBytes$1, _0n$14, _1n$11, atitle, bitMask, notImplemented;
+	var abytes, anumber, bytesToHex$4, concatBytes$2, hexToBytes$3, isBytes$3, randomBytes$1, _0n$14, _1n$11, atitle, bitMask, notImplemented;
 	var init_utils$1 = __esmMin((() => {
 		init_utils$2();
 		abytes = (value, length, title) => abytes$2(value, length, title);
 		anumber = anumber$2;
-		bytesToHex$3 = bytesToHex$4;
+		bytesToHex$4 = bytesToHex$5;
 		concatBytes$2 = (...arrays) => concatBytes$3(...arrays);
-		hexToBytes$2 = (hex) => hexToBytes$3(hex);
-		isBytes$2 = isBytes$4;
+		hexToBytes$3 = (hex) => hexToBytes$4(hex);
+		isBytes$3 = isBytes$5;
 		randomBytes$1 = (bytesLength) => randomBytes$2(bytesLength);
 		_0n$14 = /* @__PURE__ */ BigInt(0);
 		_1n$11 = /* @__PURE__ */ BigInt(1);
@@ -6467,7 +6506,7 @@
 		afunction(randomBytes, "randomBytes");
 		try {
 			const probe = randomBytes(length);
-			if (!isBytes$2(probe) || probe.length !== length) return void 0;
+			if (!isBytes$3(probe) || probe.length !== length) return void 0;
 		} catch (_unused) {
 			return;
 		}
@@ -6809,7 +6848,7 @@
 				if (this.randomBytes === void 0) throw new Error("randomBytes is required for scalar blinding");
 				const bits = this.Point.Fn.BITS + BLIND_BITS;
 				const blind = this.randomBytes(BLIND_BYTES);
-				if (!isBytes$2(blind) || blind.length !== BLIND_BYTES) throw new Error("randomBytes returned invalid byte array");
+				if (!isBytes$3(blind) || blind.length !== BLIND_BYTES) throw new Error("randomBytes returned invalid byte array");
 				blind[0] = blind[0] & 63 | 128;
 				const n = scalar + bytesToNumberBE(blind) * this.Point.Fn.ORDER;
 				return this.runCT(point, n, bits, transform);
@@ -6996,9 +7035,9 @@
 			static fromBytes(bytes, zip215 = false) {
 				const len = Fp.BYTES;
 				const { a, d } = CURVE;
-				bytes = copyBytes(abytes(bytes, len, "point"));
+				bytes = copyBytes$1(abytes(bytes, len, "point"));
 				abool(zip215, "zip215");
-				const normed = copyBytes(bytes);
+				const normed = copyBytes$1(bytes);
 				const lastByte = bytes[len - 1];
 				normed[len - 1] = lastByte & -129;
 				const y = bytesToNumberLE(normed);
@@ -7018,7 +7057,7 @@
 				});
 			}
 			static fromHex(hex, zip215 = false) {
-				return Point.fromBytes(hexToBytes$2(hex), zip215);
+				return Point.fromBytes(hexToBytes$3(hex), zip215);
 			}
 			get x() {
 				return this.toAffine().x;
@@ -7155,7 +7194,7 @@
 				return bytes;
 			}
 			toHex() {
-				return bytesToHex$3(this.toBytes());
+				return bytesToHex$4(this.toBytes());
 			}
 			toString() {
 				return `<Point ${this.is0() ? "ZERO" : this.toHex()}>`;
@@ -7226,7 +7265,7 @@
 			return this.ep.toAffine(invertedZ);
 		}
 		toHex() {
-			return bytesToHex$3(this.toBytes());
+			return bytesToHex$4(this.toBytes());
 		}
 		toString() {
 			return this.toHex();
@@ -7358,7 +7397,7 @@
 		/** Signs message with secret key. RFC8032 5.1.6 */
 		function sign(msg, secretKey, options = {}) {
 			validateObject$1(options, {}, {}, "options");
-			msg = copyBytes(abytes(msg, void 0, "message"));
+			msg = copyBytes$1(abytes(msg, void 0, "message"));
 			if (prehash) msg = prehash(msg);
 			const { prefix, scalar, pointBytes } = getExtendedPublicKey(secretKey);
 			const r = hashDomainToScalar(options.context, prefix, msg);
@@ -7411,7 +7450,7 @@
 			return abytes(seed, lengths.seed, "seed");
 		}
 		function isValidSecretKey(key) {
-			return isBytes$2(key) && key.length === lengths.secretKey;
+			return isBytes$3(key) && key.length === lengths.secretKey;
 		}
 		function isValidPublicKey(key, zip215) {
 			try {
@@ -7583,12 +7622,12 @@
 			return numberToBytesLE(modP(u), fieldLen);
 		}
 		function decodeU(u) {
-			const _u = copyBytes(abytes(u, fieldLen, "uCoordinate"));
+			const _u = copyBytes$1(abytes(u, fieldLen, "uCoordinate"));
 			if (is25519) _u[31] &= 127;
 			return modP(bytesToNumberLE(_u));
 		}
 		function decodeScalar(scalar) {
-			return bytesToNumberLE(adjustScalarBytes(copyBytes(abytes(scalar, fieldLen, "scalar"))));
+			return bytesToNumberLE(adjustScalarBytes(copyBytes$1(abytes(scalar, fieldLen, "scalar"))));
 		}
 		/**
 		* u coordinates whose order divides the cofactor, on the curve and on its quadratic twist -
@@ -7893,7 +7932,7 @@
 		* @param hex - Ristretto-encoded 32 bytes. Not every 32-byte string is valid ristretto encoding
 		*/
 		static fromHex(hex) {
-			return _RistrettoPoint.fromBytes(hexToBytes$3(hex));
+			return _RistrettoPoint.fromBytes(hexToBytes$4(hex));
 		}
 		/**
 		* Encodes ristretto point to Uint8Array.
@@ -8750,7 +8789,7 @@
 	}
 	var PASSWORD_FACTOR_ITERATIONS = 6e5;
 	function factorId(random) {
-		return bytesToHex$4(random(16));
+		return bytesToHex$5(random(16));
 	}
 	/**
 	* The single "derive KEK for a new software factor" path, shared by `makeFactor` and mnemonic-draft
@@ -9061,7 +9100,7 @@
 	async function rotateVault(platform, image, dek, removed, added) {
 		const nextDek = Secret.take(platform.random(32));
 		try {
-			const keyId = bytesToHex$4(platform.random(16));
+			const keyId = bytesToHex$5(platform.random(16));
 			const ops = [{
 				op: "set-key-id",
 				keyId
@@ -9196,7 +9235,7 @@
 	* session it opens afterwards.
 	*/
 	function establishOps(platform, factors, records, revision) {
-		const keyId = bytesToHex$4(platform.random(16));
+		const keyId = bytesToHex$5(platform.random(16));
 		return {
 			keyId,
 			ops: [
@@ -9588,7 +9627,7 @@
 				return P;
 			}
 			static fromHex(hex) {
-				return Point.fromBytes(hexToBytes$2(hex));
+				return Point.fromBytes(hexToBytes$3(hex));
 			}
 			get x() {
 				return this.toAffine().x;
@@ -9824,7 +9863,7 @@
 				return encodePoint(Point, this, isCompressed);
 			}
 			toHex(isCompressed = true) {
-				return bytesToHex$3(this.toBytes(isCompressed));
+				return bytesToHex$4(this.toBytes(isCompressed));
 			}
 			toString() {
 				return `<Point ${this.is0() ? "ZERO" : this.toHex()}>`;
@@ -9918,7 +9957,7 @@
 		function isProbPub(item) {
 			const { secretKey, publicKey, publicKeyUncompressed } = lengths;
 			const allowedLengths = Fn._lengths;
-			if (!isBytes$2(item)) return void 0;
+			if (!isBytes$3(item)) return void 0;
 			const l = abytes(item, void 0, "key").length;
 			const isPub = l === publicKey || l === publicKeyUncompressed;
 			const isSec = l === secretKey || !!(allowedLengths === null || allowedLengths === void 0 ? void 0 : allowedLengths.includes(l));
@@ -10079,7 +10118,7 @@
 				return new Signature(Fn.fromBytes(r), Fn.fromBytes(s), recid);
 			}
 			static fromHex(hex, format) {
-				return this.fromBytes(hexToBytes$2(hex), format);
+				return this.fromBytes(hexToBytes$3(hex), format);
 			}
 			assertRecovery() {
 				const { recovery } = this;
@@ -10110,7 +10149,7 @@
 			}
 			toBytes(format = defaultSigOpts.format) {
 				validateSigFormat(format);
-				if (format === "der") return hexToBytes$2(DER.hexFromSig(this));
+				if (format === "der") return hexToBytes$3(DER.hexFromSig(this));
 				const { r, s } = this;
 				const rb = Fn.toBytes(r);
 				const sb = Fn.toBytes(s);
@@ -10121,7 +10160,7 @@
 				return concatBytes$2(rb, sb);
 			}
 			toHex(format) {
-				return bytesToHex$3(this.toBytes(format));
+				return bytesToHex$4(this.toBytes(format));
 			}
 		}
 		Object.freeze(Signature.prototype);
@@ -10231,7 +10270,7 @@
 			const { lowS, prehash, format } = validateSigOpts(opts, defaultSigOpts);
 			publicKey = abytes(publicKey, void 0, "publicKey");
 			message = validateMsgAndHash(message, prehash);
-			if (!isBytes$2(signature)) {
+			if (!isBytes$3(signature)) {
 				const end = signature instanceof Signature ? ", use sig.toBytes()" : "";
 				throw new Error("verify expects Uint8Array signature" + end);
 			}
@@ -10363,7 +10402,7 @@
 	*/
 	function schnorrSign(message, secretKey, auxRand = randomBytes$2(32)) {
 		const { Fn, BASE } = Pointk1;
-		const m = copyBytes(abytes(message, void 0, "message"));
+		const m = copyBytes$1(abytes(message, void 0, "message"));
 		const { bytes: px, scalar: d } = schnorrGetExtPubKey(secretKey);
 		const a = abytes(auxRand, 32, "auxRand");
 		const rand = taggedHash("BIP0340/nonce", Fn.toBytes(d ^ num(taggedHash("BIP0340/aux", a))), px, m);
@@ -10655,12 +10694,12 @@
 					const rl = idxL[group], rr = idxR[group];
 					const sl = shiftsL160[group], sr = shiftsR160[group];
 					for (let i = 0; i < 16; i++) {
-						const tl = rotl$1(al + ripemd_f(group, bl, cl, dl) + BUF_160[rl[i]] + hbl, sl[i]) + el | 0;
-						al = el, el = dl, dl = rotl$1(cl, 10) | 0, cl = bl, bl = tl;
+						const tl = rotl$2(al + ripemd_f(group, bl, cl, dl) + BUF_160[rl[i]] + hbl, sl[i]) + el | 0;
+						al = el, el = dl, dl = rotl$2(cl, 10) | 0, cl = bl, bl = tl;
 					}
 					for (let i = 0; i < 16; i++) {
-						const tr = rotl$1(ar + ripemd_f(rGroup, br, cr, dr) + BUF_160[rr[i]] + hbr, sr[i]) + er | 0;
-						ar = er, er = dr, dr = rotl$1(cr, 10) | 0, cr = br, br = tr;
+						const tr = rotl$2(ar + ripemd_f(rGroup, br, cr, dr) + BUF_160[rr[i]] + hbr, sr[i]) + er | 0;
+						ar = er, er = dr, dr = rotl$2(cr, 10) | 0, cr = br, br = tr;
 					}
 				}
 				this.set(this.h1 + cl + dr | 0, this.h2 + dl + er | 0, this.h3 + el + ar | 0, this.h4 + al + br | 0, this.h0 + bl + cr | 0);
@@ -10677,7 +10716,7 @@
 		ripemd160 = /* @__PURE__ */ createHasher(() => new _RIPEMD160());
 	}));
 	// node_modules/.bun/@scure+bip32@2.4.0/node_modules/@scure/bip32/index.js
-	var Point$1, Fn$2, base58check$2, MASTER_SECRET$1, BITCOIN_VERSIONS, HARDENED_OFFSET$2, MAX_DEPTH$1, hash160$1, fromU32, toU32$1, validateVersions, HDKey$1;
+	var Point$1, Fn$2, base58check$2, MASTER_SECRET$1, BITCOIN_VERSIONS, HARDENED_OFFSET$2, MAX_DEPTH, hash160$1, fromU32, toU32$1, validateVersions, HDKey$1;
 	var init_bip32 = __esmMin((() => {
 		init_secp256k1();
 		init_hmac();
@@ -10699,7 +10738,7 @@
 			public: 76067358
 		};
 		HARDENED_OFFSET$2 = 2147483648;
-		MAX_DEPTH$1 = 255;
+		MAX_DEPTH = 255;
 		hash160$1 = (data) => ripemd160(sha256$1(data));
 		fromU32 = (data) => createView$1(data).getUint32(0, false);
 		toU32$1 = (n, title = "number") => {
@@ -10793,7 +10832,7 @@
 				const depth = (_opt$depth = opt.depth) !== null && _opt$depth !== void 0 ? _opt$depth : 0;
 				const index = (_opt$index = opt.index) !== null && _opt$index !== void 0 ? _opt$index : 0;
 				const parentFingerprint = (_opt$parentFingerprin = opt.parentFingerprint) !== null && _opt$parentFingerprin !== void 0 ? _opt$parentFingerprin : 0;
-				if (!Number.isSafeInteger(depth) || depth < 0 || depth > MAX_DEPTH$1) throw new RangeError("HDKey: depth must be an integer in range 0..255");
+				if (!Number.isSafeInteger(depth) || depth < 0 || depth > MAX_DEPTH) throw new RangeError("HDKey: depth must be an integer in range 0..255");
 				toU32$1(index, "index");
 				toU32$1(parentFingerprint, "parentFingerprint");
 				if (depth === 0 && (index !== 0 || parentFingerprint !== 0)) throw new Error("HDKey: zero depth with non-zero index/parent fingerprint");
@@ -10816,7 +10855,7 @@
 				if (!/^[mM]'?/.test(path)) throw new Error("Path must start with \"m\" or \"M\"");
 				if (/^[mM]'?$/.test(path)) return this;
 				const parts = path.replace(/^[mM]'?\//, "").split("/");
-				if (parts.length > MAX_DEPTH$1 - this.depth) throw new Error("HDKey: path exceeds the serializable depth 255");
+				if (parts.length > MAX_DEPTH - this.depth) throw new Error("HDKey: path exceeds the serializable depth 255");
 				let child = this;
 				for (const c of parts) {
 					const m = /^(\d+)('?)$/.exec(c);
@@ -10852,7 +10891,7 @@
 					parentFingerprint: this.fingerprint,
 					index
 				};
-				if (opt.depth > MAX_DEPTH$1) throw new Error("HDKey: depth exceeds the serializable value 255");
+				if (opt.depth > MAX_DEPTH) throw new Error("HDKey: depth exceeds the serializable value 255");
 				const retry = () => {
 					if (index >= (this._privateKey ? 2 ** 32 - 1 : 2147483647)) throw new Error(`HDKey: cannot retry child derivation at index ${index}`);
 					return this.deriveChild(index + 1);
@@ -10938,13 +10977,13 @@
 	}
 	/** Compares values used as encoded-domain constants; byte arrays compare by contents. */
 	function equal(a, b) {
-		const aBytes = isBytes$1(a);
-		const bBytes = isBytes$1(b);
+		const aBytes = isBytes$2(a);
+		const bBytes = isBytes$2(b);
 		if (aBytes || bBytes) return aBytes && bBytes && equalBytes$4(a, b);
 		return a === b;
 	}
 	/** Checks if the given value is a Uint8Array. */
-	function isBytes$1(a) {
+	function isBytes$2(a) {
 		return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
 	}
 	/**
@@ -10957,7 +10996,7 @@
 		let sum = 0;
 		for (let i = 0; i < arrays.length; i++) {
 			const a = arrays[i];
-			if (!isBytes$1(a)) throw new Error("Uint8Array expected");
+			if (!isBytes$2(a)) throw new Error("Uint8Array expected");
 			sum += a.length;
 		}
 		const res = new Uint8Array(sum);
@@ -11018,7 +11057,7 @@
 				return w.finish();
 			},
 			decode: (data, opts = {}) => {
-				if (!isBytes$1(data)) throw new TypeError(`decode: expected Uint8Array, got ${typeof data}`);
+				if (!isBytes$2(data)) throw new TypeError(`decode: expected Uint8Array, got ${typeof data}`);
 				const r = new _Reader(data, opts);
 				const res = _inner.decodeStream(r);
 				r.finish();
@@ -11323,8 +11362,8 @@
 	* receive a decoder-canonical default. NaN is the exception because it cannot equal itself.
 	*/
 	function validateDefaultSlot(r, value, def) {
-		const valueObj = value !== null && typeof value === "object" && !isBytes$1(value);
-		const defObj = def !== null && typeof def === "object" && !isBytes$1(def);
+		const valueObj = value !== null && typeof value === "object" && !isBytes$2(value);
+		const defObj = def !== null && typeof def === "object" && !isBytes$2(def);
 		const nan = typeof value === "number" && typeof def === "number" && Number.isNaN(value) && Number.isNaN(def);
 		if ((!valueObj || !defObj) && !equal(value, def) && !nan) throw r.err(`default: invalid value ${value} !== ${def}`);
 	}
@@ -11404,8 +11443,8 @@
 			encodeStream: (w, _value) => inner.encodeStream(w, constant),
 			decodeStream: (r) => {
 				const value = inner.decodeStream(r);
-				const valueObj = value !== null && typeof value === "object" && !isBytes$1(value);
-				const constantObj = constant !== null && typeof constant === "object" && !isBytes$1(constant);
+				const valueObj = value !== null && typeof value === "object" && !isBytes$2(value);
+				const constantObj = constant !== null && typeof constant === "object" && !isBytes$2(constant);
 				if (check && (!valueObj || !constantObj) && !equal(value, constant)) throw r.err(`magic: invalid value: ${value} !== ${constant}`);
 			},
 			validate: (value) => {
@@ -11509,7 +11548,7 @@
 	*/
 	function array(len, inner) {
 		if (!isCoder(inner)) throw new TypeError(`array: invalid inner value ${inner}`);
-		const terminator = isBytes$1(len) ? Uint8Array.from(len) : void 0;
+		const terminator = isBytes$2(len) ? Uint8Array.from(len) : void 0;
 		const _length = lengthCoder(typeof len === "string" ? `../${len}` : terminator || len);
 		if (len === null && inner.size === 0) throw new Error("array: null length cannot use zero-size inner");
 		if ((isCoder(len) || typeof len === "string") && inner.size === 0) throw new Error("array: dynamic length cannot use zero-size inner");
@@ -11604,7 +11643,7 @@
 		hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 		utils = /* @__PURE__ */ Object.freeze({
 			equalBytes: equalBytes$4,
-			isBytes: isBytes$1,
+			isBytes: isBytes$2,
 			isCoder,
 			checkBounds,
 			concatBytes: concatBytes$1,
@@ -11612,9 +11651,9 @@
 			isPlainObject
 		});
 		lengthCoder = (len) => {
-			if (len !== null && typeof len !== "string" && !isCoder(len) && !isBytes$1(len) && !isNum(len)) throw new TypeError(`lengthCoder: expected null | number | Uint8Array | CoderType, got ${len} (${typeof len})`);
+			if (len !== null && typeof len !== "string" && !isCoder(len) && !isBytes$2(len) && !isNum(len)) throw new TypeError(`lengthCoder: expected null | number | Uint8Array | CoderType, got ${len} (${typeof len})`);
 			if (typeof len === "number" && len < 0) throw new Error(`lengthCoder: wrong length=${len}`);
-			if (isBytes$1(len) && !len.length) throw new Error("lengthCoder: empty terminator");
+			if (isBytes$2(len) && !len.length) throw new Error("lengthCoder: empty terminator");
 			return {
 				encodeStream(w, value) {
 					if (len === null) return;
@@ -11784,7 +11823,7 @@
 				_defineProperty(this, "bitPos", 0);
 				_defineProperty(this, "bs", void 0);
 				_defineProperty(this, "view", void 0);
-				if (!isBytes$1(data)) throw new TypeError(`Reader: expected Uint8Array, got ${typeof data}`);
+				if (!isBytes$2(data)) throw new TypeError(`Reader: expected Uint8Array, got ${typeof data}`);
 				if (!isPlainObject(opts)) throw new TypeError(`ReaderOpts: expected plain object, got ${opts}`);
 				if (opts.allowUnreadBytes !== void 0 && typeof opts.allowUnreadBytes !== "boolean") throw new TypeError(`ReaderOpts.allowUnreadBytes: expected boolean, got ${typeof opts.allowUnreadBytes}`);
 				if (opts.allowMultipleReads !== void 0 && typeof opts.allowMultipleReads !== "boolean") throw new TypeError(`ReaderOpts.allowMultipleReads: expected boolean, got ${typeof opts.allowMultipleReads}`);
@@ -11901,7 +11940,7 @@
 				return out >>> 0;
 			}
 			find(needle, pos = this.pos) {
-				if (!isBytes$1(needle)) throw this.err(`find: needle is not bytes! ${needle}`);
+				if (!isBytes$2(needle)) throw this.err(`find: needle is not bytes! ${needle}`);
 				if (this.bitPos) throw this.err("find: bitPos not empty");
 				if (!needle.length) throw this.err(`find: needle is empty`);
 				if (!isNum(pos) || pos < 0) throw this.err(`find: wrong pos=${pos}`);
@@ -11973,7 +12012,7 @@
 			bytes(b) {
 				if (this.finished) throw this.err("buffer: finished");
 				if (this.bitPos) throw this.err("writeBytes: ends with non-empty bit buffer");
-				if (!isBytes$1(b)) throw this.err(`writeBytes: expected Uint8Array, got ${typeof b}`);
+				if (!isBytes$2(b)) throw this.err(`writeBytes: expected Uint8Array, got ${typeof b}`);
 				this.buffers.push(b);
 				this.run = void 0;
 				this.pos += b.length;
@@ -11992,14 +12031,14 @@
 				let sum = 0;
 				for (let i = 0; i < buffers.length; i++) {
 					const b = buffers[i];
-					sum += isBytes$1(b) ? b.length : b.end - b.start;
+					sum += isBytes$2(b) ? b.length : b.end - b.start;
 				}
 				for (let i = 0; i < this.ptrs.length; i++) sum += this.ptrs[i].buffer.length;
 				const buf = new Uint8Array(sum);
 				let pad = 0;
 				for (let i = 0; i < buffers.length; i++) {
 					const b = buffers[i];
-					if (isBytes$1(b)) {
+					if (isBytes$2(b)) {
 						buf.set(b, pad);
 						pad += b.length;
 					} else {
@@ -12196,7 +12235,7 @@
 		createBytes = (len, le = false) => {
 			if (typeof le !== "boolean") throw new TypeError(`bytes/le: expected boolean, got ${typeof le}`);
 			const _length = lengthCoder(len);
-			const _isb = isBytes$1(len);
+			const _isb = isBytes$2(len);
 			const terminator = _isb ? Uint8Array.from(len) : void 0;
 			const findTerminator = terminator && terminator.length ? createFindBytes(terminator) : void 0;
 			return wrap$1({
@@ -12217,7 +12256,7 @@
 					return le ? swapEndianness(bytes) : bytes;
 				},
 				validate: (value) => {
-					if (!isBytes$1(value)) throw new TypeError(`bytes: invalid value ${value}`);
+					if (!isBytes$2(value)) throw new TypeError(`bytes: invalid value ${value}`);
 					if (findTerminator) {
 						const data = le ? swapEndianness(value) : value;
 						if (findTerminator(data) !== void 0) throw new Error("bytes: value contains terminator");
@@ -12231,7 +12270,7 @@
 			return value;
 		});
 		flag = (flagValue, xor = false) => {
-			if (!isBytes$1(flagValue)) throw new TypeError(`flag/flagValue: expected Uint8Array, got ${typeof flagValue}`);
+			if (!isBytes$2(flagValue)) throw new TypeError(`flag/flagValue: expected Uint8Array, got ${typeof flagValue}`);
 			if (flagValue.length === 0) throw new Error("flag/flagValue: empty marker");
 			if (typeof xor !== "boolean") throw new TypeError(`flag/xor: expected boolean, got ${typeof xor}`);
 			const marker = Uint8Array.from(flagValue);
@@ -12337,10 +12376,10 @@
 			return createView$1(this.pubHash).getUint32(0, false);
 		}
 		get fingerprintHex() {
-			return bytesToHex$4(toU32(this.fingerprint));
+			return bytesToHex$5(toU32(this.fingerprint));
 		}
 		get parentFingerprintHex() {
-			return bytesToHex$4(toU32(this.parentFingerprint));
+			return bytesToHex$5(toU32(this.parentFingerprint));
 		}
 		static fromMasterSeed(seed) {
 			seed = abytes$2(seed, void 0, "seed");
@@ -12423,7 +12462,7 @@
 		ResourceSyntax: "resource line must start with '- '",
 		InvalidEnvelope: "invalid off-chain message envelope"
 	};
-	function describe(info) {
+	function describe$1(info) {
 		if (info.code === "MessageTooLarge") return `message exceeds maximum size of ${info.max} bytes, got ${info.length}`;
 		if (info.code === "Syntax") return info.syntax === "MissingField" ? `invalid message syntax: missing ${info.field}` : `invalid message syntax: ${SYNTAX_MESSAGES[info.syntax]}`;
 		if (info.code === "InvalidField") return `invalid ${info.field}: ${info.reason}`;
@@ -12440,7 +12479,7 @@
 	/** The single error type thrown by every library failure. */
 	var SiwxError = class extends Error {
 		constructor(info) {
-			super(describe(info));
+			super(describe$1(info));
 			_defineProperty(
 				this,
 				/** Structured payload; `code` matches the Rust `Error::code()`. */
@@ -12726,7 +12765,7 @@
 	//! Lexical RFC 3339 `date-time` + instant, mirroring Rust `Timestamp`.
 	var SHAPE = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
 	/** Days since 1970-01-01 for a proleptic-Gregorian y/m/d (Hinnant's algorithm). */
-	function daysFromCivil(y, m, d) {
+	function daysFromCivil$1(y, m, d) {
 		const yy = m <= 2 ? y - 1 : y;
 		const era = Math.floor((yy >= 0 ? yy : yy - 399) / 400);
 		const yoe = yy - era * 400;
@@ -12734,7 +12773,7 @@
 		const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
 		return era * 146097 + doe - 719468;
 	}
-	function daysInMonth(year, month) {
+	function daysInMonth$1(year, month) {
 		var _ref;
 		return (_ref = [
 			31,
@@ -12768,9 +12807,9 @@
 		const minute = Number(mis);
 		const second = Number(ss);
 		if (month < 1 || month > 12) return;
-		if (day < 1 || day > daysInMonth(year, month)) return;
+		if (day < 1 || day > daysInMonth$1(year, month)) return;
 		if (hour > 23 || minute > 59 || second > 59) return;
-		let ms = daysFromCivil(year, month, day) * 864e5 + hour * 36e5 + minute * 6e4 + second * 1e3;
+		let ms = daysFromCivil$1(year, month, day) * 864e5 + hour * 36e5 + minute * 6e4 + second * 1e3;
 		if (frac !== void 0 && frac.length > 1) ms += Number(frac.slice(1, 4).padEnd(3, "0"));
 		if (tz !== void 0 && tz !== "Z" && tz !== "z") {
 			const oh = Number(tz.slice(1, 3));
@@ -13281,7 +13320,7 @@
 		const hasLower = /[a-f]/.test(hex);
 		const hasUpper = /[A-F]/.test(hex);
 		if (hasLower && hasUpper && address !== toChecksumAddress(address)) throw fieldError("address", "bad EIP-55 checksum");
-		return hexToBytes$3(hex);
+		return hexToBytes$4(hex);
 	}
 	/**
 	* EVM `chain-id`: `[0-9]+`, no leading zero unless `"0"`, fits in `u64`.
@@ -13349,10 +13388,10 @@
 	//! ERC-6492 accounts and EOAs. Providers are injected; the library builds no
 	//! transports and applies no timeouts — transport policy belongs to the
 	//! provider owner.
-	var BYTECODE = hexToBytes$2("608060405234801561001057600080fd5b5060405161069438038061069483398101604081905261002f9161051e565b600061003c848484610048565b9050806000526001601ff35b60007f64926492649264926492649264926492649264926492649264926492649264926100748361040c565b036101e7576000606080848060200190518101906100929190610577565b60405192955090935091506000906001600160a01b038516906100b69085906105dd565b6000604051808303816000865af19150503d80600081146100f3576040519150601f19603f3d011682016040523d82523d6000602084013e6100f8565b606091505b50509050876001600160a01b03163b60000361016057806101605760405162461bcd60e51b815260206004820152601e60248201527f5369676e617475726556616c696461746f723a206465706c6f796d656e74000060448201526064015b60405180910390fd5b604051630b135d3f60e11b808252906001600160a01b038a1690631626ba7e90610190908b9087906004016105f9565b602060405180830381865afa1580156101ad573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906101d19190610633565b6001600160e01b03191614945050505050610405565b6001600160a01b0384163b1561027a57604051630b135d3f60e11b808252906001600160a01b03861690631626ba7e9061022790879087906004016105f9565b602060405180830381865afa158015610244573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906102689190610633565b6001600160e01b031916149050610405565b81516041146102df5760405162461bcd60e51b815260206004820152603a602482015260008051602061067483398151915260448201527f3a20696e76616c6964207369676e6174757265206c656e6774680000000000006064820152608401610157565b6102e7610425565b5060208201516040808401518451859392600091859190811061030c5761030c61065d565b016020015160f81c9050601b811480159061032b57508060ff16601c14155b1561038c5760405162461bcd60e51b815260206004820152603b602482015260008051602061067483398151915260448201527f3a20696e76616c6964207369676e617475726520762076616c756500000000006064820152608401610157565b60408051600081526020810180835289905260ff83169181019190915260608101849052608081018390526001600160a01b0389169060019060a0016020604051602081039080840390855afa1580156103ea573d6000803e3d6000fd5b505050602060405103516001600160a01b0316149450505050505b9392505050565b600060208251101561041d57600080fd5b508051015190565b60405180606001604052806003906020820280368337509192915050565b6001600160a01b038116811461045857600080fd5b50565b634e487b7160e01b600052604160045260246000fd5b60005b8381101561048c578181015183820152602001610474565b50506000910152565b600082601f8301126104a657600080fd5b81516001600160401b038111156104bf576104bf61045b565b604051601f8201601f19908116603f011681016001600160401b03811182821017156104ed576104ed61045b565b60405281815283820160200185101561050557600080fd5b610516826020830160208701610471565b949350505050565b60008060006060848603121561053357600080fd5b835161053e81610443565b6020850151604086015191945092506001600160401b0381111561056157600080fd5b61056d86828701610495565b9150509250925092565b60008060006060848603121561058c57600080fd5b835161059781610443565b60208501519093506001600160401b038111156105b357600080fd5b6105bf86828701610495565b604086015190935090506001600160401b0381111561056157600080fd5b600082516105ef818460208701610471565b9190910192915050565b828152604060208201526000825180604084015261061e816060850160208701610471565b601f01601f1916919091016060019392505050565b60006020828403121561064557600080fd5b81516001600160e01b03198116811461040557600080fd5b634e487b7160e01b600052603260045260246000fdfe5369676e617475726556616c696461746f72237265636f7665725369676e6572");
+	var BYTECODE = hexToBytes$3("608060405234801561001057600080fd5b5060405161069438038061069483398101604081905261002f9161051e565b600061003c848484610048565b9050806000526001601ff35b60007f64926492649264926492649264926492649264926492649264926492649264926100748361040c565b036101e7576000606080848060200190518101906100929190610577565b60405192955090935091506000906001600160a01b038516906100b69085906105dd565b6000604051808303816000865af19150503d80600081146100f3576040519150601f19603f3d011682016040523d82523d6000602084013e6100f8565b606091505b50509050876001600160a01b03163b60000361016057806101605760405162461bcd60e51b815260206004820152601e60248201527f5369676e617475726556616c696461746f723a206465706c6f796d656e74000060448201526064015b60405180910390fd5b604051630b135d3f60e11b808252906001600160a01b038a1690631626ba7e90610190908b9087906004016105f9565b602060405180830381865afa1580156101ad573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906101d19190610633565b6001600160e01b03191614945050505050610405565b6001600160a01b0384163b1561027a57604051630b135d3f60e11b808252906001600160a01b03861690631626ba7e9061022790879087906004016105f9565b602060405180830381865afa158015610244573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906102689190610633565b6001600160e01b031916149050610405565b81516041146102df5760405162461bcd60e51b815260206004820152603a602482015260008051602061067483398151915260448201527f3a20696e76616c6964207369676e6174757265206c656e6774680000000000006064820152608401610157565b6102e7610425565b5060208201516040808401518451859392600091859190811061030c5761030c61065d565b016020015160f81c9050601b811480159061032b57508060ff16601c14155b1561038c5760405162461bcd60e51b815260206004820152603b602482015260008051602061067483398151915260448201527f3a20696e76616c6964207369676e617475726520762076616c756500000000006064820152608401610157565b60408051600081526020810180835289905260ff83169181019190915260608101849052608081018390526001600160a01b0389169060019060a0016020604051602081039080840390855afa1580156103ea573d6000803e3d6000fd5b505050602060405103516001600160a01b0316149450505050505b9392505050565b600060208251101561041d57600080fd5b508051015190565b60405180606001604052806003906020820280368337509192915050565b6001600160a01b038116811461045857600080fd5b50565b634e487b7160e01b600052604160045260246000fd5b60005b8381101561048c578181015183820152602001610474565b50506000910152565b600082601f8301126104a657600080fd5b81516001600160401b038111156104bf576104bf61045b565b604051601f8201601f19908116603f011681016001600160401b03811182821017156104ed576104ed61045b565b60405281815283820160200185101561050557600080fd5b610516826020830160208701610471565b949350505050565b60008060006060848603121561053357600080fd5b835161053e81610443565b6020850151604086015191945092506001600160401b0381111561056157600080fd5b61056d86828701610495565b9150509250925092565b60008060006060848603121561058c57600080fd5b835161059781610443565b60208501519093506001600160401b038111156105b357600080fd5b6105bf86828701610495565b604086015190935090506001600160401b0381111561056157600080fd5b600082516105ef818460208701610471565b9190910192915050565b828152604060208201526000825180604084015261061e816060850160208701610471565b601f01601f1916919091016060019392505050565b60006020828403121561064557600080fd5b81516001600160e01b03198116811461040557600080fd5b634e487b7160e01b600052603260045260246000fdfe5369676e617475726556616c696461746f72237265636f7665725369676e6572");
 	/** Abi.encode(address signer, bytes32 hash, bytes signature). */
 	function deploylessCalldata(signer, hash, signature) {
-		const addr = hexToBytes$2(signer.slice(2));
+		const addr = hexToBytes$3(signer.slice(2));
 		const word = 32;
 		const out = new Uint8Array(BYTECODE.length + 96 + word + Math.ceil(signature.length / word) * word);
 		const bc = BYTECODE;
@@ -13377,7 +13416,7 @@
 	* is valid; the same shapes ending `00` are `false`; anything else is malformed.
 	*/
 	function decodeResult(hex) {
-		const data = hex === "" || hex === "0x" ? /* @__PURE__ */ new Uint8Array(0) : hexToBytes$2(hex.slice(2));
+		const data = hex === "" || hex === "0x" ? /* @__PURE__ */ new Uint8Array(0) : hexToBytes$3(hex.slice(2));
 		if (data.length === 1) {
 			if (data[0] === 1) return true;
 			if (data[0] === 0) return false;
@@ -13431,7 +13470,7 @@
 	async function verifyOnChain(provider, message, signed, signature) {
 		parseEip55(message.address);
 		const hash = eip191Hash(signed);
-		const data = `0x${bytesToHex$3(deploylessCalldata(message.address, hash, signature))}`;
+		const data = `0x${bytesToHex$4(deploylessCalldata(message.address, hash, signature))}`;
 		let result;
 		try {
 			result = await provider.request({
@@ -14495,7 +14534,7 @@
 	*
 	* @internal
 	*/
-	function bytesToHex$2(value) {
+	function bytesToHex$3(value) {
 		if (bytesToHexNative) return bytesToHexNative(value);
 		if (bytesToHexBuffer) return bytesToHexBuffer(value);
 		return bytesToHexLoop(value);
@@ -14538,7 +14577,7 @@
 	*
 	* @internal
 	*/
-	function hexToBytes(value) {
+	function hexToBytes$2(value) {
 		if (typeof value !== "string" || value.length < 2 || value.charCodeAt(0) !== 48 || value.charCodeAt(1) !== 120) throw new InvalidHexValueError$1(value);
 		const nibbles = value.length - 2;
 		if ((nibbles & 1) !== 0) throw new InvalidLengthError$1(value);
@@ -14628,7 +14667,7 @@
 			}
 			return val;
 		}
-		const hex = bytesToHex$2(value);
+		const hex = bytesToHex$3(value);
 		const n = hex === "0x" ? 0n : BigInt(hex);
 		const max_unsigned = 1n << BigInt(len) * 8n;
 		if (n < max_unsigned >> 1n) return n;
@@ -14888,7 +14927,7 @@
 	* @returns The encoded {@link ox#Hex.Hex} value.
 	*/
 	function fromBytes$2(value, options = {}) {
-		const hex = bytesToHex$2(value);
+		const hex = bytesToHex$3(value);
 		if (typeof options.size === "number") {
 			assertSize(hex, options.size);
 			return padRight$1(hex, options.size);
@@ -15101,7 +15140,7 @@
 			assertSize(value, size);
 			value = padRight$1(value, size);
 		}
-		return hexToBytes(value);
+		return hexToBytes$2(value);
 	}
 	/**
 	* Checks if the given value is {@link ox#Hex.Hex}.
@@ -15359,12 +15398,12 @@
 		const { size } = options;
 		if (typeof size === "number") {
 			assertSize(value, size);
-			return hexToBytes(pad$1(value, {
+			return hexToBytes$2(pad$1(value, {
 				dir: "right",
 				size
 			}));
 		}
-		return hexToBytes(value);
+		return hexToBytes$2(value);
 	}
 	/**
 	* Encodes a number value into {@link ox#Bytes.Bytes}.
@@ -16409,7 +16448,7 @@
 			return super.set(key, value);
 		}
 	};
-	var checksum$1 = { checksum: /*#__PURE__*/ new BoundedMap(32768) }.checksum;
+	var checksum$2 = { checksum: /*#__PURE__*/ new BoundedMap(32768) }.checksum;
 	var ZERO$4 = 48;
 	var NINE = 57;
 	var A_UPPER = 65;
@@ -16512,7 +16551,7 @@
 			address: value,
 			cause: new InvalidInputError()
 		});
-		if (strict && kind === 2 && checksum(value) !== value) throw new InvalidAddressError({
+		if (strict && kind === 2 && checksum$1(value) !== value) throw new InvalidAddressError({
 			address: value,
 			cause: new InvalidChecksumError()
 		});
@@ -16533,8 +16572,8 @@
 	* @param address - The address to compute the checksum for.
 	* @returns The checksummed address.
 	*/
-	function checksum(address) {
-		const direct = checksum$1.get(address);
+	function checksum$1(address) {
+		const direct = checksum$2.get(address);
 		if (direct !== void 0) return direct;
 		if (!hasShape(address)) throw new InvalidAddressError({
 			address,
@@ -16542,9 +16581,9 @@
 		});
 		const key = lowercase(address);
 		if (key !== address) {
-			const cached = checksum$1.get(key);
+			const cached = checksum$2.get(key);
 			if (cached !== void 0) {
-				checksum$1.set(address, cached);
+				checksum$2.set(address, cached);
 				return cached;
 			}
 		}
@@ -16558,8 +16597,8 @@
 			out[i + 2] = nibble >= 8 && code >= 97 ? code - 32 : code;
 		}
 		const result = String.fromCharCode.apply(null, out);
-		checksum$1.set(key, result);
-		if (key !== address) checksum$1.set(address, result);
+		checksum$2.set(key, result);
+		if (key !== address) checksum$2.set(address, result);
 		return result;
 	}
 	/**
@@ -16598,7 +16637,7 @@
 	function from$4(address, options = {}) {
 		const { checksum: checksumVal = false } = options;
 		assert$7(address);
-		if (checksumVal) return checksum(address);
+		if (checksumVal) return checksum$1(address);
 		return address;
 	}
 	/**
@@ -16631,7 +16670,7 @@
 		const kind = classify$2(address);
 		if (kind === 0) return false;
 		if (!strict || kind === 1) return true;
-		return checksum(address) === address;
+		return checksum$1(address) === address;
 	}
 	/**
 	* Thrown when an address is invalid.
@@ -17338,9 +17377,9 @@
 	var arraySuffixRegex = /^(.*)\[(\d+)?\]$/;
 	/** @internal */
 	function decodeAddress$1(cursor, options = {}) {
-		const { checksum: checksum$3 = false } = options;
+		const { checksum = false } = options;
 		const value = cursor.readBytes(32);
-		const wrap = (address) => checksum$3 ? checksum(address) : address;
+		const wrap = (address) => checksum ? checksum$1(address) : address;
 		return [wrap(fromBytes$2(slice$1(value, -20))), 32];
 	}
 	/** @internal */
@@ -19043,7 +19082,7 @@
 	var isEvmAddress = (value) => /^0x[0-9a-fA-F]{40}$/.test(value);
 	function checksumEvmAddress(address) {
 		if (!isEvmAddress(address)) throw new ChainError("invalid-address", "not an EVM address");
-		const checksummed = checksum(address);
+		const checksummed = checksum$1(address);
 		assert$7(checksummed, { strict: true });
 		return checksummed;
 	}
@@ -19051,7 +19090,7 @@
 	function evmAddressFromPublicKey(pubkey) {
 		const uncompressed = pubkey.length === 65 && pubkey[0] === 4 ? pubkey : pubkey.length === 33 ? secp256k1.Point.fromBytes(pubkey).toBytes(false) : void 0;
 		if (uncompressed === void 0 || uncompressed[0] !== 4) throw new ChainError("invalid-address", "expected a compressed or uncompressed secp256k1 key");
-		return checksumEvmAddress(`0x${bytesToHex$4(keccak_256(uncompressed.subarray(1))).slice(-40)}`);
+		return checksumEvmAddress(`0x${bytesToHex$5(keccak_256(uncompressed.subarray(1))).slice(-40)}`);
 	}
 	/**
 	* MetaMask Delegation Framework EIP7702StatelessDeleGator v1.3.0 — deterministic CREATE2, the same
@@ -19639,7 +19678,7 @@
 	var ZERO$3 = "0x0000000000000000000000000000000000000000";
 	var isWitnessType = (type) => Object.hasOwn(ORDER_TYPES, type);
 	var address$1 = (message, key) => typedDataAddress(message[key]);
-	var uint$1$1 = (message, key) => typedDataUint(message[key], MAX_UINT256);
+	var uint$1 = (message, key) => typedDataUint(message[key], MAX_UINT256);
 	/** The witness decoded per its order type, or `undefined` when any needed value is malformed. */
 	var parse = (type, witness) => {
 		const { info } = witness;
@@ -19667,19 +19706,19 @@
 			return outputs;
 		};
 		const dutch = (m) => {
-			const start = uint$1$1(m, "startAmount");
-			const end = uint$1$1(m, "endAmount");
+			const start = uint$1(m, "startAmount");
+			const end = uint$1(m, "endAmount");
 			return start === void 0 || end === void 0 ? void 0 : start < end ? start : end;
 		};
 		if (type === "ExclusiveDutchOrder" || type === "V2DutchOrder") {
 			const exclusive = type === "ExclusiveDutchOrder";
 			const prefix = exclusive ? "input" : "baseInput";
 			const inputToken = address$1(witness, `${prefix}Token`);
-			const start = uint$1$1(witness, `${prefix}StartAmount`);
-			const end = uint$1$1(witness, `${prefix}EndAmount`);
+			const start = uint$1(witness, `${prefix}StartAmount`);
+			const end = uint$1(witness, `${prefix}EndAmount`);
 			const outputs = outputsOf(exclusive ? "outputs" : "baseOutputs", (m) => dutch(m));
 			const filler = exclusive ? address$1(witness, "exclusiveFiller") : void 0;
-			const decayed = uint$1$1(witness, "decayStartTime") !== void 0 && uint$1$1(witness, "decayEndTime") !== void 0 && uint$1$1(witness, "exclusivityOverrideBps") !== void 0;
+			const decayed = uint$1(witness, "decayStartTime") !== void 0 && uint$1(witness, "decayEndTime") !== void 0 && uint$1(witness, "exclusivityOverrideBps") !== void 0;
 			const cosigned = exclusive || address$1(witness, "cosigner") !== void 0;
 			if (inputToken === void 0 || start === void 0 || end === void 0 || outputs === void 0 || exclusive && (!decayed || filler === void 0) || !cosigned) return;
 			return _objectSpread2({
@@ -19691,10 +19730,10 @@
 		}
 		if (type === "V3DutchOrder") {
 			const input = witness["baseInput"];
-			if (!isTypedDataMessage(input) || !isTypedDataMessage(input["curve"]) || address$1(witness, "cosigner") === void 0 || uint$1$1(witness, "startingBaseFee") === void 0) return;
+			if (!isTypedDataMessage(input) || !isTypedDataMessage(input["curve"]) || address$1(witness, "cosigner") === void 0 || uint$1(witness, "startingBaseFee") === void 0) return;
 			const inputToken = address$1(input, "token");
-			const maxAmount = uint$1$1(input, "maxAmount");
-			const outputs = outputsOf("baseOutputs", (m) => isTypedDataMessage(m["curve"]) ? uint$1$1(m, "minAmount") : void 0);
+			const maxAmount = uint$1(input, "maxAmount");
+			const outputs = outputsOf("baseOutputs", (m) => isTypedDataMessage(m["curve"]) ? uint$1(m, "minAmount") : void 0);
 			return inputToken === void 0 || maxAmount === void 0 || outputs === void 0 ? void 0 : {
 				info,
 				inputToken,
@@ -19703,10 +19742,10 @@
 			};
 		}
 		const { input } = witness;
-		if (!isTypedDataMessage(input) || address$1(witness, "cosigner") === void 0 || uint$1$1(witness, "auctionStartBlock") === void 0 || uint$1$1(witness, "baselinePriorityFeeWei") === void 0 || uint$1$1(input, "mpsPerPriorityFeeWei") === void 0) return;
+		if (!isTypedDataMessage(input) || address$1(witness, "cosigner") === void 0 || uint$1(witness, "auctionStartBlock") === void 0 || uint$1(witness, "baselinePriorityFeeWei") === void 0 || uint$1(input, "mpsPerPriorityFeeWei") === void 0) return;
 		const inputToken = address$1(input, "token");
-		const amount = uint$1$1(input, "amount");
-		const outputs = outputsOf("outputs", (m) => uint$1$1(m, "mpsPerPriorityFeeWei") === void 0 ? void 0 : uint$1$1(m, "amount"));
+		const amount = uint$1(input, "amount");
+		const outputs = outputsOf("outputs", (m) => uint$1(m, "mpsPerPriorityFeeWei") === void 0 ? void 0 : uint$1(m, "amount"));
 		return inputToken === void 0 || amount === void 0 || outputs === void 0 ? void 0 : {
 			info,
 			inputToken,
@@ -19737,14 +19776,14 @@
 		const { witness } = message;
 		const spender = address$1(message, "spender");
 		const permittedToken = isTypedDataMessage(permitted) ? address$1(permitted, "token") : void 0;
-		const permittedAmount = isTypedDataMessage(permitted) ? uint$1$1(permitted, "amount") : void 0;
+		const permittedAmount = isTypedDataMessage(permitted) ? uint$1(permitted, "amount") : void 0;
 		const parsed = isTypedDataMessage(witness) ? parse(witnessType, witness) : void 0;
 		if (spender === void 0 || permittedToken === void 0 || permittedAmount === void 0 || parsed === void 0 || parsed.inputToken.toLowerCase() !== permittedToken.toLowerCase()) return;
 		const { info } = parsed;
 		const reactor = address$1(info, "reactor");
 		const swapper = address$1(info, "swapper");
-		const nonce = uint$1$1(info, "nonce");
-		const deadline = uint$1$1(info, "deadline");
+		const nonce = uint$1(info, "nonce");
+		const deadline = uint$1(info, "deadline");
 		if (reactor === void 0 || reactor.toLowerCase() !== spender.toLowerCase() || reactor.toLowerCase() !== ((_REACTORS$chainId = REACTORS[chainId]) === null || _REACTORS$chainId === void 0 ? void 0 : _REACTORS$chainId[witnessType]) || swapper === void 0 || swapper.toLowerCase() !== signer.toLowerCase() || nonce === void 0 || deadline === void 0 || deadline > BigInt(Number.MAX_SAFE_INTEGER) || address$1(info, "additionalValidationContract") === void 0 || typedDataBytes(info["additionalValidationData"]) === void 0) return;
 		if (parsed.outputs.length > 8) return { kind: "oversize" };
 		const maker = checksumEvmAddress(signer);
@@ -19784,8 +19823,8 @@
 	var EXEC = from$2("function exec(address operator, address token, uint256 amount, address payable target, bytes data)");
 	var SETTLER_EXECUTE = from$2("function execute((address recipient, address buyToken, uint256 minAmountOut) slippage, bytes[] actions, bytes32 zid)");
 	var last20 = (hex) => `0x${hex.slice(-40)}`;
-	var addressBytes = (address) => hexToBytes$3(address.slice(2));
-	var bigIntBytes32 = (value) => hexToBytes$3(value.toString(16).padStart(64, "0"));
+	var addressBytes = (address) => hexToBytes$4(address.slice(2));
+	var bigIntBytes32 = (value) => hexToBytes$4(value.toString(16).padStart(64, "0"));
 	var keccakHex = (parts) => {
 		const total = parts.reduce((sum, part) => sum + part.length, 0);
 		const flat = new Uint8Array(total);
@@ -19794,7 +19833,7 @@
 			flat.set(part, offset);
 			offset += part.length;
 		}
-		return `0x${bytesToHex$4(keccak_256(flat))}`;
+		return `0x${bytesToHex$5(keccak_256(flat))}`;
 	};
 	var FEATURE_TAKER = 2n;
 	var FEATURE_METATXN = 3n;
@@ -19809,7 +19848,7 @@
 	var isZeroExSettler = (chainId, address, feature = FEATURE_TAKER) => {
 		const want = address.toLowerCase();
 		const deployer = addressBytes(ZEROX_DEPLOYER);
-		const initHash = hexToBytes$3(SHIM_INIT_CODE_HASH.slice(2));
+		const initHash = hexToBytes$4(SHIM_INIT_CODE_HASH.slice(2));
 		for (let nonce = 1; nonce <= 256; nonce++) {
 			const salt = bigIntBytes32(feature * 2n ** 128n + BigInt(chainId) * 2n ** 64n + BigInt(nonce));
 			const shim = addressBytes(last20(keccakHex([
@@ -22759,7 +22798,7 @@
 	var sessionLabel = (chainId, tokenId, deadline) => `fiat24-session-v1:${chainId}:${tokenId}:${deadline};`;
 	/** The exact personal-message text a `evm.fiat24-session` request signs. */
 	var fiat24SessionMessage = (chainId, tokenId, deadline) => {
-		return `I agree to access my profile. ${`0x${bytesToHex$4(keccak_256(utf8ToBytes$1(sessionLabel(chainId, tokenId, deadline) + deadline)))}`}`;
+		return `I agree to access my profile. ${`0x${bytesToHex$5(keccak_256(utf8ToBytes$1(sessionLabel(chainId, tokenId, deadline) + deadline)))}`}`;
 	};
 	/**
 	* The unsigned EIP-2718 envelope of a normalized transaction — one construction shared by the
@@ -22856,17 +22895,17 @@
 	*/
 	var evmSigningPreimage = (tx) => {
 		const base = baseEnvelope(tx);
-		if (tx.type === "legacy") return hexToBytes$3(serialize$1(_objectSpread2(_objectSpread2({}, base), {}, {
+		if (tx.type === "legacy") return hexToBytes$4(serialize$1(_objectSpread2(_objectSpread2({}, base), {}, {
 			type: "legacy",
 			gasPrice: BigInt(tx.gasPrice)
 		})).slice(2));
-		if (tx.type === "eip2930") return hexToBytes$3(serialize$3(_objectSpread2(_objectSpread2({}, base), {}, {
+		if (tx.type === "eip2930") return hexToBytes$4(serialize$3(_objectSpread2(_objectSpread2({}, base), {}, {
 			type: "eip2930",
 			gasPrice: BigInt(tx.gasPrice),
 			accessList: tx.accessList.map(accessEntry)
 		})).slice(2));
 		if (tx.type === "eip7702") throw new ChainError("invalid-request", "an eip7702 transaction has no unsigned preimage");
-		return hexToBytes$3(serialize(_objectSpread2(_objectSpread2({}, base), {}, {
+		return hexToBytes$4(serialize(_objectSpread2(_objectSpread2({}, base), {}, {
 			type: "eip1559",
 			accessList: tx.accessList.map(accessEntry),
 			maxFeePerGas: BigInt(tx.maxFeePerGas),
@@ -26379,20 +26418,20 @@ zoo`.split("\n"));
 	var BYTES32 = /^0x[0-9a-fA-F]{64}$/;
 	var bytes32 = (value) => typeof value === "string" && BYTES32.test(value) ? value.toLowerCase() : void 0;
 	var nonZero = (hex) => hex === ZERO_BYTES32 ? void 0 : hex;
-	var uint$1 = (value) => typedDataUint(value, MAX_UINT256$1);
+	var uint = (value) => typedDataUint(value, MAX_UINT256$1);
 	var sameAddress = (a, b) => a !== void 0 && b !== void 0 && a.toLowerCase() === b.toLowerCase();
 	/** The strict parse both `Order` and `TypedDataSign.contents` share. */
 	var orderValues = (message) => {
 		const maker = typedDataAddress(message["maker"]);
 		const signer = typedDataAddress(message["signer"]);
-		const tokenId = uint$1(message["tokenId"]);
-		const makerAmount = uint$1(message["makerAmount"]);
-		const takerAmount = uint$1(message["takerAmount"]);
-		const side = uint$1(message["side"]);
-		const signatureType = uint$1(message["signatureType"]);
+		const tokenId = uint(message["tokenId"]);
+		const makerAmount = uint(message["makerAmount"]);
+		const takerAmount = uint(message["takerAmount"]);
+		const side = uint(message["side"]);
+		const signatureType = uint(message["signatureType"]);
 		const metadata = bytes32(message["metadata"]);
 		const builder = bytes32(message["builder"]);
-		if (maker === void 0 || signer === void 0 || tokenId === void 0 || makerAmount === void 0 || makerAmount === 0n || takerAmount === void 0 || takerAmount === 0n || side === void 0 || side > 1n || signatureType === void 0 || signatureType > 3n || uint$1(message["salt"]) === void 0 || uint$1(message["timestamp"]) === void 0 || metadata === void 0 || builder === void 0) return;
+		if (maker === void 0 || signer === void 0 || tokenId === void 0 || makerAmount === void 0 || makerAmount === 0n || takerAmount === void 0 || takerAmount === 0n || side === void 0 || side > 1n || signatureType === void 0 || signatureType > 3n || uint(message["salt"]) === void 0 || uint(message["timestamp"]) === void 0 || metadata === void 0 || builder === void 0) return;
 		const meta = nonZero(metadata);
 		const code = nonZero(builder);
 		return _objectSpread2(_objectSpread2({
@@ -26477,7 +26516,7 @@ zoo`.split("\n"));
 		const { message } = json;
 		const wallet = typedDataAddress(message["verifyingContract"]);
 		const { contents } = message;
-		if (message["name"] !== "DepositWallet" || message["version"] !== "1" || wallet === void 0 || message["salt"] !== ZERO_BYTES32 || uint$1(message["chainId"]) !== BigInt(exchange.chainId) || !isTypedDataMessage(contents)) return;
+		if (message["name"] !== "DepositWallet" || message["version"] !== "1" || wallet === void 0 || message["salt"] !== ZERO_BYTES32 || uint(message["chainId"]) !== BigInt(exchange.chainId) || !isTypedDataMessage(contents)) return;
 		const order = orderValues(contents);
 		if (order === void 0 || order.signatureType !== 3n || !sameAddress(order.signer, wallet) || !sameAddress(order.maker, wallet)) return;
 		const content = orderContent(order, exchange, "deposit-wallet");
@@ -26499,7 +26538,7 @@ zoo`.split("\n"));
 		if (json.primaryType !== "ClobAuth" || domain["name"] !== "ClobAuthDomain" || domain["version"] !== "1" || chainId !== 137 && chainId !== 80002 || !sameFields(types, "EIP712Domain", EIP712_DOMAIN_AUTH) || !typeSet(types, ["EIP712Domain", "ClobAuth"]) || !sameFields(types, "ClobAuth", CLOB_AUTH_FIELDS)) return;
 		const address = typedDataAddress(message["address"]);
 		const { timestamp } = message;
-		const nonce = uint$1(message["nonce"]);
+		const nonce = uint(message["nonce"]);
 		if (address === void 0 || !sameAddress(address, context.signer) || message["message"] !== CLOB_AUTH_MESSAGE || typeof timestamp !== "string" || !/^[0-9]{1,12}$/.test(timestamp) || nonce === void 0) return;
 		return {
 			content: { polymarket: {
@@ -26524,7 +26563,7 @@ zoo`.split("\n"));
 			"Batch",
 			"Call"
 		]) || !sameFields(types, "Batch", BATCH_FIELDS) || !sameFields(types, "Call", CALL_FIELDS) || !sameAddress(typedDataAddress(message["wallet"]), wallet)) return;
-		const nonce = uint$1(message["nonce"]);
+		const nonce = uint(message["nonce"]);
 		const deadline = typedDataUint(message["deadline"], MAX_UINT48);
 		const calls = typedDataMessages(message["calls"]);
 		if (nonce === void 0 || deadline === void 0 || calls === void 0 || calls.length === 0) return;
@@ -26545,7 +26584,7 @@ zoo`.split("\n"));
 		const decoded = [];
 		for (const call of calls) {
 			const target = typedDataAddress(call["target"]);
-			const value = uint$1(call["value"]);
+			const value = uint(call["value"]);
 			const data = typedDataBytes(call["data"]);
 			if (target === void 0 || value === void 0 || data === void 0) return;
 			decoded.push(decodeCall({
@@ -27096,7 +27135,7 @@ zoo`.split("\n"));
 			amount: value.toString(10)
 		};
 	};
-	var item$1 = (message, chainId, table) => {
+	var item = (message, chainId, table) => {
 		const itemType = typedDataUint(message["itemType"], 255n);
 		const token = typedDataAddress(message["token"]);
 		const identifier = typedDataUint(message["identifierOrCriteria"], MAX_UINT256);
@@ -27129,9 +27168,9 @@ zoo`.split("\n"));
 		const zone = typedDataAddress(message["zone"]);
 		const startTime = typedDataUint(message["startTime"], MAX_UINT256);
 		const endTime = typedDataUint(message["endTime"], MAX_UINT256);
-		const offer = all$2(typedDataMessages(message["offer"]), (entry) => item$1(entry, chainId, table));
+		const offer = all$2(typedDataMessages(message["offer"]), (entry) => item(entry, chainId, table));
 		const consideration = all$2(typedDataMessages(message["consideration"]), (entry) => {
-			const base = item$1(entry, chainId, table);
+			const base = item(entry, chainId, table);
 			const recipient = typedDataAddress(entry["recipient"]);
 			return base === void 0 || recipient === void 0 ? void 0 : _objectSpread2(_objectSpread2({}, base), {}, { recipient });
 		});
@@ -27249,7 +27288,7 @@ zoo`.split("\n"));
 			return;
 		}
 	};
-	var result = (farcaster, summary) => ({
+	var result$2 = (farcaster, summary) => ({
 		content: { farcaster },
 		summary,
 		outflows: [],
@@ -27274,7 +27313,7 @@ zoo`.split("\n"));
 			if (owner === void 0 || owner.toLowerCase() !== signer.toLowerCase() || !isUint(message["keyType"], 2n ** 32n - 1n, 1n) || !isKey(key) || !isUint(message["metadataType"], 2n ** 8n - 1n, 1n) || metadata === void 0 || nonce === void 0 || deadline === void 0) return;
 			const app = decodeKeyMetadata(metadata);
 			if (app === void 0) return;
-			return result(_objectSpread2({
+			return result$2(_objectSpread2({
 				kind: "add",
 				key,
 				requestFid: app.requestFid.toString()
@@ -27286,7 +27325,7 @@ zoo`.split("\n"));
 			const { key } = message;
 			const deadline = parseUint(message["deadline"]);
 			if (requestFid === void 0 || !isKey(key) || deadline === void 0) return;
-			return result(_objectSpread2({
+			return result$2(_objectSpread2({
 				kind: "request",
 				key,
 				requestFid: requestFid.toString()
@@ -28361,7 +28400,7 @@ zoo`.split("\n"));
 	}
 	function l1ConnectionId(args) {
 		const packed = encodeL1Action(args.action);
-		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$3(new Uint8Array([1]), hexToBytes$3(args.vaultAddress.slice(2)));
+		const vault = args.vaultAddress === void 0 ? new Uint8Array([0]) : concat$3(new Uint8Array([1]), hexToBytes$4(args.vaultAddress.slice(2)));
 		const expiry = args.expiresAfter === void 0 ? /* @__PURE__ */ new Uint8Array(0) : concat$3(new Uint8Array([0]), u64be(args.expiresAfter));
 		return keccak_256(concat$3(packed, u64be(args.nonce), vault, expiry));
 	}
@@ -28403,7 +28442,7 @@ zoo`.split("\n"));
 			},
 			message: {
 				source: network === "Mainnet" ? "a" : "b",
-				connectionId: `0x${bytesToHex$4(connectionId)}`
+				connectionId: `0x${bytesToHex$5(connectionId)}`
 			}
 		});
 	}
@@ -29791,7 +29830,7 @@ zoo`.split("\n"));
 	// node_modules/.bun/@solana+transaction-messages@8.5.0+ff0372d108591aba/node_modules/@solana/transaction-messages/dist/index.browser.mjs
 	init_objectSpread2();
 	init_objectWithoutProperties();
-	var _excluded = ["accountIndices", "data"];
+	var _excluded$1 = ["accountIndices", "data"];
 	var _excluded2 = ["addressTableLookups"];
 	var memoizedU8Decoder;
 	function getMemoizedU8Decoder() {
@@ -29814,7 +29853,7 @@ zoo`.split("\n"));
 		]), (instruction) => {
 			if (instruction.accountIndices.length && instruction.data.byteLength) return instruction;
 			const { accountIndices, data } = instruction;
-			return _objectSpread2(_objectSpread2(_objectSpread2({}, _objectWithoutProperties(instruction, _excluded)), accountIndices.length ? { accountIndices } : null), data.byteLength ? { data } : null);
+			return _objectSpread2(_objectSpread2(_objectSpread2({}, _objectWithoutProperties(instruction, _excluded$1)), accountIndices.length ? { accountIndices } : null), data.byteLength ? { data } : null);
 		});
 		return memoizedGetInstructionDecoder;
 	}
@@ -32287,12 +32326,12 @@ zoo`.split("\n"));
 	}
 	/** `"41"` plus the 20-byte body as 40 lowercase hex — the form contract fields carry. */
 	function tronAddressToHex(address) {
-		return bytesToHex$4(tronBytes(address, "base58check"));
+		return bytesToHex$5(tronBytes(address, "base58check"));
 	}
 	/** `"41"` plus 40 hex — the form `raw_data` contract fields and trongrid JSON carry. */
 	function tronAddressFromHex(hex) {
 		if (!/^41[0-9a-fA-F]{40}$/.test(hex)) throw new ChainError("invalid-address", "a TRON hex address is 41 plus 40 hex");
-		return tronAddressFromBytes(hexToBytes$3(hex));
+		return tronAddressFromBytes(hexToBytes$4(hex));
 	}
 	var is0xPrefixed = (value) => value.startsWith("0x");
 	/** The 20-byte body rendered as an EIP-55 checksummed 0x address (ABI/EVM tooling form). */
@@ -32326,7 +32365,7 @@ zoo`.split("\n"));
 	* bare-width `uint`), the difference can only change what it hashes to, never whether it signs — so
 	* strictness is a validation concern, not a compatibility one.
 	*/
-	var fail$5 = (what) => {
+	var fail$4 = (what) => {
 		throw new ChainError("invalid-typed-data", what);
 	};
 	var INT_TYPE = /^(u?)int(\d*)$/;
@@ -32340,16 +32379,16 @@ zoo`.split("\n"));
 	var addressBody = (value) => {
 		if (typeof value !== "string") return;
 		if (isTronAddress(value)) return tronAddressToBytes(value).subarray(1);
-		if (/^41[0-9a-fA-F]{40}$/.test(value)) return hexToBytes$3(value).subarray(1);
-		if (/^0x[0-9a-fA-F]{40}$/.test(value)) return hexToBytes$3(value.slice(2));
+		if (/^41[0-9a-fA-F]{40}$/.test(value)) return hexToBytes$4(value).subarray(1);
+		if (/^0x[0-9a-fA-F]{40}$/.test(value)) return hexToBytes$4(value.slice(2));
 	};
 	/** The display form of a leaf `address` value — base58check, whichever form the document used. */
 	var tronTypedDataBase58 = (value) => {
 		const body = addressBody(value);
-		return body === void 0 ? void 0 : tronAddressFromHex(`41${bytesToHex$4(body)}`);
+		return body === void 0 ? void 0 : tronAddressFromHex(`41${bytesToHex$5(body)}`);
 	};
 	var word = (value) => {
-		return hexToBytes$3((value < 0n ? 2n ** 256n + value : value).toString(16).padStart(64, "0"));
+		return hexToBytes$4((value < 0n ? 2n ** 256n + value : value).toString(16).padStart(64, "0"));
 	};
 	var intBounds = (signed, bits) => signed ? [-(2n ** BigInt(bits - 1)), 2n ** BigInt(bits - 1) - 1n] : [0n, 2n ** BigInt(bits) - 1n];
 	/** Canonical-JSON int leaf: safe integer, decimal string (`-` only where signed), or `0x` hex. */
@@ -32366,7 +32405,7 @@ zoo`.split("\n"));
 	/** A bytes leaf — canonical `0x` even-length hex, plus a `Uint8Array` in argument mode. */
 	var hexLeaf = (value, args) => {
 		if (args && value instanceof Uint8Array) return value;
-		return typeof value === "string" && /^0x([0-9a-fA-F]{2})*$/.test(value) ? hexToBytes$3(value.slice(2)) : void 0;
+		return typeof value === "string" && /^0x([0-9a-fA-F]{2})*$/.test(value) ? hexToBytes$4(value.slice(2)) : void 0;
 	};
 	/**
 	* The encoder for one atomic type, mirroring TronWeb's `getBaseEncoder` — including its rule that a
@@ -32379,21 +32418,21 @@ zoo`.split("\n"));
 		if (int !== null) {
 			const signed = int[1] === "";
 			const w = int[2] === "" ? NaN : Number(int[2]);
-			if (w % 8 !== 0 || w < 8 || w > 256 || int[2] !== String(w)) fail$5(`invalid numeric width in type ${type}`);
+			if (w % 8 !== 0 || w < 8 || w > 256 || int[2] !== String(w)) fail$4(`invalid numeric width in type ${type}`);
 			const [min, max] = intBounds(signed, w);
 			return (value) => {
 				const parsed = args ? looseInt(value) : strictInt(value, signed);
-				if (parsed === void 0 || parsed < min || parsed > max) return fail$5(`value is out of bounds for ${type}`);
+				if (parsed === void 0 || parsed < min || parsed > max) return fail$4(`value is out of bounds for ${type}`);
 				return word(parsed);
 			};
 		}
 		const fixed = FIXED_BYTES.exec(type);
 		if (fixed !== null) {
 			const w = Number(fixed[1]);
-			if (w < 1 || w > 32 || String(w) !== fixed[1]) fail$5(`invalid bytes width in type ${type}`);
+			if (w < 1 || w > 32 || String(w) !== fixed[1]) fail$4(`invalid bytes width in type ${type}`);
 			return (value) => {
 				const bytes = hexLeaf(value, args);
-				if (bytes === void 0 || bytes.length !== w) return fail$5(`invalid length for ${type}`);
+				if (bytes === void 0 || bytes.length !== w) return fail$4(`invalid length for ${type}`);
 				const out = /* @__PURE__ */ new Uint8Array(32);
 				out.set(bytes);
 				return out;
@@ -32403,21 +32442,21 @@ zoo`.split("\n"));
 			case "trcToken": return baseEncoder("uint256", args);
 			case "address": return (value) => {
 				const body = addressBody(value);
-				if (body === void 0) return fail$5("address is not a base58, 41-hex or 0x-hex TRON address");
+				if (body === void 0) return fail$4("address is not a base58, 41-hex or 0x-hex TRON address");
 				return concatBytes$3(/* @__PURE__ */ new Uint8Array(12), body);
 			};
 			case "bool": return (value) => {
 				if (args) return word(Boolean(value) ? 1n : 0n);
-				if (typeof value !== "boolean") return fail$5("bool is not a JSON boolean");
+				if (typeof value !== "boolean") return fail$4("bool is not a JSON boolean");
 				return word(value ? 1n : 0n);
 			};
 			case "bytes": return (value) => {
 				const bytes = hexLeaf(value, args);
-				if (bytes === void 0) return fail$5("bytes is not 0x-prefixed even-length hex");
+				if (bytes === void 0) return fail$4("bytes is not 0x-prefixed even-length hex");
 				return keccak_256(bytes);
 			};
 			case "string": return (value) => {
-				if (typeof value !== "string") return fail$5("string value is not a string");
+				if (typeof value !== "string") return fail$4("string value is not a string");
 				return keccak_256(utf8ToBytes$1(value));
 			};
 			default: return;
@@ -32459,23 +32498,23 @@ zoo`.split("\n"));
 		}
 		for (const name of names) {
 			var _types$name2;
-			if (isBaseName(name)) fail$5(`struct type name ${JSON.stringify(name)} collides with a base type`);
+			if (isBaseName(name)) fail$4(`struct type name ${JSON.stringify(name)} collides with a base type`);
 			const seen = /* @__PURE__ */ new Set();
 			for (const field of (_types$name2 = types[name]) !== null && _types$name2 !== void 0 ? _types$name2 : []) {
 				var _parents$get, _links$get;
-				if (seen.has(field.name)) fail$5(`duplicate variable name ${JSON.stringify(field.name)} in ${JSON.stringify(name)}`);
+				if (seen.has(field.name)) fail$4(`duplicate variable name ${JSON.stringify(field.name)} in ${JSON.stringify(name)}`);
 				seen.add(field.name);
 				const base = baseName(field.type);
-				if (base === name) fail$5(`circular type reference to ${JSON.stringify(base)}`);
+				if (base === name) fail$4(`circular type reference to ${JSON.stringify(base)}`);
 				let baseIsAtomic;
 				try {
 					baseIsAtomic = baseEncoder(base, false) !== void 0;
 				} catch (error) {
-					if (error instanceof ChainError) fail$5(`invalid field type ${JSON.stringify(field.type)}`);
+					if (error instanceof ChainError) fail$4(`invalid field type ${JSON.stringify(field.type)}`);
 					throw error;
 				}
 				if (baseIsAtomic) continue;
-				if (!parents.has(base)) fail$5(`unknown type ${JSON.stringify(base)}`);
+				if (!parents.has(base)) fail$4(`unknown type ${JSON.stringify(base)}`);
 				((_parents$get = parents.get(base)) !== null && _parents$get !== void 0 ? _parents$get : []).push(name);
 				((_links$get = links.get(name)) !== null && _links$get !== void 0 ? _links$get : /* @__PURE__ */ new Set()).add(base);
 			}
@@ -32484,13 +32523,13 @@ zoo`.split("\n"));
 			var _parents$get2;
 			return ((_parents$get2 = parents.get(n)) !== null && _parents$get2 !== void 0 ? _parents$get2 : []).length === 0;
 		});
-		if (roots.length === 0) fail$5("missing primary type");
-		if (roots.length !== 1) fail$5(`ambiguous primary types or unused types: ${roots.map((r) => JSON.stringify(r)).join(", ")}`);
+		if (roots.length === 0) fail$4("missing primary type");
+		if (roots.length !== 1) fail$4(`ambiguous primary types or unused types: ${roots.map((r) => JSON.stringify(r)).join(", ")}`);
 		const primary = (_roots$ = roots[0]) !== null && _roots$ !== void 0 ? _roots$ : "";
 		const visited = /* @__PURE__ */ new Set();
 		const checkCircular = (type, found) => {
 			var _links$get2;
-			if (found.has(type)) fail$5(`circular type reference to ${JSON.stringify(type)}`);
+			if (found.has(type)) fail$4(`circular type reference to ${JSON.stringify(type)}`);
 			found.add(type);
 			visited.add(type);
 			for (const child of (_links$get2 = links.get(type)) !== null && _links$get2 !== void 0 ? _links$get2 : /* @__PURE__ */ new Set()) {
@@ -32501,7 +32540,7 @@ zoo`.split("\n"));
 			found.delete(type);
 		};
 		checkCircular(primary, /* @__PURE__ */ new Set());
-		if (visited.size !== names.length) fail$5("types contains types the primary type does not reach");
+		if (visited.size !== names.length) fail$4("types contains types the primary type does not reach");
 		const fullTypes = /* @__PURE__ */ new Map();
 		for (const [name, set] of subtypes) {
 			const st = [...set].sort();
@@ -32522,15 +32561,15 @@ zoo`.split("\n"));
 	var makeEncoder = (types, args) => {
 		const { primary, fullTypes } = checkTypes(types);
 		const encode = (type, value, depth) => {
-			if (depth > 32) fail$5("typedData nests too deeply");
+			if (depth > 32) fail$4("typedData nests too deeply");
 			const atomic = baseEncoder(type, args);
 			if (atomic !== void 0) return atomic(value);
 			const tail = ARRAY_TAIL.exec(type);
 			if (tail !== null) {
 				var _tail$2;
-				if (!Array.isArray(value)) return fail$5(`${type} value is not an array`);
+				if (!Array.isArray(value)) return fail$4(`${type} value is not an array`);
 				const len = tail[2] === "" ? void 0 : Number(tail[2]);
-				if (len !== void 0 && len !== value.length) return fail$5(`array length mismatch; expected length ${len}`);
+				if (len !== void 0 && len !== value.length) return fail$4(`array length mismatch; expected length ${len}`);
 				const elementType = (_tail$2 = tail[1]) !== null && _tail$2 !== void 0 ? _tail$2 : "";
 				const structElements = fullTypes.has(elementType);
 				return keccak_256(concatBytes$3(...value.map((v) => encode(elementType, v, depth + 1)).map((e) => structElements ? keccak_256(e) : e)));
@@ -32538,46 +32577,46 @@ zoo`.split("\n"));
 			const fields = types[type];
 			if (fields !== void 0) {
 				var _fullTypes$get;
-				if (!isRecord$4(value)) return fail$5(`${type} value is not an object`);
+				if (!isRecord$4(value)) return fail$4(`${type} value is not an object`);
 				return concatBytes$3(keccak_256(utf8ToBytes$1((_fullTypes$get = fullTypes.get(type)) !== null && _fullTypes$get !== void 0 ? _fullTypes$get : "")), ...fields.map((f) => {
 					const e = encode(f.type, value[f.name], depth + 1);
 					return fullTypes.has(f.type) ? keccak_256(e) : e;
 				}));
 			}
-			return fail$5(`unknown type ${type}`);
+			return fail$4(`unknown type ${type}`);
 		};
 		const visitLeaf = (type, value) => {
 			if (/^bytes(\d*)/.test(type)) {
 				const bytes = hexLeaf(value, args);
-				if (bytes === void 0) return fail$5(`invalid bytes value for ${type}`);
-				return `0x${bytesToHex$4(bytes)}`;
+				if (bytes === void 0) return fail$4(`invalid bytes value for ${type}`);
+				return `0x${bytesToHex$5(bytes)}`;
 			}
 			if (/^u?int/.test(type) || type === "trcToken") {
 				const v = looseInt(value);
-				if (v === void 0) return fail$5(`invalid numeric value for ${type}`);
+				if (v === void 0) return fail$4(`invalid numeric value for ${type}`);
 				return v.toString(10);
 			}
 			switch (type) {
 				case "address": {
 					const body = addressBody(value);
-					if (body === void 0) return fail$5("address is not a base58, 41-hex or 0x-hex TRON address");
-					return `41${bytesToHex$4(body)}`;
+					if (body === void 0) return fail$4("address is not a base58, 41-hex or 0x-hex TRON address");
+					return `41${bytesToHex$5(body)}`;
 				}
 				case "bool": return Boolean(value);
 				case "string":
-					if (typeof value !== "string") return fail$5("string value is not a string");
+					if (typeof value !== "string") return fail$4("string value is not a string");
 					return value;
-				default: return fail$5(`unsupported type ${type}`);
+				default: return fail$4(`unsupported type ${type}`);
 			}
 		};
 		const visit = (type, value, depth) => {
-			if (depth > 32) fail$5("typedData nests too deeply");
+			if (depth > 32) fail$4("typedData nests too deeply");
 			if (baseEncoder(type, true) !== void 0) return visitLeaf(type, value);
 			const tail = ARRAY_TAIL.exec(type);
 			if (tail !== null) {
-				if (!Array.isArray(value)) return fail$5(`${type} value is not an array`);
+				if (!Array.isArray(value)) return fail$4(`${type} value is not an array`);
 				const len = tail[2] === "" ? void 0 : Number(tail[2]);
-				if (len !== void 0 && len !== value.length) return fail$5(`array length mismatch; expected length ${len}`);
+				if (len !== void 0 && len !== value.length) return fail$4(`array length mismatch; expected length ${len}`);
 				return value.map((v) => {
 					var _tail$3;
 					return visit((_tail$3 = tail[1]) !== null && _tail$3 !== void 0 ? _tail$3 : "", v, depth + 1);
@@ -32585,10 +32624,10 @@ zoo`.split("\n"));
 			}
 			const fields = types[type];
 			if (fields !== void 0) {
-				if (!isRecord$4(value)) return fail$5(`${type} value is not an object`);
+				if (!isRecord$4(value)) return fail$4(`${type} value is not an object`);
 				return Object.fromEntries(fields.map((f) => [f.name, visit(f.type, value[f.name], depth + 1)]));
 			}
-			return fail$5(`unknown type ${type}`);
+			return fail$4(`unknown type ${type}`);
 		};
 		return {
 			primary,
@@ -32627,7 +32666,7 @@ zoo`.split("\n"));
 			const value = domain[f.name];
 			if (value !== void 0 && value !== null) fields.push(f);
 		}
-		for (const key of Object.keys(domain)) if (domain[key] !== void 0 && domain[key] !== null && !DOMAIN_NAMES.has(key)) fail$5(`invalid typed-data domain key ${JSON.stringify(key)}`);
+		for (const key of Object.keys(domain)) if (domain[key] !== void 0 && domain[key] !== null && !DOMAIN_NAMES.has(key)) fail$4(`invalid typed-data domain key ${JSON.stringify(key)}`);
 		return fields;
 	};
 	var sameFieldList = (declared, expected) => declared.length === expected.length && declared.every((f, i) => {
@@ -32648,10 +32687,10 @@ zoo`.split("\n"));
 	*/
 	var parseTronTypedData = (typedData) => {
 		var _json$types$EIP712Dom;
-		const json = strictJson(typedData, (reason) => fail$5(`typedData ${reason}`));
-		if (!isTypedDataInput(json)) return fail$5("typedData must be a JSON object with types, primaryType, domain and message");
+		const json = strictJson(typedData, (reason) => fail$4(`typedData ${reason}`));
+		if (!isTypedDataInput(json)) return fail$4("typedData must be a JSON object with types, primaryType, domain and message");
 		const domainFields = domainFieldsOf(json.domain);
-		if (!sameFieldList((_json$types$EIP712Dom = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom !== void 0 ? _json$types$EIP712Dom : fail$5("typedData must declare types.EIP712Domain"), domainFields)) fail$5("types.EIP712Domain is not the canonical field list of the domain keys present");
+		if (!sameFieldList((_json$types$EIP712Dom = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom !== void 0 ? _json$types$EIP712Dom : fail$4("typedData must declare types.EIP712Domain"), domainFields)) fail$4("types.EIP712Domain is not the canonical field list of the domain keys present");
 		tronTypedDataDigest(json);
 		return { json: _objectSpread2(_objectSpread2({}, json), {}, { domain: domainValues(json.domain) }) };
 	};
@@ -32666,7 +32705,7 @@ zoo`.split("\n"));
 		const messageTypes = {};
 		for (const [name, fields] of Object.entries(json.types)) if (name !== "EIP712Domain") messageTypes[name] = fields;
 		const encoder = makeEncoder(messageTypes, false);
-		if (encoder.primary !== json.primaryType) fail$5(`primaryType ${JSON.stringify(json.primaryType)} is not the unique root type`);
+		if (encoder.primary !== json.primaryType) fail$4(`primaryType ${JSON.stringify(json.primaryType)} is not the unique root type`);
 		const domain = makeEncoder({ EIP712Domain: domainFields }, false).hashStruct("EIP712Domain", json.domain);
 		const message = encoder.hashStruct(json.primaryType, json.message);
 		return keccak_256(concatBytes$3(Uint8Array.of(25, 1), domain, message));
@@ -32689,13 +32728,13 @@ zoo`.split("\n"));
 			if (struct !== void 0) return isRecord$4(value) ? Object.fromEntries(struct.map((f) => [f.name, map(f.type, value[f.name])])) : value;
 			if (type === "address") {
 				const body = addressBody(value);
-				return body === void 0 ? value : `0x${bytesToHex$4(body)}`;
+				return body === void 0 ? value : `0x${bytesToHex$5(body)}`;
 			}
 			return value;
 		};
 		const domain = _objectSpread2({}, json.domain);
 		const verifying = addressBody(domain["verifyingContract"]);
-		if (verifying !== void 0) domain["verifyingContract"] = `0x${bytesToHex$4(verifying)}`;
+		if (verifying !== void 0) domain["verifyingContract"] = `0x${bytesToHex$5(verifying)}`;
 		return {
 			types: json.types,
 			primaryType: json.primaryType,
@@ -32797,7 +32836,7 @@ zoo`.split("\n"));
 		if (f.wire !== 0 || f.varint !== 1n) malformed$1(`${what} is not a proto3 bool`);
 		return true;
 	};
-	var bytesOf$2 = (f) => {
+	var bytesOf$3 = (f) => {
 		if (f === void 0) return EMPTY$1;
 		if (f.wire !== 2 || f.data === void 0) malformed$1("bytes field has the wrong wire type");
 		return f.data;
@@ -32808,7 +32847,7 @@ zoo`.split("\n"));
 	});
 	var stringOf = (f, what) => {
 		if (f === void 0) return "";
-		const data = bytesOf$2(f);
+		const data = bytesOf$3(f);
 		try {
 			return utf8$2.decode(data);
 		} catch (_unused) {
@@ -32847,7 +32886,7 @@ zoo`.split("\n"));
 			extra: collectExtra(fs, [1, 2])
 		};
 	};
-	var decodeKey = (f) => {
+	var decodeKey$2 = (f) => {
 		const fs = readFields(f.wire === 2 && f.data !== void 0 ? f.data : malformed$1("key has the wrong wire type"));
 		const address = addressOf(required(fs, 1, "key.address"), "key.address");
 		const weight = int64Of(field$1(fs, 2), "key.weight");
@@ -32868,7 +32907,7 @@ zoo`.split("\n"));
 		const name = stringOf(field$1(fs, 3), "permission_name");
 		const threshold = int64Of(field$1(fs, 4), "permission.threshold");
 		const parentId = int32Of(field$1(fs, 5), "permission.parent_id");
-		const operations = bytesOf$2(field$1(fs, 6));
+		const operations = bytesOf$3(field$1(fs, 6));
 		const keys = [];
 		const extras = [...collectExtra(fs, [
 			1,
@@ -32880,7 +32919,7 @@ zoo`.split("\n"));
 			7
 		])];
 		for (const kf of all(fs, 7)) {
-			const { key, extra } = decodeKey(kf);
+			const { key, extra } = decodeKey$2(kf);
 			keys.push(key);
 			extras.push(...extra);
 		}
@@ -32996,7 +33035,7 @@ zoo`.split("\n"));
 			const owner = addressOf(required(fs, 1, "owner_address"), "owner_address");
 			const contract = addressOf(required(fs, 2, "contract_address"), "contract_address");
 			const callValue = int64Of(field$1(fs, 3), "call_value");
-			const data = bytesOf$2(field$1(fs, 4));
+			const data = bytesOf$3(field$1(fs, 4));
 			const callTokenValue = int64Of(field$1(fs, 5), "call_token_value");
 			const tokenId = int64Of(field$1(fs, 6), "token_id");
 			canonical(field$1(fs, 1), encAddress(1, owner));
@@ -33335,7 +33374,7 @@ zoo`.split("\n"));
 		"energy",
 		"tron-power"
 	];
-	var selectorOf = (data) => data.length === 0 ? "0x" : `0x${bytesToHex$4(data.subarray(0, Math.min(4, data.length)))}`;
+	var selectorOf = (data) => data.length === 0 ? "0x" : `0x${bytesToHex$5(data.subarray(0, Math.min(4, data.length)))}`;
 	/** The tokenCall's EVM-form addresses mapped back to base58 for display. */
 	var mapTokenCall = (call) => _objectSpread2(_objectSpread2({}, call), {}, {
 		outflows: call.outflows.map((flow) => _objectSpread2(_objectSpread2({}, flow), {}, {
@@ -33361,7 +33400,7 @@ zoo`.split("\n"));
 		name: p.name,
 		threshold: p.threshold.toString(10),
 		parentId: p.parentId
-	}, type === "active" ? { operations: `0x${bytesToHex$4(p.operations)}` } : {}), {}, { keys: p.keys.map((k) => ({
+	}, type === "active" ? { operations: `0x${bytesToHex$5(p.operations)}` } : {}), {}, { keys: p.keys.map((k) => ({
 		address: k.address,
 		weight: k.weight.toString(10)
 	})) });
@@ -33375,7 +33414,7 @@ zoo`.split("\n"));
 		} catch (_unused3) {}
 		return {
 			kind: "bytes",
-			hex: `0x${bytesToHex$4(memo)}`
+			hex: `0x${bytesToHex$5(memo)}`
 		};
 	};
 	var stakeEffects = (staking) => ({
@@ -33513,7 +33552,7 @@ zoo`.split("\n"));
 					amount: trc10(contract.tokenId.toString(10), contract.callTokenValue),
 					verified: false
 				});
-				const tokenCall = contract.data.length === 0 ? void 0 : decodeTokenCall(tronAddressToEvm(contract.contract), `0x${bytesToHex$4(contract.data)}`, chainId, evmTableFor(network, chainId, table));
+				const tokenCall = contract.data.length === 0 ? void 0 : decodeTokenCall(tronAddressToEvm(contract.contract), `0x${bytesToHex$5(contract.data)}`, chainId, evmTableFor(network, chainId, table));
 				if (tokenCall !== void 0) {
 					const mapped = mapTokenCall(tokenCall);
 					return {
@@ -34045,7 +34084,7 @@ zoo`.split("\n"));
 			}]);
 			await keystore.remove(existing.id).catch(() => void 0);
 		}
-		const id = bytesToHex$4(ctx.platform.random(16));
+		const id = bytesToHex$5(ctx.platform.random(16));
 		try {
 			const material = await newKeystoreKek(ctx.platform, id, {
 				protection: "presence",
@@ -34093,7 +34132,7 @@ zoo`.split("\n"));
 			return null;
 		}
 		if (deviceRow !== void 0) return null;
-		const id = bytesToHex$4(ctx.platform.random(16));
+		const id = bytesToHex$5(ctx.platform.random(16));
 		try {
 			const material = await newKeystoreKek(ctx.platform, id, { protection: "device" });
 			const row = factorRow(ctx.platform, material, id, session.dek);
@@ -34261,7 +34300,7 @@ zoo`.split("\n"));
 	* bare hex for TRON — as wipeable ASCII bytes. The encoders live in `src/secret/encode.ts` because
 	* the library encoders return strings, and a private key held in a JS string can never be zeroed.
 	*/
-	async function exportKey$1(ctx, params, requestSession) {
+	async function exportKey$2(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
 		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "export-private-key"));
 		const record = findRecord(ctx.image, "key", params.keyId);
@@ -34293,7 +34332,7 @@ zoo`.split("\n"));
 	function walletIdOf(master) {
 		const { publicKey } = master;
 		if (publicKey === null || publicKey.length !== 33) throw new KernelError("integrity", "master key has no compressed public key");
-		return bytesToHex$4(sha256$1(concatBytes$3(utf8ToBytes$1("qntx-wallet/wallet-id/v1"), publicKey)).slice(0, 8));
+		return bytesToHex$5(sha256$1(concatBytes$3(utf8ToBytes$1("qntx-wallet/wallet-id/v1"), publicKey)).slice(0, 8));
 	}
 	// packages/wallet-kernel/src/seed/entropy.ts
 	/** 12 words → 16 bytes, 24 words → 32 bytes of fresh entropy. */
@@ -34363,7 +34402,7 @@ zoo`.split("\n"));
 		/** Opens a session, replacing any existing one. Returns the new session id. */
 		open(dek, keyId) {
 			this.wipeUnlocked();
-			const id = bytesToHex$4(this.platform.random(16));
+			const id = bytesToHex$5(this.platform.random(16));
 			const at = this.platform.elapsed();
 			this.state = {
 				status: "unlocked",
@@ -34678,7 +34717,7 @@ zoo`.split("\n"));
 			var _wordList$position;
 			return Uint8Array.from((_wordList$position = wordList[position]) !== null && _wordList$position !== void 0 ? _wordList$position : []);
 		});
-		const id = bytesToHex$4(ctx.platform.random(16));
+		const id = bytesToHex$5(ctx.platform.random(16));
 		ctx.session.putDraft(id, {
 			entropy: Secret.take(entropy),
 			words: params.words,
@@ -34699,7 +34738,7 @@ zoo`.split("\n"));
 	*/
 	async function storedFactorsForPending(ctx, pending, dek) {
 		if (pending.kind === "device") return keystoreFactorRows(ctx.platform, dek);
-		const id = bytesToHex$4(ctx.platform.random(16));
+		const id = bytesToHex$5(ctx.platform.random(16));
 		const publicKey = pending.kek.use((kek) => factorPublicKey(kek));
 		const header = factorHeader(pending, publicKey, ctx.platform.now());
 		const sealed = wrapDek(dek, publicKey, {
@@ -34943,7 +34982,7 @@ zoo`.split("\n"));
 		}));
 	}
 	function payloadContext(header, factors) {
-		return `qntx-wallet/backup/v1/payload/${bytesToHex$4(sha256$1(utf8ToBytes$1(header)))}/${bytesToHex$4(sha256$1(utf8ToBytes$1(canonicalFactors(factors))))}`;
+		return `qntx-wallet/backup/v1/payload/${bytesToHex$5(sha256$1(utf8ToBytes$1(header)))}/${bytesToHex$5(sha256$1(utf8ToBytes$1(canonicalFactors(factors))))}`;
 	}
 	function factorContextOf(kind) {
 		return `qntx-wallet/backup/v1/factor/${kind}`;
@@ -34962,7 +35001,7 @@ zoo`.split("\n"));
 		return envelope;
 	}
 	/** Runs only after the payload tag verified `header`'s raw text. */
-	function parseHeader(text) {
+	function parseHeader$1(text) {
 		let value;
 		try {
 			value = JSON.parse(text);
@@ -35252,7 +35291,7 @@ zoo`.split("\n"));
 	}
 	/** The backup record's public id: HKDF over the BEK — a verifier can never reach the BEK from it. */
 	function backupKeyIdOf(bek) {
-		return bytesToHex$4(hkdf(sha256$1, bek, /* @__PURE__ */ new Uint8Array(0), utf8ToBytes$1("qntx-wallet/backup/v1/id"), 16));
+		return bytesToHex$5(hkdf(sha256$1, bek, /* @__PURE__ */ new Uint8Array(0), utf8ToBytes$1("qntx-wallet/backup/v1/id"), 16));
 	}
 	function backupKeyRecord(ctx, dek, bek, factors) {
 		const header = encodeHeader({
@@ -35411,7 +35450,7 @@ zoo`.split("\n"));
 					};
 					try {
 						var _header$keys$length, _header$keys;
-						const header = parseHeader(envelope.header);
+						const header = parseHeader$1(envelope.header);
 						decoded = decodePayload$1(plaintext);
 						if (decoded.wallets.length !== header.wallets.length || decoded.keys.length !== ((_header$keys$length = (_header$keys = header.keys) === null || _header$keys === void 0 ? void 0 : _header$keys.length) !== null && _header$keys$length !== void 0 ? _header$keys$length : 0)) throw new KernelError("integrity", "backup: payload does not match header");
 						const flagged = new Set(header.wallets.filter((w) => w.passphrase === true).map((w) => w.walletId));
@@ -35566,7 +35605,7 @@ zoo`.split("\n"));
 			return listKeys(ctx);
 		},
 		"keys.remove": async (ctx, params, session) => removeKey$1(ctx, params, session),
-		"keys.export": async (ctx, params, session) => exportKey$1(ctx, params, session)
+		"keys.export": async (ctx, params, session) => exportKey$2(ctx, params, session)
 	};
 	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/utils.js
 	/**
@@ -35767,7 +35806,7 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function compareBytes$2(a, b) {
-		if (!isBytes(a) || !isBytes(b)) throw new TypeError(`cmp: wrong type a=${typeof a} b=${typeof b}`);
+		if (!isBytes$1(a) || !isBytes$1(b)) throw new TypeError(`cmp: wrong type a=${typeof a} b=${typeof b}`);
 		const len = Math.min(a.length, b.length);
 		for (let i = 0; i < len; i++) if (a[i] != b[i]) return Math.sign(a[i] - b[i]);
 		return Math.sign(a.length - b.length);
@@ -35791,7 +35830,7 @@ zoo`.split("\n"));
 		}
 		return res;
 	}
-	var Point, Fn$1, CURVE_ORDER, _0n$3, _2n$1, hasEven, isBytes, concatBytes, equalBytes, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
+	var Point, Fn$1, CURVE_ORDER, _0n$3, _2n$1, hasEven, isBytes$1, concatBytes, equalBytes, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
 	var init_utils = __esmMin((() => {
 		init_secp256k1();
 		init_utils$1();
@@ -35805,7 +35844,7 @@ zoo`.split("\n"));
 		_0n$3 = /* @__PURE__ */ BigInt(0);
 		_2n$1 = /* @__PURE__ */ BigInt(2);
 		hasEven = (y) => y % _2n$1 === _0n$3;
-		isBytes = /* @__PURE__ */ (() => utils.isBytes)();
+		isBytes$1 = /* @__PURE__ */ (() => utils.isBytes)();
 		concatBytes = /* @__PURE__ */ (() => utils.concatBytes)();
 		equalBytes = /* @__PURE__ */ (() => utils.equalBytes)();
 		sha256 = /* @__PURE__ */ (() => sha256$1)();
@@ -35898,7 +35937,7 @@ zoo`.split("\n"));
 	*/
 	function OpToNum(op, bytesLimit = 4, forceMinimal = true) {
 		if (typeof op === "number") return op;
-		if (isBytes(op)) try {
+		if (isBytes$1(op)) try {
 			const val = ScriptNum(bytesLimit, forceMinimal).decode(op);
 			if (val > Number.MAX_SAFE_INTEGER || val < -Number.MAX_SAFE_INTEGER) return;
 			return Number(val);
@@ -37086,7 +37125,7 @@ zoo`.split("\n"));
 		P2A_PROGRAM = /* @__PURE__ */ Uint8Array.from([78, 115]);
 		OutP2A = {
 			encode(from) {
-				if (from.length !== 2 || from[0] !== 1 || !isBytes(from[1]) || !equalBytes(from[1], P2A_PROGRAM)) return;
+				if (from.length !== 2 || from[0] !== 1 || !isBytes$1(from[1]) || !equalBytes(from[1], P2A_PROGRAM)) return;
 				return {
 					type: "p2a",
 					script: Script.encode(from)
@@ -37099,7 +37138,7 @@ zoo`.split("\n"));
 		};
 		OutPK = {
 			encode(from) {
-				if (from.length !== 2 || !isBytes(from[0]) || !isValidPubkey(from[0], PubT.ecdsa) || from[1] !== "CHECKSIG") return;
+				if (from.length !== 2 || !isBytes$1(from[0]) || !isValidPubkey(from[0], PubT.ecdsa) || from[1] !== "CHECKSIG") return;
 				return {
 					type: "pk",
 					pubkey: from[0]
@@ -37112,7 +37151,7 @@ zoo`.split("\n"));
 		};
 		OutPKH = {
 			encode(from) {
-				if (from.length !== 5 || from[0] !== "DUP" || from[1] !== "HASH160" || !isBytes(from[2])) return;
+				if (from.length !== 5 || from[0] !== "DUP" || from[1] !== "HASH160" || !isBytes$1(from[2])) return;
 				if (from[2].length !== 20) return;
 				if (from[3] !== "EQUALVERIFY" || from[4] !== "CHECKSIG") return;
 				return {
@@ -37130,7 +37169,7 @@ zoo`.split("\n"));
 		};
 		OutSH = {
 			encode(from) {
-				if (from.length !== 3 || from[0] !== "HASH160" || !isBytes(from[1]) || from[2] !== "EQUAL") return;
+				if (from.length !== 3 || from[0] !== "HASH160" || !isBytes$1(from[1]) || from[2] !== "EQUAL") return;
 				if (from[1].length !== 20) return;
 				return {
 					type: "sh",
@@ -37145,7 +37184,7 @@ zoo`.split("\n"));
 		};
 		OutWSH = {
 			encode(from) {
-				if (from.length !== 2 || from[0] !== 0 || !isBytes(from[1])) return;
+				if (from.length !== 2 || from[0] !== 0 || !isBytes$1(from[1])) return;
 				if (from[1].length !== 32) return;
 				return {
 					type: "wsh",
@@ -37156,7 +37195,7 @@ zoo`.split("\n"));
 		};
 		OutWPKH = {
 			encode(from) {
-				if (from.length !== 2 || from[0] !== 0 || !isBytes(from[1])) return;
+				if (from.length !== 2 || from[0] !== 0 || !isBytes$1(from[1])) return;
 				if (from[1].length !== 20) return;
 				return {
 					type: "wpkh",
@@ -37174,7 +37213,7 @@ zoo`.split("\n"));
 				if (typeof m !== "number" || typeof n !== "number") return;
 				const pubkeys = from.slice(1, -2);
 				if (n !== pubkeys.length) return;
-				for (const pub of pubkeys) if (!isBytes(pub) || !isValidPubkey(pub, PubT.ecdsa)) return;
+				for (const pub of pubkeys) if (!isBytes$1(pub) || !isValidPubkey(pub, PubT.ecdsa)) return;
 				if (!Number.isSafeInteger(m) || m < 1 || m > n) return;
 				return {
 					type: "ms",
@@ -37191,7 +37230,7 @@ zoo`.split("\n"));
 		};
 		OutTR = {
 			encode(from) {
-				if (from.length !== 2 || from[0] !== 1 || !isBytes(from[1]) || from[1].length !== 32) return;
+				if (from.length !== 2 || from[0] !== 1 || !isBytes$1(from[1]) || from[1].length !== 32) return;
 				if (!isValidPubkey(from[1], PubT.schnorr)) return;
 				return {
 					type: "tr",
@@ -37211,7 +37250,7 @@ zoo`.split("\n"));
 						if (elm !== "CHECKSIGVERIFY" || i === last - 1) return;
 						continue;
 					}
-					if (!isBytes(elm) || !isValidPubkey(elm, PubT.schnorr)) return;
+					if (!isBytes$1(elm) || !isValidPubkey(elm, PubT.schnorr)) return;
 					pubkeys.push(elm);
 				}
 				if (!pubkeys.length || pubkeys.length > 999) return;
@@ -37241,7 +37280,7 @@ zoo`.split("\n"));
 						if (elm !== (i === 1 ? "CHECKSIG" : "CHECKSIGADD")) return;
 						continue;
 					}
-					if (!isBytes(elm) || !isValidPubkey(elm, PubT.schnorr)) return;
+					if (!isBytes$1(elm) || !isValidPubkey(elm, PubT.schnorr)) return;
 					pubkeys.push(elm);
 				}
 				if (!Number.isSafeInteger(m) || m < 1 || m > pubkeys.length || pubkeys.length > 999) return;
@@ -37284,9 +37323,9 @@ zoo`.split("\n"));
 		_OutScript = /* @__PURE__ */ (() => apply(Script, coders.match(OutScripts)))();
 		OutScript = /* @__PURE__ */ (() => Object.freeze(validate$4(_OutScript, (i) => {
 			if (i.type === "pk" && !isValidPubkey(i.pubkey, PubT.ecdsa)) throw new Error("OutScript/pk: wrong key");
-			if ((i.type === "pkh" || i.type === "sh" || i.type === "wpkh") && (!isBytes(i.hash) || i.hash.length !== 20)) throw new Error(`OutScript/${i.type}: wrong hash`);
-			if (i.type === "wsh" && (!isBytes(i.hash) || i.hash.length !== 32)) throw new Error(`OutScript/wsh: wrong hash`);
-			if (i.type === "tr" && (!isBytes(i.pubkey) || !isValidPubkey(i.pubkey, PubT.schnorr))) throw new Error("OutScript/tr: wrong taproot public key");
+			if ((i.type === "pkh" || i.type === "sh" || i.type === "wpkh") && (!isBytes$1(i.hash) || i.hash.length !== 20)) throw new Error(`OutScript/${i.type}: wrong hash`);
+			if (i.type === "wsh" && (!isBytes$1(i.hash) || i.hash.length !== 32)) throw new Error(`OutScript/wsh: wrong hash`);
+			if (i.type === "tr" && (!isBytes$1(i.pubkey) || !isValidPubkey(i.pubkey, PubT.schnorr))) throw new Error("OutScript/tr: wrong taproot public key");
 			if (i.type === "ms" || i.type === "tr_ns" || i.type === "tr_ms") {
 				if (!Array.isArray(i.pubkeys)) throw new Error("OutScript/multisig: wrong pubkeys array");
 			}
@@ -37335,13 +37374,13 @@ zoo`.split("\n"));
 		checkCanonicalScript = (script, name, allowNonCanonicalScript) => {
 			if (allowNonCanonicalScript) return;
 			const decoded = Script.decode(script);
-			if (decoded.some((op) => isBytes(op) && op.length === 1 && (1 <= op[0] && op[0] <= 16 || op[0] === 129)) || !equalBytes(script, Script.encode(decoded))) throw new Error(`${name === "redeemScript" ? "P2SH" : "P2WSH"}: non-canonical ${name}`);
+			if (decoded.some((op) => isBytes$1(op) && op.length === 1 && (1 <= op[0] && op[0] <= 16 || op[0] === 129)) || !equalBytes(script, Script.encode(decoded))) throw new Error(`${name === "redeemScript" ? "P2SH" : "P2WSH"}: non-canonical ${name}`);
 		};
 		p2sh = (child, network = NETWORK, allowNonCanonicalScript = false) => {
 			validateObject(child, {}, {}, "child");
 			const c = child;
 			const cs = c.script;
-			if (!isBytes(cs)) throw new Error(`Wrong script: ${typeof c.script}, expected Uint8Array`);
+			if (!isBytes$1(cs)) throw new Error(`Wrong script: ${typeof c.script}, expected Uint8Array`);
 			if (cs.length > 520) throw new Error(`P2SH: redeemScript exceeds 520-byte push limit: len=${cs.length}`);
 			checkCanonicalScript(cs, "redeemScript", allowNonCanonicalScript);
 			const hash = hash160(cs);
@@ -37409,7 +37448,7 @@ zoo`.split("\n"));
 	*/
 	function cloneDeep(obj) {
 		if (Array.isArray(obj)) return obj.map((i) => cloneDeep(i));
-		else if (isBytes(obj)) return Uint8Array.from(obj);
+		else if (isBytes$1(obj)) return Uint8Array.from(obj);
 		else if ([
 			"number",
 			"bigint",
@@ -37649,7 +37688,7 @@ zoo`.split("\n"));
 			const prev = _input.witnessUtxo;
 			validateObject(prev, {}, {}, "input.witnessUtxo");
 			abigint(prev.amount, "input.witnessUtxo.amount");
-			if (!isBytes(prev.script)) throw new TypeError("\"input.witnessUtxo.script\" expected Uint8Array, got type=" + typeof prev.script);
+			if (!isBytes$1(prev.script)) throw new TypeError("\"input.witnessUtxo.script\" expected Uint8Array, got type=" + typeof prev.script);
 			return prev;
 		} else throw new Error("Cannot find previous output info");
 	}
@@ -37686,7 +37725,7 @@ zoo`.split("\n"));
 		const _allowedFields = allowedFields;
 		let { nonWitnessUtxo, txid } = _i;
 		if (typeof nonWitnessUtxo === "string") nonWitnessUtxo = hex$3.decode(nonWitnessUtxo);
-		if (isBytes(nonWitnessUtxo)) nonWitnessUtxo = RawTx.decode(nonWitnessUtxo);
+		if (isBytes$1(nonWitnessUtxo)) nonWitnessUtxo = RawTx.decode(nonWitnessUtxo);
 		if (!("nonWitnessUtxo" in _i) && nonWitnessUtxo === void 0) nonWitnessUtxo = _cur === null || _cur === void 0 ? void 0 : _cur.nonWitnessUtxo;
 		if (typeof txid === "string") txid = hex$3.decode(txid);
 		if (txid === void 0) txid = _cur === null || _cur === void 0 ? void 0 : _cur.txid;
@@ -38402,7 +38441,7 @@ zoo`.split("\n"));
 				return tagSchnorr("TapSighash", ...out);
 			}
 			signIdx(privateKey, idx, allowedSighash, _auxRand) {
-				if (!isBytes(privateKey)) {
+				if (!isBytes$1(privateKey)) {
 					if (!privateKey || typeof privateKey !== "object" || typeof privateKey.deriveChild !== "function") throw new TypeError("\"privateKey\" expected Uint8Array or HDKey, got type=" + typeof privateKey);
 				}
 				this.checkInputIdx(idx);
@@ -38414,15 +38453,15 @@ zoo`.split("\n"));
 						const pubKey = pubSchnorr(privateKey);
 						if (input.tapInternalKey && equalBytes(pubKey, input.tapInternalKey)) return true;
 						if (!input.tapLeafScript) return false;
-						for (const [_, leaf] of input.tapLeafScript) for (const op of Script.decode(leaf.subarray(0, -1))) if (isBytes(op) && equalBytes(op, pubKey)) return true;
+						for (const [_, leaf] of input.tapLeafScript) for (const op of Script.decode(leaf.subarray(0, -1))) if (isBytes$1(op) && equalBytes(op, pubKey)) return true;
 						return false;
 					}
 					const pubKey = pubECDSA(privateKey);
 					const pubKeyHash = hash160(pubKey);
-					for (const op of Script.decode(inputType.lastScript)) if (isBytes(op) && (equalBytes(op, pubKey) || equalBytes(op, pubKeyHash))) return true;
+					for (const op of Script.decode(inputType.lastScript)) if (isBytes$1(op) && (equalBytes(op, pubKey) || equalBytes(op, pubKeyHash))) return true;
 					return false;
 				};
-				if (!isBytes(privateKey)) {
+				if (!isBytes$1(privateKey)) {
 					var _input$tapBip32Deriva, _input$bip32Derivatio;
 					const root = privateKey;
 					const deriveSigners = (label, rows, pubKey) => {
@@ -38486,7 +38525,7 @@ zoo`.split("\n"));
 							const scriptDecoded = Script.decode(script);
 							const ver = _script[_script.length - 1];
 							const hash = tapLeafHash(script, ver);
-							if (scriptDecoded.findIndex((i) => isBytes(i) && equalBytes(i, schnorrPub)) === -1) continue;
+							if (scriptDecoded.findIndex((i) => isBytes$1(i) && equalBytes(i, schnorrPub)) === -1) continue;
 							const msg = this.preimageWitnessV1(idx, prevOutScript, sighash, amount, void 0, script, ver);
 							const sig = concatBytes(signSchnorr(msg, privateKey, _auxRand), sighash !== SignatureHash.DEFAULT ? new Uint8Array([sighash]) : EMPTY$2);
 							this.updateInput(idx, { tapScriptSig: [[{
@@ -38502,7 +38541,7 @@ zoo`.split("\n"));
 					const pubKey = pubECDSA(privateKey);
 					let hasPubkey = false;
 					const pubKeyHash = hash160(pubKey);
-					for (const i of Script.decode(inputType.lastScript)) if (isBytes(i) && (equalBytes(i, pubKey) || equalBytes(i, pubKeyHash))) hasPubkey = true;
+					for (const i of Script.decode(inputType.lastScript)) if (isBytes$1(i) && (equalBytes(i, pubKey) || equalBytes(i, pubKeyHash))) hasPubkey = true;
 					if (!hasPubkey) throw new Error(`Input script doesn't have pubKey: ${inputType.lastScript}`);
 					let hash;
 					if (inputType.txType === "legacy") hash = this.preimageLegacy(idx, inputType.lastScript, sighash);
@@ -38574,7 +38613,7 @@ zoo`.split("\n"));
 							} else if (outScript.type === "unknown" && this.opts.allowUnknownInputs) {
 								const scriptDecoded = Script.decode(script);
 								signatures = scriptSig.map(([{ pubKey }, signature]) => {
-									const pos = scriptDecoded.findIndex((i) => isBytes(i) && equalBytes(i, pubKey));
+									const pos = scriptDecoded.findIndex((i) => isBytes$1(i) && equalBytes(i, pubKey));
 									if (pos === -1) throw new Error("finalize/taproot: cannot find position of pubkey in script");
 									return {
 										signature,
@@ -38638,7 +38677,7 @@ zoo`.split("\n"));
 				if (inputType.type.includes("wsh-")) {
 					if (inputScript.length && inputType.lastScript.length) witness = Script.decode(inputScript).map((i) => {
 						if (i === 0) return EMPTY$2;
-						if (isBytes(i)) return i;
+						if (isBytes$1(i)) return i;
 						throw new Error(`Wrong witness op=${i}`);
 					});
 					witness = witness.concat(inputType.lastScript);
@@ -38802,9 +38841,9 @@ zoo`.split("\n"));
 	* BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
 	* https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
 	*/
-	var utf8$1 = (s) => new TextEncoder().encode(s);
+	var utf8 = (s) => new TextEncoder().encode(s);
 	var BIP322_TAG = "BIP0322-signed-message";
-	var LEGACY_MAGIC = utf8$1("Bitcoin Signed Message:\n");
+	var LEGACY_MAGIC = utf8("Bitcoin Signed Message:\n");
 	var concat$1 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let o = 0;
@@ -38834,8 +38873,8 @@ zoo`.split("\n"));
 	};
 	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
 	var bip322MessageHash = (message) => {
-		const tag = sha256$1(utf8$1(BIP322_TAG));
-		return sha256$1(concat$1(tag, tag, utf8$1(message)));
+		const tag = sha256$1(utf8(BIP322_TAG));
+		return sha256$1(concat$1(tag, tag, utf8(message)));
 	};
 	/**
 	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
@@ -38908,7 +38947,7 @@ zoo`.split("\n"));
 		return `smp${base64(concat$1(varint(witness.length), ...witness.map(pushData)))}`;
 	};
 	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
-	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8$1(message)))));
+	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8(message)))));
 	/**
 	* The legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
 	* 64-byte compact ECDSA sig), header = 27 + yParity + 4 (compressed pubkey).
@@ -39268,7 +39307,7 @@ zoo`.split("\n"));
 			throw error instanceof ChainError ? error : new ChainError("invalid-request", "malformed PSBT");
 		}
 	};
-	var bytesToHex = (bytes) => {
+	var bytesToHex$2 = (bytes) => {
 		let out = "";
 		for (const b of bytes) out += b.toString(16).padStart(2, "0");
 		return out;
@@ -39289,7 +39328,7 @@ zoo`.split("\n"));
 			var _addr;
 			const { script, amount } = tx.getOutput(i);
 			if (script === void 0 || amount === void 0) throw new ChainError("invalid-request", "PSBT output without script or amount");
-			const scriptHex = bytesToHex(script);
+			const scriptHex = bytesToHex$2(script);
 			outSum += amount;
 			if (ownScripts.has(scriptHex)) continue;
 			if (unspendable(script)) {
@@ -40102,7 +40141,7 @@ zoo`.split("\n"));
 	};
 	/** Contract names for the set bits of a TRON permission operations bitmap (hex string). */
 	function tronOperationNames(operations) {
-		const bytes = hexToBytes$3(operations.replace(/^0x/i, ""));
+		const bytes = hexToBytes$4(operations.replace(/^0x/i, ""));
 		const names = [];
 		for (let i = 0; i < 256; i += 1) {
 			var _bytes;
@@ -40465,7 +40504,7 @@ zoo`.split("\n"));
 			description: joinLines(signInLines(catalog, message.signIn))
 		};
 		const hazard = intent.blind === void 0 ? void 0 : messageTextHazard(message.text);
-		const digest = hazard === "digest-length" ? `0x${bytesToHex$4(utf8ToBytes$1(message.text))}` : void 0;
+		const digest = hazard === "digest-length" ? `0x${bytesToHex$5(utf8ToBytes$1(message.text))}` : void 0;
 		return {
 			title: intent.blind === void 0 ? catalog.titles.message : catalog.blindTitle,
 			description: joinLines([
@@ -40523,6 +40562,29 @@ zoo`.split("\n"));
 		"btc.bip84": 84,
 		"btc.bip86": 86
 	};
+	var HARDENED$7 = 2147483648;
+	/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
+	var leafPath = (family, groupIndex) => {
+		if (family === "solana") return [
+			2147483692,
+			2147484149,
+			groupIndex + HARDENED$7,
+			HARDENED$7
+		];
+		return [
+			2147483692,
+			(family === "tron" ? 195 : 60) + HARDENED$7,
+			HARDENED$7,
+			0,
+			groupIndex
+		];
+	};
+	var checkNetwork = (template, network) => {
+		if (template.startsWith("evm.") && !/^eip155:[1-9]\d*$/.test(network)) throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
+		if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown solana network ${network}`);
+		if (template.startsWith("btc.") && !(network in BITCOIN_NETWORKS)) throw new KernelError("invalid-input", `unknown bitcoin network ${network}`);
+		if (template.startsWith("tron.") && !TRON_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown tron network ${network}`);
+	};
 	var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array);
 	/** Order-insensitive deep equality over wire values (Uint8Array, arrays, plain objects, scalars). */
 	var deepEqual = (a, b) => {
@@ -40545,7 +40607,7 @@ zoo`.split("\n"));
 	var isPath = (path) => Array.isArray(path) && path.every((p) => typeof p === "number");
 	var hex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 	/** The BIP-32 master fingerprint as the uint32 PSBT derivation entries carry. */
-	var fingerprintNumber$1 = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
+	var fingerprintNumber$2 = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
 	var PURPOSES = [
 		44,
 		49,
@@ -40720,7 +40782,7 @@ zoo`.split("\n"));
 		const net = bitcoinNetwork(request.network);
 		const b = {
 			material,
-			fingerprint: fingerprintNumber$1(await material.fingerprint()),
+			fingerprint: fingerprintNumber$2(await material.fingerprint()),
 			coinType: net.coinType,
 			hardened: 2147483648,
 			groupIndex: account.groupIndex,
@@ -40788,6 +40850,15 @@ zoo`.split("\n"));
 	var HARDENED$6 = 2147483648;
 	/** `m/…` notation of a task path — hardened indices print with `'`. */
 	var pathString = (path) => `m${path.map((i) => i >= HARDENED$6 ? `/${i - HARDENED$6}'` : `/${i}`).join("")}`;
+	var accountKey = async (material, path, versions) => {
+		const parsed = HDKey$1.fromExtendedKey(await material.extendedPublicKey(path, versions), versions);
+		if (parsed.publicKey === null || parsed.chainCode === null) throw new KernelError("integrity", "extended public key carries no node");
+		return {
+			publicKey: parsed.publicKey,
+			chainCode: parsed.chainCode,
+			parentFingerprint: parsed.parentFingerprint
+		};
+	};
 	/** The HD source: BIP-32 for secp256k1 schemes, SLIP-10 for ed25519, both lazy and path-cached. */
 	var seedKeys = (seed, random) => {
 		const secpNodes = /* @__PURE__ */ new Map();
@@ -40896,6 +40967,83 @@ zoo`.split("\n"));
 				wipe(secret);
 			}
 		};
+	};
+	// packages/wallet-kernel/src/modules/chains/export.ts
+	var EVM_ACCOUNT = [
+		44 + HARDENED$7,
+		60 + HARDENED$7,
+		HARDENED$7
+	];
+	var MAINNET_VERSIONS = {
+		public: 76067358,
+		private: 76066276
+	};
+	var nodeId = (node) => node.kind === "evm.account" ? "evm.account" : node.kind === "leaf" ? `leaf/${node.template}` : `btc.account/${node.template}/${node.network}`;
+	var nodePath = (node, groupIndex) => {
+		if (node.kind === "evm.account") return EVM_ACCOUNT;
+		if (node.kind === "leaf") return leafPath(node.template === "evm.bip44" ? "evm" : node.template === "tron.bip44" ? "tron" : "solana", groupIndex);
+		const purpose = BTC_PURPOSE[node.template];
+		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${node.template}`);
+		const { coinType } = bitcoinNetwork(node.network);
+		return [
+			purpose + HARDENED$7,
+			coinType + HARDENED$7,
+			groupIndex + HARDENED$7
+		];
+	};
+	var fp8 = (value) => value.toString(16).padStart(8, "0");
+	var fpHex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
+	/**
+	* The node's exported key. Account nodes go through the extended public key — the same node the
+	* `wallet.accounts` xpub serializes — so the chain code and parent fingerprint travel with it;
+	* leaves carry the bare public key only.
+	*/
+	var exportKey$1 = async (material, node, groupIndex) => {
+		const path = nodePath(node, groupIndex);
+		if (node.kind === "leaf") return {
+			node,
+			path: pathString(path),
+			curve: node.template === "solana.bip44-change" ? "ed25519" : "secp256k1",
+			publicKey: node.template === "solana.bip44-change" ? await material.ed25519(path) : await material.secp256k1(path)
+		};
+		const account = await accountKey(material, path, node.kind === "evm.account" ? MAINNET_VERSIONS : bitcoinNetwork(node.network).bip32);
+		return {
+			node,
+			path: pathString(path),
+			curve: "secp256k1",
+			publicKey: account.publicKey,
+			chainCode: account.chainCode,
+			parentFingerprint: fp8(account.parentFingerprint)
+		};
+	};
+	var result = async (material, params) => ({
+		fingerprint: fpHex(await material.fingerprint()),
+		keys: await Promise.all(params.nodes.map(async (node) => exportKey$1(material, node, params.groupIndex)))
+	});
+	var exportAccount = (external) => async (ctx, params, session) => {
+		const { dek } = ctx.session.require(session);
+		const record = findWalletRecord(ctx.image, params.walletId);
+		if (record === void 0) {
+			if (ctx.image.records.some((r) => r.kind === "key" && r.id === params.walletId)) throw new KernelError("invalid-input", "an imported key has no account material");
+			throw new KernelError("not-found", "no such wallet");
+		}
+		const seen = /* @__PURE__ */ new Set();
+		for (const node of params.nodes) {
+			if (node.kind === "btc.account") checkNetwork(node.template, node.network);
+			if (seen.has(nodeId(node))) throw new KernelError("invalid-input", "duplicate export node");
+			seen.add(nodeId(node));
+		}
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "export-account"));
+		ctx.session.require(session);
+		if (record.kind !== "entropy") return result(external(ctx.image, record), params);
+		return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+			const keys = seedKeys(seed, ctx.platform.random);
+			try {
+				return await result(keys.material, params);
+			} finally {
+				keys.wipe();
+			}
+		});
 	};
 	// packages/wallet-chains/dist/bitcoin-sign.mjs
 	init_secp256k1();
@@ -41142,31 +41290,8 @@ zoo`.split("\n"));
 	* source — the plan itself is reused, never recomputed.
 	*/
 	init_objectSpread2();
-	var HARDENED$5 = 2147483648;
-	/** The leaf path of group `g` — `m/44'/{coin}'/0'/0/{g}` or SLIP-10 `m/44'/501'/{g}'/0'`. */
-	var leafPath = (family, groupIndex) => {
-		if (family === "solana") return [
-			2147483692,
-			2147484149,
-			groupIndex + HARDENED$5,
-			HARDENED$5
-		];
-		return [
-			2147483692,
-			(family === "tron" ? 195 : 60) + HARDENED$5,
-			HARDENED$5,
-			0,
-			groupIndex
-		];
-	};
 	/** An imported account's only path is `[]`; an HD account's is its group's leaf. */
 	var requestPath = (family, account) => account.kind === "imported" ? [] : leafPath(family, account.groupIndex);
-	var checkNetwork = (template, network) => {
-		if (template.startsWith("evm.") && !/^eip155:[1-9]\d*$/.test(network)) throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
-		if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown solana network ${network}`);
-		if (template.startsWith("btc.") && !(network in BITCOIN_NETWORKS)) throw new KernelError("invalid-input", `unknown bitcoin network ${network}`);
-		if (template.startsWith("tron.") && !TRON_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown tron network ${network}`);
-	};
 	var accountFor = async (material, template, network, groupIndex) => {
 		if (template === "evm.bip44") return {
 			template,
@@ -41187,9 +41312,9 @@ zoo`.split("\n"));
 		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
 		const net = bitcoinNetwork(network);
 		const path = [
-			purpose + HARDENED$5,
-			net.coinType + HARDENED$5,
-			groupIndex + HARDENED$5
+			purpose + HARDENED$7,
+			net.coinType + HARDENED$7,
+			groupIndex + HARDENED$7
 		];
 		const fingerprint = await material.fingerprint();
 		return {
@@ -41358,7 +41483,8 @@ zoo`.split("\n"));
 			},
 			handlers: {
 				"wallet.accounts": async (ctx, params, session) => walletAccounts(ctx, params, session, accounts, external),
-				"chain.sign": chainSign
+				"chain.sign": chainSign,
+				"chain.exportAccount": exportAccount(external)
 			}
 		};
 	}
@@ -41394,17 +41520,17 @@ zoo`.split("\n"));
 		}
 	};
 	var utf8Encoder = new TextEncoder();
-	var utf8Decoder = new TextDecoder();
+	var utf8Decoder$1 = new TextDecoder();
 	var HEX32_RE = /^[0-9a-f]{64}$/;
 	var HEX64_RE = /^[0-9a-f]{128}$/;
 	/** Lowercase hex encode. */
 	function bytesToHex$1(bytes) {
-		return bytesToHex$4(bytes);
+		return bytesToHex$5(bytes);
 	}
 	/** Decode lowercase or mixed-case hex to bytes. */
 	function hexToBytes$1(hex) {
 		try {
-			return hexToBytes$3(hex);
+			return hexToBytes$4(hex);
 		} catch (error) {
 			throw new HexError(`invalid hex string of length ${hex.length}`, { cause: error });
 		}
@@ -41827,7 +41953,7 @@ zoo`.split("\n"));
 		validateKeyLength(key);
 		const { sbox2 } = tableEncoding;
 		const toClean = [];
-		if (!isLE$1 || !isAligned32(key)) toClean.push(key = copyBytes$1(key));
+		if (!isLE$1 || !isAligned32(key)) toClean.push(key = copyBytes$2(key));
 		const k32 = swap32IfBE$1(u32$6(key));
 		const Nk = k32.length;
 		const subByte = (n) => applySbox(sbox2, n, n, n, n);
@@ -41927,7 +42053,7 @@ zoo`.split("\n"));
 	}
 	function prepareBlockEncrypt(plaintext, outLen, dst) {
 		if (dst === void 0) dst = new Uint8Array(outLen);
-		if (!isLE$1 || !isAligned32(plaintext)) plaintext = copyBytes$1(plaintext);
+		if (!isLE$1 || !isAligned32(plaintext)) plaintext = copyBytes$2(plaintext);
 		const o = u32$6(dst);
 		return {
 			b: plaintext,
@@ -41994,7 +42120,7 @@ zoo`.split("\n"));
 				swap32IfBE$1(b);
 				let _iv = iv;
 				const toClean = [xk];
-				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
+				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$2(_iv));
 				const n32 = u32$6(_iv);
 				swap32IfBE$1(n32);
 				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
@@ -42023,10 +42149,10 @@ zoo`.split("\n"));
 				if (dst === void 0) dst = new Uint8Array(ciphertext.length);
 				let _iv = iv;
 				const toClean = [xk];
-				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
+				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$2(_iv));
 				const n32 = u32$6(_iv);
 				swap32IfBE$1(n32);
-				if (!isLE$1 || !isAligned32(ciphertext)) toClean.push(ciphertext = copyBytes$1(ciphertext));
+				if (!isLE$1 || !isAligned32(ciphertext)) toClean.push(ciphertext = copyBytes$2(ciphertext));
 				const b = u32$6(ciphertext);
 				const o = u32$6(dst);
 				swap32IfBE$1(b);
@@ -42072,7 +42198,7 @@ zoo`.split("\n"));
 			const iv = base64$1.decode(ivPart);
 			const ciphertext = base64$1.decode(ciphertextPart);
 			const plaintext = cbc(sharedSecret, iv).decrypt(ciphertext);
-			return utf8Decoder.decode(plaintext);
+			return utf8Decoder$1.decode(plaintext);
 		} catch (error) {
 			throw new CryptoError("invalid NIP-04 payload", { cause: error });
 		}
@@ -42187,7 +42313,7 @@ zoo`.split("\n"));
 		}
 		const unpadded = padded.subarray(prefixLen, prefixLen + unpaddedLen);
 		if (unpaddedLen < minPlaintextSize || unpaddedLen > maxPlaintextSize || unpadded.length !== unpaddedLen || padded.length !== prefixLen + calcPaddedLen(unpaddedLen)) throw new CryptoError("invalid padding");
-		return utf8Decoder.decode(unpadded);
+		return utf8Decoder$1.decode(unpadded);
 	}
 	function hmacAad(key, message, aad) {
 		if (aad.length !== 32) throw new CryptoError("AAD associated data must be 32 bytes");
@@ -42306,12 +42432,12 @@ zoo`.split("\n"));
 	var _keys;
 	var _convKeys2;
 	var _disposed2;
-	var _Class_brand2;
+	var _Class_brand2$1;
 	/** Local secret-key signer with NIP-04 (legacy) and NIP-44 support. */
-	var KeysSigner = (_keys = /* @__PURE__ */ new WeakMap(), _convKeys2 = /* @__PURE__ */ new WeakMap(), _disposed2 = /* @__PURE__ */ new WeakMap(), _Class_brand2 = /* @__PURE__ */ new WeakSet(), class {
+	var KeysSigner = (_keys = /* @__PURE__ */ new WeakMap(), _convKeys2 = /* @__PURE__ */ new WeakMap(), _disposed2 = /* @__PURE__ */ new WeakMap(), _Class_brand2$1 = /* @__PURE__ */ new WeakSet(), class {
 		constructor(secretKey, options) {
 			var _options$backend;
-			_classPrivateMethodInitSpec(this, _Class_brand2);
+			_classPrivateMethodInitSpec(this, _Class_brand2$1);
 			_classPrivateFieldInitSpec(this, _keys, void 0);
 			_classPrivateFieldInitSpec(this, _convKeys2, /* @__PURE__ */ new Map());
 			_classPrivateFieldInitSpec(this, _disposed2, false);
@@ -42325,15 +42451,15 @@ zoo`.split("\n"));
 			return _classPrivateFieldGet2(_keys, this);
 		}
 		async getPublicKey() {
-			_assertClassBrand(_Class_brand2, this, _assertUsable2).call(this);
+			_assertClassBrand(_Class_brand2$1, this, _assertUsable2).call(this);
 			return _classPrivateFieldGet2(_keys, this).publicKey;
 		}
 		async signEvent(unsigned) {
-			_assertClassBrand(_Class_brand2, this, _assertUsable2).call(this);
+			_assertClassBrand(_Class_brand2$1, this, _assertUsable2).call(this);
 			return signEvent$1(unsigned, _classPrivateFieldGet2(_keys, this));
 		}
 		async nip04Encrypt(peer, plaintext) {
-			_assertClassBrand(_Class_brand2, this, _assertUsable2).call(this);
+			_assertClassBrand(_Class_brand2$1, this, _assertUsable2).call(this);
 			const secret = _classPrivateFieldGet2(_keys, this).secretKey.bytes;
 			try {
 				return encryptToPubkey(plaintext, secret, peer, _classPrivateFieldGet2(_keys, this).backend);
@@ -42342,7 +42468,7 @@ zoo`.split("\n"));
 			}
 		}
 		async nip04Decrypt(peer, ciphertext) {
-			_assertClassBrand(_Class_brand2, this, _assertUsable2).call(this);
+			_assertClassBrand(_Class_brand2$1, this, _assertUsable2).call(this);
 			const secret = _classPrivateFieldGet2(_keys, this).secretKey.bytes;
 			try {
 				return decryptFromPubkey(ciphertext, secret, peer, _classPrivateFieldGet2(_keys, this).backend);
@@ -42351,16 +42477,16 @@ zoo`.split("\n"));
 			}
 		}
 		async nip44Encrypt(peer, plaintext) {
-			_assertClassBrand(_Class_brand2, this, _assertUsable2).call(this);
-			return encrypt$1(plaintext, _assertClassBrand(_Class_brand2, this, _conversationKey2).call(this, peer));
+			_assertClassBrand(_Class_brand2$1, this, _assertUsable2).call(this);
+			return encrypt$1(plaintext, _assertClassBrand(_Class_brand2$1, this, _conversationKey2).call(this, peer));
 		}
 		async nip44Decrypt(peer, payload) {
-			_assertClassBrand(_Class_brand2, this, _assertUsable2).call(this);
-			return decrypt(payload, _assertClassBrand(_Class_brand2, this, _conversationKey2).call(this, peer));
+			_assertClassBrand(_Class_brand2$1, this, _assertUsable2).call(this);
+			return decrypt(payload, _assertClassBrand(_Class_brand2$1, this, _conversationKey2).call(this, peer));
 		}
 		/** Unwraps each gift wrap independently — a bad wrap yields an Error, never fails the batch. */
 		async unwrapGiftWraps(events) {
-			_assertClassBrand(_Class_brand2, this, _assertUsable2).call(this);
+			_assertClassBrand(_Class_brand2$1, this, _assertUsable2).call(this);
 			const results = [];
 			for (const event of events) try {
 				results.push(await unwrap(this, event));
@@ -42450,38 +42576,38 @@ zoo`.split("\n"));
 		let y14 = prev[pi++] ^ input[ii++], y15 = prev[pi++] ^ input[ii++];
 		let x00 = y00, x01 = y01, x02 = y02, x03 = y03, x04 = y04, x05 = y05, x06 = y06, x07 = y07, x08 = y08, x09 = y09, x10 = y10, x11 = y11, x12 = y12, x13 = y13, x14 = y14, x15 = y15;
 		for (let i = 0; i < 8; i += 2) {
-			x04 ^= rotl$1(x00 + x12 | 0, 7);
-			x08 ^= rotl$1(x04 + x00 | 0, 9);
-			x12 ^= rotl$1(x08 + x04 | 0, 13);
-			x00 ^= rotl$1(x12 + x08 | 0, 18);
-			x09 ^= rotl$1(x05 + x01 | 0, 7);
-			x13 ^= rotl$1(x09 + x05 | 0, 9);
-			x01 ^= rotl$1(x13 + x09 | 0, 13);
-			x05 ^= rotl$1(x01 + x13 | 0, 18);
-			x14 ^= rotl$1(x10 + x06 | 0, 7);
-			x02 ^= rotl$1(x14 + x10 | 0, 9);
-			x06 ^= rotl$1(x02 + x14 | 0, 13);
-			x10 ^= rotl$1(x06 + x02 | 0, 18);
-			x03 ^= rotl$1(x15 + x11 | 0, 7);
-			x07 ^= rotl$1(x03 + x15 | 0, 9);
-			x11 ^= rotl$1(x07 + x03 | 0, 13);
-			x15 ^= rotl$1(x11 + x07 | 0, 18);
-			x01 ^= rotl$1(x00 + x03 | 0, 7);
-			x02 ^= rotl$1(x01 + x00 | 0, 9);
-			x03 ^= rotl$1(x02 + x01 | 0, 13);
-			x00 ^= rotl$1(x03 + x02 | 0, 18);
-			x06 ^= rotl$1(x05 + x04 | 0, 7);
-			x07 ^= rotl$1(x06 + x05 | 0, 9);
-			x04 ^= rotl$1(x07 + x06 | 0, 13);
-			x05 ^= rotl$1(x04 + x07 | 0, 18);
-			x11 ^= rotl$1(x10 + x09 | 0, 7);
-			x08 ^= rotl$1(x11 + x10 | 0, 9);
-			x09 ^= rotl$1(x08 + x11 | 0, 13);
-			x10 ^= rotl$1(x09 + x08 | 0, 18);
-			x12 ^= rotl$1(x15 + x14 | 0, 7);
-			x13 ^= rotl$1(x12 + x15 | 0, 9);
-			x14 ^= rotl$1(x13 + x12 | 0, 13);
-			x15 ^= rotl$1(x14 + x13 | 0, 18);
+			x04 ^= rotl$2(x00 + x12 | 0, 7);
+			x08 ^= rotl$2(x04 + x00 | 0, 9);
+			x12 ^= rotl$2(x08 + x04 | 0, 13);
+			x00 ^= rotl$2(x12 + x08 | 0, 18);
+			x09 ^= rotl$2(x05 + x01 | 0, 7);
+			x13 ^= rotl$2(x09 + x05 | 0, 9);
+			x01 ^= rotl$2(x13 + x09 | 0, 13);
+			x05 ^= rotl$2(x01 + x13 | 0, 18);
+			x14 ^= rotl$2(x10 + x06 | 0, 7);
+			x02 ^= rotl$2(x14 + x10 | 0, 9);
+			x06 ^= rotl$2(x02 + x14 | 0, 13);
+			x10 ^= rotl$2(x06 + x02 | 0, 18);
+			x03 ^= rotl$2(x15 + x11 | 0, 7);
+			x07 ^= rotl$2(x03 + x15 | 0, 9);
+			x11 ^= rotl$2(x07 + x03 | 0, 13);
+			x15 ^= rotl$2(x11 + x07 | 0, 18);
+			x01 ^= rotl$2(x00 + x03 | 0, 7);
+			x02 ^= rotl$2(x01 + x00 | 0, 9);
+			x03 ^= rotl$2(x02 + x01 | 0, 13);
+			x00 ^= rotl$2(x03 + x02 | 0, 18);
+			x06 ^= rotl$2(x05 + x04 | 0, 7);
+			x07 ^= rotl$2(x06 + x05 | 0, 9);
+			x04 ^= rotl$2(x07 + x06 | 0, 13);
+			x05 ^= rotl$2(x04 + x07 | 0, 18);
+			x11 ^= rotl$2(x10 + x09 | 0, 7);
+			x08 ^= rotl$2(x11 + x10 | 0, 9);
+			x09 ^= rotl$2(x08 + x11 | 0, 13);
+			x10 ^= rotl$2(x09 + x08 | 0, 18);
+			x12 ^= rotl$2(x15 + x14 | 0, 7);
+			x13 ^= rotl$2(x12 + x15 | 0, 9);
+			x14 ^= rotl$2(x13 + x12 | 0, 13);
+			x15 ^= rotl$2(x14 + x13 | 0, 18);
 		}
 		out[oi++] = y00 + x00 | 0;
 		out[oi++] = y01 + x01 | 0;
@@ -43226,12 +43352,12 @@ zoo`.split("\n"));
 	var id = int(0, 9007199254740991);
 	var orderWire = obj({
 		a: asset,
-		b: bool$1,
+		b: bool,
 		p: positive,
 		s: positive,
-		r: bool$1,
+		r: bool,
 		t: union(obj({ limit: obj({ tif: union(literal("Gtc"), literal("Ioc"), literal("Alo"), literal("FrontendMarket")) }) }), obj({ trigger: obj({
-			isMarket: bool$1,
+			isMarket: bool,
 			triggerPx: positive,
 			tpsl: union(literal("tp"), literal("sl"))
 		}) })),
@@ -43280,12 +43406,12 @@ zoo`.split("\n"));
 		}), obj({
 			type: literal("updateLeverage"),
 			asset,
-			isCross: bool$1,
+			isCross: bool,
 			leverage: int(1, 1e3)
 		}), obj({
 			type: literal("updateIsolatedMargin"),
 			asset,
-			isBuy: bool$1,
+			isBuy: bool,
 			ntli: int(-9007199254740991, 9007199254740991)
 		}), obj({
 			type: literal("twapCancel"),
@@ -43654,7 +43780,7 @@ zoo`.split("\n"));
 	init_sha2();
 	init_utils$2();
 	var HARDWARE_WALLET_KIND = "hardware-wallet";
-	var HARDENED$4 = 2147483648;
+	var HARDENED$5 = 2147483648;
 	/** The device's own strings are untrusted — only printable ASCII under 64 chars survives. */
 	var DEVICE_TEXT$1 = /^[\u0020-\u007E]{1,64}$/;
 	var HEX$1 = /^[0-9a-f]+$/;
@@ -43666,7 +43792,7 @@ zoo`.split("\n"));
 	* The same device re-paired maps to the same id — the pair handler answers `already-exists`.
 	*/
 	function hardwareWalletId(device, fingerprint) {
-		return bytesToHex$4(sha256$1(concatBytes$3(utf8ToBytes$1("qntx-wallet/hardware-wallet-id/v1"), utf8ToBytes$1(device), new Uint8Array([0]), fingerprint)).slice(0, 8));
+		return bytesToHex$5(sha256$1(concatBytes$3(utf8ToBytes$1("qntx-wallet/hardware-wallet-id/v1"), utf8ToBytes$1(device), new Uint8Array([0]), fingerprint)).slice(0, 8));
 	}
 	/** The `hardware-wallet` record for `walletId`, when the vault has one. */
 	function hardwareWallet(image, walletId) {
@@ -43680,7 +43806,7 @@ zoo`.split("\n"));
 	};
 	var asFingerprint = (value) => {
 		if (typeof value !== "string" || !/^[0-9a-f]{8}$/.test(value)) throw headerFailure();
-		return hexToBytes$3(value);
+		return hexToBytes$4(value);
 	};
 	var asDeviceText = (value) => {
 		if (typeof value !== "string" || !DEVICE_TEXT$1.test(value)) throw headerFailure();
@@ -43689,7 +43815,7 @@ zoo`.split("\n"));
 	function encodeHardwareHeader(header) {
 		const fields = {
 			device: header.device,
-			fingerprint: bytesToHex$4(header.fingerprint)
+			fingerprint: bytesToHex$5(header.fingerprint)
 		};
 		if (header.model !== void 0) fields["model"] = header.model;
 		if (header.firmware !== void 0) fields["firmware"] = header.firmware;
@@ -43720,7 +43846,7 @@ zoo`.split("\n"));
 			custody: "hardware",
 			walletId: hardwareWalletId(header.device, header.fingerprint),
 			device: header.device,
-			fingerprint: bytesToHex$4(header.fingerprint),
+			fingerprint: bytesToHex$5(header.fingerprint),
 			createdAt: header.createdAt
 		};
 		if (header.model !== void 0) info.model = header.model;
@@ -43737,16 +43863,16 @@ zoo`.split("\n"));
 			if (digits.length > 1 && digits.startsWith("0")) throw bodyFailure();
 			const index = Number(digits);
 			if (!Number.isSafeInteger(index) || index > 2147483647) throw bodyFailure();
-			return hardened ? index + HARDENED$4 : index;
+			return hardened ? index + HARDENED$5 : index;
 		});
 	}
 	/** `KeyPath` → `m/…` — the inverse of {@link pathFromString}; empty paths are `m`. */
 	function pathToString(path) {
-		return `m${path.map((i) => i >= HARDENED$4 ? `/${i - HARDENED$4}'` : `/${i}`).join("")}`;
+		return `m${path.map((i) => i >= HARDENED$5 ? `/${i - HARDENED$5}'` : `/${i}`).join("")}`;
 	}
 	var asHexBytes = (value, length) => {
 		if (typeof value !== "string" || value.length !== length * 2 || !HEX$1.test(value)) throw bodyFailure();
-		return hexToBytes$3(value);
+		return hexToBytes$4(value);
 	};
 	var parseNode = (value) => {
 		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bodyFailure();
@@ -43804,7 +43930,7 @@ zoo`.split("\n"));
 				const publicKey = asHexBytes(entry, 32);
 				if (!ed25519.utils.isValidPublicKey(publicKey)) throw bodyFailure();
 				const parsedPath = pathFromString(path);
-				if (parsedPath.some((i) => i < HARDENED$4)) throw bodyFailure();
+				if (parsedPath.some((i) => i < HARDENED$5)) throw bodyFailure();
 				return {
 					path: parsedPath,
 					publicKey
@@ -43817,14 +43943,14 @@ zoo`.split("\n"));
 		const nodes = {};
 		for (const node of keys.nodes) {
 			const entry = {
-				key: bytesToHex$4(node.publicKey),
-				chainCode: bytesToHex$4(node.chainCode)
+				key: bytesToHex$5(node.publicKey),
+				chainCode: bytesToHex$5(node.chainCode)
 			};
-			if (node.parent !== void 0) entry.parent = bytesToHex$4(node.parent);
+			if (node.parent !== void 0) entry.parent = bytesToHex$5(node.parent);
 			nodes[pathToString(node.path)] = entry;
 		}
 		const ed = {};
-		for (const key of keys.ed25519) ed[pathToString(key.path)] = bytesToHex$4(key.publicKey);
+		for (const key of keys.ed25519) ed[pathToString(key.path)] = bytesToHex$5(key.publicKey);
 		return utf8ToBytes$1(JSON.stringify({
 			nodes,
 			ed25519: ed
@@ -43838,500 +43964,5463 @@ zoo`.split("\n"));
 			ed25519: keys.ed25519
 		};
 	}
-	// packages/wallet-kernel/src/modules/signers/keystone/cbor.ts
-	init_utils$2();
-	/** Device answers are QR payloads — the protocol already bounds them; the decoder re-asserts. */
-	var MAX_BYTES = 262144;
-	/** Registry structures are flat: multi-accounts keys, a keypath's components, small maps. */
-	var MAX_DEPTH = 8;
-	var MAX_ITEMS = 4096;
-	function fail$4() {
-		throw new KernelError("integrity", "malformed cbor");
+	// node_modules/.bun/@qntx+ur@4.0.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/ur-ChGW72hQ.mjs
+	init_sha2();
+	init_defineProperty();
+	init_objectSpread2();
+	var _aliases;
+	var _probs;
+	var _degrees;
+	var _parts;
+	var _chooser;
+	var _fragLen;
+	var _msgLen;
+	var _seqCount;
+	var _messageChecksum;
+	var _seq;
+	var _lastIndexes2;
+	var _type;
+	var _fountain;
+	var _single;
+	var _emitted;
+	var _Symbol$iterator$2;
+	var _Symbol$iterator2$1;
+	var MESSAGES = {
+		NonAscii: "bytewords string is not ASCII",
+		InvalidWord: "invalid bytewords word",
+		InvalidBytewordsLength: "invalid bytewords length",
+		InvalidBytewordsChecksum: "invalid bytewords checksum",
+		InvalidScheme: "invalid UR scheme",
+		TypeUnspecified: "UR type unspecified",
+		InvalidType: "invalid UR type",
+		InvalidIndices: "invalid multi-part indices",
+		UnexpectedType: "unexpected UR type",
+		InvalidPartCbor: "invalid fountain part CBOR",
+		InvalidPart: "invalid fountain part",
+		InconsistentPart: "fountain part inconsistent with previous parts",
+		ResourceLimit: "resource limit exceeded",
+		InvalidPadding: "invalid fountain part padding",
+		InvalidMessageChecksum: "invalid fountain message checksum",
+		EmptyMessage: "empty message",
+		MessageTooLong: "message too long",
+		NotSinglePart: "expected single-part UR",
+		CborDecode: "dCBOR decode failed",
+		CborType: "dCBOR type mismatch",
+		Internal: "internal error"
+	};
+	var FATAL_CODES = /* @__PURE__ */ new Set([
+		"ResourceLimit",
+		"InvalidPadding",
+		"InvalidMessageChecksum",
+		"Internal"
+	]);
+	function describe(info) {
+		if (info.code === "ResourceLimit") return `${MESSAGES.ResourceLimit}: ${info.limit}`;
+		if (info.code === "UnexpectedType") {
+			const names = info.expected.join(", ");
+			return `${MESSAGES.UnexpectedType}: expected ${names}, found ${info.found}`;
+		}
+		return MESSAGES[info.code];
 	}
-	var utf8 = new TextDecoder("utf-8", { fatal: true });
-	var take = (cursor, length) => {
-		if (length < 0 || cursor.offset + length > cursor.bytes.length) fail$4();
-		const slice = cursor.bytes.subarray(cursor.offset, cursor.offset + length);
-		cursor.offset += length;
-		return slice;
+	/** Structured error thrown by the UR stack. */
+	var UrError = class extends Error {
+		constructor(info, options) {
+			super(describe(info), (options === null || options === void 0 ? void 0 : options.cause) === void 0 ? void 0 : { cause: options.cause });
+			_defineProperty(this, "info", void 0);
+			this.name = "UrError";
+			this.info = info;
+		}
+		get code() {
+			return this.info.code;
+		}
+		get fatal() {
+			return FATAL_CODES.has(this.info.code);
+		}
+	};
+	/** Throws a {@link UrError}; a bare code builds `{ code }` info. */
+	function fail$3(arg, options) {
+		throw new UrError(typeof arg === "string" ? { code: arg } : arg, options);
+	}
+	/** CRC-32 ISO-HDLC (polynomial 0xedb88320). */
+	var TABLE = (() => {
+		const table = /* @__PURE__ */ new Uint32Array(256);
+		for (let i = 0; i < 256; i++) {
+			let c = i;
+			for (let k = 0; k < 8; k++) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+			table[i] = c >>> 0;
+		}
+		return table;
+	})();
+	/** CRC-32 ISO-HDLC checksum of `data`. */
+	function checksum(data) {
+		var _TABLE;
+		let crc = 4294967295;
+		for (const b of data) crc = ((_TABLE = TABLE[(crc ^ b) & 255]) !== null && _TABLE !== void 0 ? _TABLE : fail$3("Internal")) ^ crc >>> 8;
+		return (crc ^ 4294967295) >>> 0;
+	}
+	/**
+	* ASCII-only character helpers. `String.prototype.toLowerCase`/`toUpperCase` are Unicode-aware
+	* (e.g. `"\u212A"` folds to `"k"`); the UR wire format folds ASCII letters only.
+	*/
+	/** True iff every code point of `text` is `<= 0x7F`. */
+	function isAscii(text) {
+		var _ch$codePointAt;
+		for (const ch of text) if (((_ch$codePointAt = ch.codePointAt(0)) !== null && _ch$codePointAt !== void 0 ? _ch$codePointAt : 0) > 127) return false;
+		return true;
+	}
+	/** Lowercase ASCII `A-Z` only; every other code unit is left untouched. */
+	function asciiLower(text) {
+		return text.replaceAll(/[A-Z]/g, (ch) => {
+			var _ch$codePointAt2;
+			return String.fromCodePoint(((_ch$codePointAt2 = ch.codePointAt(0)) !== null && _ch$codePointAt2 !== void 0 ? _ch$codePointAt2 : 0) + 32);
+		});
+	}
+	/** Uppercase ASCII `a-z` only; every other code unit is left untouched. */
+	function asciiUpper(text) {
+		return text.replaceAll(/[a-z]/g, (ch) => {
+			var _ch$codePointAt3;
+			return String.fromCodePoint(((_ch$codePointAt3 = ch.codePointAt(0)) !== null && _ch$codePointAt3 !== void 0 ? _ch$codePointAt3 : 0) - 32);
+		});
+	}
+	/** BCR-2020-012 bytewords tables. */
+	/** Four-letter bytewords (index = byte value). */
+	var WORDS = [
+		"able",
+		"acid",
+		"also",
+		"apex",
+		"aqua",
+		"arch",
+		"atom",
+		"aunt",
+		"away",
+		"axis",
+		"back",
+		"bald",
+		"barn",
+		"belt",
+		"beta",
+		"bias",
+		"blue",
+		"body",
+		"brag",
+		"brew",
+		"bulb",
+		"buzz",
+		"calm",
+		"cash",
+		"cats",
+		"chef",
+		"city",
+		"claw",
+		"code",
+		"cola",
+		"cook",
+		"cost",
+		"crux",
+		"curl",
+		"cusp",
+		"cyan",
+		"dark",
+		"data",
+		"days",
+		"deli",
+		"dice",
+		"diet",
+		"door",
+		"down",
+		"draw",
+		"drop",
+		"drum",
+		"dull",
+		"duty",
+		"each",
+		"easy",
+		"echo",
+		"edge",
+		"epic",
+		"even",
+		"exam",
+		"exit",
+		"eyes",
+		"fact",
+		"fair",
+		"fern",
+		"figs",
+		"film",
+		"fish",
+		"fizz",
+		"flap",
+		"flew",
+		"flux",
+		"foxy",
+		"free",
+		"frog",
+		"fuel",
+		"fund",
+		"gala",
+		"game",
+		"gear",
+		"gems",
+		"gift",
+		"girl",
+		"glow",
+		"good",
+		"gray",
+		"grim",
+		"guru",
+		"gush",
+		"gyro",
+		"half",
+		"hang",
+		"hard",
+		"hawk",
+		"heat",
+		"help",
+		"high",
+		"hill",
+		"holy",
+		"hope",
+		"horn",
+		"huts",
+		"iced",
+		"idea",
+		"idle",
+		"inch",
+		"inky",
+		"into",
+		"iris",
+		"iron",
+		"item",
+		"jade",
+		"jazz",
+		"join",
+		"jolt",
+		"jowl",
+		"judo",
+		"jugs",
+		"jump",
+		"junk",
+		"jury",
+		"keep",
+		"keno",
+		"kept",
+		"keys",
+		"kick",
+		"kiln",
+		"king",
+		"kite",
+		"kiwi",
+		"knob",
+		"lamb",
+		"lava",
+		"lazy",
+		"leaf",
+		"legs",
+		"liar",
+		"limp",
+		"lion",
+		"list",
+		"logo",
+		"loud",
+		"love",
+		"luau",
+		"luck",
+		"lung",
+		"main",
+		"many",
+		"math",
+		"maze",
+		"memo",
+		"menu",
+		"meow",
+		"mild",
+		"mint",
+		"miss",
+		"monk",
+		"nail",
+		"navy",
+		"need",
+		"news",
+		"next",
+		"noon",
+		"note",
+		"numb",
+		"obey",
+		"oboe",
+		"omit",
+		"onyx",
+		"open",
+		"oval",
+		"owls",
+		"paid",
+		"part",
+		"peck",
+		"play",
+		"plus",
+		"poem",
+		"pool",
+		"pose",
+		"puff",
+		"puma",
+		"purr",
+		"quad",
+		"quiz",
+		"race",
+		"ramp",
+		"real",
+		"redo",
+		"rich",
+		"road",
+		"rock",
+		"roof",
+		"ruby",
+		"ruin",
+		"runs",
+		"rust",
+		"safe",
+		"saga",
+		"scar",
+		"sets",
+		"silk",
+		"skew",
+		"slot",
+		"soap",
+		"solo",
+		"song",
+		"stub",
+		"surf",
+		"swan",
+		"taco",
+		"task",
+		"taxi",
+		"tent",
+		"tied",
+		"time",
+		"tiny",
+		"toil",
+		"tomb",
+		"toys",
+		"trip",
+		"tuna",
+		"twin",
+		"ugly",
+		"undo",
+		"unit",
+		"urge",
+		"user",
+		"vast",
+		"very",
+		"veto",
+		"vial",
+		"vibe",
+		"view",
+		"visa",
+		"void",
+		"vows",
+		"wall",
+		"wand",
+		"warm",
+		"wasp",
+		"wave",
+		"waxy",
+		"webs",
+		"what",
+		"when",
+		"whiz",
+		"wolf",
+		"work",
+		"yank",
+		"yawn",
+		"yell",
+		"yoga",
+		"yurt",
+		"zaps",
+		"zero",
+		"zest",
+		"zinc",
+		"zone",
+		"zoom"
+	];
+	/** First+last letter of each byteword (UR minimal style). */
+	var MINIMALS = [
+		"ae",
+		"ad",
+		"ao",
+		"ax",
+		"aa",
+		"ah",
+		"am",
+		"at",
+		"ay",
+		"as",
+		"bk",
+		"bd",
+		"bn",
+		"bt",
+		"ba",
+		"bs",
+		"be",
+		"by",
+		"bg",
+		"bw",
+		"bb",
+		"bz",
+		"cm",
+		"ch",
+		"cs",
+		"cf",
+		"cy",
+		"cw",
+		"ce",
+		"ca",
+		"ck",
+		"ct",
+		"cx",
+		"cl",
+		"cp",
+		"cn",
+		"dk",
+		"da",
+		"ds",
+		"di",
+		"de",
+		"dt",
+		"dr",
+		"dn",
+		"dw",
+		"dp",
+		"dm",
+		"dl",
+		"dy",
+		"eh",
+		"ey",
+		"eo",
+		"ee",
+		"ec",
+		"en",
+		"em",
+		"et",
+		"es",
+		"ft",
+		"fr",
+		"fn",
+		"fs",
+		"fm",
+		"fh",
+		"fz",
+		"fp",
+		"fw",
+		"fx",
+		"fy",
+		"fe",
+		"fg",
+		"fl",
+		"fd",
+		"ga",
+		"ge",
+		"gr",
+		"gs",
+		"gt",
+		"gl",
+		"gw",
+		"gd",
+		"gy",
+		"gm",
+		"gu",
+		"gh",
+		"go",
+		"hf",
+		"hg",
+		"hd",
+		"hk",
+		"ht",
+		"hp",
+		"hh",
+		"hl",
+		"hy",
+		"he",
+		"hn",
+		"hs",
+		"id",
+		"ia",
+		"ie",
+		"ih",
+		"iy",
+		"io",
+		"is",
+		"in",
+		"im",
+		"je",
+		"jz",
+		"jn",
+		"jt",
+		"jl",
+		"jo",
+		"js",
+		"jp",
+		"jk",
+		"jy",
+		"kp",
+		"ko",
+		"kt",
+		"ks",
+		"kk",
+		"kn",
+		"kg",
+		"ke",
+		"ki",
+		"kb",
+		"lb",
+		"la",
+		"ly",
+		"lf",
+		"ls",
+		"lr",
+		"lp",
+		"ln",
+		"lt",
+		"lo",
+		"ld",
+		"le",
+		"lu",
+		"lk",
+		"lg",
+		"mn",
+		"my",
+		"mh",
+		"me",
+		"mo",
+		"mu",
+		"mw",
+		"md",
+		"mt",
+		"ms",
+		"mk",
+		"nl",
+		"ny",
+		"nd",
+		"ns",
+		"nt",
+		"nn",
+		"ne",
+		"nb",
+		"oy",
+		"oe",
+		"ot",
+		"ox",
+		"on",
+		"ol",
+		"os",
+		"pd",
+		"pt",
+		"pk",
+		"py",
+		"ps",
+		"pm",
+		"pl",
+		"pe",
+		"pf",
+		"pa",
+		"pr",
+		"qd",
+		"qz",
+		"re",
+		"rp",
+		"rl",
+		"ro",
+		"rh",
+		"rd",
+		"rk",
+		"rf",
+		"ry",
+		"rn",
+		"rs",
+		"rt",
+		"se",
+		"sa",
+		"sr",
+		"ss",
+		"sk",
+		"sw",
+		"st",
+		"sp",
+		"so",
+		"sg",
+		"sb",
+		"sf",
+		"sn",
+		"to",
+		"tk",
+		"ti",
+		"tt",
+		"td",
+		"te",
+		"ty",
+		"tl",
+		"tb",
+		"ts",
+		"tp",
+		"ta",
+		"tn",
+		"uy",
+		"uo",
+		"ut",
+		"ue",
+		"ur",
+		"vt",
+		"vy",
+		"vo",
+		"vl",
+		"ve",
+		"vw",
+		"va",
+		"vd",
+		"vs",
+		"wl",
+		"wd",
+		"wm",
+		"wp",
+		"we",
+		"wy",
+		"ws",
+		"wt",
+		"wn",
+		"wz",
+		"wf",
+		"wk",
+		"yk",
+		"yn",
+		"yl",
+		"ya",
+		"yt",
+		"zs",
+		"zo",
+		"zt",
+		"zc",
+		"ze",
+		"zm"
+	];
+	var wordByToken = /* @__PURE__ */ new Map();
+	for (const [i, word] of WORDS.entries()) wordByToken.set(word, i);
+	for (const [i, minimal] of MINIMALS.entries()) wordByToken.set(minimal, i);
+	function wordAt(table, byte) {
+		const word = table[byte];
+		if (word === void 0) throw new Error("byteword index out of range");
+		return word;
+	}
+	function checksumBytes(data) {
+		const crc = checksum(data);
+		return new Uint8Array([
+			crc >>> 24 & 255,
+			crc >>> 16 & 255,
+			crc >>> 8 & 255,
+			crc & 255
+		]);
+	}
+	function encodeWords(data, style) {
+		const parts = [];
+		const table = style === "minimal" ? MINIMALS : WORDS;
+		for (const b of data) parts.push(wordAt(table, b));
+		return parts.join({
+			standard: " ",
+			uri: "-",
+			minimal: ""
+		}[style]);
+	}
+	/** Encode `data` with trailing CRC-32 as bytewords. Empty data is allowed. */
+	function encodeBytewords(data, style) {
+		const withCrc = new Uint8Array(data.length + 4);
+		withCrc.set(data);
+		withCrc.set(checksumBytes(data), data.length);
+		return encodeWords(withCrc, style);
+	}
+	/** Decode bytewords and verify CRC-32. Case-insensitive. */
+	function decodeBytewords(text, style) {
+		var _ch$codePointAt4;
+		for (const ch of text) if (((_ch$codePointAt4 = ch.codePointAt(0)) !== null && _ch$codePointAt4 !== void 0 ? _ch$codePointAt4 : 0) > 127) fail$3("NonAscii");
+		const lowered = asciiLower(text);
+		if (style === "minimal") return decodeMinimal(lowered);
+		const sep = style === "standard" ? " " : "-";
+		return decodeParts(lowered.length === 0 ? [] : lowered.split(sep), false);
+	}
+	function decodeMinimal(encoded) {
+		if (encoded.length % 2 !== 0) fail$3("InvalidBytewordsLength");
+		const parts = [];
+		for (let i = 0; i < encoded.length; i += 2) parts.push(encoded.slice(i, i + 2));
+		return decodeParts(parts, true);
+	}
+	function decodeParts(parts, minimal) {
+		const data = new Uint8Array(parts.length);
+		for (const [i, part] of parts.entries()) {
+			const expectedLen = minimal ? 2 : 4;
+			if (part.length !== expectedLen) fail$3("InvalidWord");
+			const byte = wordByToken.get(part);
+			if (byte === void 0) fail$3("InvalidWord");
+			if (part !== wordAt(minimal ? MINIMALS : WORDS, byte)) fail$3("InvalidWord");
+			data[i] = byte;
+		}
+		return stripChecksum(data);
+	}
+	function stripChecksum(data) {
+		if (data.length < 4) fail$3("InvalidBytewordsChecksum");
+		const split = data.length - 4;
+		const payload = data.subarray(0, split);
+		const expected = checksum(payload);
+		if (new DataView(data.buffer, data.byteOffset + split, 4).getUint32(0) !== expected) fail$3("InvalidBytewordsChecksum");
+		return new Uint8Array(payload);
+	}
+	function at(list, i) {
+		const v = list[i];
+		if (v === void 0) throw new Error("unreachable: index out of range");
+		return v;
+	}
+	/** Walker's alias method with reverse-index ordered partition. */
+	var Sampler = (_aliases = /* @__PURE__ */ new WeakMap(), _probs = /* @__PURE__ */ new WeakMap(), class {
+		constructor(weightsIn) {
+			_classPrivateFieldInitSpec(this, _aliases, void 0);
+			_classPrivateFieldInitSpec(this, _probs, void 0);
+			const weights = [...weightsIn];
+			for (const w of weights) if (w < 0) throw new Error("negative probability encountered");
+			const summed = weights.reduce((a, b) => a + b, 0);
+			if (!(summed > 0)) throw new Error("probabilities don't sum to a positive value");
+			const count = weights.length;
+			for (const [i, w] of weights.entries()) weights[i] = w * (count / summed);
+			const s = [];
+			const l = [];
+			for (let j = count - 1; j >= 0; j--) if (at(weights, j) < 1) s.push(j);
+			else l.push(j);
+			const probs = Array.from({ length: count }, () => 0);
+			const aliases = Array.from({ length: count }, () => 0);
+			while (s.length > 0 && l.length > 0) {
+				const a = s.pop();
+				const g = l.pop();
+				if (a === void 0 || g === void 0) break;
+				probs[a] = at(weights, a);
+				aliases[a] = g;
+				weights[g] = at(weights, g) + (at(weights, a) - 1);
+				if (at(weights, g) < 1) s.push(g);
+				else l.push(g);
+			}
+			for (const i of l) probs[i] = 1;
+			for (const i of s) probs[i] = 1;
+			_classPrivateFieldSet2(_aliases, this, aliases);
+			_classPrivateFieldSet2(_probs, this, probs);
+		}
+		next(xoshiro) {
+			const n = _classPrivateFieldGet2(_probs, this).length;
+			const i = xoshiro.nextInt(0, n - 1);
+			if (xoshiro.nextDouble() < at(_classPrivateFieldGet2(_probs, this), i)) return i;
+			return at(_classPrivateFieldGet2(_aliases, this), i);
+		}
+	});
+	var MASK64 = (1n << 64n) - 1n;
+	var U32_MASK = 4294967295n;
+	function rotl(x, k) {
+		const v = x & MASK64;
+		return (v << BigInt(k) | v >> BigInt(64 - k)) & MASK64;
+	}
+	/**
+	* `Double(value) / 2^64` with a single round-to-nearest-even conversion: `hi * 2^32` is exact and
+	* adding `lo` performs the one IEEE-754 rounding; division by `2^64` is exact.
+	*/
+	function unitInterval(value) {
+		const hi = Number(value >> 32n);
+		const lo = Number(value & U32_MASK);
+		return (hi * 2 ** 32 + lo) / 2 ** 64;
+	}
+	/**
+	* `floor(d * (high - low + 1)) + low`, clamped to `high` when `d` is 1.0 — the deliberate deviation
+	* documented on `Xoshiro256.nextInt`.
+	*/
+	function scaledInt(d, low, high) {
+		const span = high - low + 1;
+		return Math.min(Math.floor(d * span), span - 1) + low;
+	}
+	/** Xoshiro256** with SHA-256 seeding. */
+	var Xoshiro256 = class Xoshiro256 {
+		constructor(s0, s1, s2, s3) {
+			_defineProperty(this, "s0", void 0);
+			_defineProperty(this, "s1", void 0);
+			_defineProperty(this, "s2", void 0);
+			_defineProperty(this, "s3", void 0);
+			this.s0 = s0;
+			this.s1 = s1;
+			this.s2 = s2;
+			this.s3 = s3;
+		}
+		/** Seed from arbitrary bytes via SHA-256 + BE-limb→LE packing. */
+		static fromBytes(bytes) {
+			return Xoshiro256.fromDigest(sha256$1(bytes));
+		}
+		static fromString(value) {
+			return Xoshiro256.fromBytes(new TextEncoder().encode(value));
+		}
+		/** Seed from CRC-32 BE bytes of `bytes` (test helper path). */
+		static fromCrc(bytes) {
+			const c = checksum(bytes);
+			const seed = /* @__PURE__ */ new Uint8Array(4);
+			seed[0] = c >>> 24 & 255;
+			seed[1] = c >>> 16 & 255;
+			seed[2] = c >>> 8 & 255;
+			seed[3] = c & 255;
+			return Xoshiro256.fromBytes(seed);
+		}
+		static fromDigest(seed32) {
+			const view = new DataView(seed32.buffer, seed32.byteOffset, seed32.byteLength);
+			return new Xoshiro256(view.getBigUint64(0), view.getBigUint64(8), view.getBigUint64(16), view.getBigUint64(24));
+		}
+		nextU64() {
+			const result = rotl(this.s1 * 5n & MASK64, 7) * 9n & MASK64;
+			const t = this.s1 << 17n & MASK64;
+			this.s2 = (this.s2 ^ this.s0) & MASK64;
+			this.s3 = (this.s3 ^ this.s1) & MASK64;
+			this.s1 = (this.s1 ^ this.s2) & MASK64;
+			this.s0 = (this.s0 ^ this.s3) & MASK64;
+			this.s2 = (this.s2 ^ t) & MASK64;
+			this.s3 = rotl(this.s3, 45);
+			return result;
+		}
+		nextDouble() {
+			return unitInterval(this.nextU64());
+		}
+		/**
+		* Inclusive `[low, high]` via double scaling (normative float path). Deliberate deviation: clamp
+		* to `high` when `nextDouble()` rounds to 1.0 (raw >= 2^64 - 2^10); the reference implementations
+		* index out of bounds there.
+		*/
+		nextInt(low, high) {
+			return scaledInt(this.nextDouble(), low, high);
+		}
+		/** Remove-order shuffle (not Fisher–Yates); stops after `count` picks. */
+		shuffled(items, count = items.length) {
+			const pool = [...items];
+			const out = [];
+			while (pool.length > 0 && out.length < count) {
+				const index = this.nextInt(0, pool.length - 1);
+				const [item] = pool.splice(index, 1);
+				if (item === void 0) throw new Error("unreachable: splice returned empty");
+				out.push(item);
+			}
+			return out;
+		}
+		chooseDegree(length) {
+			const weights = [];
+			for (let x = 1; x <= length; x++) weights.push(1 / x);
+			return new Sampler(weights).next(this) + 1;
+		}
+		nextByte() {
+			return this.nextInt(0, 255);
+		}
+		nextBytes(n) {
+			const out = new Uint8Array(n);
+			for (let i = 0; i < n; i++) out[i] = this.nextByte();
+			return out;
+		}
 	};
 	/**
-	* One argument slot: the embedded value of a head. Only minimal encodings pass — a value that fits
-	* a shorter slot is a non-canonical, hand-built deviation (strict-CBOR decoders reject it).
+	* Per-stream index generator (BCR-2024-001 §4 FragmentChooser): harmonic degree sampler built once,
+	* partial remove-shuffle per sequence.
 	*/
-	var argument = (cursor, info) => {
-		let value;
-		let bytes = 0;
-		if (info < 24) return info;
-		if (info === 24) bytes = 1;
-		else if (info === 25) bytes = 2;
-		else if (info === 26) bytes = 4;
-		else if (info === 27) bytes = 8;
-		else fail$4();
-		const slot = take(cursor, bytes);
-		if (bytes === 8) {
-			const wide = new DataView(slot.buffer, slot.byteOffset, 8).getBigUint64(0);
-			if (wide > BigInt(Number.MAX_SAFE_INTEGER)) fail$4();
-			value = Number(wide);
-		} else {
-			value = 0;
-			for (const byte of slot) value = value * 256 + byte;
+	var FragmentChooser = (_degrees = /* @__PURE__ */ new WeakMap(), class {
+		constructor(fragmentCount, checksum) {
+			_defineProperty(this, "fragmentCount", void 0);
+			_defineProperty(this, "checksum", void 0);
+			_classPrivateFieldInitSpec(this, _degrees, void 0);
+			this.fragmentCount = fragmentCount;
+			this.checksum = checksum;
+			const weights = [];
+			for (let x = 1; x <= fragmentCount; x++) weights.push(1 / x);
+			_classPrivateFieldSet2(_degrees, this, new Sampler(weights));
 		}
-		if (value < (bytes === 1 ? 24 : bytes === 2 ? 256 : bytes === 4 ? 65536 : 2 ** 32)) fail$4();
-		return value;
-	};
-	var length = (cursor, info) => {
-		const value = argument(cursor, info);
-		if (value > MAX_ITEMS) fail$4();
-		return value;
-	};
-	var item = (cursor, depth) => {
-		var _take$;
-		if (depth > MAX_DEPTH) fail$4();
-		const head = (_take$ = take(cursor, 1)[0]) !== null && _take$ !== void 0 ? _take$ : 0;
-		const major = Math.trunc(head / 32);
-		const info = head % 32;
-		switch (major) {
-			case 0: return {
-				kind: "uint",
-				value: argument(cursor, info)
-			};
-			case 2: return {
-				kind: "bytes",
-				value: take(cursor, argument(cursor, info))
-			};
-			case 3: {
-				const raw = take(cursor, argument(cursor, info));
-				try {
-					return {
-						kind: "text",
-						value: utf8.decode(raw)
-					};
-				} catch (_unused) {
-					return fail$4();
-				}
-			}
-			case 4: {
-				const count = length(cursor, info);
-				const items = [];
-				for (let i = 0; i < count; i++) items.push(item(cursor, depth + 1));
-				return {
-					kind: "array",
-					items
-				};
-			}
-			case 5: {
-				const count = length(cursor, info);
-				const seen = /* @__PURE__ */ new Set();
-				const entries = [];
-				for (let i = 0; i < count; i++) {
-					const key = item(cursor, depth + 1);
-					const encoded = encodeCbor(key).join(",");
-					if (seen.has(encoded)) fail$4();
-					seen.add(encoded);
-					entries.push([key, item(cursor, depth + 1)]);
-				}
-				return {
-					kind: "map",
-					entries
-				};
-			}
-			case 6: return {
-				kind: "tag",
-				tag: argument(cursor, info),
-				item: item(cursor, depth + 1)
-			};
-			case 7:
-				if (info === 20 || info === 21) return {
-					kind: "bool",
-					value: info === 21
-				};
-				return fail$4();
-			default: return fail$4();
+		/**
+		* Fragment indexes mixed into sequence `sequence` (1-based), sorted ascending. Normative: simple
+		* if sequence <= K; else degree + remove-shuffle.
+		*/
+		choose(sequence) {
+			if (sequence <= this.fragmentCount) return [sequence - 1];
+			const seed = /* @__PURE__ */ new Uint8Array(8);
+			seed[0] = sequence >>> 24 & 255;
+			seed[1] = sequence >>> 16 & 255;
+			seed[2] = sequence >>> 8 & 255;
+			seed[3] = sequence & 255;
+			seed[4] = this.checksum >>> 24 & 255;
+			seed[5] = this.checksum >>> 16 & 255;
+			seed[6] = this.checksum >>> 8 & 255;
+			seed[7] = this.checksum & 255;
+			const xoshiro = Xoshiro256.fromBytes(seed);
+			const degree = _classPrivateFieldGet2(_degrees, this).next(xoshiro) + 1;
+			const indexes = Array.from({ length: this.fragmentCount }, (_, i) => i);
+			return xoshiro.shuffled(indexes, degree).sort((a, b) => a - b);
 		}
-	};
-	/** Parses exactly one canonical item from `bytes` — trailing input is malformed. */
-	var decodeCbor = (bytes) => {
-		if (bytes.length === 0 || bytes.length > MAX_BYTES) fail$4();
-		const cursor = {
-			bytes,
-			offset: 0
-		};
-		const parsed = item(cursor, 1);
-		if (cursor.offset !== bytes.length) fail$4();
-		return parsed;
-	};
-	var head = (major, value, out) => {
-		if (value < 24) out.push(major * 32 + value);
-		else if (value < 256) out.push(major * 32 + 24, value);
-		else if (value < 65536) out.push(major * 32 + 25, Math.trunc(value / 256), value % 256);
-		else if (value < 2 ** 32) out.push(major * 32 + 26, Math.trunc(value / 16777216), Math.trunc(value / 65536) % 256, Math.trunc(value / 256) % 256, value % 256);
-		else {
-			out.push(major * 32 + 27);
-			let rest = BigInt(value);
-			const slot = [];
-			for (let i = 0; i < 8; i++) {
-				slot.unshift(Number(rest % 256n));
-				rest /= 256n;
-			}
-			out.push(...slot);
-		}
-	};
-	/** Serialises the tree canonically — shortest heads, in-order map keys, definite lengths. */
-	var encodeCbor = (value) => {
-		const out = [];
-		const emit = (node) => {
-			switch (node.kind) {
-				case "uint":
-					head(0, node.value, out);
-					break;
-				case "bytes":
-					head(2, node.value.length, out);
-					for (const byte of node.value) out.push(byte);
-					break;
-				case "text": {
-					const raw = utf8ToBytes$1(node.value);
-					head(3, raw.length, out);
-					for (const byte of raw) out.push(byte);
-					break;
-				}
-				case "array":
-					head(4, node.items.length, out);
-					for (const entry of node.items) emit(entry);
-					break;
-				case "map":
-					head(5, node.entries.length, out);
-					for (const [key, entry] of node.entries) {
-						emit(key);
-						emit(entry);
-					}
-					break;
-				case "tag":
-					head(6, node.tag, out);
-					emit(node.item);
-					break;
-				case "bool": out.push(node.value ? 245 : 244);
-			}
-		};
-		emit(value);
-		return new Uint8Array(out);
-	};
-	// packages/wallet-kernel/src/modules/signers/keystone/registry.ts
-	init_objectSpread2();
-	var TAG_KEY_DERIVATION_CALL = 1301;
-	var TAG_KEY_DERIVATION_SCHEMA = 1302;
-	function fail$3() {
-		throw new KernelError("integrity", "malformed registry item");
+	});
+	/**
+	* Production default (1 MiB message, 2000 fragments, 8192-byte fragments and URIs), frozen.
+	*
+	* Hosts that need another budget pass `new UrDecoder({ limits })`.
+	*/
+	var DEFAULT_LIMITS = Object.freeze({
+		maxMessageLength: 1048576,
+		maxFragmentCount: 2e3,
+		maxFragmentLength: 8192,
+		maxUriLength: 8192
+	});
+	function mergeLimits(partial) {
+		return _objectSpread2(_objectSpread2({}, DEFAULT_LIMITS), partial);
 	}
-	var uint = (value) => {
-		if (value.kind !== "uint") fail$3();
-		return value.value;
+	var MAX_U32$2 = 4294967295;
+	function isU32(v) {
+		return Number.isSafeInteger(v) && v >= 0 && v <= MAX_U32$2;
+	}
+	/**
+	* Semantic part validation shared by `decodePart`, the encoder, and the decoder ingest path:
+	* `sequence`, `sequenceCount`, and `messageLength` are nonzero u32; `checksum` is a u32; `data` is
+	* nonempty; and `data.length` is a consistent fragment length, i.e. `K · fragLen ≥ messageLength`
+	* with padding under one fragment.
+	*/
+	function validatePart(part) {
+		const fragLen = part.data.length;
+		if (!isU32(part.sequence) || part.sequence === 0 || !isU32(part.sequenceCount) || part.sequenceCount === 0 || !isU32(part.messageLength) || part.messageLength === 0 || !isU32(part.checksum) || fragLen === 0) fail$3("InvalidPart");
+		const product = BigInt(part.sequenceCount) * BigInt(fragLen);
+		const length = BigInt(part.messageLength);
+		if (product < length || product - length >= BigInt(fragLen)) fail$3("InvalidPart");
+	}
+	/** XOR `src` into `target`; buffers are equal-length by construction. */
+	function xorInto(target, src) {
+		var _src$i;
+		for (const [i, a] of target.entries()) target[i] = a ^ ((_src$i = src[i]) !== null && _src$i !== void 0 ? _src$i : 0);
+	}
+	function divCeil(a, b) {
+		return Math.trunc((a + b - 1) / b);
+	}
+	var MAX_U32$1 = 4294967295;
+	var DEFAULT_MIN_FRAGMENT_LENGTH = 10;
+	/**
+	* URKit `findNominalFragmentLength` in closed form: the smallest fragment count that fits `max` is
+	* `ceil(len / max)`, bounded above by `floor(len / min)` (and at least 1). When `min` binds,
+	* fragments may exceed `maxFragmentLength` — that is the reference behavior.
+	*/
+	function fragmentLength(dataLength, maxFragmentLength, minFragmentLength = DEFAULT_MIN_FRAGMENT_LENGTH) {
+		return divCeil(dataLength, Math.min(divCeil(dataLength, maxFragmentLength), Math.max(1, Math.floor(dataLength / minFragmentLength))));
+	}
+	/** Pad and split a message into `fragmentLength`-sized fragments. */
+	function partition(data, fragLen) {
+		const pad = (fragLen - data.length % fragLen) % fragLen;
+		const padded = new Uint8Array(data.length + pad);
+		padded.set(data);
+		const out = [];
+		for (let i = 0; i < padded.length; i += fragLen) out.push(padded.subarray(i, i + fragLen));
+		return out;
+	}
+	/**
+	* Fountain encoder. An infinite iterator: produces parts with sequence `firstSequence + 1`, `+2`, …
+	* and ends after `0xFFFFFFFF` (UR-ADR-028). For `K == 1` it keeps producing identical parts with
+	* rising sequences. Message problems throw `UrError`; invalid options throw `RangeError`.
+	*/
+	var FountainEncoder = (_parts = /* @__PURE__ */ new WeakMap(), _chooser = /* @__PURE__ */ new WeakMap(), _fragLen = /* @__PURE__ */ new WeakMap(), _msgLen = /* @__PURE__ */ new WeakMap(), _seqCount = /* @__PURE__ */ new WeakMap(), _messageChecksum = /* @__PURE__ */ new WeakMap(), _seq = /* @__PURE__ */ new WeakMap(), _lastIndexes2 = /* @__PURE__ */ new WeakMap(), _Symbol$iterator$2 = Symbol.iterator, class {
+		constructor(message, options) {
+			_classPrivateFieldInitSpec(this, _parts, void 0);
+			_classPrivateFieldInitSpec(this, _chooser, void 0);
+			_classPrivateFieldInitSpec(this, _fragLen, void 0);
+			_classPrivateFieldInitSpec(this, _msgLen, void 0);
+			_classPrivateFieldInitSpec(this, _seqCount, void 0);
+			_classPrivateFieldInitSpec(this, _messageChecksum, void 0);
+			_classPrivateFieldInitSpec(this, _seq, void 0);
+			_classPrivateFieldInitSpec(this, _lastIndexes2, []);
+			const { maxFragmentLength, minFragmentLength = DEFAULT_MIN_FRAGMENT_LENGTH, firstSequence = 0 } = options;
+			if (message.length === 0) fail$3("EmptyMessage");
+			if (message.length > MAX_U32$1) fail$3("MessageTooLong");
+			if (!Number.isSafeInteger(maxFragmentLength) || maxFragmentLength < 1) throw new RangeError("maxFragmentLength must be a positive integer");
+			if (!Number.isSafeInteger(minFragmentLength) || minFragmentLength < 1 || minFragmentLength > maxFragmentLength) throw new RangeError("minFragmentLength must be a positive integer at most maxFragmentLength");
+			if (!Number.isSafeInteger(firstSequence) || firstSequence < 0 || firstSequence > MAX_U32$1) throw new RangeError("firstSequence must be an integer in 0..=0xFFFFFFFF");
+			const fragLen = fragmentLength(message.length, maxFragmentLength, minFragmentLength);
+			const fragments = partition(message, fragLen);
+			const messageChecksum = checksum(message);
+			_classPrivateFieldSet2(_parts, this, fragments);
+			_classPrivateFieldSet2(_chooser, this, new FragmentChooser(fragments.length, messageChecksum));
+			_classPrivateFieldSet2(_fragLen, this, fragLen);
+			_classPrivateFieldSet2(_msgLen, this, message.length);
+			_classPrivateFieldSet2(_seqCount, this, fragments.length);
+			_classPrivateFieldSet2(_messageChecksum, this, messageChecksum);
+			_classPrivateFieldSet2(_seq, this, firstSequence);
+		}
+		get fragmentCount() {
+			return _classPrivateFieldGet2(_seqCount, this);
+		}
+		get fragmentLength() {
+			return _classPrivateFieldGet2(_fragLen, this);
+		}
+		get messageLength() {
+			return _classPrivateFieldGet2(_msgLen, this);
+		}
+		/** Last emitted sequence number, or `firstSequence` before any part. */
+		get sequence() {
+			return _classPrivateFieldGet2(_seq, this);
+		}
+		get isComplete() {
+			return _classPrivateFieldGet2(_seq, this) >= _classPrivateFieldGet2(_seqCount, this);
+		}
+		/** Fragment indexes mixed into the most recently produced part. */
+		get lastFragmentIndexes() {
+			return _classPrivateFieldGet2(_lastIndexes2, this);
+		}
+		next() {
+			if (_classPrivateFieldGet2(_seq, this) === MAX_U32$1) return {
+				value: void 0,
+				done: true
+			};
+			_classPrivateFieldSet2(_seq, this, _classPrivateFieldGet2(_seq, this) + 1);
+			const indexes = _classPrivateFieldGet2(_chooser, this).choose(_classPrivateFieldGet2(_seq, this));
+			const mixed = new Uint8Array(_classPrivateFieldGet2(_fragLen, this));
+			for (const i of indexes) {
+				const fragment = _classPrivateFieldGet2(_parts, this)[i];
+				if (fragment !== void 0) xorInto(mixed, fragment);
+			}
+			const part = {
+				sequence: _classPrivateFieldGet2(_seq, this),
+				sequenceCount: _classPrivateFieldGet2(_seqCount, this),
+				messageLength: _classPrivateFieldGet2(_msgLen, this),
+				checksum: _classPrivateFieldGet2(_messageChecksum, this),
+				data: mixed
+			};
+			_classPrivateFieldSet2(_lastIndexes2, this, indexes);
+			return {
+				value: part,
+				done: false
+			};
+		}
+		[_Symbol$iterator$2]() {
+			return this;
+		}
+	});
+	var MAX_U32 = 4294967295;
+	/**
+	* Encode a part as fixed-schema deterministic CBOR: `array(5) [sequence, sequenceCount,
+	* messageLength, checksum, data]` with shortest-form integers.
+	*/
+	function encodePart(part) {
+		validatePart(part);
+		const out = [133];
+		encodeU32(out, part.sequence);
+		encodeU32(out, part.sequenceCount);
+		encodeU32(out, part.messageLength);
+		encodeU32(out, part.checksum);
+		encodeBstr(out, part.data);
+		return new Uint8Array(out);
+	}
+	/**
+	* Decode a part from CBOR. Lenient on integer width (UR-ADR-017): any well-formed definite-length
+	* encoding is accepted; re-encode with {@link encodePart} for the shortest form. `limits` apply
+	* `maxFragmentLength` to the bstr and `maxFragmentCount` to `sequenceCount`.
+	*/
+	function decodePart(bytes, limits) {
+		return decodePartInner(bytes, mergeLimits(limits));
+	}
+	function decodePartInner(bytes, limits) {
+		const cur = { i: 0 };
+		if (decodeLen(bytes, cur, 4) !== 5) fail$3("InvalidPartCbor");
+		const sequence = decodeU32(bytes, cur);
+		const sequenceCount = decodeU32(bytes, cur);
+		const messageLength = decodeU32(bytes, cur);
+		const checksum = decodeU32(bytes, cur);
+		const data = decodeBstr(bytes, cur, limits === null || limits === void 0 ? void 0 : limits.maxFragmentLength);
+		if (cur.i !== bytes.length) fail$3("InvalidPartCbor");
+		const part = {
+			sequence,
+			sequenceCount,
+			messageLength,
+			checksum,
+			data
+		};
+		validatePart(part);
+		if (limits !== void 0 && sequenceCount > limits.maxFragmentCount) fail$3({
+			code: "ResourceLimit",
+			limit: "fragmentCount"
+		});
+		return part;
+	}
+	function encodeU32(out, v) {
+		if (v <= 23) out.push(v);
+		else if (v <= 255) out.push(24, v);
+		else if (v <= 65535) out.push(25, v >>> 8 & 255, v & 255);
+		else out.push(26, v >>> 24 & 255, v >>> 16 & 255, v >>> 8 & 255, v & 255);
+	}
+	function encodeBstr(out, data) {
+		const len = data.length;
+		if (len <= 23) out.push(64 | len);
+		else if (len <= 255) out.push(88, len);
+		else if (len <= 65535) out.push(89, len >>> 8 & 255, len & 255);
+		else out.push(90, len >>> 24 & 255, len >>> 16 & 255, len >>> 8 & 255, len & 255);
+		for (const b of data) out.push(b);
+	}
+	/**
+	* Reads a definite-length argument for the given major type in any width (including 8-byte u64).
+	* Values above 2^53 lose low bits — callers only order or bound-check such values; equality is only
+	* demanded of values <= u32::MAX.
+	*/
+	function decodeLen(bytes, cur, major) {
+		const head = read(bytes, cur);
+		if (head >> 5 !== major) fail$3("InvalidPartCbor");
+		const ai = head & 31;
+		if (ai <= 23) return ai;
+		if (ai === 24) return read(bytes, cur);
+		if (ai === 25) return read(bytes, cur) << 8 | read(bytes, cur);
+		if (ai === 26) return (read(bytes, cur) << 24 | read(bytes, cur) << 16 | read(bytes, cur) << 8 | read(bytes, cur)) >>> 0;
+		if (ai === 27) {
+			const hi = (read(bytes, cur) << 24 | read(bytes, cur) << 16 | read(bytes, cur) << 8 | read(bytes, cur)) >>> 0;
+			const lo = (read(bytes, cur) << 24 | read(bytes, cur) << 16 | read(bytes, cur) << 8 | read(bytes, cur)) >>> 0;
+			return hi * 4294967296 + lo;
+		}
+		return fail$3("InvalidPartCbor");
+	}
+	function decodeU32(bytes, cur) {
+		const v = decodeLen(bytes, cur, 0);
+		if (v > MAX_U32) fail$3("InvalidPartCbor");
+		return v;
+	}
+	function decodeBstr(bytes, cur, maxDataLen) {
+		const len = decodeLen(bytes, cur, 2);
+		if (maxDataLen !== void 0 && len > maxDataLen) fail$3({
+			code: "ResourceLimit",
+			limit: "fragmentLength"
+		});
+		if (cur.i + len > bytes.length) fail$3("InvalidPartCbor");
+		const data = bytes.slice(cur.i, cur.i + len);
+		cur.i += len;
+		return data;
+	}
+	function read(bytes, cur) {
+		const b = bytes[cur.i];
+		if (b === void 0) fail$3("InvalidPartCbor");
+		cur.i += 1;
+		return b;
+	}
+	/** Validate and lowercase a UR type token. Throws `UrError(InvalidType)`. */
+	function parseUrType(text) {
+		const lower = asciiLower(text);
+		if (lower.length === 0 || !/^[a-z0-9-]+$/.test(lower)) fail$3("InvalidType");
+		return lower;
+	}
+	/**
+	* Scheme and type: an ASCII case-insensitive `ur:` prefix (`InvalidScheme`), then the token up to
+	* the first `/` (`TypeUnspecified` if none, `InvalidType` if illegal). Only the type token is
+	* lowercased — the body keeps its original case (bytewords decode is itself case-insensitive).
+	*/
+	function parseUrHead(text) {
+		if (text.length < 3 || asciiLower(text.slice(0, 3)) !== "ur:") fail$3("InvalidScheme");
+		const rest0 = text.slice(3);
+		const slash = rest0.indexOf("/");
+		if (slash === -1) fail$3("TypeUnspecified");
+		return {
+			type: parseUrType(rest0.slice(0, slash)),
+			rest: rest0.slice(slash + 1)
+		};
+	}
+	/**
+	* Text admission after type admission: the whole URI must be ASCII (`NonAscii`, so `.length` is the
+	* byte count), then the URI-length budget (`ResourceLimit: uriLength`).
+	*/
+	function checkUriText(text, limits) {
+		if (!isAscii(text)) fail$3("NonAscii");
+		if (text.length > limits.maxUriLength) fail$3({
+			code: "ResourceLimit",
+			limit: "uriLength"
+		});
+	}
+	/** Indices grammar, bytewords, and part CBOR for the text after `ur:<type>/`. */
+	function parseUrBody(type, rest, decode) {
+		const lastSlash = rest.lastIndexOf("/");
+		if (lastSlash === -1) return {
+			kind: "single",
+			type,
+			message: decodeBytewords(rest, "minimal")
+		};
+		const { seq, count } = decodeIndices(rest.slice(0, lastSlash));
+		const part = decode(decodeBytewords(rest.slice(lastSlash + 1), "minimal"));
+		if (part.sequence !== seq || part.sequenceCount !== count) fail$3("InvalidIndices");
+		return {
+			kind: "multi",
+			type,
+			part
+		};
+	}
+	/**
+	* Parse and decode a UR string. Case-insensitive for the URI and bytewords content. `limits` bounds
+	* the URI length and the multi-part CBOR fields. Throws `UrError`.
+	*/
+	function parseUr(text, limits) {
+		const merged = mergeLimits(limits);
+		const { type, rest } = parseUrHead(text);
+		checkUriText(text, merged);
+		return parseUrBody(type, rest, (bytes) => decodePart(bytes, merged));
+	}
+	/** UR-ADR-029: `seq = 1*DIGIT "-" 1*DIGIT`, both in `1..=0xFFFFFFFF`. */
+	function decodeIndices(indices) {
+		const dash = indices.indexOf("-");
+		if (dash === -1) fail$3("InvalidIndices");
+		const a = indices.slice(0, dash);
+		const b = indices.slice(dash + 1);
+		if (!/^\d+$/.test(a) || !/^\d+$/.test(b)) fail$3("InvalidIndices");
+		const seq = Number(a);
+		const count = Number(b);
+		if (!Number.isSafeInteger(seq) || !Number.isSafeInteger(count) || seq === 0 || count === 0 || seq > 4294967295 || count > 4294967295) fail$3("InvalidIndices");
+		return {
+			seq,
+			count
+		};
+	}
+	/** Encode a single-part UR. Empty `message` is allowed. */
+	function encodeUr$1(type, message) {
+		return `ur:${type}/${encodeBytewords(message, "minimal")}`;
+	}
+	/** Uppercase UR string for denser QR alphanumeric mode. */
+	function toQrString(ur) {
+		return asciiUpper(ur);
+	}
+	/**
+	* UR string encoder. `K == 1` emits the same single-part UR on every step; larger messages emit
+	* `ur:<type>/<seq>-<count>/<bytewords>` fountain parts until sequence `0xFFFFFFFF`, where iteration
+	* ends.
+	*/
+	var UrEncoder = (_type = /* @__PURE__ */ new WeakMap(), _fountain = /* @__PURE__ */ new WeakMap(), _single = /* @__PURE__ */ new WeakMap(), _emitted = /* @__PURE__ */ new WeakMap(), _Symbol$iterator2$1 = Symbol.iterator, class {
+		constructor(type, message, options) {
+			_classPrivateFieldInitSpec(this, _type, void 0);
+			_classPrivateFieldInitSpec(this, _fountain, void 0);
+			_classPrivateFieldInitSpec(this, _single, void 0);
+			_classPrivateFieldInitSpec(this, _emitted, false);
+			_classPrivateFieldSet2(_type, this, type);
+			_classPrivateFieldSet2(_fountain, this, new FountainEncoder(message, options));
+			_classPrivateFieldSet2(_single, this, _classPrivateFieldGet2(_fountain, this).fragmentCount === 1 ? encodeUr$1(type, new Uint8Array(message)) : void 0);
+		}
+		get type() {
+			return _classPrivateFieldGet2(_type, this);
+		}
+		get fragmentCount() {
+			return _classPrivateFieldGet2(_fountain, this).fragmentCount;
+		}
+		get isSinglePart() {
+			return _classPrivateFieldGet2(_fountain, this).fragmentCount === 1;
+		}
+		get isComplete() {
+			return _classPrivateFieldGet2(_single, this) === void 0 ? _classPrivateFieldGet2(_fountain, this).isComplete : _classPrivateFieldGet2(_emitted, this);
+		}
+		/** Fragment indexes mixed into the most recently produced part. */
+		get lastFragmentIndexes() {
+			return _classPrivateFieldGet2(_fountain, this).lastFragmentIndexes;
+		}
+		next() {
+			const single = _classPrivateFieldGet2(_single, this);
+			if (single !== void 0) {
+				_classPrivateFieldSet2(_emitted, this, true);
+				return {
+					value: single,
+					done: false
+				};
+			}
+			const { value: part, done } = _classPrivateFieldGet2(_fountain, this).next();
+			if (done === true || part === void 0) return {
+				value: void 0,
+				done: true
+			};
+			const body = encodeBytewords(encodePart(part), "minimal");
+			return {
+				value: `ur:${_classPrivateFieldGet2(_type, this)}/${part.sequence}-${part.sequenceCount}/${body}`,
+				done: false
+			};
+		}
+		[_Symbol$iterator2$1]() {
+			return this;
+		}
+	});
+	// node_modules/.bun/@blockchaincommons+dcbor@1.0.0-beta.5/node_modules/@blockchaincommons/dcbor/dist/error-BM_wVk_h.mjs
+	init_defineProperty();
+	var MajorType = {
+		Unsigned: 0,
+		Negative: 1,
+		ByteString: 2,
+		Text: 3,
+		Array: 4,
+		Map: 5,
+		Tagged: 6,
+		Simple: 7
 	};
-	var bytes = (value) => {
-		if (value.kind !== "bytes") fail$3();
-		return value.value;
+	var isCborNumber = (value) => {
+		return typeof value === "number" || typeof value === "bigint";
 	};
-	var text = (value) => {
-		if (value.kind !== "text") fail$3();
-		return value.value;
+	var isCbor = (value) => {
+		return value !== null && typeof value === "object" && "isCbor" in value && value.isCbor === true;
 	};
-	var bool = (value) => {
-		if (value.kind !== "bool") fail$3();
-		return value.value;
+	/**
+	* Compare two tag values for equality, normalizing `number` vs `bigint`.
+	* A raw `===` would treat `100n` and `100` as unequal, so a large tag that
+	* decoded to a `bigint` wouldn't match the same value written as a `number`.
+	*
+	* @internal Exported for cross-module use; not part of the public surface -
+	* use `Tag.equals` instead.
+	*/
+	var tagValuesEqual = (a, b) => {
+		if (typeof a === "bigint" || typeof b === "bigint") return BigInt(a) === BigInt(b);
+		return a === b;
 	};
-	var fingerprint = (value) => {
-		const n = uint(value);
-		if (n > 4294967295) fail$3();
-		const out = /* @__PURE__ */ new Uint8Array(4);
-		new DataView(out.buffer).setUint32(0, n);
+	/**
+	* Value-type companion for the `Tag` interface: an interface plus a merged
+	* `const` with a handful of members. It stays small and must not import the
+	* encode/format graph.
+	*/
+	var Tag = {
+		/**
+		* Create a Tag from its numeric value, optionally with a name.
+		*
+		* The returned object is frozen: a `Tag` is a value, as in the reference,
+		* and a store keeps the tags it is given by identity when they are frozen.
+		*
+		* ```typescript
+		* Tag.from(1, "date");
+		* Tag.from(12345);
+		* ```
+		*/
+		from(value, name) {
+			if (name !== void 0) return Object.freeze({
+				value,
+				name
+			});
+			return Object.freeze({ value });
+		},
+		/**
+		* Compare two tags for equality: compares by `value` only (normalizing
+		* `number` vs `bigint`) and ignores the optional `name`.
+		*/
+		equals(a, b) {
+			return tagValuesEqual(a.value, b.value);
+		}
+	};
+	/**
+	* Get the string representation of a tag.
+	* Internal function used for error messages.
+	*
+	* @param tag - The tag to represent
+	* @returns String representation (name if available, otherwise value)
+	*
+	* @internal
+	*/
+	var tagToString = (tag) => {
+		var _tag$name;
+		return (_tag$name = tag.name) !== null && _tag$name !== void 0 ? _tag$name : tag.value.toString();
+	};
+	var captureStackTrace = Error.captureStackTrace;
+	/**
+	* The single error type thrown by dCBOR encoding, decoding, and extraction.
+	*
+	* @example
+	* ```typescript
+	* try {
+	*   decodeCbor(bytes);
+	* } catch (e) {
+	*   if (CborError.isCborError(e) && e.code === "WrongTag") {
+	*     console.log(e.details.expectedTag, e.details.actualTag);
+	*   }
+	* }
+	* ```
+	*/
+	var CborError$1 = class CborError extends Error {
+		constructor(code, message, details = {}) {
+			super(message);
+			_defineProperty(
+				this,
+				/** Machine-readable discriminant; switch on this to handle errors. */
+				"code",
+				void 0
+			);
+			_defineProperty(
+				this,
+				/** Structured, code-specific data (see {@link CborErrorDetails}). */
+				"details",
+				void 0
+			);
+			this.name = "CborError";
+			this.code = code;
+			this.details = details;
+			Object.setPrototypeOf(this, new.target.prototype);
+			if (typeof captureStackTrace === "function") captureStackTrace(this, CborError);
+		}
+		/** Type guard: is `value` a {@link CborError}? Narrows to the
+		* code-discriminated {@link CborErrorTyped} union. */
+		static isCborError(value) {
+			return value instanceof CborError;
+		}
+		/** The CBOR data ended before a complete item could be decoded. */
+		static underrun() {
+			return new CborError("Underrun", "early end of CBOR data");
+		}
+		/** An unsupported/invalid value was found in a CBOR header byte. */
+		static unsupportedHeaderValue(headerValue) {
+			return new CborError("UnsupportedHeaderValue", "unsupported value in CBOR header", { headerValue });
+		}
+		/** A numeric value was not in its shortest/canonical dCBOR form. */
+		static nonCanonicalNumeric() {
+			return new CborError("NonCanonicalNumeric", "a CBOR numeric value was encoded in non-canonical form");
+		}
+		/** A major-type-7 simple value other than false/true/null/float. */
+		static invalidSimpleValue() {
+			return new CborError("InvalidSimpleValue", "an invalid CBOR simple value was encountered");
+		}
+		/** A text string was not valid UTF-8 (with the underlying reason). */
+		static invalidString(cause) {
+			return new CborError("InvalidString", `an invalidly-encoded UTF-8 string was encountered in the CBOR (${cause})`, { cause });
+		}
+		/** A text string was not in Unicode NFC. */
+		static nonCanonicalString() {
+			return new CborError("NonCanonicalString", "a CBOR string was not encoded in Unicode Canonical Normalization Form C");
+		}
+		/** The decoded item left `count` trailing bytes unconsumed. */
+		static unusedData(count) {
+			return new CborError("UnusedData", `the decoded CBOR had ${count} extra bytes at the end`, { count });
+		}
+		/** Map keys were not in canonical ascending byte order. */
+		static misorderedMapKey() {
+			return new CborError("MisorderedMapKey", "the decoded CBOR map has keys that are not in canonical order");
+		}
+		/** A map contained a duplicate key. */
+		static duplicateMapKey() {
+			return new CborError("DuplicateMapKey", "the decoded CBOR map has a duplicate key");
+		}
+		/** A requested map key was not present. */
+		static missingMapKey() {
+			return new CborError("MissingMapKey", "missing CBOR map key");
+		}
+		/** A numeric value could not be represented in the target type. */
+		static outOfRange() {
+			return new CborError("OutOfRange", "the CBOR numeric value could not be represented in the specified numeric type");
+		}
+		/** The CBOR value was not the type expected by a conversion. */
+		static wrongType() {
+			return new CborError("WrongType", "the decoded CBOR value was not the expected type");
+		}
+		/** A tagged value had a tag other than the one expected. */
+		static wrongTag(expected, actual) {
+			return new CborError("WrongTag", `expected CBOR tag ${tagToString(expected)}, but got ${tagToString(actual)}`, {
+				expectedTag: expected,
+				actualTag: actual
+			});
+		}
+		/** Invalid UTF-8 in a text string (with the underlying reason). */
+		static invalidUtf8(cause) {
+			return new CborError("InvalidUtf8", `invalid UTF‑8 string: ${cause}`, { cause });
+		}
+		/** Invalid ISO 8601 / RFC 3339 date string (with the underlying reason). */
+		static invalidDate(cause) {
+			return new CborError("InvalidDate", `invalid ISO 8601 date string: ${cause}`, { cause });
+		}
+		/** An arbitrary error carrying a custom message. */
+		static custom(message) {
+			return new CborError("Custom", message);
+		}
+	};
+	// node_modules/.bun/@blockchaincommons+dcbor@1.0.0-beta.5/node_modules/@blockchaincommons/dcbor/dist/tags-store-BSBP9gpt.mjs
+	init_defineProperty();
+	var _Class;
+	var _Class2;
+	var _Class3;
+	var _Class4;
+	var _Symbol$toStringTag$1;
+	var _Symbol$iterator$1;
+	var _Symbol$toStringTag2$1;
+	/**
+	* Byte-array utilities shared across the library.
+	*
+	* @module stdlib
+	*/
+	/**
+	* Check if two byte arrays are equal.
+	*/
+	var areBytesEqual = (a, b) => {
+		if (a.length !== b.length) return false;
+		for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+		return true;
+	};
+	/**
+	* Lexicographically compare two byte arrays.
+	* Returns: -1 if a < b, 0 if a == b, 1 if a > b
+	*/
+	var lexicographicallyCompareBytes = (a, b) => {
+		const minLen = Math.min(a.length, b.length);
+		for (let i = 0; i < minLen; i++) {
+			const aVal = a[i];
+			const bVal = b[i];
+			if (aVal === void 0 || bVal === void 0) throw CborError$1.custom("Unexpected undefined byte in array");
+			if (aVal < bVal) return -1;
+			if (aVal > bVal) return 1;
+		}
+		if (a.length < b.length) return -1;
+		if (a.length > b.length) return 1;
+		return 0;
+	};
+	/**
+	* A map keyed by encoded CBOR key bytes, kept in canonical (lexicographic)
+	* byte order.
+	*
+	* dCBOR needs exactly one specialised container: keys are the encoded bytes of
+	* a CBOR value, and the map must iterate in ascending lexicographic byte order
+	* (that ordering is the deterministic wire contract). This is a thin,
+	* dependency-free structure over a sorted array with binary-search insertion -
+	* it gives the exact ordering dCBOR requires, and lets the decode hot path
+	* append in O(1) since canonical input already arrives sorted.
+	*
+	* @module sorted-byte-map
+	*/
+	var SortedByteMap = class {
+		constructor() {
+			_defineProperty(this, "items", []);
+		}
+		/** Number of entries. */
+		get size() {
+			return this.items.length;
+		}
+		/**
+		* Binary search for `key`. Returns the index of an exact match, or the
+		* negative value `-(insertionPoint) - 1` when absent, so a single search both
+		* tests membership and locates where an insert would go (Java
+		* `Arrays.binarySearch` convention).
+		*/
+		indexOf(key) {
+			let lo = 0;
+			let hi = this.items.length - 1;
+			while (lo <= hi) {
+				const mid = lo + hi >>> 1;
+				const cmp = lexicographicallyCompareBytes(this.items[mid].key, key);
+				if (cmp < 0) lo = mid + 1;
+				else if (cmp > 0) hi = mid - 1;
+				else return mid;
+			}
+			return -(lo + 1);
+		}
+		/** Insert or replace the entry for `key`. */
+		set(key, value) {
+			const i = this.indexOf(key);
+			if (i >= 0) this.items[i] = {
+				key,
+				value
+			};
+			else this.items.splice(-i - 1, 0, {
+				key,
+				value
+			});
+		}
+		/**
+		* Append an entry whose key is strictly greater than every existing key.
+		* Used by canonical decode, where keys arrive already sorted; the caller must
+		* guarantee the ordering (this skips the search + shift that {@link set} does).
+		*/
+		appendGreatest(key, value) {
+			this.items.push({
+				key,
+				value
+			});
+		}
+		/** The value for `key`, or `undefined` if absent. */
+		get(key) {
+			const i = this.indexOf(key);
+			return i >= 0 ? this.items[i].value : void 0;
+		}
+		/** Whether `key` is present. */
+		has(key) {
+			return this.indexOf(key) >= 0;
+		}
+		/** Remove `key`; returns whether it was present. */
+		delete(key) {
+			const i = this.indexOf(key);
+			if (i < 0) return false;
+			this.items.splice(i, 1);
+			return true;
+		}
+		/** The greatest key currently stored (ascending order), or `undefined`. */
+		maxKey() {
+			const n = this.items.length;
+			return n > 0 ? this.items[n - 1].key : void 0;
+		}
+		/**
+		* The key at position `i` in ascending key order. Positional access lets
+		* two maps be walked in lockstep, and a single map be encoded, without
+		* materializing an entries array; the caller keeps `i` within `[0, size)`.
+		*/
+		keyAt(i) {
+			return this.items[i].key;
+		}
+		/** The value at position `i` in ascending key order (see {@link keyAt}). */
+		valueAt(i) {
+			return this.items[i].value;
+		}
+		/** Map over each value (with its key) in ascending key order. */
+		map(fn) {
+			return this.items.map((e) => fn(e.value, e.key));
+		}
+	};
+	/**
+	* Numeric boundary contract and helpers.
+	*
+	* ## The `number` / `bigint` contract
+	*
+	* dCBOR integers span `[-(2^64), 2^64)`, which exceeds JavaScript's safe
+	* integer range (`±(2^53 − 1)`). The rule is:
+	*
+	* - An integer that fits in the IEEE-754 **safe** range is represented as a
+	*   `number`; anything larger (in magnitude) is a `bigint`.
+	* - Decoding returns the **narrowest exact** representation via
+	*   {@link narrowInteger}, so small values are ergonomic `number`s and large
+	*   ones remain lossless `bigint`s.
+	* - Encoding accepts either at the public edge and normalises once.
+	*
+	* The integer range constants and the saturating float casts live here.
+	*
+	* @module numeric
+	*/
+	/** `BigInt(Number.MAX_SAFE_INTEGER)` - largest integer exact as a `number`. */
+	var SAFE_MAX_BIG = BigInt(Number.MAX_SAFE_INTEGER);
+	/** `BigInt(Number.MIN_SAFE_INTEGER)`. */
+	var SAFE_MIN_BIG = BigInt(Number.MIN_SAFE_INTEGER);
+	/** Smallest dCBOR-encodable integer: −(2^64). */
+	var CBOR_INT_MIN = -(1n << 64n);
+	/**
+	* Return the narrowest exact representation of an integer: a `number` when it
+	* fits the safe-integer range, otherwise the `bigint` unchanged. This is the
+	* canonical way to hand an integer back to callers.
+	*/
+	var narrowInteger = (value) => value >= SAFE_MIN_BIG && value <= SAFE_MAX_BIG ? Number(value) : value;
+	/**
+	* A growable output buffer for encoding.
+	*
+	* The encoder writes a whole CBOR tree into a single `BufWriter` rather than
+	* allocating a fresh `Uint8Array` per node and concatenating them (which
+	* re-copies every subtree at every level): one buffer, geometric growth, one
+	* final right-sized copy.
+	*
+	* @module buf-writer
+	*/
+	var BufWriter = class {
+		constructor(initialCapacity = 64) {
+			_defineProperty(this, "buf", void 0);
+			_defineProperty(this, "view", void 0);
+			_defineProperty(this, "pos", 0);
+			this.buf = new Uint8Array(initialCapacity);
+			this.view = new DataView(this.buf.buffer);
+		}
+		/** Number of bytes written so far. */
+		get length() {
+			return this.pos;
+		}
+		/** Grow the backing store so at least `extra` more bytes fit. */
+		ensure(extra) {
+			const needed = this.pos + extra;
+			if (needed <= this.buf.length) return;
+			let capacity = this.buf.length * 2;
+			while (capacity < needed) capacity *= 2;
+			const next = new Uint8Array(capacity);
+			next.set(this.buf.subarray(0, this.pos));
+			this.buf = next;
+			this.view = new DataView(next.buffer);
+		}
+		writeByte(byte) {
+			this.ensure(1);
+			this.buf[this.pos] = byte;
+			this.pos += 1;
+		}
+		writeUint16(value) {
+			this.ensure(2);
+			this.view.setUint16(this.pos, value, false);
+			this.pos += 2;
+		}
+		writeUint32(value) {
+			this.ensure(4);
+			this.view.setUint32(this.pos, value, false);
+			this.pos += 4;
+		}
+		writeBigUint64(value) {
+			this.ensure(8);
+			this.view.setBigUint64(this.pos, value, false);
+			this.pos += 8;
+		}
+		writeBytes(bytes) {
+			this.ensure(bytes.length);
+			this.buf.set(bytes, this.pos);
+			this.pos += bytes.length;
+		}
+		/** Return the written region as a right-sized copy. */
+		toBytes() {
+			return this.buf.slice(0, this.pos);
+		}
+	};
+	var typeBits = (t) => {
+		return t << 5;
+	};
+	/**
+	* Write a CBOR head (major type + argument) straight into `writer`, avoiding
+	* the intermediate `Uint8Array` that {@link encodeVarInt} allocates. This is
+	* the encoder hot path (every node emits a head). It must stay byte-identical
+	* to {@link encodeVarInt}; the golden vectors cover both.
+	*/
+	var writeVarInt = (writer, value, majorType) => {
+		if (value < 0) throw CborError$1.outOfRange();
+		if (typeof value === "number" && hasFractionalPart(value)) throw CborError$1.outOfRange();
+		const type = typeBits(majorType);
+		if (isCborNumber(value) && value <= Number.MAX_SAFE_INTEGER) {
+			const n = Number(value);
+			if (n <= 23) writer.writeByte(n | type);
+			else if (n <= 255) {
+				writer.writeByte(24 | type);
+				writer.writeByte(n);
+			} else if (n <= 65535) {
+				writer.writeByte(25 | type);
+				writer.writeUint16(n);
+			} else if (n <= 4294967295) {
+				writer.writeByte(26 | type);
+				writer.writeUint32(n);
+			} else {
+				writer.writeByte(27 | type);
+				writer.writeBigUint64(BigInt(n));
+			}
+		} else {
+			const big = BigInt(value);
+			if (big > 18446744073709551615n) throw CborError$1.outOfRange();
+			writer.writeByte(27 | type);
+			writer.writeBigUint64(big);
+		}
+	};
+	/**
+	* Encode a CBOR head (major type + argument) in its shortest form.
+	*
+	* @throws {CborError} `OutOfRange` for a negative, fractional, or
+	*   above-u64 argument.
+	*/
+	var encodeVarInt = (value, majorType) => {
+		if (value < 0) throw CborError$1.outOfRange();
+		if (typeof value === "number" && hasFractionalPart(value)) throw CborError$1.outOfRange();
+		const type = typeBits(majorType);
+		if (isCborNumber(value) && value <= Number.MAX_SAFE_INTEGER) {
+			value = Number(value);
+			if (value <= 23) return new Uint8Array([value | type]);
+			else if (value <= 255) return new Uint8Array([24 | type, value]);
+			else if (value <= 65535) {
+				const buffer = /* @__PURE__ */ new ArrayBuffer(3);
+				const view = new DataView(buffer);
+				view.setUint8(0, 25 | type);
+				view.setUint16(1, value);
+				return new Uint8Array(buffer);
+			} else if (value <= 4294967295) {
+				const buffer = /* @__PURE__ */ new ArrayBuffer(5);
+				const view = new DataView(buffer);
+				view.setUint8(0, 26 | type);
+				view.setUint32(1, value);
+				return new Uint8Array(buffer);
+			} else {
+				const buffer = /* @__PURE__ */ new ArrayBuffer(9);
+				const view = new DataView(buffer);
+				view.setUint8(0, 27 | type);
+				view.setBigUint64(1, BigInt(value));
+				return new Uint8Array(buffer);
+			}
+		} else {
+			const big = BigInt(value);
+			if (big > 18446744073709551615n) throw CborError$1.outOfRange();
+			const buffer = /* @__PURE__ */ new ArrayBuffer(9);
+			const view = new DataView(buffer);
+			view.setUint8(0, 27 | type);
+			view.setBigUint64(1, big);
+			return new Uint8Array(buffer);
+		}
+	};
+	var hasFract = (n) => {
+		return n % 1 !== 0;
+	};
+	/**
+	* Shared float→integer exactness gate for every `Exact<Int>.exactFromF*`. A
+	* float is an exact integer of a width iff it is finite, whole, and inside that
+	* width's exclusive `(loEx, hiEx)` bounds (use ±Infinity to skip a side). The
+	* bounds encode the per-width / per-source-precision limits. The three typed
+	* wrappers below shape the truncated result.
+	*/
+	var isExactIntFloat = (source, loEx, hiEx) => Number.isFinite(source) && source > loEx && source < hiEx && !hasFract(source);
+	/** float → small integer (`number`). */
+	var intFromFloatNum = (source, loEx, hiEx) => isExactIntFloat(source, loEx, hiEx) ? Math.trunc(source) : void 0;
+	/** float → 64-bit integer (`number` if safe, else `bigint`). */
+	var intFromFloatNarrow = (source, loEx, hiEx) => isExactIntFloat(source, loEx, hiEx) ? narrowInteger(BigInt(Math.trunc(source))) : void 0;
+	/** float → 128-bit integer (`bigint`). */
+	var intFromFloatBig = (source, loEx, hiEx) => isExactIntFloat(source, loEx, hiEx) ? BigInt(Math.trunc(source)) : void 0;
+	/**
+	* Exact conversions for i128 (JavaScript bigint).
+	*/
+	var ExactI128 = (_Class = class {
+		static exactFromF16(source) {
+			return intFromFloatBig(source, -Infinity, Infinity);
+		}
+		static exactFromF32(source) {
+			return intFromFloatBig(source, -Infinity, Infinity);
+		}
+		static exactFromF64(source) {
+			return intFromFloatBig(source, -Infinity, Infinity);
+		}
+		static exactFromU64(source) {
+			return BigInt(source);
+		}
+		static exactFromI64(source) {
+			return BigInt(source);
+		}
+		static exactFromU128(source) {
+			if (source > 2n ** 127n - 1n) return void 0;
+			return source;
+		}
+		static exactFromI128(source) {
+			return source;
+		}
+	}, _defineProperty(_Class, "MIN", -(2n ** 127n)), _defineProperty(_Class, "MAX", 2n ** 127n - 1n), _Class);
+	/**
+	* Exact conversions for u16 (0 to 65535).
+	*/
+	var ExactU16 = (_Class2 = class {
+		static exactFromF16(source) {
+			return intFromFloatNum(source, -1, Infinity);
+		}
+		static exactFromF32(source) {
+			return intFromFloatNum(source, -1, 65536);
+		}
+		static exactFromF64(source) {
+			return intFromFloatNum(source, -1, 65536);
+		}
+		static exactFromU64(source) {
+			const n = typeof source === "bigint" ? Number(source) : source;
+			if (n > 65535) return void 0;
+			return n;
+		}
+		static exactFromI64(source) {
+			const n = typeof source === "bigint" ? Number(source) : source;
+			if (n < 0 || n > 65535) return void 0;
+			return n;
+		}
+		static exactFromU128(source) {
+			if (source > 65535n) return void 0;
+			return Number(source);
+		}
+		static exactFromI128(source) {
+			if (source < 0n || source > 65535n) return void 0;
+			return Number(source);
+		}
+	}, _defineProperty(_Class2, "MIN", 0), _defineProperty(_Class2, "MAX", 65535), _Class2);
+	/**
+	* Exact conversions for u32 (0 to 4294967295).
+	*/
+	var ExactU32 = (_Class3 = class {
+		static exactFromF16(source) {
+			return intFromFloatNum(source, -1, Infinity);
+		}
+		static exactFromF32(source) {
+			return intFromFloatNum(source, -1, 4294967296);
+		}
+		static exactFromF64(source) {
+			return intFromFloatNum(source, -1, 4294967296);
+		}
+		static exactFromU64(source) {
+			const n = typeof source === "bigint" ? Number(source) : source;
+			if (n > 4294967295) return void 0;
+			return n;
+		}
+		static exactFromI64(source) {
+			const n = typeof source === "bigint" ? Number(source) : source;
+			if (n < 0 || n > 4294967295) return void 0;
+			return n;
+		}
+		static exactFromU128(source) {
+			if (source > 4294967295n) return void 0;
+			return Number(source);
+		}
+		static exactFromI128(source) {
+			if (source < 0n || source > 4294967295n) return void 0;
+			return Number(source);
+		}
+	}, _defineProperty(_Class3, "MIN", 0), _defineProperty(_Class3, "MAX", 4294967295), _Class3);
+	/**
+	* Exact conversions for u64 (0 to 18446744073709551615).
+	*/
+	var ExactU64 = (_Class4 = class {
+		static exactFromF16(source) {
+			return intFromFloatNarrow(source, -1, Infinity);
+		}
+		static exactFromF32(source) {
+			return intFromFloatNarrow(source, -1, 0x10000000000000000);
+		}
+		static exactFromF64(source) {
+			return intFromFloatNarrow(source, -1, 0x10000000000000000);
+		}
+		static exactFromU64(source) {
+			return source;
+		}
+		static exactFromI64(source) {
+			if ((typeof source === "bigint" ? source : BigInt(source)) < 0n) return void 0;
+			return source;
+		}
+		static exactFromU128(source) {
+			if (source > 18446744073709551615n) return void 0;
+			return narrowInteger(source);
+		}
+		static exactFromI128(source) {
+			if (source < 0n || source > 18446744073709551615n) return void 0;
+			return narrowInteger(source);
+		}
+	}, _defineProperty(_Class4, "MIN", 0n), _defineProperty(_Class4, "MAX", 18446744073709551615n), _Class4);
+	/**
+	* Float encoding and conversion utilities for dCBOR.
+	*
+	* The dCBOR canonical encoding rules for floating point values:
+	*
+	* - Numeric reduction: a float with zero fractional part in
+	*   [-2^64, 2^64-1] is encoded as an integer (42.0 becomes 42)
+	* - Other values use the smallest width (f16, f32, f64) that preserves them
+	* - Every NaN is encoded as the single representation 0xf97e00
+	* - Positive and negative infinity are encoded as half-precision floats
+	*
+	* @module float
+	*/
+	/**
+	* Canonical NaN representation in CBOR: 0xf97e00
+	*/
+	var CBOR_NAN = new Uint8Array([
+		249,
+		126,
+		0
+	]);
+	/**
+	* Check if a number has a fractional part.
+	*/
+	var hasFractionalPart = (n) => n !== Math.floor(n);
+	/**
+	* Read a big-endian IEEE-754 double from the first 8 bytes of `data`.
+	* @internal
+	*/
+	var binary64ToNumber = (data) => new DataView(data.buffer, data.byteOffset, data.byteLength).getFloat64(0, false);
+	/**
+	* Encode a number as 4 big-endian bytes of an IEEE-754 single (f32).
+	*/
+	var numberToBinary32 = (n) => {
+		const data = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(data.buffer).setFloat32(0, n, false);
+		return data;
+	};
+	/**
+	* Read a big-endian IEEE-754 single (f32) from the first 4 bytes of `data`.
+	*/
+	var binary32ToNumber = (data) => new DataView(data.buffer, data.byteOffset, data.byteLength).getFloat32(0, false);
+	var f32ScratchView = /* @__PURE__ */ new DataView(/* @__PURE__ */ new ArrayBuffer(4));
+	/**
+	* Compute the 16-bit pattern of the IEEE-754 half-precision value nearest `n`,
+	* rounding ties to even.
+	*
+	* A value is only stored as a half after the round-trip probe
+	* (`binary16ToNumber(numberToBinary16(n)) === n`) succeeds, so stored values
+	* never round; the rounding makes that probe, and the reference's
+	* `f16::from_f32` in `validateCanonicalF32`, answer correctly for any input.
+	*/
+	var float16Bits = (n) => {
+		f32ScratchView.setFloat32(0, n, false);
+		const f = f32ScratchView.getUint32(0, false);
+		const sign = f >>> 16 & 32768;
+		const exp = f >>> 23 & 255;
+		const mant = f & 8388607;
+		if (exp === 255) return sign | (mant !== 0 ? 32256 : 31744);
+		const e = exp - 127 + 15;
+		if (e >= 31) return sign | 31744;
+		if (e <= 0) {
+			if (e < -10) return sign;
+			const significand = mant | 8388608;
+			const shift = 14 - e;
+			let result = significand >>> shift;
+			const remainder = significand & (1 << shift) - 1;
+			const halfway = 1 << shift - 1;
+			if (remainder > halfway || remainder === halfway && (result & 1) === 1) result += 1;
+			return sign | result;
+		}
+		let fraction = mant >>> 13;
+		const remainder = mant & 8191;
+		let exponent = e;
+		if (remainder > 4096 || remainder === 4096 && (fraction & 1) === 1) {
+			fraction += 1;
+			if (fraction === 1024) {
+				fraction = 0;
+				exponent += 1;
+				if (exponent >= 31) return sign | 31744;
+			}
+		}
+		return sign | exponent << 10 | fraction;
+	};
+	/**
+	* Encode a number as 2 big-endian bytes of an IEEE-754 half (f16).
+	*/
+	var numberToBinary16 = (n) => {
+		const bits = float16Bits(n);
+		return new Uint8Array([bits >> 8 & 255, bits & 255]);
+	};
+	/**
+	* Read a big-endian IEEE-754 half (f16) from the first 2 bytes of `data`.
+	*/
+	var binary16ToNumber = (data) => {
+		const bits = data[0] << 8 | data[1];
+		const sign = (bits & 32768) !== 0 ? -1 : 1;
+		const exponent = bits >> 10 & 31;
+		const fraction = bits & 1023;
+		if (exponent === 0) return sign * fraction * 2 ** -24;
+		if (exponent === 31) return fraction !== 0 ? NaN : sign * Infinity;
+		return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
+	};
+	/**
+	* Encode f64 value to CBOR data bytes.
+	* Implements numeric reduction and canonical encoding rules.
+	* @internal
+	*/
+	var f64CborData = (value) => {
+		const n = value;
+		const f = binary32ToNumber(numberToBinary32(n));
+		if (f === n) return f32CborData(f);
+		if (n < 0) {
+			const i128 = ExactI128.exactFromF64(n);
+			if (i128 !== void 0) {
+				const i = ExactU64.exactFromI128(-1n - i128);
+				if (i !== void 0) return encodeVarInt(i, MajorType.Negative);
+			}
+		}
+		const u = ExactU64.exactFromF64(n);
+		if (u !== void 0) return encodeVarInt(u, MajorType.Unsigned);
+		if (Number.isNaN(value)) return CBOR_NAN;
+		const buffer = /* @__PURE__ */ new ArrayBuffer(8);
+		new DataView(buffer).setFloat64(0, n, false);
+		const bytes = new Uint8Array(buffer);
+		return new Uint8Array([251, ...bytes]);
+	};
+	/**
+	* Encode f32 value to CBOR data bytes.
+	* Implements numeric reduction and canonical encoding rules.
+	* @internal
+	*/
+	var f32CborData = (value) => {
+		const n = value;
+		const f = binary16ToNumber(numberToBinary16(n));
+		if (f === n) return f16CborData(f);
+		if (n < 0) {
+			const u = ExactU64.exactFromF32(Math.fround(-1 - n));
+			if (u !== void 0) return encodeVarInt(u, MajorType.Negative);
+		}
+		const u = ExactU32.exactFromF32(n);
+		if (u !== void 0) return encodeVarInt(u, MajorType.Unsigned);
+		if (Number.isNaN(value)) return CBOR_NAN;
+		const bytes = numberToBinary32(n);
+		return new Uint8Array([250, ...bytes]);
+	};
+	/**
+	* Encode f16 value to CBOR data bytes.
+	* Implements numeric reduction and canonical encoding rules.
+	* @internal
+	*/
+	var f16CborData = (value) => {
+		const n = value;
+		if (n < 0) {
+			const u = ExactU64.exactFromF64(-1 - n);
+			if (u !== void 0) return encodeVarInt(u, MajorType.Negative);
+		}
+		const u = ExactU16.exactFromF64(n);
+		if (u !== void 0) return encodeVarInt(u, MajorType.Unsigned);
+		if (Number.isNaN(value)) return CBOR_NAN;
+		const bytes = numberToBinary16(value);
+		return new Uint8Array([249, ...bytes]);
+	};
+	var TWO_POW_63 = 2 ** 63;
+	/**
+	* Rust `n as i64 as f64`: NaN → 0; saturates at the i64 bounds. `i64::MAX`
+	* (2^63 - 1) is not a double, so the saturated image converts back to 2^63,
+	* and every double at or above 2^63 saturates to it.
+	*/
+	var saturatingI64AsF64 = (n) => {
+		if (Number.isNaN(n)) return 0;
+		if (n >= TWO_POW_63) return TWO_POW_63;
+		if (n <= -TWO_POW_63) return -TWO_POW_63;
+		return Math.trunc(n);
+	};
+	/** Rust `n as i32 as f32` for an f32 value: NaN → 0; saturates at the i32 bounds. */
+	var saturatingI32AsF32 = (n) => {
+		if (Number.isNaN(n)) return 0;
+		if (n >= 2147483647) return Math.fround(2147483647);
+		if (n <= -2147483648) return -2147483648;
+		return Math.fround(Math.trunc(n));
+	};
+	/**
+	* `validate_canonical_f16`: a half head is non-canonical when it is
+	* whole-valued (must be an integer) or a NaN other than `0x7e00`.
+	* @internal
+	*/
+	var validateCanonicalF16 = (bits, n) => {
+		if (n === saturatingI64AsF64(n) || Number.isNaN(n) && bits !== 32256) throw CborError$1.nonCanonicalNumeric();
+	};
+	/**
+	* `validate_canonical_f32`: a single head is non-canonical when it fits a half
+	* (including ±0 and ±Infinity), equals its saturating `i32` image, or is NaN.
+	* @internal
+	*/
+	var validateCanonicalF32 = (n) => {
+		if (n === binary16ToNumber(numberToBinary16(n)) || n === saturatingI32AsF32(n) || Number.isNaN(n)) throw CborError$1.nonCanonicalNumeric();
+	};
+	/**
+	* `validate_canonical_f64`: a double head is non-canonical when it fits a
+	* single, equals its saturating `i64` image, or is NaN.
+	* @internal
+	*/
+	var validateCanonicalF64 = (n) => {
+		if (n === Math.fround(n) || n === saturatingI64AsF64(n) || Number.isNaN(n)) throw CborError$1.nonCanonicalNumeric();
+	};
+	var unsignedNode = (value) => ({
+		isCbor: true,
+		type: MajorType.Unsigned,
+		value
+	});
+	var negativeNode = (magnitude) => ({
+		isCbor: true,
+		type: MajorType.Negative,
+		value: magnitude
+	});
+	var floatNode = (value) => ({
+		isCbor: true,
+		type: MajorType.Simple,
+		value: {
+			type: "Float",
+			value
+		}
+	});
+	/** `From<f16> for CBOR`. @internal */
+	var cborNodeFromF16 = (n) => {
+		if (n < 0) {
+			const i = ExactU64.exactFromF64(-1 - n);
+			if (i !== void 0) return negativeNode(i);
+		}
+		const u = ExactU16.exactFromF64(n);
+		if (u !== void 0) return unsignedNode(u);
+		return floatNode(n);
+	};
+	/**
+	* `From<f32> for CBOR`. The negative magnitude is computed in f32 arithmetic
+	* (`-1f32 - n`): `Math.fround(-1 - n)` is exactly that, since a double holds
+	* the difference of two singles with at most one rounding.
+	* @internal
+	*/
+	var cborNodeFromF32 = (n) => {
+		if (n < 0) {
+			const i = ExactU64.exactFromF32(Math.fround(-1 - n));
+			if (i !== void 0) return negativeNode(i);
+		}
+		const u = ExactU32.exactFromF32(n);
+		if (u !== void 0) return unsignedNode(u);
+		return floatNode(n);
+	};
+	/** `From<f64> for CBOR`. @internal */
+	var cborNodeFromF64 = (n) => {
+		if (n < 0) {
+			const i128 = ExactI128.exactFromF64(n);
+			if (i128 !== void 0) {
+				const i = ExactU64.exactFromI128(-1n - i128);
+				if (i !== void 0) return negativeNode(i);
+			}
+		}
+		const u = ExactU64.exactFromF64(n);
+		if (u !== void 0) return unsignedNode(u);
+		return floatNode(n);
+	};
+	/**
+	* UTF-8 validation failure description, mirroring `core::str::Utf8Error`.
+	*
+	* The decoder rejects malformed text with the WHATWG `TextDecoder` (fatal
+	* mode), whose error text is host-defined. To report the same message as the
+	* reference (`str::from_utf8` → `Utf8Error` → `Display`), the failing bytes
+	* are re-scanned here with a port of `core::str::validations::
+	* run_utf8_validation`, which yields the reference's `(valid_up_to,
+	* error_len)` pair.
+	*
+	* @module utf8
+	* @internal
+	*/
+	/**
+	* `core::str::validations::utf8_char_width`: the sequence length a lead byte
+	* announces, or 0 for a byte that can never start a sequence (a continuation
+	* byte `80-bf`, the overlong leads `c0`/`c1`, or `f5-ff`).
+	*/
+	var utf8CharWidth = (lead) => {
+		if (lead < 128) return 1;
+		if (lead < 194) return 0;
+		if (lead < 224) return 2;
+		if (lead < 240) return 3;
+		if (lead < 245) return 4;
+		return 0;
+	};
+	/** A byte that is not a UTF-8 continuation byte (`80-bf`). */
+	var isNotContinuation = (byte) => byte < 128 || byte > 191;
+	/**
+	* Locate the first UTF-8 error in `bytes` the way `run_utf8_validation`
+	* does, or return `undefined` when the bytes are valid.
+	*
+	* `validUpTo` is the index of the offending lead byte. `errorLength` is the
+	* number of bytes to skip (1, 2 or 3) when an invalid byte is present, or
+	* `undefined` when the input ends inside a sequence. A present invalid byte
+	* always beats "incomplete": the continuation bytes are checked one at a
+	* time as they are read.
+	*/
+	var findUtf8Error = (bytes) => {
+		const len = bytes.length;
+		let index = 0;
+		while (index < len) {
+			const first = bytes[index];
+			if (first < 128) {
+				index++;
+				continue;
+			}
+			const start = index;
+			const next = () => {
+				index++;
+				return index < len ? bytes[index] : void 0;
+			};
+			const err = (errorLength) => ({
+				validUpTo: start,
+				errorLength
+			});
+			const width = utf8CharWidth(first);
+			if (width === 2) {
+				const b1 = next();
+				if (b1 === void 0) return err(void 0);
+				if (isNotContinuation(b1)) return err(1);
+			} else if (width === 3) {
+				const b1 = next();
+				if (b1 === void 0) return err(void 0);
+				if (!(first === 224 && b1 >= 160 && b1 <= 191 || first >= 225 && first <= 236 && b1 >= 128 && b1 <= 191 || first === 237 && b1 >= 128 && b1 <= 159 || first >= 238 && first <= 239 && b1 >= 128 && b1 <= 191)) return err(1);
+				const b2 = next();
+				if (b2 === void 0) return err(void 0);
+				if (isNotContinuation(b2)) return err(2);
+			} else if (width === 4) {
+				const b1 = next();
+				if (b1 === void 0) return err(void 0);
+				if (!(first === 240 && b1 >= 144 && b1 <= 191 || first >= 241 && first <= 243 && b1 >= 128 && b1 <= 191 || first === 244 && b1 >= 128 && b1 <= 143)) return err(1);
+				const b2 = next();
+				if (b2 === void 0) return err(void 0);
+				if (isNotContinuation(b2)) return err(2);
+				const b3 = next();
+				if (b3 === void 0) return err(void 0);
+				if (isNotContinuation(b3)) return err(3);
+			} else return err(1);
+			index++;
+		}
+	};
+	/**
+	* `Utf8Error`'s `Display` text for `bytes`, which must be invalid UTF-8:
+	* `invalid utf-8 sequence of N bytes from index I` or `incomplete utf-8 byte
+	* sequence from index I`.
+	*/
+	var utf8ErrorDescription = (bytes) => {
+		const info = findUtf8Error(bytes);
+		if (info === void 0) return "invalid utf-8 sequence";
+		return info.errorLength === void 0 ? `incomplete utf-8 byte sequence from index ${info.validUpTo}` : `invalid utf-8 sequence of ${info.errorLength} bytes from index ${info.validUpTo}`;
+	};
+	var utf8Decoder = new TextDecoder("utf-8", {
+		fatal: true,
+		ignoreBOM: true
+	});
+	/**
+	* A forward-only cursor over the input bytes.
+	*
+	* Decoding advances a single `pos` through one shared `DataView` rather than
+	* slicing a fresh sub-view per nested item and threading a consumed-length back
+	* up the recursion. Every read is bounds-checked against the remaining bytes.
+	*/
+	var ByteReader = class {
+		constructor(data) {
+			_defineProperty(this, "view", void 0);
+			_defineProperty(this, "pos", 0);
+			this.view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+		}
+		get byteLength() {
+			return this.view.byteLength;
+		}
+		get remaining() {
+			return this.view.byteLength - this.pos;
+		}
+		/** Read the byte at `offset` relative to the current position (no advance). */
+		peek(offset) {
+			return this.view.getUint8(this.pos + offset);
+		}
+		/** Advance the cursor by `count` bytes. */
+		advance(count) {
+			this.pos += count;
+		}
+		/** A zero-copy view of `len` bytes at the given absolute offset. */
+		bytesAt(offset, len) {
+			return new Uint8Array(this.view.buffer, this.view.byteOffset + offset, len);
+		}
+	};
+	/**
+	* Decode a single dCBOR item from `data`, enforcing every deterministic
+	* encoding rule (canonical numeric forms, NFC text, map-key order, no
+	* trailing bytes). Throws {@link CborError} on any violation.
+	*
+	* @example
+	* ```typescript
+	* const value = decodeCbor(hexToBytes("a1616101")); // {"a": 1}
+	* expectMap(value).size; // 1
+	* ```
+	*
+	* @throws {CborError} `Underrun` | `UnsupportedHeaderValue` |
+	*   `NonCanonicalNumeric` | `InvalidSimpleValue` | `InvalidUtf8` |
+	*   `NonCanonicalString` | `UnusedData` | `MisorderedMapKey` |
+	*   `DuplicateMapKey` - see {@link CborErrorDetailsByCode}.
+	* @public
+	*
+	* @remarks Decoded byte strings are zero-copy views aliasing the input
+	* buffer - mutating the input after decoding (or mutating the returned
+	* bytes) changes the other side. Call `.slice()` first if you need an
+	* independent copy.
+	*/
+	function decodeCbor(data) {
+		const reader = new ByteReader(data);
+		const cbor = readCbor(reader);
+		const remaining = reader.byteLength - reader.pos;
+		if (remaining !== 0) throw CborError$1.unusedData(remaining);
+		return cbor;
+	}
+	function parseHeader(header) {
+		return {
+			majorType: header >> 5,
+			headerValue: header & 31
+		};
+	}
+	/**
+	* Read a CBOR head (major type + argument) at the cursor, advancing past it.
+	* `varIntLen` is the head length (1/2/3/5/9); the argument value is validated
+	* for canonical minimal-length encoding.
+	*/
+	function readHeaderVarint(reader) {
+		if (reader.remaining < 1) throw CborError$1.underrun();
+		const header = reader.peek(0);
+		const { majorType, headerValue } = parseHeader(header);
+		const dataRemaining = reader.remaining - 1;
+		let value;
+		let varIntLen;
+		if (headerValue <= 23) {
+			value = headerValue;
+			varIntLen = 1;
+		} else if (headerValue === 24) {
+			if (dataRemaining < 1) throw CborError$1.underrun();
+			value = reader.peek(1);
+			if (value < 24) throw CborError$1.nonCanonicalNumeric();
+			varIntLen = 2;
+		} else if (headerValue === 25) {
+			if (dataRemaining < 2) throw CborError$1.underrun();
+			value = (reader.peek(1) << 8 | reader.peek(2)) >>> 0;
+			if (value <= 255 && header !== 249) throw CborError$1.nonCanonicalNumeric();
+			varIntLen = 3;
+		} else if (headerValue === 26) {
+			if (dataRemaining < 4) throw CborError$1.underrun();
+			value = (reader.peek(1) << 24 | reader.peek(2) << 16 | reader.peek(3) << 8 | reader.peek(4)) >>> 0;
+			if (value <= 65535 && header !== 250) throw CborError$1.nonCanonicalNumeric();
+			varIntLen = 5;
+		} else if (headerValue === 27) {
+			if (dataRemaining < 8) throw CborError$1.underrun();
+			const a = BigInt(reader.peek(1)) << 56n;
+			const b = BigInt(reader.peek(2)) << 48n;
+			const c = BigInt(reader.peek(3)) << 40n;
+			const d = BigInt(reader.peek(4)) << 32n;
+			const e = BigInt(reader.peek(5)) << 24n;
+			const f = BigInt(reader.peek(6)) << 16n;
+			const g = BigInt(reader.peek(7)) << 8n;
+			const h = BigInt(reader.peek(8));
+			value = narrowInteger(a | b | c | d | e | f | g | h);
+			if (value <= 4294967295 && header !== 251) throw CborError$1.nonCanonicalNumeric();
+			varIntLen = 9;
+		} else throw CborError$1.unsupportedHeaderValue(headerValue);
+		reader.advance(varIntLen);
+		return {
+			majorType,
+			value,
+			varIntLen
+		};
+	}
+	function readCbor(reader) {
+		if (reader.remaining < 1) throw CborError$1.underrun();
+		const headStart = reader.pos;
+		const { majorType, value, varIntLen } = readHeaderVarint(reader);
+		switch (majorType) {
+			case MajorType.Unsigned: {
+				const cbor = attachMethods({
+					isCbor: true,
+					type: MajorType.Unsigned,
+					value
+				});
+				checkCanonicalEncoding(cbor, reader.bytesAt(headStart, varIntLen));
+				return cbor;
+			}
+			case MajorType.Negative: {
+				const cbor = attachMethods({
+					isCbor: true,
+					type: MajorType.Negative,
+					value
+				});
+				checkCanonicalEncoding(cbor, reader.bytesAt(headStart, varIntLen));
+				return cbor;
+			}
+			case MajorType.ByteString: {
+				if (typeof value === "bigint") throw CborError$1.underrun();
+				if (reader.remaining < value) throw CborError$1.underrun();
+				const bytes = reader.bytesAt(reader.pos, value);
+				reader.advance(value);
+				return attachMethods({
+					isCbor: true,
+					type: MajorType.ByteString,
+					value: bytes
+				});
+			}
+			case MajorType.Text: {
+				if (typeof value === "bigint") throw CborError$1.underrun();
+				if (reader.remaining < value) throw CborError$1.underrun();
+				const textBytes = reader.bytesAt(reader.pos, value);
+				reader.advance(value);
+				let text;
+				try {
+					text = utf8Decoder.decode(textBytes);
+				} catch (_unused) {
+					throw CborError$1.invalidUtf8(utf8ErrorDescription(textBytes));
+				}
+				if (text.normalize("NFC") !== text) throw CborError$1.nonCanonicalString();
+				return attachMethods({
+					isCbor: true,
+					type: MajorType.Text,
+					value: text
+				});
+			}
+			case MajorType.Array: {
+				const items = [];
+				for (let i = 0; i < value; i++) items.push(readCbor(reader));
+				return attachMethods({
+					isCbor: true,
+					type: MajorType.Array,
+					value: items
+				});
+			}
+			case MajorType.Map: {
+				const map = new CborMap();
+				for (let i = 0; i < value; i++) {
+					const key = readCbor(reader);
+					const val = readCbor(reader);
+					map.setNext(key, val);
+				}
+				return attachMethods({
+					isCbor: true,
+					type: MajorType.Map,
+					value: map
+				});
+			}
+			case MajorType.Tagged: {
+				const item = readCbor(reader);
+				return attachMethods({
+					isCbor: true,
+					type: MajorType.Tagged,
+					tag: value,
+					value: item
+				});
+			}
+			case MajorType.Simple: switch (varIntLen) {
+				case 3: {
+					const f = binary16ToNumber(reader.bytesAt(headStart + 1, 2));
+					validateCanonicalF16(Number(value), f);
+					return attachMethods(cborNodeFromF16(f));
+				}
+				case 5: {
+					const f = binary32ToNumber(reader.bytesAt(headStart + 1, 4));
+					validateCanonicalF32(f);
+					return attachMethods(cborNodeFromF32(f));
+				}
+				case 9: {
+					const f = binary64ToNumber(reader.bytesAt(headStart + 1, 8));
+					validateCanonicalF64(f);
+					return attachMethods(cborNodeFromF64(f));
+				}
+				default: switch (value) {
+					case 20: return attachMethods({
+						isCbor: true,
+						type: MajorType.Simple,
+						value: { type: "False" }
+					});
+					case 21: return attachMethods({
+						isCbor: true,
+						type: MajorType.Simple,
+						value: { type: "True" }
+					});
+					case 22: return attachMethods({
+						isCbor: true,
+						type: MajorType.Simple,
+						value: { type: "Null" }
+					});
+					default: throw CborError$1.invalidSimpleValue();
+				}
+			}
+		}
+	}
+	function checkCanonicalEncoding(cbor, buf) {
+		if (!areBytesEqual(buf, encodeCbor(cbor))) throw CborError$1.nonCanonicalNumeric();
+	}
+	/**
+	* Extract the native JavaScript value from a CBOR value, decoding it first
+	* when given bytes. Maps come back as `CborMap` and tagged values as `Cbor`
+	* (see {@link CborNative}).
+	*/
+	var extractCbor = (cbor) => {
+		let c;
+		if (cbor instanceof Uint8Array) c = decodeCbor(cbor);
+		else c = cbor;
+		switch (c.type) {
+			case MajorType.Unsigned: return c.value;
+			case MajorType.Negative: if (typeof c.value === "bigint") return -c.value - 1n;
+			else return -c.value - 1;
+			case MajorType.ByteString: return c.value;
+			case MajorType.Text: return c.value;
+			case MajorType.Array: return c.value.map(extractCbor);
+			case MajorType.Map: return c.value;
+			case MajorType.Tagged: return c;
+			case MajorType.Simple: {
+				const simple = c.value;
+				switch (simple.type) {
+					case "True": return true;
+					case "False": return false;
+					case "Null": return null;
+					case "Float": return simple.value;
+					default: return simple;
+				}
+			}
+			default: return c;
+		}
+	};
+	/**
+	* A deterministic CBOR map: maps with the same content encode identically,
+	* regardless of insertion order.
+	*
+	* - Entries are kept in lexicographic order of their encoded key bytes
+	* - Setting a key whose encoding is already present replaces that entry
+	* - Keys and values can be any type that can be converted to CBOR
+	*
+	* `CborMap` mirrors the JS `Map` protocol: `set`, `get`, `getOrThrow`, `has`,
+	* `delete`, `clear`, `size`, `keys()`, `values()`, `entries()`, `forEach`,
+	* iteration. `get` returns the stored `Cbor` node, like `entries()`; extract
+	* natives explicitly with `extractCbor(map.getOrThrow(k))`.
+	*
+	* @module map
+	*/
+	/**
+	* A deterministic CBOR map implementation.
+	*
+	* Maps are always encoded with keys sorted lexicographically by their
+	* encoded CBOR representation, ensuring deterministic encoding.
+	*/
+	var CborMap = (_Symbol$toStringTag$1 = Symbol.toStringTag, _Symbol$iterator$1 = Symbol.iterator, class {
+		/** Debug label: `Object.prototype.toString` reports `[object CborMap]`. */
+		get [_Symbol$toStringTag$1]() {
+			return "CborMap";
+		}
+		/**
+		* Creates a new, empty CBOR Map.
+		* Optionally initializes from a JavaScript Map (every key and value must
+		* itself be encodable).
+		*/
+		constructor(map) {
+			_defineProperty(this, "_dict", void 0);
+			this._dict = new SortedByteMap();
+			if (map !== void 0) for (const [key, value] of map.entries()) this.set(key, value);
+		}
+		/**
+		* Inserts a key-value pair into the map (replacing any entry whose key has
+		* the same canonical encoding). Any insertion order is accepted - entries
+		* are kept in canonical ascending encoded-key order.
+		*
+		* @example
+		* ```typescript
+		* const m = new CborMap();
+		* m.set("z", 1);
+		* m.set(10, "ten"); // sorts before "z" in the encoding
+		* encodeCbor(m);    // deterministic regardless of insertion order
+		* ```
+		* @public
+		*/
+		set(key, value) {
+			const keyCbor = cbor(key);
+			const valueCbor = cbor(value);
+			const keyData = encodeCbor(keyCbor);
+			this._dict.set(keyData, {
+				key: keyCbor,
+				value: valueCbor
+			});
+		}
+		_makeKey(key) {
+			return encodeCbor(cbor(key));
+		}
+		/**
+		* Get the stored `Cbor` node for a key, or `undefined` if absent.
+		*
+		* To read a native value, compose explicitly:
+		*
+		* ```typescript
+		* asNumber(map.get("age"));          // number | undefined, checked
+		* extractCbor(map.getOrThrow("age")); // CborNative, throws if absent
+		* ```
+		* @public
+		*/
+		get(key) {
+			var _this$_dict$get;
+			return (_this$_dict$get = this._dict.get(this._makeKey(key))) === null || _this$_dict$get === void 0 ? void 0 : _this$_dict$get.value;
+		}
+		/**
+		* Get the stored `Cbor` node for a key.
+		*
+		* @throws {CborError} `MissingMapKey` - the key is not present.
+		*/
+		getOrThrow(key) {
+			const value = this.get(key);
+			if (value === void 0) throw CborError$1.missingMapKey();
+			return value;
+		}
+		delete(key) {
+			const keyData = this._makeKey(key);
+			const existed = this._dict.has(keyData);
+			this._dict.delete(keyData);
+			return existed;
+		}
+		has(key) {
+			return this._dict.has(this._makeKey(key));
+		}
+		clear() {
+			this._dict = new SortedByteMap();
+		}
+		/** The number of entries in the map. */
+		get size() {
+			return this._dict.size;
+		}
+		/**
+		* Get the entries of the map as an array, sorted in canonical ascending
+		* encoded-key order.
+		*
+		* @internal Public because the encoder, diagnostic formatter, and hex
+		* annotator consume it cross-module; not part of the supported surface.
+		*/
+		get entriesArray() {
+			return this._dict.map((value, _key) => ({
+				key: value.key,
+				value: value.value
+			}));
+		}
+		/**
+		* The stored entry at position `i` in canonical ascending encoded-key
+		* order; the caller keeps `i` within `[0, size)`.
+		*
+		* @internal Positional access for the encoder and for structural equality,
+		* which walk a map (or two maps in lockstep) without materializing
+		* `entriesArray`; not part of the supported surface.
+		*/
+		entryAt(i) {
+			return this._dict.valueAt(i);
+		}
+		/**
+		* The encoded CBOR bytes of the key at position `i` - the bytes the entry
+		* is sorted by, computed once when it was inserted.
+		*
+		* @internal The encoder writes these directly, as the reference's
+		* `Map::cbor_data` writes its stored `MapKey`, instead of re-encoding the
+		* key node; not part of the supported surface.
+		*/
+		encodedKeyAt(i) {
+			return this._dict.keyAt(i);
+		}
+		/** Iterate keys in canonical (sorted encoded-key) order. */
+		*keys() {
+			for (const entry of this.entriesArray) yield entry.key;
+		}
+		/** Iterate values in canonical key order. */
+		*values() {
+			for (const entry of this.entriesArray) yield entry.value;
+		}
+		/**
+		* Iterate `[key, value]` tuples in canonical key order (the JS
+		* `Map.entries()` shape).
+		*/
+		*entries() {
+			for (const entry of this.entriesArray) yield [entry.key, entry.value];
+		}
+		/** JS `Map.forEach` mirror (value first, then key, then the map). */
+		forEach(callback, thisArg) {
+			for (const entry of this.entriesArray) callback.call(thisArg, entry.value, entry.key, this);
+		}
+		*[_Symbol$iterator$1]() {
+			for (const entry of this.entriesArray) yield [entry.key, entry.value];
+		}
+		/**
+		* Append a key-value pair whose encoded key must sort strictly after every
+		* existing key.
+		*
+		* @internal The decoder's append path; not part of the supported surface.
+		* @throws {CborError} `DuplicateMapKey` for a repeated key,
+		*   `MisorderedMapKey` for a key out of ascending order.
+		*/
+		setNext(key, value) {
+			const keyCbor = cbor(key);
+			const newKey = encodeCbor(keyCbor);
+			if (this._dict.has(newKey)) throw CborError$1.duplicateMapKey();
+			const greatest = this._dict.maxKey();
+			if (greatest !== void 0) {
+				if (lexicographicallyCompareBytes(newKey, greatest) <= 0) throw CborError$1.misorderedMapKey();
+			}
+			this._dict.appendGreatest(newKey, {
+				key: keyCbor,
+				value: cbor(value)
+			});
+		}
+		/**
+		* Convert to a plain JavaScript `Map` of extracted native values.
+		* Tagged values come back as `Cbor` nodes and nested maps as `CborMap`
+		* (the {@link CborNative} asymmetries).
+		*/
+		toMap() {
+			const map = /* @__PURE__ */ new Map();
+			for (const entry of this.entriesArray) map.set(extractCbor(entry.key), extractCbor(entry.value));
+			return map;
+		}
+	});
+	/**
+	* Encodes the simple value to its raw CBOR byte representation.
+	*
+	* Returns the CBOR bytes that represent this simple value according to the
+	* dCBOR deterministic encoding rules:
+	* - `False` encodes as `0xf4`
+	* - `True` encodes as `0xf5`
+	* - `Null` encodes as `0xf6`
+	* - `Float` values reduce to an integer when whole, otherwise encode in the
+	*   shortest IEEE 754 width that preserves the value.
+	*/
+	var simpleCborData = (simple) => {
+		switch (simple.type) {
+			case "False": return encodeVarInt(20, MajorType.Simple);
+			case "True": return encodeVarInt(21, MajorType.Simple);
+			case "Null": return encodeVarInt(22, MajorType.Simple);
+			case "Float": return f64CborData(simple.value);
+		}
+	};
+	Uint8Array.fromHex;
+	/**
+	* Convert bytes to a lowercase hex string.
+	*
+	* Delegates to the native `Uint8Array.prototype.toHex` where available.
+	*/
+	var bytesToHex = (bytes) => {
+		const native = bytes.toHex;
+		if (typeof native === "function") return native.call(bytes);
+		let out = "";
+		for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
 		return out;
 	};
-	/** `uint` keys ≤ 2^32 are the only map keys the registry uses. */
-	var keyOf = (value) => {
-		if (value.kind !== "uint" || value.value > 4294967295) fail$3();
-		return value.value;
+	/**
+	* The dCBOR value core: the `Cbor` union type, the polymorphic constructor
+	* `cbor()`, the encoder entry `encodeCbor()`, and the tagged-value
+	* constructor `taggedValue()`.
+	*
+	* ## The API in one paragraph
+	*
+	* Construct with `cbor(input)` (the single polymorphic constructor) or
+	* `taggedValue(tag, content)` (the only explicit tagged-value constructor);
+	* custom types participate by implementing the one structural protocol
+	* `ToCbor { toCbor(): Cbor }`. Encode with `encodeCbor(value)`. Decode with
+	* `decodeCbor(bytes)` (throws) or `tryDecode(bytes)` (returns `Result`).
+	* Read with the free `isX`/`asX`/`expectX` accessor functions. The only
+	* instance conveniences on a `Cbor` value are `toData()`, `toHex()`, and a
+	* cheap `toString()`.
+	*
+	* @module cbor
+	*/
+	/**
+	* The instance methods shared by every `Cbor` value: exactly three cheap
+	* conveniences (plus debug symbols below). Everything else is a free function
+	* so decode-only bundles never carry the diagnostic formatter, hex annotator,
+	* tag store, or walker.
+	*
+	* `String(c)`/template literals/`console.log` produce `Cbor(0x…)`. Diagnostic
+	* rendering lives in `@blockchaincommons/dcbor/diagnostic`; opt-in diag-flavored debug
+	* output lives in `@blockchaincommons/dcbor/debug` (`installDebugHooks()`).
+	*/
+	var CBOR_METHODS = {
+		toData() {
+			return encodeCbor(this);
+		},
+		toHex() {
+			return bytesToHex(encodeCbor(this));
+		},
+		toString() {
+			return `Cbor(0x${bytesToHex(encodeCbor(this))})`;
+		},
+		[Symbol.toStringTag]: "Cbor",
+		[Symbol.for("nodejs.util.inspect.custom")]() {
+			return this.toString();
+		}
 	};
-	var tagged$1 = (value, tag) => {
-		if (value.kind !== "tag" || value.tag !== tag) fail$3();
-		return value.item;
+	/**
+	* Decorate a bare CBOR value (`{ isCbor, type, value[, tag] }`) with the shared
+	* instance methods. The methods live on {@link CBOR_METHODS} and are installed
+	* via the prototype - constructed with `Object.create` (not `setPrototypeOf`,
+	* which would drop the object off V8's fast path). Only the handful of data
+	* properties are own-properties; the methods are shared, not per-object.
+	*
+	* @internal
+	*/
+	var attachMethods = (obj) => {
+		const decorated = Object.create(CBOR_METHODS);
+		return Object.assign(decorated, obj);
 	};
-	var keyPath = (value) => {
-		var _components;
-		if (value.kind !== "map") fail$3();
-		let components;
-		let sourceFingerprint;
-		let depth;
-		for (const [key, entry] of value.entries) switch (keyOf(key)) {
-			case 1: {
-				if (entry.kind !== "array") fail$3();
-				const flat = entry.items;
-				if (flat.length % 2 !== 0) fail$3();
-				const parsed = [];
-				for (let i = 0; i < flat.length; i += 2) {
-					const index = flat[i];
-					const flag = flat[i + 1];
-					if (index === void 0 || flag === void 0) fail$3();
-					if (index.kind !== "uint" && !(index.kind === "array" && index.items.length === 0)) fail$3();
-					parsed.push({
-						index: index.kind === "uint" ? index.value : void 0,
-						hardened: bool(flag)
-					});
+	var CBOR_FALSE = attachMethods({
+		isCbor: true,
+		type: MajorType.Simple,
+		value: { type: "False" }
+	});
+	var CBOR_TRUE = attachMethods({
+		isCbor: true,
+		type: MajorType.Simple,
+		value: { type: "True" }
+	});
+	var CBOR_NULL = attachMethods({
+		isCbor: true,
+		type: MajorType.Simple,
+		value: { type: "Null" }
+	});
+	var hasTaggedCbor = (value) => {
+		return typeof value === "object" && value !== null && "taggedCbor" in value && typeof value.taggedCbor === "function";
+	};
+	var hasToCbor = (value) => {
+		return typeof value === "object" && value !== null && "toCbor" in value && typeof value.toCbor === "function";
+	};
+	/**
+	* Convert any supported value to its CBOR representation - the single
+	* polymorphic constructor.
+	*
+	* Custom types participate by implementing {@link ToCbor}
+	* (`toCbor(): Cbor` - the `toJSON` precedent). Tagged values are built with
+	* {@link taggedValue}.
+	*
+	* @example
+	* ```typescript
+	* cbor(42);                          // integer
+	* cbor("héllo");                     // text (NFC-normalized when encoded)
+	* cbor([1, "two", true, null]);      // array
+	* cbor(new Map([["k", 1]]));         // map (canonical key order)
+	* cbor({ name: "Alice", age: 30 });  // plain object -> map
+	* ```
+	*
+	* @throws {CborError} `OutOfRange` - bigint outside `[-(2^64), 2^64 - 1]`.
+	* @throws {CborError} `Custom` - unsupported input type, or one of the two
+	*   directive errors below.
+	* @public
+	*
+	* ## Directive errors
+	*
+	* Two input shapes throw a directive `CborError` because encoding them
+	* silently would produce ambiguous or divergent bytes:
+	*
+	* - plain objects shaped exactly `{tag, value}`: use
+	*   `taggedValue(tag, content)` for a tagged value, or add/rename a key for
+	*   a map;
+	* - objects implementing `taggedCbor()` but not `toCbor()`: add
+	*   `toCbor() { return this.taggedCbor(); }`.
+	*/
+	var cbor = (value) => {
+		if (isCbor(value) && "toData" in value) return value;
+		if (isCbor(value)) return attachMethods(value);
+		let result;
+		if (isCborNumber(value)) {
+			if (typeof value === "number" && Number.isNaN(value)) result = {
+				isCbor: true,
+				type: MajorType.Simple,
+				value: {
+					type: "Float",
+					value: NaN
 				}
-				components = parsed;
+			};
+			else if (typeof value === "number" && hasFractionalPart(value)) result = {
+				isCbor: true,
+				type: MajorType.Simple,
+				value: {
+					type: "Float",
+					value
+				}
+			};
+			else if (value == Infinity) result = {
+				isCbor: true,
+				type: MajorType.Simple,
+				value: {
+					type: "Float",
+					value: Infinity
+				}
+			};
+			else if (value == -Infinity) result = {
+				isCbor: true,
+				type: MajorType.Simple,
+				value: {
+					type: "Float",
+					value: -Infinity
+				}
+			};
+			else if (typeof value === "number" && !Number.isSafeInteger(value)) {
+				const big = BigInt(value);
+				if (big >= 0n && big <= 18446744073709551615n) result = {
+					isCbor: true,
+					type: MajorType.Unsigned,
+					value: big
+				};
+				else if (big < 0n && big >= CBOR_INT_MIN) result = {
+					isCbor: true,
+					type: MajorType.Negative,
+					value: -big - 1n
+				};
+				else result = {
+					isCbor: true,
+					type: MajorType.Simple,
+					value: {
+						type: "Float",
+						value
+					}
+				};
+			} else if (typeof value === "bigint" && (value > 18446744073709551615n || value < CBOR_INT_MIN)) throw CborError$1.outOfRange();
+			else if (value < 0) {
+				if (typeof value === "bigint") result = {
+					isCbor: true,
+					type: MajorType.Negative,
+					value: -value - 1n
+				};
+				else result = {
+					isCbor: true,
+					type: MajorType.Negative,
+					value: -value - 1
+				};
+			} else result = {
+				isCbor: true,
+				type: MajorType.Unsigned,
+				value
+			};
+		} else if (typeof value === "string") result = {
+			isCbor: true,
+			type: MajorType.Text,
+			value
+		};
+		else if (value === null || value === void 0) return CBOR_NULL;
+		else if (value === true) return CBOR_TRUE;
+		else if (value === false) return CBOR_FALSE;
+		else if (Array.isArray(value)) result = {
+			isCbor: true,
+			type: MajorType.Array,
+			value: value.map(cbor)
+		};
+		else if (value instanceof Uint8Array) result = {
+			isCbor: true,
+			type: MajorType.ByteString,
+			value
+		};
+		else if (value instanceof CborMap) result = {
+			isCbor: true,
+			type: MajorType.Map,
+			value
+		};
+		else if (value instanceof Map) result = {
+			isCbor: true,
+			type: MajorType.Map,
+			value: new CborMap(value)
+		};
+		else if (value instanceof Set) result = {
+			isCbor: true,
+			type: MajorType.Array,
+			value: Array.from(value).map(cbor)
+		};
+		else if (hasToCbor(value)) return value.toCbor();
+		else if (hasTaggedCbor(value)) throw CborError$1.custom("objects implementing taggedCbor() are not auto-wrapped by cbor(); implement toCbor() (e.g. `toCbor() { return this.taggedCbor(); }`)");
+		else if (typeof value === "object" && "tag" in value && "value" in value) {
+			const keys = Object.keys(value);
+			if (keys.length === 2 && keys.includes("tag") && keys.includes("value")) throw CborError$1.custom("plain { tag, value } objects are ambiguous and do not encode as tagged values; use taggedValue(tag, content) for a tagged value, or add/rename a key to encode a map");
+			const map = new CborMap();
+			for (const [key, val] of Object.entries(value)) map.set(cbor(key), cbor(val));
+			result = {
+				isCbor: true,
+				type: MajorType.Map,
+				value: map
+			};
+		} else if (typeof value === "object") {
+			const map = new CborMap();
+			for (const [key, val] of Object.entries(value)) map.set(cbor(key), cbor(val));
+			result = {
+				isCbor: true,
+				type: MajorType.Map,
+				value: map
+			};
+		} else throw CborError$1.custom("Unsupported type for CBOR encoding");
+		return attachMethods(result);
+	};
+	var textEncoder$1 = new TextEncoder();
+	/**
+	* dCBOR requires every encoded text string to be in Unicode Normalization
+	* Form C. Like the reference (`cbor.rs`: `x.nfc().collect()` inside
+	* `cbor_data`), normalization happens here at encode time, so the node keeps
+	* the string it was built from. Strings whose code units are all below U+0300
+	* (the first combining mark) contain nothing that can compose or decompose
+	* and are already NFC; skipping `normalize` for them keeps the ASCII/Latin-1
+	* hot path allocation-free.
+	*/
+	var toNfc = (text) => {
+		for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) >= 768) return text.normalize("NFC");
+		return text;
+	};
+	/**
+	* Write a CBOR value into `writer`. The whole tree encodes into one growable
+	* buffer, so nested containers don't allocate-and-concatenate a fresh array
+	* per level.
+	*/
+	var writeCborInto = (writer, value) => {
+		const c = cbor(value);
+		switch (c.type) {
+			case MajorType.Unsigned:
+				writeVarInt(writer, c.value, MajorType.Unsigned);
+				return;
+			case MajorType.Negative:
+				writeVarInt(writer, c.value, MajorType.Negative);
+				return;
+			case MajorType.ByteString:
+				if (c.value instanceof Uint8Array) {
+					writeVarInt(writer, c.value.length, MajorType.ByteString);
+					writer.writeBytes(c.value);
+					return;
+				}
 				break;
+			case MajorType.Text:
+				if (typeof c.value === "string") {
+					const utf8Bytes = textEncoder$1.encode(toNfc(c.value));
+					writeVarInt(writer, utf8Bytes.length, MajorType.Text);
+					writer.writeBytes(utf8Bytes);
+					return;
+				}
+				break;
+			case MajorType.Tagged:
+				if (typeof c.tag === "bigint" || typeof c.tag === "number") {
+					writeVarInt(writer, c.tag, MajorType.Tagged);
+					writeCborInto(writer, c.value);
+					return;
+				}
+				break;
+			case MajorType.Simple:
+				writer.writeBytes(simpleCborData(c.value));
+				return;
+			case MajorType.Array:
+				writeVarInt(writer, c.value.length, MajorType.Array);
+				for (const item of c.value) writeCborInto(writer, item);
+				return;
+			case MajorType.Map: {
+				const map = c.value;
+				const n = map.size;
+				writeVarInt(writer, n, MajorType.Map);
+				for (let i = 0; i < n; i++) {
+					writer.writeBytes(map.encodedKeyAt(i));
+					writeCborInto(writer, map.entryAt(i).value);
+				}
+				return;
 			}
-			case 2:
-				sourceFingerprint = fingerprint(entry);
-				break;
-			case 3: depth = uint(entry);
 		}
-		return {
-			components: (_components = components) !== null && _components !== void 0 ? _components : [],
-			sourceFingerprint,
-			depth
-		};
+		throw CborError$1.wrongType();
 	};
-	var coinInfo = (value) => {
-		if (value.kind !== "map") fail$3();
-		let coinType;
-		let network;
-		for (const [key, entry] of value.entries) switch (keyOf(key)) {
-			case 1:
-				coinType = uint(entry);
-				break;
-			case 2: network = uint(entry);
+	/**
+	* Encode a value to deterministic CBOR bytes. Accepts anything `cbor()`
+	* accepts; equal values always produce identical bytes (dCBOR determinism).
+	*
+	* @example
+	* ```typescript
+	* encodeCbor({ a: 1 });            // Uint8Array [0xa1, 0x61, 0x61, 0x01]
+	* bytesToHex(encodeCbor("Hello")); // "6548656c6c6f"
+	* ```
+	*
+	* @throws {CborError} Whatever `cbor(value)` throws for unsupported inputs
+	*   (`OutOfRange`, `Custom`).
+	* @remarks The decoder's canonicality check re-encodes every decoded value
+	*   through this function, so it is wire-critical.
+	* @public
+	*/
+	var encodeCbor = (value) => {
+		const c = cbor(value);
+		switch (c.type) {
+			case MajorType.Unsigned: return encodeVarInt(c.value, MajorType.Unsigned);
+			case MajorType.Negative: return encodeVarInt(c.value, MajorType.Negative);
+			case MajorType.Simple: return simpleCborData(c.value);
+			default: {
+				const writer = new BufWriter();
+				writeCborInto(writer, c);
+				return writer.toBytes();
+			}
 		}
-		return {
-			coinType,
-			network
-		};
 	};
-	var hdKey = (value) => {
-		if (value.kind !== "map") fail$3();
-		let isMaster = false;
-		let isPrivate = false;
-		let key;
-		let chainCode;
-		let useInfo;
-		let origin;
-		let children;
-		let parentFingerprint;
-		let name;
-		let note;
-		for (const [field, entry] of value.entries) switch (keyOf(field)) {
-			case 1:
-				isMaster = bool(entry);
-				break;
-			case 2:
-				isPrivate = bool(entry);
-				break;
-			case 3:
-				key = bytes(entry);
-				break;
-			case 4:
-				chainCode = bytes(entry);
-				break;
-			case 5:
-				useInfo = coinInfo(tagged$1(entry, 305));
-				break;
-			case 6:
-				origin = keyPath(tagged$1(entry, 304));
-				break;
-			case 7:
-				children = keyPath(tagged$1(entry, 304));
-				break;
-			case 8:
-				parentFingerprint = fingerprint(entry);
-				break;
-			case 9:
-				name = text(entry);
-				break;
-			case 10: note = text(entry);
+	/**
+	* Construct a tagged value - the only explicit tagged-value constructor.
+	*
+	* @example
+	* ```typescript
+	* taggedValue(1, 1675854714);        // epoch date, tag 1
+	* taggedValue(Tag.from(32), "https://example.com/"); // URI, tag 32
+	* ```
+	*
+	* @param tag - The tag number (`number | bigint`) or a `Tag` object. Its
+	*   `.value` goes on the wire; a `.name` is kept on the node (see
+	*   `CborTaggedType.tagName`) so a `WrongTag` error can name the tag that
+	*   was found, as the reference does.
+	* @param content - Anything `cbor()` accepts.
+	* @public
+	*/
+	var taggedValue = (tag, content) => {
+		if (typeof tag === "object" && "value" in tag) {
+			if (tag.name !== void 0) return attachMethods({
+				isCbor: true,
+				type: MajorType.Tagged,
+				tag: tag.value,
+				tagName: tag.name,
+				value: cbor(content)
+			});
+			return attachMethods({
+				isCbor: true,
+				type: MajorType.Tagged,
+				tag: tag.value,
+				value: cbor(content)
+			});
 		}
+		return attachMethods({
+			isCbor: true,
+			type: MajorType.Tagged,
+			tag,
+			value: cbor(content)
+		});
+	};
+	/**
+	* Tag registry implementation.
+	*
+	* Stores tags with their names and optional summarizer functions.
+	*/
+	var TagsStore = (_Symbol$toStringTag2$1 = Symbol.toStringTag, class TagsStore {
+		/** Debug label: `Object.prototype.toString` reports `[object TagsStore]`. */
+		get [_Symbol$toStringTag2$1]() {
+			return "TagsStore";
+		}
+		constructor() {
+			_defineProperty(this, "_tagsByValue", /* @__PURE__ */ new Map());
+			_defineProperty(this, "_tagsByName", /* @__PURE__ */ new Map());
+			_defineProperty(this, "_summarizers", /* @__PURE__ */ new Map());
+		}
+		/**
+		* Insert a tag into the registry.
+		*
+		* - Throws if the tag name is undefined or empty
+		* - Throws if a tag with the same value exists with a different name
+		* - Allows re-registering the same tag value with the same name
+		*
+		* The store holds frozen tags, as the reference stores clones it owns: a
+		* frozen argument (every `Tag.from` result) is kept by identity, an
+		* unfrozen object literal is copied, so later mutation of the caller's
+		* object never changes a lookup.
+		*
+		* @param tag - The tag to register (must have a non-empty name)
+		* @throws {CborError} `Custom` if the tag has no name, an empty name, or
+		*   conflicts with an existing registration
+		*
+		* @example
+		* ```typescript
+		* const store = new TagsStore();
+		* store.register(Tag.from(12345, 'myCustomTag'));
+		* ```
+		*/
+		register(tag) {
+			const name = tag.name;
+			if (name === void 0 || name === "") throw CborError$1.custom(`Tag ${tag.value} must have a non-empty name`);
+			const key = this._valueKey(tag.value);
+			const existing = this._tagsByValue.get(key);
+			if ((existing === null || existing === void 0 ? void 0 : existing.name) !== void 0 && existing.name !== name) throw CborError$1.custom(`Attempt to register tag: ${tag.value} '${existing.name}' with different name: '${name}'`);
+			const stored = Object.isFrozen(tag) ? tag : Tag.from(tag.value, name);
+			this._tagsByValue.set(key, stored);
+			this._tagsByName.set(name, stored);
+		}
+		/**
+		* Register multiple tags; the conflict-throwing validation in `register()`
+		* applies per tag. Accepts any iterable, including a `readonly` array.
+		*/
+		registerAll(tags) {
+			for (const tag of tags) this.register(tag);
+		}
+		/**
+		* An independent copy of this store (the reference's `#[derive(Clone)]`
+		* on `TagsStore`).
+		*
+		* The clone holds the same frozen tags by identity and shares the
+		* summarizer functions, as the reference's `Arc` summarizers are shared.
+		* Registering a tag or setting a summarizer on either store leaves the
+		* other unchanged. The clone is a plain store; it never replaces the
+		* global store.
+		*/
+		clone() {
+			const copy = new TagsStore();
+			for (const [key, tag] of this._tagsByValue) copy._tagsByValue.set(key, tag);
+			for (const [name, tag] of this._tagsByName) copy._tagsByName.set(name, tag);
+			for (const [key, summarizer] of this._summarizers) copy._summarizers.set(key, summarizer);
+			return copy;
+		}
+		/**
+		* Register a custom summarizer function for a tag.
+		*
+		* @param tagValue - The numeric tag value
+		* @param summarizer - The summarizer function
+		*
+		* @example
+		* ```typescript
+		* store.setSummarizer(1, (cbor, flat) => ({
+		*   ok: true,
+		*   value: `Date(${extractCbor(cbor)})`,
+		* }));
+		* ```
+		*/
+		setSummarizer(tagValue, summarizer) {
+			const key = this._valueKey(tagValue);
+			this._summarizers.set(key, summarizer);
+		}
+		assignedNameForTag(tag) {
+			var _this$_tagsByValue$ge;
+			const key = this._valueKey(tag.value);
+			return (_this$_tagsByValue$ge = this._tagsByValue.get(key)) === null || _this$_tagsByValue$ge === void 0 ? void 0 : _this$_tagsByValue$ge.name;
+		}
+		nameForTag(tag) {
+			var _this$assignedNameFor;
+			return (_this$assignedNameFor = this.assignedNameForTag(tag)) !== null && _this$assignedNameFor !== void 0 ? _this$assignedNameFor : tag.value.toString();
+		}
+		tagForValue(value) {
+			const key = this._valueKey(value);
+			return this._tagsByValue.get(key);
+		}
+		tagForName(name) {
+			return this._tagsByName.get(name);
+		}
+		nameForValue(value) {
+			const tag = this.tagForValue(value);
+			return tag !== void 0 ? this.nameForTag(tag) : value.toString();
+		}
+		summarizer(tag) {
+			const key = this._valueKey(tag);
+			return this._summarizers.get(key);
+		}
+		/** Map key for a tag value, equal for a `number` and the same `bigint`. */
+		_valueKey(value) {
+			return value.toString();
+		}
+	});
+	/**
+	* The slot the global store lives in. It is keyed on `globalThis` by a
+	* registered symbol rather than held in a module variable so that every copy
+	* of this module in a process - the ESM and CommonJS builds, or two bundled
+	* copies - resolves the SAME store, the way the reference's `GLOBAL_TAGS`
+	* static is one per process. The `@1` names the store's major version; bump
+	* it on a breaking `TagsStore` change so incompatible copies do not share.
+	*/
+	var GLOBAL_TAGS_KEY = Symbol.for("@blockchaincommons/dcbor/global-tags-store@1");
+	/**
+	* Get the global tags store instance.
+	*
+	* Creates the instance on first access. One store per process for dcbor
+	* 1.x, shared by the ESM and CommonJS builds (see `GLOBAL_TAGS_KEY`).
+	*
+	* @returns The global TagsStore instance
+	*
+	* @example
+	* ```typescript
+	* const store = getGlobalTagsStore();
+	* store.register(Tag.from(999, 'myTag'));
+	* ```
+	*/
+	var getGlobalTagsStore = () => {
+		var _globalThis, _globalThis$GLOBAL_TA;
+		return (_globalThis$GLOBAL_TA = (_globalThis = globalThis)[GLOBAL_TAGS_KEY]) !== null && _globalThis$GLOBAL_TA !== void 0 ? _globalThis$GLOBAL_TA : _globalThis[GLOBAL_TAGS_KEY] = new TagsStore();
+	};
+	// node_modules/.bun/@blockchaincommons+dcbor@1.0.0-beta.5/node_modules/@blockchaincommons/dcbor/dist/index.mjs
+	init_defineProperty();
+	var _CborDate;
+	var _Symbol$toStringTag2;
+	/**
+	* Validate that a CBOR value has one of the expected tags.
+	*
+	* @param cbor - CBOR value to validate
+	* @param expectedTags - Array of valid tags
+	* @returns The matching tag
+	* @throws {CborError} `WrongType` if the value is not tagged; `WrongTag` if
+	*   the tag matches none of `expectedTags`.
+	*/
+	var validateTag = (cbor, expectedTags) => {
+		if (cbor.type !== MajorType.Tagged) throw CborError$1.wrongType();
+		const tagValue = cbor.tag;
+		const matchingTag = expectedTags.find((t) => tagValuesEqual(t.value, tagValue));
+		if (matchingTag === void 0) throw CborError$1.wrongTag(expectedTags[0], Tag.from(tagValue, cbor.tagName));
+		return matchingTag;
+	};
+	/**
+	* Extract the content from a tagged CBOR value.
+	*
+	* @param cbor - Tagged CBOR value
+	* @returns The untagged content
+	* @throws {CborError} `WrongType` if the value is not tagged.
+	*/
+	var extractTaggedContent = (cbor) => {
+		if (cbor.type !== MajorType.Tagged) throw CborError$1.wrongType();
+		return cbor.value;
+	};
+	/**
+	* Date/time support for CBOR with tag 1 encoding.
+	*
+	* The `CborDate` type holds an instant as whole seconds since the Unix epoch
+	* plus nanoseconds - the same model as the reference's `chrono::DateTime` -
+	* and encodes and decodes it to/from CBOR with tag 1, following the CBOR
+	* date/time standard specified in RFC 8949.
+	*
+	* When encoded to CBOR, dates are represented as tag 1 followed by a numeric
+	* value representing the number of seconds since (or before) the Unix epoch
+	* (1970-01-01T00:00:00Z). The numeric value can be a positive or negative
+	* integer, or a floating-point value for dates with fractional seconds.
+	*
+	* @module date
+	*/
+	/**
+	* The reference's representable range: chrono's `NaiveDateTime::MIN`
+	* (−262143-01-01T00:00:00) and `MAX` (262142-12-31T23:59:59.999999999) as
+	* Unix seconds. Beyond it `Date::from_timestamp` panics (`timestamp_opt(…)
+	* .unwrap()`); here it is `InvalidDate`. JS `Date` reaches further (±8.64e12
+	* s), so `toDate()` can represent every accepted value.
+	*/
+	var MIN_TIMESTAMP_SECONDS = -8334601228800;
+	var MAX_TIMESTAMP_SECONDS = 8210266876799;
+	/** `f64::exact_from_u64`: the magnitude as a number, or `OutOfRange` when inexact. */
+	function exactNumber(magnitude) {
+		const n = Number(magnitude);
+		if (!Number.isFinite(n) || BigInt(n) !== magnitude) throw CborError$1.outOfRange();
+		return n;
+	}
+	/** chrono's `NaiveDate` year range (`MIN_YEAR` / `MAX_YEAR`). */
+	var MIN_YEAR = -262143;
+	var MAX_YEAR = 262142;
+	var isLeapYear = (year) => year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+	var DAYS_IN_MONTH = [
+		31,
+		28,
+		31,
+		30,
+		31,
+		30,
+		31,
+		31,
+		30,
+		31,
+		30,
+		31
+	];
+	var daysInMonth = (year, month) => {
+		var _DAYS_IN_MONTH;
+		return month === 2 && isLeapYear(year) ? 29 : (_DAYS_IN_MONTH = DAYS_IN_MONTH[month - 1]) !== null && _DAYS_IN_MONTH !== void 0 ? _DAYS_IN_MONTH : 0;
+	};
+	/**
+	* Days since 1970-01-01 of a proleptic-Gregorian civil date (the components
+	* must already be valid). Pure integer arithmetic, as chrono computes it: JS
+	* `Date.UTC` would map years 0–99 to 1900–1999.
+	*/
+	function daysFromCivil(year, month, day) {
+		const y = month <= 2 ? year - 1 : year;
+		const era = Math.floor(y / 400);
+		const yoe = y - era * 400;
+		const doy = Math.floor((153 * (month + (month > 2 ? -3 : 9)) + 2) / 5) + day - 1;
+		const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+		return era * 146097 + doe - 719468;
+	}
+	/** The civil date of a day count since 1970-01-01 (inverse of `daysFromCivil`). */
+	function civilFromDays(days) {
+		const z = days + 719468;
+		const era = Math.floor(z / 146097);
+		const doe = z - era * 146097;
+		const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+		const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+		const mp = Math.floor((5 * doy + 2) / 153);
+		const day = doy - Math.floor((153 * mp + 2) / 5) + 1;
+		const month = mp < 10 ? mp + 3 : mp - 9;
+		return [
+			yoe + era * 400 + (month <= 2 ? 1 : 0),
+			month,
+			day
+		];
+	}
+	/**
+	* Whole seconds since the Unix epoch of the given UTC components, or
+	* `undefined` when they are not a valid date-time. The checks are chrono's
+	* (`NaiveDate::from_ymd_opt`, `NaiveTime::from_hms_opt`): the year within
+	* −262143…+262142, a calendar-valid month and day, and `hh:mm:ss` within 23:59:59.
+	*/
+	function civilSeconds(year, month, day, hour, minute, second) {
+		if (![
+			year,
+			month,
+			day,
+			hour,
+			minute,
+			second
+		].every(Number.isInteger)) return void 0;
+		if (year < MIN_YEAR || year > MAX_YEAR) return void 0;
+		if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return void 0;
+		if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) return;
+		return daysFromCivil(year, month, day) * 86400 + hour * 3600 + minute * 60 + second;
+	}
+	/** Rust's `char::is_whitespace` (Unicode `White_Space`), as a character class. */
+	var WHITESPACE = "[\\t\\n\\v\\f\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]";
+	/**
+	* chrono's fixed-layout RFC 3339 grammar (`DateTime::parse_from_rfc3339`):
+	* `YYYY-MM-DD`, a `T`/`t`/space separator, `hh:mm:ss`, an optional fraction
+	* of which the first nine digits count, then `Z`/`z` or `±hh:mm` (U+2212 is
+	* accepted as the minus sign). Nothing may follow.
+	*/
+	var RFC3339 = /^(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9})\d*)?(?:[Zz]|([+\-\u2212])(\d{2}):(\d{2}))$/;
+	/**
+	* chrono's strftime `%Y-%m-%d` (`NaiveDate::parse_from_str`): each number may
+	* be preceded by whitespace; `%Y` is one to four digits, or a sign followed by
+	* any number of digits; `%m` and `%d` are one or two digits; nothing may
+	* follow.
+	*/
+	var YMD = new RegExp(`^${WHITESPACE}*(?:([+-])(\\d+)|(\\d{1,4}))-${WHITESPACE}*(\\d{1,2})-${WHITESPACE}*(\\d{1,2})$`);
+	/**
+	* Split a timestamp (seconds since the Unix epoch) into the (whole seconds,
+	* nanoseconds) pair the reference's `Date::from_timestamp` builds:
+	*
+	* - `trunc() as i64` for the seconds - NaN saturates to 0 (the epoch);
+	*   ±Infinity saturates to the `i64` bounds, which chrono rejects and the
+	*   reference then panics on, so here it is `InvalidDate`;
+	* - `(fract() * 1e9) as u32` for the nanoseconds - truncated toward zero and
+	*   saturated to `[0, u32::MAX]`, so a negative fraction is dropped (`-1.5`
+	*   becomes `-1`) and sub-nanosecond precision is lost;
+	* - `timestamp_opt(...)` then requires the whole seconds inside chrono's
+	*   range (the fraction does not take part, so `MIN - 0.5` is `MIN`).
+	*
+	* @internal
+	*/
+	function timestampParts(seconds) {
+		if (Number.isNaN(seconds)) return [0, 0];
+		if (!Number.isFinite(seconds)) throw CborError$1.invalidDate("non-finite timestamp");
+		const whole = Math.trunc(seconds);
+		if (whole < MIN_TIMESTAMP_SECONDS || whole > MAX_TIMESTAMP_SECONDS) throw CborError$1.invalidDate("timestamp outside the representable range");
+		let nanoseconds = Math.trunc((seconds - whole) * 1e9);
+		if (nanoseconds < 0) nanoseconds = 0;
+		else if (nanoseconds > 4294967295) nanoseconds = 4294967295;
+		return [whole, nanoseconds];
+	}
+	var dateCodec;
+	_Symbol$toStringTag2 = Symbol.toStringTag, _CborDate = class CborDate {
+		/** Debug label: `Object.prototype.toString` reports `[object CborDate]`. */
+		get [_Symbol$toStringTag2]() {
+			return "CborDate";
+		}
+		/**
+		* Creates a new `CborDate` from the given JavaScript `Date`.
+		*
+		* @param dateTime - A `Date` instance
+		*
+		* @returns A new `CborDate` instance
+		*
+		* @throws `InvalidDate` for an invalid `Date` (`NaN` time) or one outside
+		*   the reference's representable range (years −262143 to 262142), which a chrono
+		*   value handed to `Date::from_datetime` can never be.
+		*
+		* @example
+		* ```typescript
+		* const datetime = new Date();
+		* const date = CborDate.fromDate(datetime);
+		* ```
+		*/
+		static fromDate(dateTime) {
+			const ms = dateTime.getTime();
+			if (!Number.isFinite(ms)) throw CborError$1.invalidDate("non-finite timestamp");
+			const whole = Math.floor(ms / 1e3);
+			if (whole < MIN_TIMESTAMP_SECONDS || whole > MAX_TIMESTAMP_SECONDS) throw CborError$1.invalidDate("timestamp outside the representable range");
+			return new CborDate(whole, (ms - whole * 1e3) * 1e6);
+		}
+		/**
+		* Creates a new `CborDate` from year, month, and day components, at
+		* 00:00:00 UTC.
+		*
+		* @param year - The year component (e.g., 2023)
+		* @param month - The month component (1-12)
+		* @param day - The day component (1-31)
+		*
+		* @returns A new `CborDate` instance
+		*
+		* @example
+		* ```typescript
+		* // Create February 8, 2023
+		* const date = CborDate.fromYmd(2023, 2, 8);
+		* ```
+		*
+		* @throws `InvalidDate` if the components do not form a valid date (the
+		*   reference panics there).
+		*/
+		static fromYmd(year, month, day) {
+			return CborDate.fromYmdHms(year, month, day, 0, 0, 0);
+		}
+		/**
+		* Creates a new `CborDate` from year, month, day, hour, minute, and second
+		* components.
+		*
+		* @param year - The year component (e.g., 2023)
+		* @param month - The month component (1-12)
+		* @param day - The day component (1-31)
+		* @param hour - The hour component (0-23)
+		* @param minute - The minute component (0-59)
+		* @param second - The second component (0-59)
+		*
+		* @returns A new `CborDate` instance
+		*
+		* @example
+		* ```typescript
+		* // Create February 8, 2023, 15:30:45 UTC
+		* const date = CborDate.fromYmdHms(2023, 2, 8, 15, 30, 45);
+		* ```
+		*
+		* @throws `InvalidDate` if the components do not form a valid date and time
+		*   — the checks the reference's `with_ymd_and_hms(…).unwrap()` panics on:
+		*   a year outside −262143…+262142, an impossible month or day, or a time past
+		*   23:59:59 (no leap second here; `fromString` accepts `:60`).
+		*/
+		static fromYmdHms(year, month, day, hour, minute, second) {
+			const seconds = civilSeconds(year, month, day, hour, minute, second);
+			if (seconds === void 0) throw CborError$1.invalidDate("Invalid date components");
+			return new CborDate(seconds, 0);
+		}
+		/**
+		* Creates a new `CborDate` from seconds since the Unix epoch
+		* (1970-01-01T00:00:00Z); negative values are before the epoch.
+		*
+		* The value is split as the reference's `from_timestamp` splits it: whole
+		* seconds by truncation toward zero, then the fraction in nanoseconds
+		* (truncated, never negative), so `-1.5` is the instant `-1` and
+		* `1.0000000001` is `1`. `NaN` is the epoch, as the reference's saturating
+		* cast makes it.
+		*
+		* @param secondsSinceUnixEpoch - Seconds from the Unix epoch (positive or
+		*   negative), which can include a fractional part for sub-second
+		*   precision
+		*
+		* @returns A new `CborDate` instance
+		*
+		* @throws `InvalidDate` for ±Infinity, or when the whole seconds fall
+		*   outside the reference's representable range (years −262143 to 262142),
+		*   where the reference panics.
+		*
+		* @example
+		* ```typescript
+		* // Create a date from a timestamp
+		* const date = CborDate.fromEpochSeconds(1675854714.0);
+		*
+		* // Create a date one second before the Unix epoch
+		* const beforeEpoch = CborDate.fromEpochSeconds(-1.0);
+		*
+		* // Create a date with fractional seconds
+		* const withFraction = CborDate.fromEpochSeconds(1675854714.5);
+		* ```
+		*/
+		static fromEpochSeconds(secondsSinceUnixEpoch) {
+			const [seconds, nanoseconds] = timestampParts(secondsSinceUnixEpoch);
+			return new CborDate(seconds, nanoseconds);
+		}
+		/**
+		* Creates a new `CborDate` from a string containing an ISO-8601 (RFC-3339)
+		* date (with or without time).
+		*
+		* Accepts exactly what the reference's `Date::from_string` accepts:
+		*
+		* - An RFC 3339 date-time (`2023-02-08T15:30:45Z`, `…45.123456789+05:30`),
+		*   with `T`, `t` or a space between date and time, up to nine fraction
+		*   digits kept (further digits are ignored), `Z`/`z` or an offset within
+		*   ±23:59, and the `:60` leap second (read as second 59 plus one second,
+		*   as chrono represents it).
+		* - A bare date read as UTC midnight, in chrono's `%Y-%m-%d` form: one to
+		*   four year digits or a signed year of any length (`-0001-01-01`,
+		*   `+12023-02-08`), one- or two-digit month and day, with whitespace
+		*   allowed before each number (`2023-2-8`, ` 2023-02-08`).
+		*
+		* The fraction is kept exactly as nanoseconds, so a decimal fraction
+		* encodes to the same bytes on both sides (`timestamp()`: whole seconds
+		* plus nanoseconds over 10⁹) and a leap second still displays as `:60`.
+		*
+		* @param value - A string containing a date or date-time in ISO-8601/RFC-3339
+		*   format
+		*
+		* @returns A new `CborDate` instance if parsing succeeds
+		*
+		* @throws `InvalidDate` if the string cannot be parsed as a valid date or
+		*   date-time (an impossible calendar date, a time past `23:59:60`, an
+		*   offset beyond ±23:59, a missing offset, or trailing characters).
+		*
+		* @example
+		* ```typescript
+		* // Parse a date-time string
+		* const date = CborDate.fromString("2023-02-08T15:30:45Z");
+		*
+		* // Parse a date-only string (time will be set to 00:00:00)
+		* const date2 = CborDate.fromString("2023-02-08");
+		* ```
+		*/
+		static fromString(value) {
+			const invalidDate = () => CborError$1.invalidDate("Invalid date string");
+			const dt = RFC3339.exec(value);
+			if (dt !== null) {
+				const [, y, mo, d, h, mi, sec, frac = "", sign, oh, om] = dt;
+				let second = Number(sec);
+				let nanoseconds = frac === "" ? 0 : Number(frac.padEnd(9, "0"));
+				if (second === 60) {
+					second = 59;
+					nanoseconds += 1e9;
+				}
+				const offsetHours = sign === void 0 ? 0 : Number(oh);
+				const offsetMinutes = sign === void 0 ? 0 : Number(om);
+				if (offsetHours > 23 || offsetMinutes > 59) throw invalidDate();
+				const offset = (sign === "+" ? 1 : -1) * (offsetHours * 3600 + offsetMinutes * 60);
+				const whole = civilSeconds(Number(y), Number(mo), Number(d), Number(h), Number(mi), second);
+				if (whole === void 0) throw invalidDate();
+				return new CborDate(whole - offset, nanoseconds);
+			}
+			const ymd = YMD.exec(value);
+			if (ymd !== null) {
+				const [, sign, signedYear, plainYear, mo, d] = ymd;
+				const whole = civilSeconds(sign === void 0 ? Number(plainYear) : Number(`${sign}${signedYear}`), Number(mo), Number(d), 0, 0, 0);
+				if (whole === void 0) throw invalidDate();
+				return new CborDate(whole, 0);
+			}
+			throw invalidDate();
+		}
+		/**
+		* Creates a new `CborDate` containing the current date and time.
+		*
+		* @returns A new `CborDate` instance representing the current UTC date and time
+		*
+		* @example
+		* ```typescript
+		* const now = CborDate.now();
+		* ```
+		*/
+		static now() {
+			return CborDate.fromDate(/* @__PURE__ */ new Date());
+		}
+		/**
+		* Creates a new `CborDate` containing the current date and time plus the given
+		* duration.
+		*
+		* @param durationMs - The duration in milliseconds to add to the current time
+		*
+		* @returns A new `CborDate` instance representing the current UTC date and time plus
+		* the duration
+		*
+		* @example
+		* ```typescript
+		* // Get a date 1 hour from now
+		* const oneHourLater = CborDate.withDurationFromNow(3600 * 1000);
+		* ```
+		*/
+		static withDurationFromNow(durationMs) {
+			const future = new Date((/* @__PURE__ */ new Date()).getTime() + durationMs);
+			return CborDate.fromDate(future);
+		}
+		/**
+		* Returns a new JavaScript `Date` for this instant (millisecond precision;
+		* sub-millisecond digits are lost).
+		*
+		* @returns A new `Date` instance
+		*
+		* @example
+		* ```typescript
+		* const date = CborDate.now();
+		* const datetime = date.toDate();
+		* const year = datetime.getFullYear();
+		* ```
+		*/
+		toDate() {
+			return /* @__PURE__ */ new Date(this.epochSeconds * 1e3);
+		}
+		/**
+		* The date as the number of seconds since the Unix epoch
+		* (1970-01-01T00:00:00Z), as a floating-point `number`. Negative values
+		* represent times before the epoch; the fractional part is sub-second
+		* precision.
+		*
+		* This is the reference's `timestamp()`: whole seconds plus nanoseconds
+		* over 10⁹, computed in `f64`, and it is the value that goes on the wire.
+		*
+		* @example
+		* ```typescript
+		* const date = CborDate.fromYmd(2023, 2, 8);
+		* const timestamp = date.epochSeconds;
+		* ```
+		*/
+		get epochSeconds() {
+			return this._seconds + this._nanoseconds / 1e9;
+		}
+		/**
+		* Add seconds to this date.
+		*
+		* @param seconds - Seconds to add (can be fractional)
+		* @returns New CborDate instance
+		*
+		* @example
+		* ```typescript
+		* const date = CborDate.fromYmd(2022, 3, 21);
+		* const tomorrow = date.add(24 * 60 * 60);
+		* ```
+		*/
+		add(seconds) {
+			return CborDate.fromEpochSeconds(this.epochSeconds + seconds);
+		}
+		/**
+		* Subtract seconds from this date.
+		*
+		* @param seconds - Seconds to subtract (can be fractional)
+		* @returns New CborDate instance
+		*
+		* @example
+		* ```typescript
+		* const date = CborDate.fromYmd(2022, 3, 21);
+		* const yesterday = date.subtract(24 * 60 * 60);
+		* ```
+		*/
+		subtract(seconds) {
+			return CborDate.fromEpochSeconds(this.epochSeconds - seconds);
+		}
+		/**
+		* Get the difference in seconds between this date and another.
+		*
+		* @param other - Other CborDate to compare with
+		* @returns Difference in seconds (this - other)
+		*
+		* @example
+		* ```typescript
+		* const date1 = CborDate.fromYmd(2022, 3, 22);
+		* const date2 = CborDate.fromYmd(2022, 3, 21);
+		* const diff = date1.difference(date2);
+		* // Returns 86400 (one day in seconds)
+		* ```
+		*/
+		difference(other) {
+			return this.epochSeconds - other.epochSeconds;
+		}
+		/**
+		* The CBOR tags for `CborDate`: tag 1, the RFC 8949 epoch-based date/time.
+		*
+		* The tag carries whatever name the global tags store has for 1 at the
+		* time of the call (`tags_for_values` in the reference): `date` once
+		* `registerStandardTags()` has run, otherwise none. That name is what a
+		* `WrongTag` error prints as the expected tag.
+		*
+		* @returns An array containing tag 1
+		*/
+		cborTags() {
+			var _getGlobalTagsStore$t;
+			return [(_getGlobalTagsStore$t = getGlobalTagsStore().tagForValue(1)) !== null && _getGlobalTagsStore$t !== void 0 ? _getGlobalTagsStore$t : Tag.from(1)];
+		}
+		/**
+		* Converts this `CborDate` to its untagged CBOR content: the epoch-seconds
+		* numeric value. It may be an integer or a floating-point number,
+		* depending on whether the date has fractional seconds.
+		*
+		* @returns A CBOR value representing the timestamp
+		*/
+		untaggedCbor() {
+			return cbor(this.epochSeconds);
+		}
+		/**
+		* Converts this `CborDate` to a tagged CBOR value with tag 1.
+		*
+		* @returns Tagged CBOR value
+		*/
+		taggedCbor() {
+			const tag = this.cborTags()[0];
+			if (tag === void 0) throw CborError$1.custom("No tags defined for this type");
+			return taggedValue(tag, this.untaggedCbor());
+		}
+		/**
+		* The `ToCbor` protocol: dates encode as their tagged form.
+		*/
+		toCbor() {
+			return this.taggedCbor();
+		}
+		/**
+		* Creates a `CborDate` from an untagged CBOR value, which must be a number
+		* (integer or floating-point) of seconds since the Unix epoch. The static
+		* `CborDate.fromUntaggedCbor` is the usual entry point; this instance form
+		* exists for the `CborTagged` protocol and returns a new instance.
+		*
+		* @param cbor - The untagged CBOR value
+		*
+		* @returns The decoded date
+		*
+		* @throws `WrongType` for a non-numeric value, `OutOfRange` for an integer
+		*   `f64` cannot hold exactly, `InvalidDate` beyond the representable
+		*   range. A float `NaN` is the epoch, as in the reference.
+		*/
+		fromUntaggedCbor(cbor) {
+			let timestamp;
+			switch (cbor.type) {
+				case MajorType.Unsigned:
+					timestamp = typeof cbor.value === "number" ? cbor.value : exactNumber(cbor.value);
+					break;
+				case MajorType.Negative:
+					if (typeof cbor.value === "bigint") timestamp = -exactNumber(cbor.value) - 1;
+					else timestamp = -cbor.value - 1;
+					break;
+				case MajorType.Simple:
+					if (cbor.value.type === "Float") timestamp = cbor.value.value;
+					else throw CborError$1.wrongType();
+					break;
+				default: throw CborError$1.wrongType();
+			}
+			return CborDate.fromEpochSeconds(timestamp);
+		}
+		/**
+		* Creates a `CborDate` from a tag-1 CBOR value (the `CborTagged`
+		* protocol's instance form; returns a new instance).
+		*
+		* @param cbor - Tagged CBOR value
+		*
+		* @returns The decoded date
+		*
+		* @throws {CborError} `WrongType` if the value is not tagged, `WrongTag`
+		*   for a tag other than 1, or what `fromUntaggedCbor` throws for the content
+		*/
+		fromTaggedCbor(cbor) {
+			validateTag(cbor, this.cborTags());
+			const content = extractTaggedContent(cbor);
+			return this.fromUntaggedCbor(content);
+		}
+		/**
+		* Static method to create a CborDate from tagged CBOR.
+		*
+		* @param cbor - Tagged CBOR value
+		* @returns New CborDate instance
+		*/
+		static fromTaggedCbor(cbor) {
+			return CborDate.EPOCH.fromTaggedCbor(cbor);
+		}
+		/**
+		* The {@link CborCodec} exemplar: a runtime witness that binds
+		* `T = CborDate` for `decodeWith(bytes, CborDate.codec)`.
+		*
+		* A lazy getter (memoized) rather than a static field: the date ↔ tags
+		* module cycle makes an eager initializer hit the temporal dead zone.
+		*
+		* @beta
+		*/
+		static get codec() {
+			var _dateCodec;
+			(_dateCodec = dateCodec) !== null && _dateCodec !== void 0 || (dateCodec = {
+				get tags() {
+					return CborDate.EPOCH.cborTags();
+				},
+				decode: (c) => CborDate.fromTaggedCbor(c),
+				encode: (value) => value.taggedCbor()
+			});
+			return dateCodec;
+		}
+		static fromUntaggedCbor(cbor) {
+			return CborDate.EPOCH.fromUntaggedCbor(cbor);
+		}
+		/**
+		* The date in ISO-8601 format: only the date part when the time is exactly
+		* midnight (00:00:00), otherwise a date-time to the second with `Z`.
+		*
+		* @returns String representation in ISO-8601 format
+		*
+		* @example
+		* ```typescript
+		* // A date at midnight will display as just the date
+		* const date = CborDate.fromYmd(2023, 2, 8);
+		* // Returns "2023-02-08"
+		* console.log(date.toString());
+		*
+		* // A date with time will display as date and time
+		* const date2 = CborDate.fromYmdHms(2023, 2, 8, 15, 30, 45);
+		* // Returns "2023-02-08T15:30:45Z"
+		* console.log(date2.toString());
+		* ```
+		*/
+		toString() {
+			const total = this._seconds;
+			const days = Math.floor(total / 86400);
+			const secondOfDay = total - days * 86400;
+			const [year, month, day] = civilFromDays(days);
+			const pad = (n, width = 2) => String(n).padStart(width, "0");
+			const date = `${year >= 0 && year <= 9999 ? pad(year, 4) : `${year < 0 ? "-" : "+"}${pad(Math.abs(year), 4)}`}-${pad(month)}-${pad(day)}`;
+			if (secondOfDay === 0) return date;
+			const hour = Math.floor(secondOfDay / 3600);
+			const minute = Math.floor(secondOfDay % 3600 / 60);
+			const second = secondOfDay % 60 + (this._nanoseconds >= 1e9 ? 1 : 0);
+			return `${date}T${pad(hour)}:${pad(minute)}:${pad(second)}Z`;
+		}
+		/**
+		* Compare two dates for equality: the same whole seconds and the same
+		* nanoseconds (chrono's `PartialEq`). A leap second `23:59:60` is a
+		* different instant from the following `00:00:00`, although both encode
+		* to the same wire value.
+		*
+		* @param other - Other CborDate to compare
+		* @returns true if dates represent the same moment in time
+		*/
+		equals(other) {
+			return this._seconds === other._seconds && this._nanoseconds === other._nanoseconds;
+		}
+		/**
+		* Compare two dates: by whole seconds, then by nanoseconds (chrono's
+		* `Ord`, so a leap second sorts after `:59.999999999` and before the next
+		* `:00`).
+		*
+		* @param other - Other CborDate to compare
+		* @returns -1 if this < other, 0 if equal, 1 if this > other
+		*/
+		compare(other) {
+			if (this._seconds !== other._seconds) return this._seconds < other._seconds ? -1 : 1;
+			if (this._nanoseconds !== other._nanoseconds) return this._nanoseconds < other._nanoseconds ? -1 : 1;
+			return 0;
+		}
+		/**
+		* Convert to JSON (returns ISO 8601 string).
+		*
+		* @returns ISO 8601 string
+		*/
+		toJSON() {
+			return this.toString();
+		}
+		constructor(seconds, nanoseconds) {
+			_defineProperty(
+				this,
+				/**
+				* The instant as the reference's `chrono::DateTime<Utc>` holds it: whole
+				* seconds since the Unix epoch plus a nanosecond part in
+				* `[0, 1_999_999_999]` (values from 10⁹ up represent a leap second, e.g.
+				* `23:59:60`, as chrono does). Keeping the pair rather than one `f64`
+				* means display, equality and ordering see exactly what the reference
+				* sees; the wire value is derived from it as `timestamp()` does.
+				*/
+				"_seconds",
+				void 0
+			);
+			_defineProperty(this, "_nanoseconds", void 0);
+			this._seconds = seconds;
+			this._nanoseconds = nanoseconds;
+		}
+	}, _defineProperty(_CborDate, "EPOCH", new _CborDate(0, 0));
+	/**
+	* Check if CBOR value is an unsigned integer.
+	*
+	* @param cbor - CBOR value to check
+	* @returns True if value is unsigned integer
+	*
+	* @example
+	* ```typescript
+	* if (isUnsigned(value)) {
+	*   console.log('Unsigned:', value.value);
+	* }
+	* ```
+	*/
+	var isUnsigned = (cbor) => {
+		return cbor.type === MajorType.Unsigned;
+	};
+	/**
+	* Check if CBOR value is an array.
+	*
+	* @param cbor - CBOR value to check
+	* @returns True if value is array
+	*/
+	var isArray = (cbor) => {
+		return cbor.type === MajorType.Array;
+	};
+	/**
+	* Extract unsigned integer value if type matches.
+	*
+	* @param cbor - CBOR value
+	* @returns Unsigned integer or undefined
+	*/
+	var asUnsigned = (cbor) => {
+		if (cbor.type === MajorType.Unsigned) return cbor.value;
+	};
+	/**
+	* Extract any integer value (unsigned or negative) if type matches.
+	*
+	* @param cbor - CBOR value
+	* @returns Integer or undefined
+	*/
+	var asInteger = (cbor) => {
+		if (cbor.type === MajorType.Unsigned) return cbor.value;
+		else if (cbor.type === MajorType.Negative) {
+			if (typeof cbor.value === "bigint") return -cbor.value - 1n;
+			else return -cbor.value - 1;
+		}
+	};
+	/**
+	* Extract byte string value if type matches.
+	*
+	* Decoded byte strings are zero-copy views aliasing the input buffer -
+	* mutating the input after decoding (or mutating the returned bytes) changes
+	* the other side. Call `.slice()` first if you need an independent copy.
+	*
+	* @param cbor - CBOR value
+	* @returns Byte string or undefined
+	*/
+	var asBytes = (cbor) => {
+		if (cbor.type === MajorType.ByteString) return cbor.value;
+	};
+	/**
+	* Extract text string value if type matches.
+	*
+	* @param cbor - CBOR value
+	* @returns Text string or undefined
+	*/
+	var asText = (cbor) => {
+		if (cbor.type === MajorType.Text) return cbor.value;
+	};
+	/**
+	* Extract array value if type matches.
+	*
+	* @param cbor - CBOR value
+	* @returns Array or undefined
+	*/
+	var asArray = (cbor) => {
+		if (cbor.type === MajorType.Array) return cbor.value;
+	};
+	/**
+	* Extract map value if type matches.
+	*
+	* @param cbor - CBOR value
+	* @returns Map or undefined
+	*/
+	var asMap = (cbor) => {
+		if (cbor.type === MajorType.Map) return cbor.value;
+	};
+	/**
+	* Extract boolean value if type matches.
+	*
+	* @param cbor - CBOR value
+	* @returns Boolean or undefined
+	*/
+	var asBoolean = (cbor) => {
+		if (cbor.type !== MajorType.Simple) return;
+		if (cbor.value.type === "True") return true;
+		if (cbor.value.type === "False") return false;
+	};
+	/**
+	* Extract unsigned integer value, throwing if type doesn't match.
+	*
+	* With `options`, the value is checked against a fixed width and, when
+	* `wrapNegative` is set, a negative node is wrapped exactly as the
+	* reference's `u*::try_from` wraps it (see {@link ExpectUnsignedOptions}).
+	*
+	* @param cbor - CBOR value
+	* @param options - Fixed-width extraction (optional; without it the
+	*   behaviour is the plain `Unsigned`-or-`WrongType` check)
+	* @returns Unsigned integer (`bigint` above `Number.MAX_SAFE_INTEGER`)
+	* @throws {CborError} `WrongType` if cbor is not an unsigned integer (or,
+	*   with `wrapNegative`, not an integer); `OutOfRange` when the value does
+	*   not fit `width`
+	*/
+	var expectUnsigned = (cbor, options) => {
+		if (options === void 0) {
+			const value = asUnsigned(cbor);
+			if (value === void 0) throw CborError$1.wrongType();
+			return value;
+		}
+		const max = (1n << BigInt(options.width)) - 1n;
+		if (cbor.type === MajorType.Unsigned) {
+			const value = BigInt(cbor.value);
+			if (value > max) throw CborError$1.outOfRange();
+			return narrowInteger(value);
+		}
+		if (cbor.type === MajorType.Negative && options.wrapNegative === true) {
+			const magnitude = BigInt(cbor.value);
+			if (magnitude > max) throw CborError$1.outOfRange();
+			return narrowInteger(max - magnitude);
+		}
+		throw CborError$1.wrongType();
+	};
+	/**
+	* Extract any integer value, throwing if type doesn't match.
+	*
+	* @param cbor - CBOR value
+	* @returns Integer
+	* @throws {CborError} `WrongType` if cbor is not an integer
+	*/
+	var expectInteger$1 = (cbor) => {
+		const value = asInteger(cbor);
+		if (value === void 0) throw CborError$1.wrongType();
+		return value;
+	};
+	/**
+	* Extract byte string value, throwing if type doesn't match.
+	*
+	* Decoded byte strings are zero-copy views aliasing the input buffer -
+	* mutating the input after decoding (or mutating the returned bytes) changes
+	* the other side. Call `.slice()` first if you need an independent copy.
+	*
+	* @param cbor - CBOR value
+	* @returns Byte string
+	* @throws {CborError} `WrongType` if cbor is not a byte string
+	*/
+	var expectBytes$1 = (cbor) => {
+		const value = asBytes(cbor);
+		if (value === void 0) throw CborError$1.wrongType();
+		return value;
+	};
+	/**
+	* Extract text string value, throwing if type doesn't match.
+	*
+	* @param cbor - CBOR value
+	* @returns Text string
+	* @throws {CborError} `WrongType` if cbor is not a text string
+	*/
+	var expectText = (cbor) => {
+		const value = asText(cbor);
+		if (value === void 0) throw CborError$1.wrongType();
+		return value;
+	};
+	/**
+	* Extract array value, throwing if type doesn't match.
+	*
+	* @param cbor - CBOR value
+	* @returns Array
+	* @throws {CborError} `WrongType` if cbor is not an array
+	*/
+	var expectArray = (cbor) => {
+		const value = asArray(cbor);
+		if (value === void 0) throw CborError$1.wrongType();
+		return value;
+	};
+	/**
+	* Extract map value, throwing if type doesn't match.
+	*
+	* @param cbor - CBOR value
+	* @returns Map
+	* @throws {CborError} `WrongType` if cbor is not a map
+	*/
+	var expectMap = (cbor) => {
+		const value = asMap(cbor);
+		if (value === void 0) throw CborError$1.wrongType();
+		return value;
+	};
+	/**
+	* Extract boolean value, throwing if type doesn't match.
+	*
+	* @param cbor - CBOR value
+	* @returns Boolean
+	* @throws {CborError} `WrongType` if cbor is not a boolean
+	*/
+	var expectBoolean = (cbor) => {
+		const value = asBoolean(cbor);
+		if (value === void 0) throw CborError$1.wrongType();
+		return value;
+	};
+	// node_modules/.bun/@qntx+ur@4.0.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/typed-C8j8iVYT.mjs
+	init_defineProperty();
+	function mapCborDecode(run) {
+		try {
+			return run();
+		} catch (error) {
+			if (CborError$1.isCborError(error)) fail$3("CborDecode", { cause: error });
+			throw error;
+		}
+	}
+	function mapCborType(run) {
+		try {
+			return run();
+		} catch (error) {
+			if (CborError$1.isCborError(error)) fail$3("CborType", { cause: error });
+			throw error;
+		}
+	}
+	/** Uniform Resource whose payload is deterministic CBOR. */
+	var Ur = class Ur {
+		constructor(type, cborValue) {
+			_defineProperty(this, "type", void 0);
+			_defineProperty(this, "cbor", void 0);
+			this.type = type;
+			this.cbor = cborValue;
+		}
+		static fromCbor(type, input) {
+			const prepared = input instanceof Uint8Array ? new Uint8Array(input) : input;
+			return new Ur(parseUrType(type), mapCborType(() => cbor(prepared)));
+		}
+		/** Wrap already-encoded dCBOR bytes. */
+		static fromCborData(type, data) {
+			const bytes = new Uint8Array(data);
+			const value = mapCborDecode(() => decodeCbor(bytes));
+			return new Ur(parseUrType(type), value);
+		}
+		/** Parse a **single-part** UR string; the message must be dCBOR. */
+		static parse(text) {
+			const parsed = parseUr(text);
+			if (parsed.kind !== "single") fail$3("NotSinglePart");
+			return Ur.fromCborData(parsed.type, parsed.message);
+		}
+		/** Wrap a completed {@link UrDecoder} result; the message must be dCBOR. */
+		static fromDecoded(decoded) {
+			return Ur.fromCborData(decoded.type, decoded.message);
+		}
+		toCborData() {
+			return new Uint8Array(mapCborType(() => encodeCbor(this.cbor)));
+		}
+		toString() {
+			return encodeUr$1(this.type, this.toCborData());
+		}
+		toQrString() {
+			return toQrString(this.toString());
+		}
+		/** L3 encoder over this UR's dCBOR bytes. */
+		encoder(options) {
+			return new UrEncoder(this.type, this.toCborData(), options);
+		}
+	};
+	/** UR types a codec accepts on read: every tag name, write-preferred first. */
+	function codecUrTypes(codec) {
+		const [first, ...rest] = codec.tags;
+		return [toUrType(first), ...rest.map(toUrType)];
+	}
+	function toUrType(tag) {
+		const { name } = tag;
+		if (name === void 0 || name === "") fail$3("InvalidType");
+		return parseUrType(name);
+	}
+	/** Typed UR for `value`: first tag name as the type, untagged body. */
+	function toUr(value, codec) {
+		const [type] = codecUrTypes(codec);
+		const body = mapCborType(() => codec.encode(value));
+		return Ur.fromCbor(type, body);
+	}
+	/** Decode `ur`'s body when its type is one of the codec's tag names. */
+	function fromUr(ur, codec) {
+		const expected = codecUrTypes(codec);
+		if (!expected.some((t) => ur.type === t)) fail$3({
+			code: "UnexpectedType",
+			expected,
+			found: ur.type
+		});
+		return mapCborType(() => codec.decode(ur.cbor));
+	}
+	/** `tags[0]`-wrapped dCBOR for `value`. */
+	function toTagged(value, codec) {
+		return mapCborType(() => taggedValue(codec.tags[0], codec.encode(value)));
+	}
+	/** Unwraps any of the codec's tags, then decodes the body. */
+	function fromTagged(cbor, codec) {
+		return mapCborType(() => {
+			validateTag(cbor, [...codec.tags]);
+			return codec.decode(extractTaggedContent(cbor));
+		});
+	}
+	// node_modules/.bun/@qntx+ur@4.0.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/registry-BGnkPqkV.mjs
+	init_objectSpread2();
+	function copyBuf(bytes) {
+		return new Uint8Array(bytes);
+	}
+	function copyBytes(cbor) {
+		return copyBuf(expectBytes$1(cbor));
+	}
+	function expectClosedIntMap(cbor, allowed) {
+		const map = expectMap(cbor);
+		for (const [key] of map) {
+			const n = expectUnsigned(key);
+			if (typeof n !== "number" || !Number.isInteger(n) || !allowed.has(n)) throw CborError$1.wrongType();
+		}
+		return map;
+	}
+	function expectUint(cbor, max) {
+		const n = expectUnsigned(cbor);
+		if (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > max) throw CborError$1.outOfRange();
+		return n;
+	}
+	var expectUint8 = (c) => expectUint(c, 255);
+	var expectUint31 = (c) => expectUint(c, 2147483647);
+	var expectUint32Ne0 = (c) => {
+		const n = expectUint(c, 4294967295);
+		if (n === 0) throw CborError$1.outOfRange();
+		return n;
+	};
+	/** CDDL `int` that must fit in JS number as int32. Used only for coin-info `network`. */
+	function expectInt32(cbor) {
+		const n = expectInteger$1(cbor);
+		if (typeof n !== "number" || !Number.isInteger(n) || n < -2147483648 || n > 2147483647) throw CborError$1.outOfRange();
+		return n;
+	}
+	function expectBool(cbor) {
+		return expectBoolean(cbor);
+	}
+	/** Encode-side mirror of `expectText`: validates a caller-built field. */
+	function assertText(value) {
+		if (typeof value !== "string") throw CborError$1.wrongType();
+		return value;
+	}
+	/**
+	* Codecs that exist in this version. The `crypto-*` entries are the deprecated v1 tags
+	* (BCR-2020-006); the v2 codecs accept them on read, and the separate `crypto*Codec` writers emit
+	* them. `SCRIPT_TAGS` are the BCR-2020-010 script-expression tags embedded inside v1 crypto-output
+	* bodies.
+	*/
+	var TAGS = {
+		envelope: Tag.from(200, "envelope"),
+		seed: Tag.from(40300, "seed"),
+		hdkey: Tag.from(40303, "hdkey"),
+		keypath: Tag.from(40304, "keypath"),
+		"coin-info": Tag.from(40305, "coin-info"),
+		eckey: Tag.from(40306, "eckey"),
+		address: Tag.from(40307, "address"),
+		"output-descriptor": Tag.from(40308, "output-descriptor"),
+		sskr: Tag.from(40309, "sskr"),
+		psbt: Tag.from(40310, "psbt"),
+		"account-descriptor": Tag.from(40311, "account-descriptor"),
+		"crypto-seed": Tag.from(300, "crypto-seed"),
+		"crypto-hdkey": Tag.from(303, "crypto-hdkey"),
+		"crypto-keypath": Tag.from(304, "crypto-keypath"),
+		"crypto-coin-info": Tag.from(305, "crypto-coin-info"),
+		"crypto-eckey": Tag.from(306, "crypto-eckey"),
+		"crypto-address": Tag.from(307, "crypto-address"),
+		"crypto-output": Tag.from(308, "crypto-output"),
+		"crypto-sskr": Tag.from(309, "crypto-sskr"),
+		"crypto-psbt": Tag.from(310, "crypto-psbt"),
+		"crypto-account": Tag.from(311, "crypto-account")
+	};
+	/** BCR-2020-010 script-expression tags by descriptor function name. */
+	var SCRIPT_TAGS = {
+		sh: Tag.from(400, "sh"),
+		wsh: Tag.from(401, "wsh"),
+		pk: Tag.from(402, "pk"),
+		pkh: Tag.from(403, "pkh"),
+		wpkh: Tag.from(404, "wpkh"),
+		combo: Tag.from(405, "combo"),
+		multi: Tag.from(406, "multi"),
+		sortedmulti: Tag.from(407, "sortedmulti"),
+		raw: Tag.from(408, "raw"),
+		tr: Tag.from(409, "tr"),
+		cosigner: Tag.from(410, "cosigner")
+	};
+	TAGS.seed, TAGS["crypto-seed"];
+	var PSBT_MAGIC = [
+		112,
+		115,
+		98,
+		116,
+		255
+	];
+	function copyPsbt(bytes) {
+		if (bytes.length < PSBT_MAGIC.length) throw CborError$1.outOfRange();
+		for (let i = 0; i < PSBT_MAGIC.length; i++) if (bytes[i] !== PSBT_MAGIC[i]) throw CborError$1.wrongType();
+		return copyBuf(bytes);
+	}
+	var psbtCodec = {
+		tags: [TAGS.psbt, TAGS["crypto-psbt"]],
+		encode(psbt) {
+			return cbor(copyPsbt(psbt.bytes));
+		},
+		decode(value) {
+			return Object.freeze({ bytes: copyPsbt(copyBytes(value)) });
+		}
+	};
+	/**
+	* Deprecated v1 writer (`ur:crypto-psbt`, tag 310). The body is identical to v2; only the tag
+	* differs.
+	*/
+	var cryptoPsbtCodec = {
+		tags: [TAGS["crypto-psbt"], TAGS.psbt],
+		encode: psbtCodec.encode,
+		decode: psbtCodec.decode
+	};
+	var KEYPATH_KEYS = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3
+	]);
+	function assertUint31$1(n) {
+		if (!Number.isInteger(n) || n < 0 || n > 2147483647) throw CborError$1.outOfRange();
+		return n;
+	}
+	function assertUint8(n) {
+		if (!Number.isInteger(n) || n < 0 || n > 255) throw CborError$1.outOfRange();
+		return n;
+	}
+	function assertUint32Ne0$1(n) {
+		if (!Number.isInteger(n) || n < 1 || n > 4294967295) throw CborError$1.outOfRange();
+		return n;
+	}
+	function take(items, i) {
+		const item = items[i];
+		if (item === void 0) throw CborError$1.wrongType();
+		return item;
+	}
+	function encodeComponent(c) {
+		if (c.kind === "index") return [assertUint31$1(c.index), c.hardened];
+		if (c.kind === "wildcard") return [[], c.hardened];
+		if (c.kind === "range") {
+			if (c.low >= c.high) throw CborError$1.outOfRange();
+			return [[assertUint31$1(c.low), assertUint31$1(c.high)], c.hardened];
+		}
+		return [[
+			assertUint31$1(c.external.index),
+			c.external.hardened,
+			assertUint31$1(c.internal.index),
+			c.internal.hardened
+		]];
+	}
+	function decodeComponents(value) {
+		const items = expectArray(value);
+		const components = [];
+		let i = 0;
+		while (i < items.length) {
+			const head = take(items, i);
+			if (isUnsigned(head)) {
+				const hardened = expectBool(take(items, i + 1));
+				components.push({
+					kind: "index",
+					index: expectUint31(head),
+					hardened
+				});
+				i += 2;
+				continue;
+			}
+			if (isArray(head)) {
+				const inner = head.value;
+				if (inner.length === 0) {
+					const hardened = expectBool(take(items, i + 1));
+					components.push({
+						kind: "wildcard",
+						hardened
+					});
+					i += 2;
+					continue;
+				}
+				if (inner.length === 2) {
+					const low = expectUint31(take(inner, 0));
+					const high = expectUint31(take(inner, 1));
+					if (low >= high) throw CborError$1.outOfRange();
+					const hardened = expectBool(take(items, i + 1));
+					components.push({
+						kind: "range",
+						low,
+						high,
+						hardened
+					});
+					i += 2;
+					continue;
+				}
+				if (inner.length === 4) {
+					components.push({
+						kind: "pair",
+						external: {
+							index: expectUint31(take(inner, 0)),
+							hardened: expectBool(take(inner, 1))
+						},
+						internal: {
+							index: expectUint31(take(inner, 2)),
+							hardened: expectBool(take(inner, 3))
+						}
+					});
+					i += 1;
+					continue;
+				}
+			}
+			throw CborError$1.wrongType();
+		}
+		return components;
+	}
+	var keypathCodec = {
+		tags: [TAGS.keypath, TAGS["crypto-keypath"]],
+		encode(keypath) {
+			if (keypath.components.length === 0 && keypath.sourceFingerprint === void 0 && keypath.depth === void 0) throw CborError$1.wrongType();
+			const items = [];
+			for (const c of keypath.components) items.push(...encodeComponent(c));
+			const map = new CborMap();
+			map.set(1, items);
+			if (keypath.sourceFingerprint !== void 0) map.set(2, assertUint32Ne0$1(keypath.sourceFingerprint));
+			if (keypath.depth !== void 0) map.set(3, assertUint8(keypath.depth));
+			return cbor(map);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, KEYPATH_KEYS);
+			const components = decodeComponents(map.getOrThrow(1));
+			const fingerprint = map.get(2);
+			const depth = map.get(3);
+			if (components.length === 0 && fingerprint === void 0 && depth === void 0) throw CborError$1.wrongType();
+			return Object.freeze(_objectSpread2(_objectSpread2({ components: Object.freeze(components) }, fingerprint === void 0 ? {} : { sourceFingerprint: expectUint32Ne0(fingerprint) }), depth === void 0 ? {} : { depth: expectUint8(depth) }));
+		}
+	};
+	/**
+	* Deprecated v1 writer (`ur:crypto-keypath`, tag 304). The body is identical to v2; only the tag
+	* differs.
+	*/
+	var cryptoKeypathCodec = {
+		tags: [TAGS["crypto-keypath"], TAGS.keypath],
+		encode: keypathCodec.encode,
+		decode: keypathCodec.decode
+	};
+	var COIN_INFO_KEYS = /* @__PURE__ */ new Set([1, 2]);
+	function assertUint31(n) {
+		if (!Number.isInteger(n) || n < 0 || n > 2147483647) throw CborError$1.outOfRange();
+		return n;
+	}
+	function assertInt32$1(n) {
+		if (!Number.isInteger(n) || n < -2147483648 || n > 2147483647) throw CborError$1.outOfRange();
+		return n;
+	}
+	function encodeBody(info, v1) {
+		const map = new CborMap();
+		if (info.type !== void 0 && (v1 || info.type !== 0)) map.set(1, assertUint31(info.type));
+		if (info.network !== void 0 && (v1 || info.network !== 0)) map.set(2, assertInt32$1(info.network));
+		return cbor(map);
+	}
+	var coinInfoCodec = {
+		tags: [TAGS["coin-info"], TAGS["crypto-coin-info"]],
+		encode(info) {
+			return encodeBody(info, false);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, COIN_INFO_KEYS);
+			const type = map.get(1);
+			const network = map.get(2);
+			return Object.freeze(_objectSpread2(_objectSpread2({}, type === void 0 ? {} : { type: expectUint31(type) }), network === void 0 ? {} : { network: expectInt32(network) }));
+		}
+	};
+	/**
+	* Deprecated v1 writer (`ur:crypto-coin-info`, tag 305). Presence-preserving: `type` and `network`
+	* are written iff present, `0` included — unlike the v2 writer, which omits defaults.
+	*/
+	var cryptoCoinInfoCodec = {
+		tags: [TAGS["crypto-coin-info"], TAGS["coin-info"]],
+		encode(info) {
+			return encodeBody(info, true);
+		},
+		decode: coinInfoCodec.decode
+	};
+	var ECKEY_KEYS = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3
+	]);
+	var CURVE_SECP256K1 = 0;
+	var PRIVATE_KEY_LEN = 32;
+	function assertDataLen$1(curve, isPrivate, data) {
+		if (curve !== CURVE_SECP256K1) {
+			if (data.length === 0) throw CborError$1.outOfRange();
+			return;
+		}
+		if (!(isPrivate ? data.length === PRIVATE_KEY_LEN : data.length === 33 || data.length === 65)) throw CborError$1.outOfRange();
+	}
+	function assertCurve(n) {
+		if (!Number.isSafeInteger(n) || n < 0) throw CborError$1.outOfRange();
+		return n;
+	}
+	function expectCurve(value) {
+		const n = expectUnsigned(value);
+		if (typeof n !== "number") throw CborError$1.outOfRange();
+		return assertCurve(n);
+	}
+	var ecKeyCodec = {
+		tags: [TAGS.eckey, TAGS["crypto-eckey"]],
+		encode(key) {
+			var _key$curve, _key$isPrivate;
+			const curve = (_key$curve = key.curve) !== null && _key$curve !== void 0 ? _key$curve : CURVE_SECP256K1;
+			const isPrivate = (_key$isPrivate = key.isPrivate) !== null && _key$isPrivate !== void 0 ? _key$isPrivate : false;
+			assertCurve(curve);
+			assertDataLen$1(curve, isPrivate, key.data);
+			const map = new CborMap();
+			if (curve !== CURVE_SECP256K1) map.set(1, curve);
+			if (isPrivate) map.set(2, true);
+			map.set(3, cbor(copyBuf(key.data)));
+			return cbor(map);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, ECKEY_KEYS);
+			const curveV = map.get(1);
+			const isPrivateV = map.get(2);
+			const data = copyBytes(map.getOrThrow(3));
+			const curve = curveV === void 0 ? CURVE_SECP256K1 : expectCurve(curveV);
+			const isPrivate = isPrivateV === void 0 ? false : expectBool(isPrivateV);
+			assertDataLen$1(curve, isPrivate, data);
+			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2({}, curveV === void 0 ? {} : { curve }), isPrivateV === void 0 ? {} : { isPrivate }), {}, { data }));
+		}
+	};
+	var ADDRESS_KEYS = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3
+	]);
+	var TYPED_DATA_LEN = 20;
+	var ADDRESS_TYPES = [
+		"p2pkh",
+		"p2sh",
+		"p2wpkh"
+	];
+	function assertDataLen(type, data) {
+		if (type !== void 0) {
+			if (data.length !== TYPED_DATA_LEN) throw CborError$1.outOfRange();
+			return;
+		}
+		if (data.length === 0) throw CborError$1.outOfRange();
+	}
+	function encodeAddressBody(address, coinInfo) {
+		assertDataLen(address.type, address.data);
+		const map = new CborMap();
+		if (address.info !== void 0) map.set(1, toTagged(address.info, coinInfo));
+		if (address.type !== void 0) {
+			const index = ADDRESS_TYPES.indexOf(address.type);
+			if (index === -1) throw CborError$1.wrongType();
+			map.set(2, index);
+		}
+		map.set(3, cbor(copyBuf(address.data)));
+		return cbor(map);
+	}
+	var addressCodec = {
+		tags: [TAGS.address, TAGS["crypto-address"]],
+		encode(address) {
+			return encodeAddressBody(address, coinInfoCodec);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, ADDRESS_KEYS);
+			const info = map.get(1);
+			const typeV = map.get(2);
+			const data = copyBytes(map.getOrThrow(3));
+			const type = typeV === void 0 ? void 0 : ADDRESS_TYPES[expectUint(typeV, 2)];
+			assertDataLen(type, data);
+			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2({}, info === void 0 ? {} : { info: fromTagged(info, coinInfoCodec) }), type === void 0 ? {} : { type }), {}, { data }));
+		}
+	};
+	var MASTER_KEYS = /* @__PURE__ */ new Set([
+		1,
+		3,
+		4
+	]);
+	var DERIVED_KEYS = /* @__PURE__ */ new Set([
+		2,
+		3,
+		4,
+		5,
+		6,
+		7,
+		8,
+		9,
+		10
+	]);
+	var KEY_DATA_LEN$1 = 33;
+	var CHAIN_CODE_LEN$1 = 32;
+	function copyLen(bytes, len) {
+		if (bytes.length !== len) throw CborError$1.outOfRange();
+		return copyBuf(bytes);
+	}
+	function bytesOfLen(value, len) {
+		const bytes = copyBytes(value);
+		if (bytes.length !== len) throw CborError$1.outOfRange();
+		return bytes;
+	}
+	function assertKeyData(isPrivate, data) {
+		if (data.length !== KEY_DATA_LEN$1 || isPrivate && data[0] !== 0) throw CborError$1.outOfRange();
+	}
+	function assertUint32Ne0(n) {
+		if (!Number.isInteger(n) || n < 1 || n > 4294967295) throw CborError$1.outOfRange();
+		return n;
+	}
+	var V2_NESTED = {
+		coinInfo: coinInfoCodec,
+		keypath: keypathCodec
+	};
+	var V1_NESTED = {
+		coinInfo: cryptoCoinInfoCodec,
+		keypath: cryptoKeypathCodec
+	};
+	function writeDerivedMeta(map, meta, v1) {
+		const nested = v1 ? V1_NESTED : V2_NESTED;
+		if (v1 ? meta.isPrivate !== void 0 : meta.isPrivate === true) map.set(2, meta.isPrivate === true);
+		if (meta.chainCode !== void 0) map.set(4, cbor(copyLen(meta.chainCode, CHAIN_CODE_LEN$1)));
+		if (meta.useInfo !== void 0) map.set(5, toTagged(meta.useInfo, nested.coinInfo));
+		if (meta.origin !== void 0) map.set(6, toTagged(meta.origin, nested.keypath));
+		if (meta.children !== void 0) map.set(7, toTagged(meta.children, nested.keypath));
+		if (meta.parentFingerprint !== void 0) map.set(8, assertUint32Ne0(meta.parentFingerprint));
+		if (meta.name !== void 0 && meta.name !== "") map.set(9, assertText(meta.name));
+		if (meta.note !== void 0 && meta.note !== "") map.set(10, assertText(meta.note));
+	}
+	function readDerivedMeta(map, emptyChainCodeAbsent) {
+		const isPrivate = map.get(2);
+		const chainCode = map.get(4);
+		const useInfo = map.get(5);
+		const origin = map.get(6);
+		const children = map.get(7);
+		const parentFingerprint = map.get(8);
+		const name = map.get(9);
+		const note = map.get(10);
+		const chainCodeBytes = chainCode === void 0 ? void 0 : copyBytes(chainCode);
+		return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, isPrivate === void 0 ? {} : { isPrivate: expectBool(isPrivate) }), chainCodeBytes === void 0 ? {} : chainCodeBytes.length === 0 && emptyChainCodeAbsent ? {} : { chainCode: copyLen(chainCodeBytes, CHAIN_CODE_LEN$1) }), useInfo === void 0 ? {} : { useInfo: fromTagged(useInfo, coinInfoCodec) }), origin === void 0 ? {} : { origin: fromTagged(origin, keypathCodec) }), children === void 0 ? {} : { children: fromTagged(children, keypathCodec) }), parentFingerprint === void 0 ? {} : { parentFingerprint: expectUint32Ne0(parentFingerprint) }), name === void 0 ? {} : { name: expectText(name) }), note === void 0 ? {} : { note: expectText(note) });
+	}
+	function encodeHdKeyBody(key, v1) {
+		const map = new CborMap();
+		if (key.kind === "master") {
+			map.set(1, true);
+			assertKeyData(true, key.keyData);
+			map.set(3, cbor(copyBuf(key.keyData)));
+			map.set(4, cbor(copyLen(key.chainCode, CHAIN_CODE_LEN$1)));
+			return cbor(map);
+		}
+		assertKeyData(key.isPrivate === true, key.keyData);
+		map.set(3, cbor(copyBuf(key.keyData)));
+		writeDerivedMeta(map, key, v1);
+		return cbor(map);
+	}
+	function decodeDerivedHdKeyBody(value) {
+		const map = expectClosedIntMap(value, DERIVED_KEYS);
+		const meta = readDerivedMeta(map, false);
+		const keyData = bytesOfLen(map.getOrThrow(3), KEY_DATA_LEN$1);
+		assertKeyData(meta.isPrivate === true, keyData);
+		return Object.freeze(_objectSpread2(_objectSpread2({ kind: "derived" }, meta), {}, { keyData }));
+	}
+	var hdKeyCodec = {
+		tags: [TAGS.hdkey, TAGS["crypto-hdkey"]],
+		encode(key) {
+			return encodeHdKeyBody(key, false);
+		},
+		decode(value) {
+			const masterFlag = expectMap(value).get(1);
+			if (masterFlag !== void 0) {
+				if (!expectBool(masterFlag)) throw CborError$1.wrongType();
+				const map = expectClosedIntMap(value, MASTER_KEYS);
+				const keyData = bytesOfLen(map.getOrThrow(3), KEY_DATA_LEN$1);
+				assertKeyData(true, keyData);
+				return Object.freeze({
+					kind: "master",
+					keyData,
+					chainCode: bytesOfLen(map.getOrThrow(4), CHAIN_CODE_LEN$1)
+				});
+			}
+			return decodeDerivedHdKeyBody(value);
+		}
+	};
+	TAGS["crypto-hdkey"], TAGS.hdkey, hdKeyCodec.decode;
+	TAGS["crypto-eckey"], TAGS.eckey, ecKeyCodec.encode, ecKeyCodec.decode;
+	TAGS["crypto-address"], TAGS.address, addressCodec.decode;
+	SCRIPT_TAGS.pk, SCRIPT_TAGS.pkh, SCRIPT_TAGS.wpkh, SCRIPT_TAGS.combo, SCRIPT_TAGS.tr;
+	TAGS["output-descriptor"], TAGS["crypto-output"];
+	TAGS["crypto-output"], TAGS["output-descriptor"];
+	TAGS["account-descriptor"], TAGS["crypto-account"];
+	TAGS["crypto-account"], TAGS["account-descriptor"];
+	TAGS.sskr, TAGS["crypto-sskr"];
+	TAGS.envelope;
+	// node_modules/.bun/@qntx+ur@4.0.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/interop.mjs
+	init_objectSpread2();
+	init_objectWithoutProperties();
+	var _excluded = ["isPrivate"];
+	var TAG_ETH_SIGN_REQUEST = 401;
+	var TAG_ETH_SIGNATURE = 402;
+	var TAG_SOL_SIGN_REQUEST = 1101;
+	var TAG_SOL_SIGNATURE = 1102;
+	var TAG_TRON_SIGN_REQUEST = 5101;
+	var TAG_TRON_SIGNATURE = 5102;
+	var TAG_CRYPTO_MULTI_ACCOUNTS = 1103;
+	var TAG_UUID = 37;
+	var TAG_ONEKEY_TRON_SIGN_REQUEST = 5201;
+	/**
+	* Interop (vendor-extension) tags — Keystone / OneKey / ERC-4527. `401`/`402` collide with the
+	* BCR-2020-010 `wsh`/`pk` script-expression tags; these types are never embedded tagged, so no
+	* global name registration happens here.
+	*/
+	var INTEROP_TAGS = {
+		"crypto-multi-accounts": Tag.from(TAG_CRYPTO_MULTI_ACCOUNTS, "crypto-multi-accounts"),
+		"eth-sign-request": Tag.from(TAG_ETH_SIGN_REQUEST, "eth-sign-request"),
+		"eth-signature": Tag.from(TAG_ETH_SIGNATURE, "eth-signature"),
+		"sol-sign-request": Tag.from(TAG_SOL_SIGN_REQUEST, "sol-sign-request"),
+		"sol-signature": Tag.from(TAG_SOL_SIGNATURE, "sol-signature"),
+		"tron-sign-request": Tag.from(TAG_TRON_SIGN_REQUEST, "tron-sign-request"),
+		"tron-signature": Tag.from(TAG_TRON_SIGNATURE, "tron-signature"),
+		uuid: Tag.from(TAG_UUID, "uuid")
+	};
+	Tag.from(TAG_ONEKEY_TRON_SIGN_REQUEST, "tron-sign-request");
+	var UUID_LEN$1 = 16;
+	/** `#6.37(bstr .size 16)` for a 16-byte request id (out-of-range otherwise). */
+	function requestIdTagged$1(requestId) {
+		if (requestId.length !== UUID_LEN$1) throw CborError$1.outOfRange();
+		return taggedValue(INTEROP_TAGS.uuid, cbor(copyBuf(requestId)));
+	}
+	/** Reads a `#6.37` tagged 16-byte request id (untagged ⇒ WrongType, foreign tag ⇒ WrongTag). */
+	function readRequestId$1(cbor) {
+		validateTag(cbor, [INTEROP_TAGS.uuid]);
+		const bytes = copyBytes(extractTaggedContent(cbor));
+		if (bytes.length !== UUID_LEN$1) throw CborError$1.outOfRange();
+		return bytes;
+	}
+	/** A signing path is concrete: at least one component, every one an index step. */
+	function assertConcretePath$1(path) {
+		if (path.components.length === 0 || path.components.some((component) => component.kind !== "index")) throw CborError$1.outOfRange();
+		return path;
+	}
+	/** `derivationPath` written `#6.304`; the path must be concrete. */
+	function derivationPathTagged$1(path) {
+		assertConcretePath$1(path);
+		return taggedValue(cryptoKeypathCodec.tags[0], cryptoKeypathCodec.encode(path));
+	}
+	/** Reads `#6.304`/`#6.40304` and requires a concrete path. */
+	function readDerivationPath$1(cbor) {
+		validateTag(cbor, [...cryptoKeypathCodec.tags]);
+		return assertConcretePath$1(cryptoKeypathCodec.decode(extractTaggedContent(cbor)));
+	}
+	/** Non-empty byte string (`signData`/`address`), copied. */
+	function readNonEmptyBytes$1(cbor) {
+		const bytes = copyBytes(cbor);
+		if (bytes.length === 0) throw CborError$1.outOfRange();
+		return bytes;
+	}
+	/** Byte string of exactly `len` bytes, copied. */
+	function readBytesLen(cbor, len) {
+		const bytes = copyBytes(cbor);
+		if (bytes.length !== len) throw CborError$1.outOfRange();
+		return bytes;
+	}
+	/** Writes `key: text` unless `text` is undefined or `""` (which encode as absent). */
+	function setOptionalText$1(map, key, text) {
+		if (text !== void 0 && text !== "") map.set(key, assertText(text));
+	}
+	/** Reads `key` as text when present; `""` on the wire reads as absent. */
+	function optionalText$1(map, key) {
+		const value = map.get(key);
+		if (value === void 0) return;
+		const text = expectText(value);
+		return text === "" ? void 0 : text;
+	}
+	var SIGN_REQUEST_KEYS$2 = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3,
+		4,
+		5,
+		6,
+		7
+	]);
+	var SIGNATURE_KEYS$2 = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3
+	]);
+	var ADDRESS_LEN = 20;
+	var SIGNATURE_MIN = 65;
+	var SIGNATURE_MAX = 72;
+	var CHAIN_ID_MAX = 35184372088831;
+	var DATA_TYPE_WIRE = {
+		transaction: 1,
+		typedData: 2,
+		personalMessage: 3,
+		typedTransaction: 4
+	};
+	function decodeDataType(cbor) {
+		switch (expectUnsigned(cbor)) {
+			case 1: return "transaction";
+			case 2: return "typedData";
+			case 3: return "personalMessage";
+			case 4: return "typedTransaction";
+			default: throw CborError$1.outOfRange();
+		}
+	}
+	function dataTypeWire(dataType) {
+		const wire = DATA_TYPE_WIRE[dataType];
+		if (wire === void 0) throw CborError$1.wrongType();
+		return wire;
+	}
+	function assertChainId(chainId) {
+		if (!Number.isInteger(chainId) || chainId < 1 || chainId > CHAIN_ID_MAX) throw CborError$1.outOfRange();
+		return chainId;
+	}
+	function readChainId(value) {
+		const n = expectInteger$1(value);
+		if (typeof n !== "number" || !Number.isInteger(n) || n < 1 || n > CHAIN_ID_MAX) throw CborError$1.outOfRange();
+		return n;
+	}
+	function assertAddress(address) {
+		if (address.length !== ADDRESS_LEN) throw CborError$1.outOfRange();
+		return copyBuf(address);
+	}
+	var ethSignRequestCodec = {
+		tags: [INTEROP_TAGS["eth-sign-request"]],
+		encode(request) {
+			const map = new CborMap();
+			if (request.requestId !== void 0) map.set(1, requestIdTagged$1(request.requestId));
+			const signData = copyBuf(request.signData);
+			if (signData.length === 0) throw CborError$1.outOfRange();
+			map.set(2, cbor(signData));
+			map.set(3, dataTypeWire(request.dataType));
+			if (request.chainId !== void 0) map.set(4, assertChainId(request.chainId));
+			map.set(5, derivationPathTagged$1(request.derivationPath));
+			if (request.address !== void 0) map.set(6, cbor(assertAddress(request.address)));
+			setOptionalText$1(map, 7, request.origin);
+			return cbor(map);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, SIGN_REQUEST_KEYS$2);
+			const requestId = map.get(1);
+			const chainId = map.get(4);
+			const address = map.get(6);
+			const origin = optionalText$1(map, 7);
+			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, {
+				signData: readNonEmptyBytes$1(map.getOrThrow(2)),
+				dataType: decodeDataType(map.getOrThrow(3))
+			}, chainId === void 0 ? {} : { chainId: readChainId(chainId) }), {}, { derivationPath: readDerivationPath$1(map.getOrThrow(5)) }, address === void 0 ? {} : { address: readBytesLen(address, ADDRESS_LEN) }), origin === void 0 ? {} : { origin }));
+		}
+	};
+	var ethSignatureCodec = {
+		tags: [INTEROP_TAGS["eth-signature"]],
+		encode(signature) {
+			const map = new CborMap();
+			if (signature.requestId !== void 0) map.set(1, requestIdTagged$1(signature.requestId));
+			const bytes = copyBuf(signature.signature);
+			if (bytes.length < SIGNATURE_MIN || bytes.length > SIGNATURE_MAX) throw CborError$1.outOfRange();
+			map.set(2, cbor(bytes));
+			setOptionalText$1(map, 3, signature.origin);
+			return cbor(map);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, SIGNATURE_KEYS$2);
+			const requestId = map.get(1);
+			const signature = copyBytes(map.getOrThrow(2));
+			if (signature.length < SIGNATURE_MIN || signature.length > SIGNATURE_MAX) throw CborError$1.outOfRange();
+			const origin = optionalText$1(map, 3);
+			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, { signature }, origin === void 0 ? {} : { origin }));
+		}
+	};
+	var SIGN_REQUEST_KEYS$1 = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3,
+		4,
+		5,
+		6
+	]);
+	var SIGNATURE_KEYS$1 = /* @__PURE__ */ new Set([1, 2]);
+	var SIGNATURE_LEN$1 = 64;
+	var SIGN_TYPE_WIRE = {
+		transaction: 1,
+		message: 2,
+		offchainMessageLegacy: 3,
+		offchainMessageStandard: 4
+	};
+	function decodeSignType(cbor) {
+		switch (expectUnsigned(cbor)) {
+			case 1: return "transaction";
+			case 2: return "message";
+			case 3: return "offchainMessageLegacy";
+			case 4: return "offchainMessageStandard";
+			default: throw CborError$1.outOfRange();
+		}
+	}
+	function signTypeWire(signType) {
+		const wire = SIGN_TYPE_WIRE[signType];
+		if (wire === void 0) throw CborError$1.wrongType();
+		return wire;
+	}
+	var solSignRequestCodec = {
+		tags: [INTEROP_TAGS["sol-sign-request"]],
+		encode(request) {
+			const map = new CborMap();
+			if (request.requestId !== void 0) map.set(1, requestIdTagged$1(request.requestId));
+			const signData = copyBuf(request.signData);
+			if (signData.length === 0) throw CborError$1.outOfRange();
+			map.set(2, cbor(signData));
+			map.set(3, derivationPathTagged$1(request.derivationPath));
+			if (request.address !== void 0) {
+				if (request.address.length === 0) throw CborError$1.outOfRange();
+				map.set(4, cbor(copyBuf(request.address)));
+			}
+			setOptionalText$1(map, 5, request.origin);
+			map.set(6, signTypeWire(request.signType));
+			return cbor(map);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, SIGN_REQUEST_KEYS$1);
+			const requestId = map.get(1);
+			const address = map.get(4);
+			const origin = optionalText$1(map, 5);
+			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, {
+				signData: readNonEmptyBytes$1(map.getOrThrow(2)),
+				derivationPath: readDerivationPath$1(map.getOrThrow(3))
+			}, address === void 0 ? {} : { address: readNonEmptyBytes$1(address) }), origin === void 0 ? {} : { origin }), {}, { signType: decodeSignType(map.getOrThrow(6)) }));
+		}
+	};
+	var solSignatureCodec = {
+		tags: [INTEROP_TAGS["sol-signature"]],
+		encode(signature) {
+			const map = new CborMap();
+			if (signature.requestId !== void 0) map.set(1, requestIdTagged$1(signature.requestId));
+			const bytes = copyBuf(signature.signature);
+			if (bytes.length !== SIGNATURE_LEN$1) throw CborError$1.outOfRange();
+			map.set(2, cbor(bytes));
+			return cbor(map);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, SIGNATURE_KEYS$1);
+			const requestId = map.get(1);
+			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, { signature: readBytesLen(map.getOrThrow(2), SIGNATURE_LEN$1) }));
+		}
+	};
+	var SIGN_REQUEST_KEYS = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3,
+		4,
+		5,
+		6
+	]);
+	var SIGNATURE_KEYS = /* @__PURE__ */ new Set([1, 2]);
+	var SIGNATURE_LEN = 65;
+	function decodeBody(value) {
+		const map = expectClosedIntMap(value, SIGN_REQUEST_KEYS);
+		const requestId = map.get(1);
+		const discriminator = map.getOrThrow(3);
+		let request;
+		if (discriminator.type === MajorType.Unsigned) {
+			const dataType = keystoneDataType(expectUnsigned(discriminator));
+			request = _objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, {
+				signData: readNonEmptyBytes$1(map.getOrThrow(2)),
+				dataType,
+				derivationPath: readDerivationPath$1(map.getOrThrow(4))
+			}, optionalAddressOrigin(map, 5, 6));
+		} else if (discriminator.type === MajorType.Tagged) request = _objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, {
+			signData: readNonEmptyBytes$1(map.getOrThrow(2)),
+			dataType: oneKeyRequestType(map.getOrThrow(6)),
+			derivationPath: readDerivationPath$1(discriminator)
+		}, optionalAddressOrigin(map, 4, 5));
+		else throw CborError$1.wrongType();
+		return Object.freeze(request);
+	}
+	function keystoneDataType(n) {
+		switch (n) {
+			case 1: return "transaction";
+			case 2: return "messageV2";
+			default: throw CborError$1.outOfRange();
+		}
+	}
+	function oneKeyRequestType(cbor) {
+		switch (expectUnsigned(cbor)) {
+			case 1: return "transaction";
+			case 2: return "messageV1";
+			case 3: return "messageV2";
+			default: throw CborError$1.outOfRange();
+		}
+	}
+	function optionalAddressOrigin(map, addressKey, originKey) {
+		const address = map.get(addressKey);
+		const origin = optionalText$1(map, originKey);
+		return _objectSpread2(_objectSpread2({}, address === void 0 ? {} : { address: readNonEmptyBytes$1(address) }), origin === void 0 ? {} : { origin });
+	}
+	function keystoneDataTypeWire(dataType) {
+		switch (dataType) {
+			case "transaction": return 1;
+			case "messageV2": return 2;
+			default: throw CborError$1.outOfRange();
+		}
+	}
+	function sharedFields(map, request) {
+		if (request.requestId !== void 0) map.set(1, requestIdTagged$1(request.requestId));
+		const signData = copyBuf(request.signData);
+		if (signData.length === 0) throw CborError$1.outOfRange();
+		map.set(2, cbor(signData));
+	}
+	function optionalTail(map, request, addressKey, originKey) {
+		if (request.address !== void 0) {
+			if (request.address.length === 0) throw CborError$1.outOfRange();
+			map.set(addressKey, cbor(copyBuf(request.address)));
+		}
+		setOptionalText$1(map, originKey, request.origin);
+	}
+	/**
+	* Keystone's `tron-sign-request` writer (tag 5101): `{1 uuid?, 2 signData, 3 dataType, 4 path, 5
+	* address?, 6 origin?}` where `dataType` is 1 transaction / 2 messageV2 — `messageV1` has no
+	* Keystone wire value, so both encode and decode reject it (decode would not round-trip). Reads the
+	* OneKey dialect too at the body level: key 3's CBOR type picks the layout, and `transaction`/
+	* `messageV2` OneKey bodies decode because they re-encode under this writer. `fromTagged` requires
+	* this codec's own tag (5101).
+	*/
+	var tronSignRequestCodec = {
+		tags: [INTEROP_TAGS["tron-sign-request"]],
+		encode(request) {
+			const map = new CborMap();
+			sharedFields(map, request);
+			map.set(3, keystoneDataTypeWire(request.dataType));
+			map.set(4, derivationPathTagged$1(request.derivationPath));
+			optionalTail(map, request, 5, 6);
+			return cbor(map);
+		},
+		decode(value) {
+			const request = decodeBody(value);
+			if (request.dataType === "messageV1") throw CborError$1.outOfRange();
+			return request;
+		}
+	};
+	var tronSignatureCodec = {
+		tags: [INTEROP_TAGS["tron-signature"]],
+		encode(signature) {
+			const map = new CborMap();
+			if (signature.requestId !== void 0) map.set(1, requestIdTagged$1(signature.requestId));
+			const bytes = copyBuf(signature.signature);
+			if (bytes.length !== SIGNATURE_LEN) throw CborError$1.outOfRange();
+			map.set(2, cbor(bytes));
+			return cbor(map);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, SIGNATURE_KEYS);
+			const requestId = map.get(1);
+			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, { signature: readBytesLen(map.getOrThrow(2), SIGNATURE_LEN) }));
+		}
+	};
+	var ACCOUNT_KEYS = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3,
+		4,
+		5
+	]);
+	var KEY_BODY_KEYS = /* @__PURE__ */ new Set([
+		2,
+		3,
+		4,
+		5,
+		6,
+		7,
+		8,
+		9,
+		10
+	]);
+	var KEY_DATA_LEN = 33;
+	var ED25519_KEY_DATA_LEN = 32;
+	var CHAIN_CODE_LEN = 32;
+	function encodeKey(key) {
+		if (key.curve === "secp256k1") {
+			const derived = key.key;
+			if (derived.isPrivate === true || derived.keyData.length !== KEY_DATA_LEN) throw CborError$1.outOfRange();
+			const map = new CborMap();
+			map.set(3, cbor(copyBuf(derived.keyData)));
+			writeDerivedMeta(map, derived, true);
+			return taggedValue(TAGS["crypto-hdkey"], cbor(map));
+		}
+		const ed = key.key;
+		if (ed.isPrivate !== void 0 && ed.isPrivate) throw CborError$1.outOfRange();
+		if (ed.keyData.length !== ED25519_KEY_DATA_LEN) throw CborError$1.outOfRange();
+		const map = new CborMap();
+		map.set(3, cbor(copyBuf(ed.keyData)));
+		writeDerivedMeta(map, ed, true);
+		return taggedValue(TAGS["crypto-hdkey"], cbor(map));
+	}
+	function decodeKey(cbor) {
+		validateTag(cbor, [TAGS["crypto-hdkey"], TAGS.hdkey]);
+		const body = extractTaggedContent(cbor);
+		const keyData = expectMap(body).get(3);
+		if (keyData === void 0) throw CborError$1.wrongType();
+		const bytes = copyBytes(keyData);
+		if (bytes.length === KEY_DATA_LEN) {
+			const derived = decodeDerivedHdKeyBody(body);
+			if (derived.isPrivate === true) throw CborError$1.outOfRange();
+			return Object.freeze({
+				curve: "secp256k1",
+				key: derived
+			});
+		}
+		if (bytes.length !== ED25519_KEY_DATA_LEN) throw CborError$1.outOfRange();
+		const meta = readDerivedMeta(expectClosedIntMap(body, KEY_BODY_KEYS), true);
+		if (meta.isPrivate === true) throw CborError$1.outOfRange();
+		if (meta.chainCode !== void 0 && meta.chainCode.length !== CHAIN_CODE_LEN) throw CborError$1.outOfRange();
+		const { isPrivate: _isPrivate } = meta, rest = _objectWithoutProperties(meta, _excluded);
+		return Object.freeze({
+			curve: "ed25519",
+			key: Object.freeze(_objectSpread2(_objectSpread2({}, rest), {}, { keyData: bytes }, meta.isPrivate === void 0 ? {} : { isPrivate: false }))
+		});
+	}
+	function assertFingerprint(n) {
+		if (!Number.isInteger(n) || n < 0 || n > 4294967295) throw CborError$1.outOfRange();
+	}
+	var cryptoMultiAccountsCodec = {
+		tags: [INTEROP_TAGS["crypto-multi-accounts"]],
+		encode(accounts) {
+			if (accounts.keys.length === 0) throw CborError$1.outOfRange();
+			assertFingerprint(accounts.masterFingerprint);
+			const map = new CborMap();
+			map.set(1, accounts.masterFingerprint);
+			const keys = accounts.keys.map(encodeKey);
+			map.set(2, keys);
+			setOptionalText$1(map, 3, accounts.device);
+			setOptionalText$1(map, 4, accounts.deviceId);
+			setOptionalText$1(map, 5, accounts.version);
+			return cbor(map);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, ACCOUNT_KEYS);
+			const keys = expectArray(map.getOrThrow(2));
+			if (keys.length === 0) throw CborError$1.outOfRange();
+			const device = optionalText$1(map, 3);
+			const deviceId = optionalText$1(map, 4);
+			const version = optionalText$1(map, 5);
+			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2({
+				masterFingerprint: expectUint(map.getOrThrow(1), 4294967295),
+				keys: keys.map(decodeKey)
+			}, device === void 0 ? {} : { device }), deviceId === void 0 ? {} : { deviceId }), version === void 0 ? {} : { version }));
+		}
+	};
+	// packages/wallet-kernel/src/modules/signers/keystone/ur.ts
+	/**
+	* The Keystone driver's UR codecs on `@qntx/ur`'s typed layer. The pairing sync, the signatures and
+	* `crypto-psbt` decode through the library's registry and interop codecs; the two wire formats it
+	* does not carry are the local `UrCodec`s here — `btc-sign-request`/`btc-signature` (tags
+	* 8101/8102, ur-registry 1.0.9 bitcoin/btc_sign_request.rs) and the `qr-hardware-call`
+	* key-derivation request (1201, `@keystonehq/bc-ur-registry` extended/QRHardwareCall). Like the
+	* library's interop codecs the local maps are closed, tagged items are validated, and every field
+	* length is exact.
+	*
+	* `decodeUr` is the only entry device bytes reach: it re-asserts the payload bound the protocol
+	* already applies, then folds every decode failure — a dcbor `CborError`, a library `UrError`, the
+	* host `RangeError` hostile nesting can raise — into `KernelError("integrity")`. An encode failure
+	* means the request the kernel built was malformed and closes the same way; no untyped error ever
+	* escapes this module.
+	*/
+	init_objectSpread2();
+	/** Device answers are QR payloads — the protocol already bounds them; the decode re-asserts. */
+	var MAX_BYTES = 262144;
+	var UUID_TAG = Tag.from(37, "uuid");
+	var UUID_LEN = 16;
+	var [KEYPATH_TAG] = cryptoKeypathCodec.tags;
+	var HARDENED$4 = 2147483648;
+	function integrity$3() {
+		throw new KernelError("integrity", "malformed device UR exchange");
+	}
+	/** DCBOR `bytes` carried by UR `type`, decoded by `codec`; every failure is `integrity`. */
+	var decodeUr = (type, bytes, codec) => {
+		try {
+			if (bytes.length === 0 || bytes.length > MAX_BYTES) throw CborError$1.outOfRange();
+			return fromUr(Ur.fromCborData(type, bytes), codec);
+		} catch (error) {
+			if (error instanceof KernelError) throw error;
+			throw new KernelError("integrity", "malformed device UR exchange");
+		}
+	};
+	/** `codec`'s untagged dCBOR body for `value`; a malformed request build is `integrity`. */
+	var encodeUr = (value, codec) => {
+		try {
+			return toUr(value, codec).toCborData();
+		} catch (error) {
+			if (error instanceof KernelError) throw error;
+			throw new KernelError("integrity", "malformed device UR exchange");
+		}
+	};
+	/** A BIP-32 master fingerprint as its uint32 wire form (the registry's `sourceFingerprint`). */
+	var fingerprintNumber$1 = (fingerprint) => {
+		if (fingerprint.length !== 4) integrity$3();
+		return new DataView(fingerprint.buffer, fingerprint.byteOffset, 4).getUint32(0);
+	};
+	/** A uint32 wire fingerprint back to its four big-endian bytes. */
+	var fingerprintBytes = (fingerprint) => {
+		const out = /* @__PURE__ */ new Uint8Array(4);
+		new DataView(out.buffer).setUint32(0, fingerprint);
+		return out;
+	};
+	/** The `crypto-keypath` a sign or derivation request carries: index steps plus the fingerprint. */
+	var requestKeypath = (path, fingerprint) => ({
+		components: path.map((component) => ({
+			kind: "index",
+			index: component % HARDENED$4,
+			hardened: component >= HARDENED$4
+		})),
+		sourceFingerprint: fingerprintNumber$1(fingerprint)
+	});
+	var requestIdTagged = (requestId) => {
+		if (requestId.length !== UUID_LEN) throw CborError$1.outOfRange();
+		return taggedValue(UUID_TAG, cbor(new Uint8Array(requestId)));
+	};
+	var readRequestId = (value) => {
+		validateTag(value, [UUID_TAG]);
+		const bytes = expectBytes$1(extractTaggedContent(value));
+		if (bytes.length !== UUID_LEN) throw CborError$1.outOfRange();
+		return new Uint8Array(bytes);
+	};
+	/** A signing path is concrete: at least one component, every one an index step. */
+	var assertConcretePath = (path) => {
+		if (path.components.length === 0 || path.components.some((component) => component.kind !== "index")) throw CborError$1.outOfRange();
+		return path;
+	};
+	var derivationPathTagged = (path) => taggedValue(KEYPATH_TAG, cryptoKeypathCodec.encode(assertConcretePath(path)));
+	var readDerivationPath = (value) => {
+		validateTag(value, [...cryptoKeypathCodec.tags]);
+		return assertConcretePath(cryptoKeypathCodec.decode(extractTaggedContent(value)));
+	};
+	var readNonEmptyBytes = (value) => {
+		const bytes = new Uint8Array(expectBytes$1(value));
+		if (bytes.length === 0) throw CborError$1.outOfRange();
+		return bytes;
+	};
+	var optionalText = (map, key) => {
+		const value = map.get(key);
+		if (value === void 0) return;
+		const text = expectText(value);
+		return text === "" ? void 0 : text;
+	};
+	var setOptionalText = (map, key, text) => {
+		if (text !== void 0 && text !== "") map.set(key, text);
+	};
+	/** The closed unsigned-key map every registry structure is. */
+	var closedIntMap = (value, allowed) => {
+		const map = expectMap(value);
+		for (const [key] of map) {
+			const n = expectUnsigned(key);
+			if (typeof n !== "number" || !Number.isInteger(n) || !allowed.has(n)) throw CborError$1.wrongType();
+		}
+		return map;
+	};
+	var BTC_SIGN_REQUEST_KEYS = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3,
+		4,
+		5,
+		6
+	]);
+	var BTC_SIGNATURE_KEYS = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3
+	]);
+	var HARDWARE_CALL_KEYS = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3,
+		4
+	]);
+	var KEY_DERIVATION_CALL_KEYS = /* @__PURE__ */ new Set([1]);
+	var KEY_DERIVATION_SCHEMA_KEYS = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3,
+		4
+	]);
+	var BTC_MESSAGE_DATA_TYPE = 1;
+	var PUBLIC_KEY_LEN = 33;
+	var TAG_KEY_DERIVATION_CALL = Tag.from(1301, "key-derivation-call");
+	var TAG_KEY_DERIVATION_SCHEMA = Tag.from(1302, "key-derivation-schema");
+	/**
+	* Keystone's `btc-sign-request` (tag 8101): `{1 uuid?, 2 signData, 3 dataType, 4 [keypaths], 5
+	* addresses?, 6 origin?}`. The only data type the vendor enum defines is message (1) — the driver's
+	* bitcoin message signing — so both directions accept it alone.
+	*/
+	var btcSignRequestCodec = {
+		tags: [Tag.from(8101, "btc-sign-request")],
+		encode(request) {
+			if (request.derivationPaths.length === 0) throw CborError$1.outOfRange();
+			const signData = new Uint8Array(request.signData);
+			if (signData.length === 0) throw CborError$1.outOfRange();
+			const map = new CborMap();
+			if (request.requestId !== void 0) map.set(1, requestIdTagged(request.requestId));
+			map.set(2, cbor(signData));
+			map.set(3, BTC_MESSAGE_DATA_TYPE);
+			map.set(4, request.derivationPaths.map(derivationPathTagged));
+			if (request.addresses !== void 0 && request.addresses.length > 0) map.set(5, request.addresses.map((address) => {
+				if (address === "") throw CborError$1.outOfRange();
+				return address;
+			}));
+			setOptionalText(map, 6, request.origin);
+			return cbor(map);
+		},
+		decode(value) {
+			const map = closedIntMap(value, BTC_SIGN_REQUEST_KEYS);
+			const requestId = map.get(1);
+			if (expectUnsigned(map.getOrThrow(3)) !== BTC_MESSAGE_DATA_TYPE) throw CborError$1.outOfRange();
+			const addresses = map.get(5);
+			const origin = optionalText(map, 6);
+			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
+				signData: readNonEmptyBytes(map.getOrThrow(2)),
+				derivationPaths: expectArray(map.getOrThrow(4)).map(readDerivationPath)
+			}, addresses === void 0 ? {} : { addresses: expectArray(addresses).map((address) => {
+				const text = expectText(address);
+				if (text === "") throw CborError$1.outOfRange();
+				return text;
+			}) }), origin === void 0 ? {} : { origin }));
+		}
+	};
+	var btcSignatureCodec = {
+		tags: [Tag.from(8102, "btc-signature")],
+		encode(signature) {
+			const map = new CborMap();
+			if (signature.requestId !== void 0) map.set(1, requestIdTagged(signature.requestId));
+			const signatureBytes = new Uint8Array(signature.signature);
+			if (signatureBytes.length === 0) throw CborError$1.outOfRange();
+			map.set(2, cbor(signatureBytes));
+			const publicKey = new Uint8Array(signature.publicKey);
+			if (publicKey.length !== PUBLIC_KEY_LEN) throw CborError$1.outOfRange();
+			map.set(3, cbor(publicKey));
+			return cbor(map);
+		},
+		decode(value) {
+			const map = closedIntMap(value, BTC_SIGNATURE_KEYS);
+			const requestId = map.get(1);
+			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
+				signature: readNonEmptyBytes(map.getOrThrow(2)),
+				publicKey: readNonEmptyBytes(map.getOrThrow(3))
+			}));
+		}
+	};
+	var CURVE_WIRE = {
+		secp256k1: 0,
+		ed25519: 1
+	};
+	var readCurve = (value) => {
+		switch (expectUnsigned(value)) {
+			case 0: return "secp256k1";
+			case 1: return "ed25519";
+			default: throw CborError$1.outOfRange();
+		}
+	};
+	var derivationSchema = (schema) => {
+		const map = new CborMap();
+		map.set(1, derivationPathTagged(schema.path));
+		map.set(2, CURVE_WIRE[schema.curve]);
+		map.set(3, 0);
+		return taggedValue(TAG_KEY_DERIVATION_SCHEMA, cbor(map));
+	};
+	var readDerivationSchema = (value) => {
+		validateTag(value, [TAG_KEY_DERIVATION_SCHEMA]);
+		const map = closedIntMap(extractTaggedContent(value), KEY_DERIVATION_SCHEMA_KEYS);
+		const chainType = map.get(4);
+		if (chainType !== void 0 && chainType.type !== MajorType.ByteString) throw CborError$1.wrongType();
+		if (expectUnsigned(map.getOrThrow(3)) !== 0) throw CborError$1.outOfRange();
 		return {
-			isMaster,
-			isPrivate,
-			key,
-			chainCode,
-			useInfo,
-			origin,
-			children,
-			parentFingerprint,
-			name,
-			note
+			path: readDerivationPath(map.getOrThrow(1)),
+			curve: readCurve(map.getOrThrow(2))
 		};
 	};
 	/**
-	* The sync payload: the bare map — the UR's type already carries the `crypto-multi-accounts` tag,
-	* and a device-sized payload wrapped in it again would exceed the decoder's depth cap.
+	* The `qr-hardware-call` (tag 1201) the wallet sends for key derivation: `{1 callType, 2 #1301
+	* key-derivation-call {1 [schemas]}, 3 origin?, 4 version?}`. Only call-type 0 exists on the wire
+	* this wallet writes, and version stays absent — V0 is the default every client sends (the vendor
+	* encoder drops a falsy version), which is what firmware 3.2.2 parses.
 	*/
-	var multiAccounts = (value) => {
-		if (value.kind !== "map") fail$3();
-		const root = value;
-		let masterFingerprint;
-		let keys;
-		let device;
-		let deviceId;
-		let deviceVersion;
-		for (const [key, entry] of root.entries) switch (keyOf(key)) {
-			case 1:
-				masterFingerprint = fingerprint(entry);
-				break;
-			case 2:
-				if (entry.kind !== "array") fail$3();
-				keys = entry.items.map((item) => hdKey(tagged$1(item, 303)));
-				break;
-			case 3:
-				device = text(entry);
-				break;
-			case 4:
-				deviceId = text(entry);
-				break;
-			case 5: deviceVersion = text(entry);
+	var qrHardwareCallCodec = {
+		tags: [Tag.from(1201, "qr-hardware-call")],
+		encode(call) {
+			if (call.schemas.length === 0) throw CborError$1.outOfRange();
+			const params = new CborMap();
+			params.set(1, call.schemas.map(derivationSchema));
+			const map = new CborMap();
+			map.set(1, 0);
+			map.set(2, taggedValue(TAG_KEY_DERIVATION_CALL, cbor(params)));
+			setOptionalText(map, 3, call.origin);
+			return cbor(map);
+		},
+		decode(value) {
+			const map = closedIntMap(value, HARDWARE_CALL_KEYS);
+			if (expectUnsigned(map.getOrThrow(1)) !== 0) throw CborError$1.outOfRange();
+			validateTag(map.getOrThrow(2), [TAG_KEY_DERIVATION_CALL]);
+			const params = closedIntMap(extractTaggedContent(map.getOrThrow(2)), KEY_DERIVATION_CALL_KEYS);
+			const origin = optionalText(map, 3);
+			return Object.freeze(_objectSpread2({ schemas: expectArray(params.getOrThrow(1)).map(readDerivationSchema) }, origin === void 0 ? {} : { origin }));
 		}
-		if (masterFingerprint === void 0 || keys === void 0) fail$3();
-		return {
-			masterFingerprint,
-			keys,
-			device,
-			deviceId,
-			deviceVersion
-		};
 	};
-	var HARDENED_BIT = 2147483648;
-	var cborUint = (value) => ({
-		kind: "uint",
-		value
-	});
-	var cborBytes = (value) => ({
-		kind: "bytes",
-		value
-	});
-	var cborText = (value) => ({
-		kind: "text",
-		value
-	});
-	var cborMap = (entries) => ({
-		kind: "map",
-		entries: entries.map(([key, value]) => [cborUint(key), value])
-	});
-	var keyPathCbor = (path, fingerprint) => {
-		if (fingerprint.length !== 4) fail$3();
-		return {
-			kind: "tag",
-			tag: 304,
-			item: cborMap([[1, {
-				kind: "array",
-				items: path.flatMap((component) => [cborUint(component % HARDENED_BIT), {
-					kind: "bool",
-					value: component >= HARDENED_BIT
-				}])
-			}], [2, cborUint(new DataView(fingerprint.buffer, fingerprint.byteOffset, 4).getUint32(0))]])
-		};
-	};
-	var requestIdCbor = (requestId) => {
-		if (requestId.length !== 16) fail$3();
-		return {
-			kind: "tag",
-			tag: 37,
-			item: cborBytes(requestId)
-		};
-	};
-	var ethSignRequest = (fields) => encodeCbor(cborMap([
-		[1, requestIdCbor(fields.requestId)],
-		[2, cborBytes(fields.signData)],
-		[3, cborUint(fields.dataType)],
-		...fields.chainId === void 0 ? [] : [[4, cborUint(fields.chainId)]],
-		[5, keyPathCbor(fields.path, fields.fingerprint)],
-		[7, cborText(fields.origin)]
-	]));
-	var solSignRequest = (fields) => encodeCbor(cborMap([
-		[1, requestIdCbor(fields.requestId)],
-		[2, cborBytes(fields.signData)],
-		[3, keyPathCbor(fields.path, fields.fingerprint)],
-		[5, cborText(fields.origin)],
-		[6, cborUint(fields.signType)]
-	]));
-	var tronSignRequest = (fields) => encodeCbor(cborMap([
-		[1, requestIdCbor(fields.requestId)],
-		[2, cborBytes(fields.signData)],
-		[3, cborUint(fields.dataType)],
-		[4, keyPathCbor(fields.path, fields.fingerprint)],
-		[6, cborText(fields.origin)]
-	]));
-	var btcSignRequest = (fields) => encodeCbor(cborMap([
-		[1, requestIdCbor(fields.requestId)],
-		[2, cborBytes(fields.signData)],
-		[3, cborUint(1)],
-		[4, {
-			kind: "array",
-			items: fields.paths.map((path) => keyPathCbor(path, fields.fingerprint))
-		}],
-		[6, cborText(fields.origin)]
-	]));
-	/** A `crypto-psbt` payload is the bare PSBT byte string — the UR type carries tag 310. */
-	var cryptoPsbt = (psbt) => encodeCbor(cborBytes(psbt));
-	var derivationSchema = (path, curve, fingerprint) => ({
-		kind: "tag",
-		tag: TAG_KEY_DERIVATION_SCHEMA,
-		item: cborMap([
-			[1, keyPathCbor(path, fingerprint)],
-			[2, cborUint(curve)],
-			[3, cborUint(0)]
-		])
-	});
-	/**
-	* A `qr-hardware-call` key-derivation request: call-type 0, #1301 key-derivation-call wrapping the
-	* schemas and the wallet origin string. Version stays absent — V0 is the default every client sends
-	* (the vendor encoder drops a falsy version), which is what firmware 3.2.2 parses.
-	*/
-	var hardwareCall = (fields) => encodeCbor(cborMap([
-		[1, cborUint(0)],
-		[2, {
-			kind: "tag",
-			tag: TAG_KEY_DERIVATION_CALL,
-			item: cborMap([[1, {
-				kind: "array",
-				items: [...fields.secp256k1.map((path) => derivationSchema(path, 0, fields.fingerprint)), ...fields.ed25519.map((path) => derivationSchema(path, 1, fields.fingerprint))]
-			}]])
-		}],
-		[3, cborText(fields.origin)]
-	]));
-	var requestId = (entries) => {
-		var _entries$find;
-		const taggedId = (_entries$find = entries.find(([key]) => key.kind === "uint" && key.value === 1)) === null || _entries$find === void 0 ? void 0 : _entries$find[1];
-		return taggedId === void 0 ? void 0 : bytes(tagged$1(taggedId, 37));
-	};
-	var signatureFields = (value) => {
-		var _value$entries$find;
-		if (value.kind !== "map") fail$3();
-		const signature = (_value$entries$find = value.entries.find(([key]) => key.kind === "uint" && key.value === 2)) === null || _value$entries$find === void 0 ? void 0 : _value$entries$find[1];
-		if (signature === void 0) fail$3();
-		return {
-			requestId: requestId(value.entries),
-			signature: bytes(signature)
-		};
-	};
-	var ethSignature = (value) => signatureFields(value);
-	var solSignature = (value) => signatureFields(value);
-	var tronSignature = (value) => signatureFields(value);
-	var btcSignature = (value) => {
-		var _value$entries$find2;
-		if (value.kind !== "map") fail$3();
-		const publicKey = (_value$entries$find2 = value.entries.find(([key]) => key.kind === "uint" && key.value === 3)) === null || _value$entries$find2 === void 0 ? void 0 : _value$entries$find2[1];
-		if (publicKey === void 0) fail$3();
-		return _objectSpread2(_objectSpread2({}, signatureFields(value)), {}, { publicKey: bytes(publicKey) });
-	};
-	/** Decodes a `crypto-psbt` response payload: the signed PSBT byte string. */
-	var cryptoPsbtBytes = (value) => bytes(value);
 	// packages/wallet-kernel/src/modules/signers/keystone/sync.ts
-	/**
-	* The Keystone-Connect pairing sync: decode the `crypto-multi-accounts` the device shows over QR
-	* and pin exactly the public material the design names — the six BIP-32 account nodes and the two
-	* SLIP-10 ed25519 leaves a Keystone 3 Pro publishes. Every other key (DOGE/XRP/LTC/BCH/ZEC/ADA
-	* accounts, the ledger-legacy/live derivatives without chain code) parses structurally and is then
-	* ignored: it may not influence the pin.
-	*/
 	init_secp256k1();
 	init_objectSpread2();
 	var HARDENED$3 = 2147483648;
@@ -44382,11 +49471,14 @@ zoo`.split("\n"));
 	function fail$2() {
 		throw new KernelError("integrity", "malformed crypto-multi-accounts sync");
 	}
-	/** The derivation path a keypath claims, or `undefined` when a wildcard makes it unpinnable. */
-	var pathOf = (keyPath) => {
+	/**
+	* The derivation path a keypath claims, or `undefined` when a non-index component (wildcard, range,
+	* pair) makes it unpinnable.
+	*/
+	var pathOf = (keypath) => {
 		const components = [];
-		for (const component of keyPath.components) {
-			if (component.index === void 0 || component.index > 2147483647) return;
+		for (const component of keypath.components) {
+			if (component.kind !== "index") return;
 			components.push(component.index + (component.hardened ? HARDENED$3 : 0));
 		}
 		return components;
@@ -44395,50 +49487,41 @@ zoo`.split("\n"));
 	/** Parses the QR response: exactly a `crypto-multi-accounts` UR or `integrity`. */
 	var parseSync = (response) => {
 		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") fail$2();
-		const accounts = multiAccounts(decodeCbor(response.ur.cbor));
+		const accounts = decodeUr("crypto-multi-accounts", response.ur.cbor, cryptoMultiAccountsCodec);
 		const nodes = [];
 		const ed25519 = [];
 		const claimed = [];
 		for (const key of accounts.keys) {
-			const path = key.origin === void 0 ? void 0 : pathOf(key.origin);
-			if (key.origin !== void 0) {
-				const source = key.origin.sourceFingerprint;
-				if (source !== void 0 && !equalBytes$6(source, accounts.masterFingerprint)) fail$2();
-			}
-			if (key.isMaster || key.isPrivate || key.key === void 0 || path === void 0) continue;
+			const { origin } = key.key;
+			const path = origin === void 0 ? void 0 : pathOf(origin);
+			if ((origin === null || origin === void 0 ? void 0 : origin.sourceFingerprint) !== void 0 && origin.sourceFingerprint !== accounts.masterFingerprint) fail$2();
+			if (path === void 0) continue;
 			if (claimed.some((seen) => samePath$2(seen, path))) fail$2();
 			claimed.push(path);
 			if (SECP256K1_PATHS.some((wanted) => samePath$2(path, wanted))) {
-				if (key.key.length !== 33 || key.chainCode === void 0 || key.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(key.key)) fail$2();
+				if (key.curve !== "secp256k1") fail$2();
+				const node = key.key;
+				if (node.chainCode === void 0 || node.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(node.keyData)) fail$2();
 				nodes.push(_objectSpread2({
 					path,
-					publicKey: new Uint8Array(key.key),
-					chainCode: new Uint8Array(key.chainCode)
-				}, key.parentFingerprint === void 0 ? {} : { parent: new Uint8Array(key.parentFingerprint) }));
+					publicKey: new Uint8Array(node.keyData),
+					chainCode: new Uint8Array(node.chainCode)
+				}, node.parentFingerprint === void 0 ? {} : { parent: fingerprintBytes(node.parentFingerprint) }));
 			} else if (ED25519_PATHS.some((wanted) => samePath$2(path, wanted))) {
-				if (key.key.length !== 32) fail$2();
+				if (key.curve !== "ed25519") fail$2();
 				ed25519.push({
 					path,
-					publicKey: new Uint8Array(key.key)
+					publicKey: new Uint8Array(key.key.keyData)
 				});
 			}
 		}
 		if (nodes.length === 0 && ed25519.length === 0) fail$2();
-		return _objectSpread2(_objectSpread2(_objectSpread2({ fingerprint: accounts.masterFingerprint }, accounts.device === void 0 ? {} : { model: accounts.device }), accounts.deviceVersion === void 0 ? {} : { firmware: accounts.deviceVersion }), {}, {
+		return _objectSpread2(_objectSpread2(_objectSpread2({ fingerprint: fingerprintBytes(accounts.masterFingerprint) }, accounts.device === void 0 ? {} : { model: accounts.device }), accounts.version === void 0 ? {} : { firmware: accounts.version }), {}, {
 			nodes,
 			ed25519
 		});
 	};
 	// packages/wallet-kernel/src/modules/signers/keystone/derive.ts
-	/**
-	* The Keystone `qr-hardware-call` key-derivation exchange: the wallet asks the device to derive
-	* hardened nodes the sync could not pin (per-group account xpubs, solana change leaves). The
-	* request paths are checked against the firmware's `check_hardware_call_path` allow-list before
-	* anything is shown, and the `crypto-multi-accounts` answer must cover exactly the requested paths
-	* — anything missing, extra or duplicated fails closed (`integrity`). The claimed master
-	* fingerprint is returned unchanged; the module compares it against the pin and maps a mismatch to
-	* `wrong-device`.
-	*/
 	init_secp256k1();
 	init_objectSpread2();
 	var HARDENED$2 = 2147483648;
@@ -44488,44 +49571,50 @@ zoo`.split("\n"));
 			kind: "qr",
 			show: {
 				type: "qr-hardware-call",
-				cbor: hardwareCall(_objectSpread2(_objectSpread2({}, need), {}, {
-					fingerprint: pin.fingerprint,
+				cbor: encodeUr({
+					schemas: [...need.secp256k1.map((path) => ({
+						path: requestKeypath(path, pin.fingerprint),
+						curve: "secp256k1"
+					})), ...need.ed25519.map((path) => ({
+						path: requestKeypath(path, pin.fingerprint),
+						curve: "ed25519"
+					}))],
 					origin: ORIGIN$1
-				}))
+				}, qrHardwareCallCodec)
 			},
 			scan: ["crypto-multi-accounts"]
 		});
 		if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") integrity$2();
-		const accounts = multiAccounts(decodeCbor(response.ur.cbor));
+		const accounts = decodeUr("crypto-multi-accounts", response.ur.cbor, cryptoMultiAccountsCodec);
 		const nodes = [];
 		const ed25519 = [];
 		const answered = [];
 		for (const key of accounts.keys) {
-			const path = key.origin === void 0 ? void 0 : pathOf(key.origin);
-			if (key.origin !== void 0) {
-				const source = key.origin.sourceFingerprint;
-				if (source !== void 0 && !equalBytes$6(source, accounts.masterFingerprint)) integrity$2();
-			}
-			if (key.isMaster || key.isPrivate || key.key === void 0 || path === void 0) integrity$2();
+			const { origin } = key.key;
+			const path = origin === void 0 ? void 0 : pathOf(origin);
+			if ((origin === null || origin === void 0 ? void 0 : origin.sourceFingerprint) !== void 0 && origin.sourceFingerprint !== accounts.masterFingerprint) integrity$2();
+			if (path === void 0) integrity$2();
 			if (need.secp256k1.some((wanted) => samePath$2(path, wanted))) {
-				if (key.key.length !== 33 || key.chainCode === void 0 || key.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(key.key)) integrity$2();
+				if (key.curve !== "secp256k1") integrity$2();
+				const node = key.key;
+				if (node.chainCode === void 0 || node.chainCode.length !== 32 || !secp256k1.utils.isValidPublicKey(node.keyData)) integrity$2();
 				nodes.push(_objectSpread2({
 					path,
-					publicKey: new Uint8Array(key.key),
-					chainCode: new Uint8Array(key.chainCode)
-				}, key.parentFingerprint === void 0 ? {} : { parent: new Uint8Array(key.parentFingerprint) }));
+					publicKey: new Uint8Array(node.keyData),
+					chainCode: new Uint8Array(node.chainCode)
+				}, node.parentFingerprint === void 0 ? {} : { parent: fingerprintBytes(node.parentFingerprint) }));
 			} else if (need.ed25519.some((wanted) => samePath$2(path, wanted))) {
-				if (key.key.length !== 32) integrity$2();
+				if (key.curve !== "ed25519") integrity$2();
 				ed25519.push({
 					path,
-					publicKey: new Uint8Array(key.key)
+					publicKey: new Uint8Array(key.key.keyData)
 				});
 			}
 			answered.push(path);
 		}
 		const wanted = [...need.secp256k1, ...need.ed25519];
 		if (answered.length !== wanted.length || !wanted.every((w) => answered.some((a) => samePath$2(a, w)))) integrity$2();
-		return _objectSpread2(_objectSpread2(_objectSpread2({ fingerprint: accounts.masterFingerprint }, accounts.device === void 0 ? {} : { model: accounts.device }), accounts.deviceVersion === void 0 ? {} : { firmware: accounts.deviceVersion }), {}, {
+		return _objectSpread2(_objectSpread2(_objectSpread2({ fingerprint: fingerprintBytes(accounts.masterFingerprint) }, accounts.device === void 0 ? {} : { model: accounts.device }), accounts.version === void 0 ? {} : { firmware: accounts.version }), {}, {
 			nodes,
 			ed25519
 		});
@@ -44570,18 +49659,22 @@ zoo`.split("\n"));
 		}
 	};
 	/**
-	* Sends the prepared UR and reads the device's answer: a `qr` response of exactly `type` carrying
-	* strictly-decoded CBOR — anything else, including a well-formed payload under the wrong type, is
-	* `integrity`.
+	* Sends the prepared UR and reads the device's answer: a `qr` response of exactly the answer
+	* codec's type decoded by that codec — anything else, including a well-formed payload under the
+	* wrong type, is `integrity`.
 	*/
-	var exchange = async (link, show, type) => {
+	var exchange = async (link, request, codec) => {
+		const [type] = codecUrTypes(codec);
 		const response = await link.exchange({
 			kind: "qr",
-			show,
+			show: {
+				type: codecUrTypes(request.codec)[0],
+				cbor: encodeUr(request.value, request.codec)
+			},
 			scan: [type]
 		});
 		if (response.kind !== "qr" || response.ur.type !== type) integrity$1();
-		return decodeCbor(response.ur.cbor);
+		return decodeUr(type, response.ur.cbor, codec);
 	};
 	/** A signature answer must name the request id this exchange minted. */
 	var checkRequestId = (returned, sent) => {
@@ -44609,17 +49702,17 @@ zoo`.split("\n"));
 			signData = evmSigningPreimage(tx);
 			const { chainId: txChainId } = tx;
 			if (tx.type === "legacy") {
-				dataType = 1;
+				dataType = "transaction";
 				chainId = txChainId;
 			} else if (tx.type === "eip1559") {
-				dataType = 4;
+				dataType = "typedTransaction";
 				chainId = txChainId;
 			} else integrity$1();
 			expectDigest(keccak_256(signData), task);
 		} else if (stage.kind === "evm.typed-data") {
 			if (request.kind !== "evm.typed-data") integrity$1();
 			signData = utf8ToBytes$1(request.typedData);
-			dataType = 2;
+			dataType = "typedData";
 			expectDigest(planEvm(request, {
 				path: task.path,
 				publicKey: task.publicKey
@@ -44627,21 +49720,20 @@ zoo`.split("\n"));
 		} else {
 			if (request.kind !== stage.kind) integrity$1();
 			signData = request.kind === "evm.fiat24-session" ? utf8ToBytes$1(fiat24SessionMessage(networkChainId(request.network), request.tokenId, request.deadline)) : request.message;
-			dataType = 3;
+			dataType = "personalMessage";
 			expectDigest(personalDigest(signData), task);
 		}
-		return compactSecp256k1(ethSignature(await exchange(link, {
-			type: "eth-sign-request",
-			cbor: ethSignRequest(_objectSpread2(_objectSpread2({
+		return compactSecp256k1(await exchange(link, {
+			value: _objectSpread2(_objectSpread2({
 				requestId,
 				signData,
 				dataType
 			}, chainId === void 0 ? {} : { chainId }), {}, {
-				path: task.path,
-				fingerprint: context.pin.fingerprint,
+				derivationPath: requestKeypath(task.path, context.pin.fingerprint),
 				origin: ORIGIN
-			}))
-		}, "eth-signature")), requestId, 65);
+			}),
+			codec: ethSignRequestCodec
+		}, ethSignatureCodec), requestId, 65);
 	};
 	var tron = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
@@ -44650,24 +49742,23 @@ zoo`.split("\n"));
 		let dataType;
 		if (request.kind === "tron.transaction" && stage.kind === "tron.transaction") {
 			signData = request.rawData;
-			dataType = 1;
+			dataType = "transaction";
 			expectDigest(sha256$1(signData), task);
 		} else if (request.kind === "tron.message" && stage.kind === "tron.message") {
 			signData = request.message;
-			dataType = 2;
+			dataType = "messageV2";
 			expectDigest(tronMessageDigest(signData), task);
 		} else integrity$1();
-		return compactSecp256k1(tronSignature(await exchange(link, {
-			type: "tron-sign-request",
-			cbor: tronSignRequest({
+		return compactSecp256k1(await exchange(link, {
+			value: {
 				requestId,
 				signData,
 				dataType,
-				path: task.path,
-				fingerprint: context.pin.fingerprint,
+				derivationPath: requestKeypath(task.path, context.pin.fingerprint),
 				origin: ORIGIN
-			})
-		}, "tron-signature")), requestId, 65);
+			},
+			codec: tronSignRequestCodec
+		}, tronSignatureCodec), requestId, 65);
 	};
 	var solana = async (link, context, request, stage) => {
 		const [task] = stage.tasks;
@@ -44675,26 +49766,25 @@ zoo`.split("\n"));
 		const signData = request.message;
 		if (!equalBytes$6(signData, task.message)) integrity$1();
 		const requestId = context.random(16);
-		const answer = solSignature(await exchange(link, {
-			type: "sol-sign-request",
-			cbor: solSignRequest({
+		const answer = await exchange(link, {
+			value: {
 				requestId,
 				signData,
-				signType: request.kind === "solana.transaction" ? 1 : 2,
-				path: task.path,
-				fingerprint: context.pin.fingerprint,
-				origin: ORIGIN
-			})
-		}, "sol-signature"));
+				derivationPath: requestKeypath(task.path, context.pin.fingerprint),
+				origin: ORIGIN,
+				signType: request.kind === "solana.transaction" ? "transaction" : "message"
+			},
+			codec: solSignRequestCodec
+		}, solSignatureCodec);
 		checkRequestId(answer.requestId, requestId);
 		if (answer.signature.length !== 64) integrity$1();
 		return answer.signature;
 	};
 	var bitcoinPsbt = async (link, stage) => {
-		const signed = cryptoPsbtBytes(await exchange(link, {
-			type: "crypto-psbt",
-			cbor: cryptoPsbt(stage.psbt)
-		}, "crypto-psbt"));
+		const signed = (await exchange(link, {
+			value: { bytes: stage.psbt },
+			codec: cryptoPsbtCodec
+		}, cryptoPsbtCodec)).bytes;
 		if (!samePsbtContent(stage.psbt, signed)) integrity$1();
 		let transaction;
 		try {
@@ -44732,16 +49822,15 @@ zoo`.split("\n"));
 		const signData = utf8ToBytes$1(request.message);
 		expectDigest(legacyMessageHash(request.message), task);
 		const requestId = context.random(16);
-		const answer = btcSignature(await exchange(link, {
-			type: "btc-sign-request",
-			cbor: btcSignRequest({
+		const answer = await exchange(link, {
+			value: {
 				requestId,
 				signData,
-				paths: [task.path],
-				fingerprint: context.pin.fingerprint,
+				derivationPaths: [requestKeypath(task.path, context.pin.fingerprint)],
 				origin: ORIGIN
-			})
-		}, "btc-signature"));
+			},
+			codec: btcSignRequestCodec
+		}, btcSignatureCodec);
 		checkRequestId(answer.requestId, requestId);
 		if (!equalBytes$6(answer.publicKey, task.publicKey)) wrongDevice();
 		if (answer.signature.length !== 65) integrity$1();
@@ -44822,7 +49911,7 @@ zoo`.split("\n"));
 		secp256k1: async (path) => {
 			if (path.length === 0) throw deviceRequired();
 			const node = nodeAt(pin, path);
-			if (node !== void 0) return node.publicKey;
+			if (node !== void 0) return new Uint8Array(node.publicKey);
 			const ancestor = derivingAncestor(pin, path);
 			if (ancestor === void 0) throw deviceRequired();
 			return derivePublic(ancestor, path);
@@ -44830,7 +49919,7 @@ zoo`.split("\n"));
 		ed25519: async (path) => {
 			const key = pin.ed25519.find((k) => samePath$1(k.path, path));
 			if (key === void 0) throw deviceRequired();
-			return key.publicKey;
+			return new Uint8Array(key.publicKey);
 		},
 		extendedPublicKey: async (path, versions) => {
 			var _path$at;
@@ -44845,7 +49934,7 @@ zoo`.split("\n"));
 				publicKey: node.publicKey
 			}).publicExtendedKey;
 		},
-		fingerprint: async () => pin.fingerprint
+		fingerprint: async () => new Uint8Array(pin.fingerprint)
 	});
 	// packages/wallet-kernel/src/modules/signers/operation.ts
 	init_utils$2();
@@ -44908,7 +49997,7 @@ zoo`.split("\n"));
 		const begin = async (device, display, body) => {
 			if (active !== void 0) discard(active);
 			const op = {
-				opId: bytesToHex$4(platform.random(16)),
+				opId: bytesToHex$5(platform.random(16)),
 				device,
 				display,
 				cancelTimer: () => void 0,
@@ -45368,15 +50457,15 @@ zoo`.split("\n"));
 		}
 	};
 	function lines(catalog, summary) {
-		if (summary.kind === "transfer") return summary.receivers.map((receiver) => catalog.send(receiver.amountSats, bytesToHex$4(receiver.identityPublicKey)));
+		if (summary.kind === "transfer") return summary.receivers.map((receiver) => catalog.send(receiver.amountSats, bytesToHex$5(receiver.identityPublicKey)));
 		if (summary.kind === "lightning") {
-			const hash = bytesToHex$4(summary.paymentHash);
+			const hash = bytesToHex$5(summary.paymentHash);
 			return [summary.invoiceAmountSats === void 0 ? catalog.payOpen(hash) : catalog.pay(summary.invoiceAmountSats, hash), catalog.maxFee(summary.maxFeeSats)];
 		}
 		if (summary.kind === "exit") return [catalog.withdraw(summary.amountSats, summary.address), catalog.maxFee(summary.maxFeeSats)];
 		if (summary.kind === "onchain") return [catalog.onchain(summary.address, summary.maxFeeSats)];
-		const token = bytesToHex$4(summary.tokenIdentifier);
-		return summary.receivers.map((receiver) => catalog.sendToken(receiver.amount, token, bytesToHex$4(receiver.ownerPublicKey)));
+		const token = bytesToHex$5(summary.tokenIdentifier);
+		return summary.receivers.map((receiver) => catalog.sendToken(receiver.amount, token, bytesToHex$5(receiver.ownerPublicKey)));
 	}
 	function sparkPrompt(locale, summary) {
 		const catalog = CATALOGS[locale];
@@ -52028,13 +57117,13 @@ zoo`.split("\n"));
 				id: operator.id,
 				identifier: operator.identifier,
 				address: operator.address,
-				identityPublicKey: hexToBytes$3(operator.identityPublicKey)
+				identityPublicKey: hexToBytes$4(operator.identityPublicKey)
 			})),
 			threshold: 2,
 			coordinator: COORDINATOR,
 			ssp: {
 				baseUrl: "https://api.lightspark.com",
-				identityPublicKey: hexToBytes$3(sspKey),
+				identityPublicKey: hexToBytes$4(sspKey),
 				graphqlPath: SSP_GRAPHQL_PATH
 			},
 			tokens: {
@@ -52291,7 +57380,7 @@ zoo`.split("\n"));
 	* internally when serializing the outpoint).
 	*/
 	function txIdInputBytes(txBytes) {
-		return hexToBytes$3(parseTransaction(txBytes).id);
+		return hexToBytes$4(parseTransaction(txBytes).id);
 	}
 	/**
 	* Decodes a Bitcoin address to its output script under `network` — bech32 HRP and base58 version
@@ -53291,7 +58380,7 @@ zoo`.split("\n"));
 	}
 	/** `sha256` of the exact description bytes, lowercase hex — the description enters hashed. */
 	function lightningAddressDescriptionHash(description) {
-		return bytesToHex$4(sha256$1(utf8ToBytes$1(description)));
+		return bytesToHex$5(sha256$1(utf8ToBytes$1(description)));
 	}
 	/**
 	* `POST /lnurlpay/{pubkey}`: the message claiming `username` on `domain`, fields joined by LF:
@@ -53404,12 +58493,12 @@ zoo`.split("\n"));
 	}
 	function identifierBytes(identifier) {
 		if (!IDENTIFIER_PATTERN.test(identifier)) throw new SparkInputError("identifier: must be 64 lowercase hex characters");
-		return hexToBytes$3(identifier);
+		return hexToBytes$4(identifier);
 	}
 	function commitmentKey(commitment) {
 		requireLength(commitment.hiding, 33, "commitment.hiding");
 		requireLength(commitment.binding, 33, "commitment.binding");
-		return bytesToHex$4(concatBytes$3(commitment.hiding, commitment.binding));
+		return bytesToHex$5(concatBytes$3(commitment.hiding, commitment.binding));
 	}
 	function checkOperators(operators) {
 		if (operators.length === 0) throw new SparkInputError("operators: must not be empty");
@@ -53420,7 +58509,7 @@ zoo`.split("\n"));
 			if (!Number.isSafeInteger(operator.id) || operator.id < 0) throw new SparkInputError("operator.id: must be a non-negative safe integer");
 			identifierBytes(operator.identifier);
 			requireLength(operator.identityPublicKey, 33, "operator.identityPublicKey");
-			const publicKey = bytesToHex$4(operator.identityPublicKey);
+			const publicKey = bytesToHex$5(operator.identityPublicKey);
 			if (ids.has(operator.id) || identifiers.has(operator.identifier) || publicKeys.has(publicKey)) throw new SparkInputError("operators: id, identifier and identityPublicKey must each be unique");
 			ids.add(operator.id);
 			identifiers.add(operator.identifier);
@@ -53702,7 +58791,7 @@ zoo`.split("\n"));
 					const nonce = item.slice(0, NONCE_LENGTH);
 					const hiding = item.slice(NONCE_LENGTH, 97);
 					const binding = item.slice(97, FROST_COMMITMENT_ITEM);
-					nonces.set(bytesToHex$4(concatBytes$3(hiding, binding)), nonce);
+					nonces.set(bytesToHex$5(concatBytes$3(hiding, binding)), nonce);
 					commitments.push({
 						hiding,
 						binding
@@ -53830,7 +58919,7 @@ zoo`.split("\n"));
 				const prevout = job.target.prevouts[job.target.inputIndex];
 				if (prevout === void 0) throw new SparkInputError("signFrost: inputIndex out of range for prevouts");
 				const tx = parseTransaction(job.target.transaction);
-				const key = bytesToHex$4(job.publicKey);
+				const key = bytesToHex$5(job.publicKey);
 				if (tx.inputsLength > 1) {
 					const foreign = /* @__PURE__ */ new Map();
 					for (let i = 0; i < tx.inputsLength; i++) {
@@ -53839,7 +58928,7 @@ zoo`.split("\n"));
 						if (!eq(otherPrevout.script, prevout.script)) {
 							const { txid } = tx.getInput(i);
 							if (txid === void 0) throw new SparkInputError("signFrost: foreign input carries no prevout txid");
-							foreign.set(bytesToHex$4(txid), txid);
+							foreign.set(bytesToHex$5(txid), txid);
 						}
 					}
 					if (foreign.size > 0) {
@@ -53861,7 +58950,7 @@ zoo`.split("\n"));
 						};
 						entry.amountSats = Math.max(entry.amountSats, prevout.amount);
 						leaves.set(key, entry);
-						exits.set(bytesToHex$4(txid), txid);
+						exits.set(bytesToHex$5(txid), txid);
 						continue;
 					}
 				}
@@ -53889,11 +58978,11 @@ zoo`.split("\n"));
 				leaves.set(key, entry);
 				if (tx.inputsLength === 1) {
 					const distinct = /* @__PURE__ */ new Map();
-					for (const script of violations) distinct.set(bytesToHex$4(script), script);
+					for (const script of violations) distinct.set(bytesToHex$5(script), script);
 					if (distinct.size !== 1) throw new SparkInputError("signFrost: job carries multiple non-whitelisted outputs");
 					const script = distinct.values().next().value;
 					if (script === void 0) throw new SparkInputError("signFrost: malformed output set");
-					lightnings.set(bytesToHex$4(script), script);
+					lightnings.set(bytesToHex$5(script), script);
 				} else throw new SparkInputError(`signFrost: non-whitelisted output on a ${tx.inputsLength}-input transaction`);
 			}
 			if (exits.size > 0 && lightnings.size > 0) throw new SparkInputError("signFrost: batch mixes connector and HTLC refunds");
@@ -53932,7 +59021,7 @@ zoo`.split("\n"));
 		const recordSign = (signingPublicKey, target) => {
 			const prevout = target.prevouts[target.inputIndex];
 			if (prevout === void 0) throw new SparkInputError("signFrost: inputIndex out of range for prevouts");
-			const key = bytesToHex$4(signingPublicKey);
+			const key = bytesToHex$5(signingPublicKey);
 			let record = signs.get(key);
 			if (record === void 0) {
 				if (signs.size >= MAX_SIGNING_KEYS) {
@@ -53951,13 +59040,13 @@ zoo`.split("\n"));
 			}
 			for (const leaf of leaves) {
 				var _receivers$get;
-				const pk = bytesToHex$4(leaf.publicKey);
+				const pk = bytesToHex$5(leaf.publicKey);
 				let receivers = leafReceivers.get(pk);
 				if (receivers === void 0) {
 					receivers = /* @__PURE__ */ new Map();
 					leafReceivers.set(pk, receivers);
 				}
-				const receiver = bytesToHex$4(leaf.receiverIdentityPublicKey);
+				const receiver = bytesToHex$5(leaf.receiverIdentityPublicKey);
 				receivers.set(receiver, ((_receivers$get = receivers.get(receiver)) !== null && _receivers$get !== void 0 ? _receivers$get : 0) + 1);
 				receiverScripts.set(receiver, p2trScriptFromPublicKey(leaf.receiverIdentityPublicKey, network));
 			}
@@ -53988,7 +59077,7 @@ zoo`.split("\n"));
 				return value !== void 0 && recorded !== void 0 && eq(recorded, value);
 			})) throw new SparkInputError("transfer package: key_tweak_package does not match the recorded operator packages");
 			const leafAmounts = prepared.leaves.map((leaf) => {
-				const record = signs.get(bytesToHex$4(leaf.publicKey));
+				const record = signs.get(bytesToHex$5(leaf.publicKey));
 				if (record === void 0) throw new SparkInputError(`transfer package: no recorded refund signature for leaf ${leaf.leafId}`);
 				return record.maxAmount;
 			});
@@ -53996,7 +59085,7 @@ zoo`.split("\n"));
 			const sspCount = prepared.leaves.map((leaf) => eq(leaf.receiverIdentityPublicKey, sspIdentityPublicKey)).filter(Boolean).length;
 			if (sspCount > 0 && sspCount !== prepared.leaves.length) throw new SparkInputError("transfer package: SSP and non-SSP receivers in one transfer");
 			if (sspCount > 0) {
-				const authorized = prepared.leaves.filter((leaf) => serviceAuthorized.has(bytesToHex$4(leaf.publicKey))).length;
+				const authorized = prepared.leaves.filter((leaf) => serviceAuthorized.has(bytesToHex$5(leaf.publicKey))).length;
 				if (authorized === prepared.leaves.length) return;
 				if (authorized !== 0) throw new SparkInputError("transfer package: SSP transfer mixes service-authorized and unauthorized leaves");
 				return {
@@ -54007,7 +59096,7 @@ zoo`.split("\n"));
 			}
 			const receivers = /* @__PURE__ */ new Map();
 			for (const [i, leaf] of prepared.leaves.entries()) {
-				const key = bytesToHex$4(leaf.receiverIdentityPublicKey);
+				const key = bytesToHex$5(leaf.receiverIdentityPublicKey);
 				const amount = leafAmounts[i];
 				if (amount === void 0) throw new SparkInputError("transfer package: leaf amount out of range");
 				const entry = receivers.get(key);
@@ -54028,9 +59117,9 @@ zoo`.split("\n"));
 			const prepared = transfers.get(transferId);
 			if (prepared !== void 0) {
 				for (const leaf of prepared.leaves) {
-					const pk = bytesToHex$4(leaf.publicKey);
+					const pk = bytesToHex$5(leaf.publicKey);
 					const receivers = leafReceivers.get(pk);
-					const receiver = bytesToHex$4(leaf.receiverIdentityPublicKey);
+					const receiver = bytesToHex$5(leaf.receiverIdentityPublicKey);
 					if (receivers !== void 0) {
 						const count = receivers.get(receiver);
 						if (count !== void 0) {
@@ -54048,7 +59137,7 @@ zoo`.split("\n"));
 		return {
 			evaluateJobs,
 			markServiceAuthorized: (publicKeys) => {
-				for (const pk of publicKeys) serviceAuthorized.add(bytesToHex$4(pk));
+				for (const pk of publicKeys) serviceAuthorized.add(bytesToHex$5(pk));
 			},
 			recordSign,
 			recordPrepare,
@@ -54097,7 +59186,7 @@ zoo`.split("\n"));
 		}
 		if (statement.kind === "static-deposit-claim") return {
 			digest: staticDepositStatementDigest({
-				transactionId: bytesToHex$4(statement.txid),
+				transactionId: bytesToHex$5(statement.txid),
 				outputIndex: statement.vout,
 				network: statement.network,
 				requestType: "fixed",
@@ -54108,7 +59197,7 @@ zoo`.split("\n"));
 		};
 		if (statement.kind === "static-deposit-refund") return {
 			digest: staticDepositStatementDigest({
-				transactionId: bytesToHex$4(statement.txid),
+				transactionId: bytesToHex$5(statement.txid),
 				outputIndex: statement.vout,
 				network: statement.network,
 				requestType: "refund",
@@ -54989,18 +60078,18 @@ zoo`.split("\n"));
 			sspIdentityPublicKey: rt.sparkNetworkConfig(network).ssp.identityPublicKey,
 			identityPublicKey: await signer.identityPublicKey()
 		}), outflow.htlcOutputScript)) return false;
-		const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
+		const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$5(leaf.publicKey)));
 		if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > budget + intent.maxFeeSats) return false;
-		for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
+		for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$5(leaf.publicKey), leaf.amountSats);
 		return true;
 	};
 	var exitCovered = (outflow, approval, intent) => {
 		const { addressScript } = approval.decoded;
 		if (addressScript === void 0) return false;
 		if (!outflow.exitOutputs.some((output) => equalBytes$6(output.script, addressScript) && output.amountSats >= intent.amountSats)) return false;
-		const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
+		const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$5(leaf.publicKey)));
 		if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > intent.amountSats + intent.maxFeeSats) return false;
-		for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
+		for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$5(leaf.publicKey), leaf.amountSats);
 		return true;
 	};
 	var onchainCovered = (rt, outflow, approval, intent) => {
@@ -55018,7 +60107,7 @@ zoo`.split("\n"));
 		const approved = /* @__PURE__ */ new Map();
 		for (const receiver of intent.receivers) {
 			var _approved$get;
-			const owner = bytesToHex$4(receiver.ownerPublicKey);
+			const owner = bytesToHex$5(receiver.ownerPublicKey);
 			approved.set(owner, ((_approved$get = approved.get(owner)) !== null && _approved$get !== void 0 ? _approved$get : 0n) + BigInt(receiver.amount));
 		}
 		const spent = /* @__PURE__ */ new Map();
@@ -55026,7 +60115,7 @@ zoo`.split("\n"));
 			var _spent$get;
 			if (equalBytes$6(output.ownerPublicKey, identity)) continue;
 			if (!equalBytes$6(output.tokenIdentifier, intent.tokenIdentifier)) return false;
-			const owner = bytesToHex$4(output.ownerPublicKey);
+			const owner = bytesToHex$5(output.ownerPublicKey);
 			spent.set(owner, ((_spent$get = spent.get(owner)) !== null && _spent$get !== void 0 ? _spent$get : 0n) + output.amount);
 		}
 		return [...spent].every(([owner, amount]) => {

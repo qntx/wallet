@@ -478,6 +478,25 @@ export type PreparedMessage = Omit<PreparedRequest, "submit" | "txId"> & {
   readonly submit: (verify: SendParams["verify"]) => Promise<SignatureResult>;
 };
 
+/** A transaction signed for a counterpart that broadcasts it itself — nothing is tracked or sent. */
+export type SignedTransactionResult =
+  | { readonly kind: "evm.signed-transaction"; readonly signedTransaction: Uint8Array }
+  | { readonly kind: "tron.signed-transaction"; readonly signature: Uint8Array };
+
+/**
+ * A prepared QR transaction signature: all of `PreparedRequest`'s checks without its tracking —
+ * `submit` signs the request's own bytes, `commit()`s before returning, and hands back the signed
+ * material for the counterpart to broadcast.
+ */
+export type PreparedQrSign = Omit<PreparedRequest, "submit" | "txId"> & {
+  /** The address that will sign. */
+  readonly signer: string;
+  readonly submit: (
+    verify: SendParams["verify"],
+    commit: () => void,
+  ) => Promise<SignedTransactionResult>;
+};
+
 export type Options = {
   readonly wallet: Wallet;
   readonly networks: NetworkController;

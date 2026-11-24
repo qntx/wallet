@@ -181,6 +181,7 @@ async function rig() {
   const seam: { afterSign: (() => void) | undefined } = { afterSign: undefined };
   const wrapped = {
     account: apis.account,
+    exportAccount: apis.exportAccount,
     sign: async (params: Parameters<typeof apis.sign>[0]) => {
       const { request } = params;
       if (request.kind === "evm.transaction") {

@@ -9,15 +9,21 @@ import type { WalletInternals } from "../internal.ts";
 import type {
   ChainAccount,
   ChainAccountsParams,
+  ChainExportNode,
+  ChainExportResult,
   ChainSignRequest,
   ChainSignResult,
 } from "../protocol/chains.ts";
 import type { VerifyFactor, Wallet } from "../types.ts";
-import { checkSignResult } from "./check.ts";
+import { checkExportResult, checkSignResult } from "./check.ts";
 
 export type {
   ChainAccount,
   ChainAccountsParams,
+  ChainExportedKey,
+  ChainExportNode,
+  ChainExportParams,
+  ChainExportResult,
   ChainSignRequest,
   ChainSignResult,
   ChainTemplate,
@@ -29,6 +35,12 @@ export type ChainsApi = {
     readonly request: ChainSignRequest;
     readonly verify: VerifyFactor;
   }) => Promise<ChainSignResult>;
+  readonly exportAccount: (params: {
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly nodes: ReadonlyArray<ChainExportNode>;
+    readonly verify: VerifyFactor;
+  }) => Promise<ChainExportResult>;
 };
 
 function createChainsApi(internals: WalletInternals): ChainsApi {
@@ -41,6 +53,17 @@ function createChainsApi(internals: WalletInternals): ChainsApi {
           verify: await internals.resolveVerifyFactor(params.verify, wire),
         }));
         await checkSignResult(internals, params.request, result);
+        return result;
+      }),
+    exportAccount: async (params) =>
+      internals.withVerifying(async () => {
+        const result = await internals.secretCall("chain.exportAccount", async (wire) => ({
+          walletId: params.walletId,
+          groupIndex: params.groupIndex,
+          nodes: params.nodes,
+          verify: await internals.resolveVerifyFactor(params.verify, wire),
+        }));
+        await checkExportResult(internals, params, result);
         return result;
       }),
   };

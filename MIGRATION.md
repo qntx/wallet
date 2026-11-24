@@ -2201,6 +2201,79 @@ export async function signWithinBudget(
       }
     }
     throw error;
+   change before card wallets ship. Never collect a card access code or short ID in a JS
+   `TextInput`.
+
+## 31. QR signer mode
+
+`@qntx/wallet-engine/qr` turns the wallet into the signing half of an air-gapped pair: a
+watch-only counterpart shows an animated UR request, the user scans it, approves it like any
+other request, and the wallet answers with animated frames. Compiled snippet:
+[`tests/migration/qr-signer.ts`](tests/migration/qr-signer.ts).
+
+1. **A new `RequestOrigin` kind.** A scanned request enters the pipeline with
+   `{ kind: "qr", declared? }` (`declared` is the counterpart's self-label, display-only and
+   untrusted). Every switch on `RequestOrigin["kind"]` must name it — `originBadge` in the
+   snippet. It uses the same prepare → approve → respond pipeline as every other origin: risk
+   findings, user verification and `RequestEndedError` semantics are unchanged.
+2. **`EngineOptions.devices`.** Signatures for hardware-custody accounts — for every origin,
+   QR included — are routed through the host's `DeviceTransport` (`engineOptions` in the
+   snippet). The transport is called once per signature; the host aborts through the io's
+   `signal`. Leave it out and hardware wallets can still be listed and watched, but every
+   signature fails `device-required`.
+3. **`BitcoinPsbtInput.sign[].template` widened** to all four account templates (`psbtTemplateLabel`
+   in the snippet): a QR counterpart may ask for `btc.bip44`/`btc.bip49` inputs where a dApp only
+   names `btc.bip84`/`btc.bip86`. Hosts that render or filter PSBT inputs by template need the
+   new members.
+4. **Wiring the signer.** The host drives the framing — `createQrScanner` folds scanned frames
+   into the payload, `readQrRequest` decodes and re-checks it, `qrSigner({ engine, wallet }).prepare`
+   binds it and opens the pending request, and after the user approves, `respond` returns the
+   answer payload for `qrFrames` to animate (`answerQrRequest`, `qrAnswerFrames`). `respond` must
+   run on the `qrSigner` instance that prepared the request — keep one signer for the session
+   (`openQrSigner`). Scanning and animation
+   progress belong to the host UI; the request's own stage is read from the pipeline like any
+   other origin. `exportAccount` produces the pairing QR for the counterpart (MetaMask/Rabby:
+   `crypto-hdkey`; BlueWallet/Sparrow: `crypto-account`; Keystone-compatible and the qntx Web
+   wallet: `crypto-multi-accounts`) — `discloses` says exactly which material leaves the device
+   and belongs in the prompt (`exportForWatch`).
+5. **A watch-only counterpart** needs no engine internals: `readQrExport` turns the export
+   payload into `QrLink`s, `engine.watch.add` persists one as a `WatchAccount.qr`, and
+   `qrSignRequest`/`readQrSignature` encode and verify the round trip. The counterpart never
+   learns which kind of signer backs the account.
+
+[`tests/migration/qr-signer.ts`](tests/migration/qr-signer.ts):
+
+```ts
+import type { Wallet } from "@qntx/wallet";
+import type {
+  BitcoinPsbtInput,
+  EngineOptions,
+  PendingRequest,
+  RequestOrigin,
+  WalletEngine,
+  DeviceTransport,
+} from "@qntx/wallet-engine";
+import { createQrScanner, qrFrames, qrSigner, readQrRequest } from "@qntx/wallet-engine/qr";
+import type { QrExport } from "@qntx/wallet-engine/qr";
+
+/**
+ * `RequestOrigin` gains `{ kind: "qr", declared? }` — a request that entered through a scanned UR
+ * frame. Every switch on `RequestOrigin["kind"]` must name it: a scanned request is attributed to
+ * the counterpart's self-declared `origin` (display-only, untrusted), never to a dApp session.
+ */
+// oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
+export function originBadge(origin: RequestOrigin): string {
+  switch (origin.kind) {
+    case "internal":
+      return "this app";
+    case "browser":
+      return origin.origin;
+    case "walletconnect":
+      return origin.name;
+    case "app":
+      return origin.id;
+    case "qr":
+      return origin.declared ?? "scanned QR request";
   }
 }
 
@@ -2228,5 +2301,89 @@ export async function enableAndReopen(
 /** Trading answers `reopen-required` while the session is unopened — call `reopen`, not enable. */
 export function isReopen(error: unknown): boolean {
   return error instanceof HyperliquidError && error.category === "reopen-required";
+ * `BitcoinPsbtInput.sign[].template` widened from the two dApp-facing templates to all four — a QR
+ * counterpart may ask for `btc.bip44` or `btc.bip49` inputs too. A host that rendered or filtered
+ * PSBT inputs by template must expect every member.
+ */
+// oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
+export function psbtTemplateLabel(template: BitcoinPsbtInput["sign"][number]["template"]): string {
+  switch (template) {
+    case "btc.bip44":
+      return "legacy";
+    case "btc.bip49":
+      return "wrapped segwit";
+    case "btc.bip84":
+      return "native segwit";
+    case "btc.bip86":
+      return "taproot";
+  }
+}
+
+/**
+ * `EngineOptions.devices` routes hardware-custody accounts' signatures — for every origin, QR
+ * included — through the host's device transport. Called once per signature; the io's `signal` is
+ * how the pipeline cancels a tap. Without it, hardware wallets fail `device-required`.
+ */
+export function engineOptions(devices: DeviceTransport): Pick<EngineOptions, "devices"> {
+  return { devices };
+}
+
+/**
+ * The phone side owns ONE `qrSigner` for the session: `prepare` records every request it bound, so
+ * `respond` must run on the instance that prepared it — a second `qrSigner({ engine, wallet })`
+ * answers "not prepared by this signer". The host creates one and passes it to every QR call.
+ */
+export type PhoneQrSigner = ReturnType<typeof qrSigner>;
+
+export function openQrSigner(engine: WalletEngine, wallet: Wallet): PhoneQrSigner {
+  return qrSigner({ engine, wallet });
+}
+
+/**
+ * Decode the counterpart's frames, prepare an ordinary engine request, let the user approve it,
+ * answer with the signature frames. Progress on the wire is the scanner's ratio; the request's
+ * stage moves `awaiting-approval` → `signed` on its own.
+ */
+export async function answerQrRequest(
+  signer: PhoneQrSigner,
+  account: { walletId: string; groupIndex: number },
+  readFrame: () => Promise<string>,
+): Promise<PendingRequest> {
+  const scanner = createQrScanner({ kind: "request", now: () => Date.now() });
+  for (;;) {
+    // oxlint-disable-next-line no-await-in-loop -- frames arrive one camera read at a time
+    const outcome = scanner.receive(await readFrame());
+    if (outcome.status === "complete") {
+      const { payload } = outcome;
+      return signer.prepare(readQrRequest(payload), account);
+    }
+  }
+}
+
+/**
+ * After the user approves `pending.id` through the usual pipeline, `respond` encodes the UR answer;
+ * the host animates `qrFrames` until the counterpart has every part.
+ */
+export async function qrAnswerFrames(
+  signer: PhoneQrSigner,
+  requestId: string,
+): Promise<() => string> {
+  const payload = await signer.respond(requestId);
+  return qrFrames(payload);
+}
+
+/** Show the account export QR: what it discloses belongs in the prompt. */
+export async function exportForWatch(
+  signer: PhoneQrSigner,
+  account: { walletId: string; groupIndex: number },
+  verify: { kind: "password"; password: string },
+): Promise<{ frames: () => string; discloses: QrExport["discloses"] }> {
+  const out = await signer.exportAccount({
+    account,
+    form: "crypto-multi-accounts",
+    families: ["evm", "solana", "tron"],
+    verify,
+  });
+  return { frames: qrFrames(out.payload), discloses: out.discloses };
 }
 ```

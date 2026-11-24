@@ -1,0 +1,302 @@
+{
+  "version": 1,
+  "requests": [
+    {
+      "name": "evm-legacy-transfer",
+      "type": "eth-sign-request",
+      "cbor": "a501d825501234567812344321abcd1234567890ab02582ceb808504a817c80082520894f39fd6e51aad88f6f4ce6ab8827279cfffb9226687038d7ea4c68000800180800301040105d90130a2018a182cf5183cf500f500f400f4021a73c5da0a",
+      "expect": {
+        "family": "evm",
+        "kind": "transaction",
+        "path": "m/44'/60'/0'/0/0",
+        "steps": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "xfp": "73c5da0a",
+        "requestId": "1234567812344321abcd1234567890ab",
+        "chainId": 1,
+        "data": "eb808504a817c80082520894f39fd6e51aad88f6f4ce6ab8827279cfffb9226687038d7ea4c6800080018080",
+        "tx": {
+          "type": "legacy",
+          "chainId": 1,
+          "nonce": 0,
+          "gasPrice": "0x4a817c800",
+          "gas": "0x5208",
+          "to": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+          "value": "0x38d7ea4c68000",
+          "data": "0x"
+        }
+      },
+      "digests": [
+        {
+          "kind": "evm-transaction-hash",
+          "value": "0x6e1206bc47466d389900f5a47533c1eef03c27d5caa39266f7a213a2e6914f8e"
+        }
+      ]
+    },
+    {
+      "name": "evm-1559-transfer",
+      "type": "eth-sign-request",
+      "cbor": "a501d825501234567812344321abcd1234567890ab02583402f201018459682f008506fc23ac008261a894f39fd6e51aad88f6f4ce6ab8827279cfffb92266865af3107a400084a9059cbbc00304040105d90130a2018a182cf5183cf500f500f400f4021a73c5da0a",
+      "expect": {
+        "family": "evm",
+        "kind": "transaction",
+        "path": "m/44'/60'/0'/0/0",
+        "steps": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "xfp": "73c5da0a",
+        "requestId": "1234567812344321abcd1234567890ab",
+        "chainId": 1,
+        "data": "02f201018459682f008506fc23ac008261a894f39fd6e51aad88f6f4ce6ab8827279cfffb92266865af3107a400084a9059cbbc0",
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 1,
+          "maxPriorityFeePerGas": "0x59682f00",
+          "maxFeePerGas": "0x6fc23ac00",
+          "gas": "0x61a8",
+          "to": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+          "value": "0x5af3107a4000",
+          "data": "0xa9059cbb",
+          "accessList": []
+        }
+      },
+      "digests": [
+        {
+          "kind": "evm-transaction-hash",
+          "value": "0xaf30f43d85df9d8145a591fe5f3312017487ff5e272c1089392cff1592a03f22"
+        }
+      ]
+    },
+    {
+      "name": "evm-2930-transfer",
+      "type": "eth-sign-request",
+      "cbor": "a501d825501234567812344321abcd1234567890ab02585f01f85c010285037e11d60082c35094f39fd6e51aad88f6f4ce6ab8827279cfffb922668080f838f794f39fd6e51aad88f6f4ce6ab8827279cfffb92266e1a000000000000000000000000000000000000000000000000000000000000000010304040105d90130a2018a182cf5183cf500f500f400f4021a73c5da0a",
+      "expect": {
+        "family": "evm",
+        "kind": "transaction",
+        "path": "m/44'/60'/0'/0/0",
+        "steps": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "xfp": "73c5da0a",
+        "requestId": "1234567812344321abcd1234567890ab",
+        "chainId": 1,
+        "data": "01f85c010285037e11d60082c35094f39fd6e51aad88f6f4ce6ab8827279cfffb922668080f838f794f39fd6e51aad88f6f4ce6ab8827279cfffb92266e1a00000000000000000000000000000000000000000000000000000000000000001",
+        "tx": {
+          "type": "eip2930",
+          "chainId": 1,
+          "nonce": 2,
+          "gasPrice": "0x37e11d600",
+          "gas": "0xc350",
+          "to": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+          "value": "0x0",
+          "data": "0x",
+          "accessList": [
+            {
+              "address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+              "storageKeys": [
+                "0x0000000000000000000000000000000000000000000000000000000000000001"
+              ]
+            }
+          ]
+        }
+      },
+      "digests": [
+        {
+          "kind": "evm-transaction-hash",
+          "value": "0xc6b85397720c345d9c14ada91edf6abdbea2dc345ec36abfa93d9c35f211483b"
+        }
+      ]
+    },
+    {
+      "name": "evm-personal-message",
+      "type": "eth-sign-request",
+      "cbor": "a501d825501234567812344321abcd1234567890ab024868656c6c6f207172030305d90130a2018a182cf5183cf500f500f400f4021a73c5da0a06549858effd232b4033e47d90003d41ec34ecaeda94",
+      "expect": {
+        "family": "evm",
+        "kind": "personal-message",
+        "path": "m/44'/60'/0'/0/0",
+        "steps": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "xfp": "73c5da0a",
+        "requestId": "1234567812344321abcd1234567890ab",
+        "address": "0x9858effd232b4033e47d90003d41ec34ecaeda94",
+        "message": "68656c6c6f207172"
+      },
+      "digests": [
+        {
+          "kind": "eip191-digest",
+          "value": "0x49226bb8e5dfaf7c037834c8550a88e2017084e911af27183e43301a5190818a"
+        }
+      ]
+    },
+    {
+      "name": "evm-typed-data",
+      "type": "eth-sign-request",
+      "cbor": "a501d825501234567812344321abcd1234567890ab025902b47b227479706573223a7b22454950373132446f6d61696e223a5b7b226e616d65223a226e616d65222c2274797065223a22737472696e67227d2c7b226e616d65223a2276657273696f6e222c2274797065223a22737472696e67227d2c7b226e616d65223a22636861696e4964222c2274797065223a2275696e74323536227d2c7b226e616d65223a22766572696679696e67436f6e7472616374222c2274797065223a2261646472657373227d5d2c22506572736f6e223a5b7b226e616d65223a226e616d65222c2274797065223a22737472696e67227d2c7b226e616d65223a2277616c6c6574222c2274797065223a2261646472657373227d5d2c224d61696c223a5b7b226e616d65223a2266726f6d222c2274797065223a22506572736f6e227d2c7b226e616d65223a22746f222c2274797065223a22506572736f6e227d2c7b226e616d65223a22636f6e74656e7473222c2274797065223a22737472696e67227d5d7d2c227072696d61727954797065223a224d61696c222c22646f6d61696e223a7b226e616d65223a224574686572204d61696c222c2276657273696f6e223a2231222c22636861696e4964223a312c22766572696679696e67436f6e7472616374223a22307843634343636363634343434363434343434343634363436363436343434363436363636363636343227d2c226d657373616765223a7b2266726f6d223a7b226e616d65223a22436f77222c2277616c6c6574223a22307843443261336439463933384531334344393437456330354162433746453733344466384444383236227d2c22746f223a7b226e616d65223a22426f62222c2277616c6c6574223a22307862426242424242626242424262626242626242626262624242624262626262426242626242426242227d2c22636f6e74656e7473223a2248656c6c6f2c20426f6221227d7d030205d90130a2018a182cf5183cf500f500f400f4021a73c5da0a06549858effd232b4033e47d90003d41ec34ecaeda94",
+      "expect": {
+        "family": "evm",
+        "kind": "typed-data",
+        "path": "m/44'/60'/0'/0/0",
+        "steps": [
+          2147483692,
+          2147483708,
+          2147483648,
+          0,
+          0
+        ],
+        "xfp": "73c5da0a",
+        "requestId": "1234567812344321abcd1234567890ab",
+        "address": "0x9858effd232b4033e47d90003d41ec34ecaeda94",
+        "typedData": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}],\"Mail\":[{\"name\":\"from\",\"type\":\"Person\"},{\"name\":\"to\",\"type\":\"Person\"},{\"name\":\"contents\",\"type\":\"string\"}]},\"primaryType\":\"Mail\",\"domain\":{\"name\":\"Ether Mail\",\"version\":\"1\",\"chainId\":1,\"verifyingContract\":\"0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\"},\"message\":{\"from\":{\"name\":\"Cow\",\"wallet\":\"0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\"},\"to\":{\"name\":\"Bob\",\"wallet\":\"0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\"},\"contents\":\"Hello, Bob!\"}}"
+      },
+      "digests": [
+        {
+          "kind": "eip712-domain-hash",
+          "value": "0xf2cee375fa42b42143804025fc449deafd50cc031ca257e0b194a650a912090f"
+        },
+        {
+          "kind": "eip712-message-hash",
+          "value": "0xc52c0ee5d84264471806290a3f2c4cecfc5490626bf912d01f240d7a274b371e"
+        },
+        {
+          "kind": "eip712-digest",
+          "value": "0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2"
+        }
+      ]
+    },
+    {
+      "name": "sol-transaction",
+      "type": "sol-sign-request",
+      "cbor": "a501d825501234567812344321abcd1234567890ab0258209a883febd944dd468385681bc698f5cae19fa3561022381f10a5e05064393ef203d90130a20188182cf51901f5f500f500f5021a73c5da0a045820f036276246a75b9de3349ed42b15e232f6518fc20f5fcd4f1d64e81f9bd258f70601",
+      "expect": {
+        "family": "solana",
+        "kind": "transaction",
+        "path": "m/44'/501'/0'/0'",
+        "steps": [
+          2147483692,
+          2147484149,
+          2147483648,
+          2147483648
+        ],
+        "xfp": "73c5da0a",
+        "requestId": "1234567812344321abcd1234567890ab",
+        "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "data": "9a883febd944dd468385681bc698f5cae19fa3561022381f10a5e05064393ef2"
+      },
+      "digests": [
+        {
+          "kind": "solana-message-hash",
+          "value": "3Xtv7kDUMJUTopfyeB9grEbiDUhWHBVLqAXQ2RNdbsc8"
+        }
+      ]
+    },
+    {
+      "name": "sol-message",
+      "type": "sol-sign-request",
+      "cbor": "a3024c68656c6c6f20736f6c616e6103d90130a20188182cf51901f5f500f500f5021a73c5da0a0602",
+      "expect": {
+        "family": "solana",
+        "kind": "message",
+        "path": "m/44'/501'/0'/0'",
+        "steps": [
+          2147483692,
+          2147484149,
+          2147483648,
+          2147483648
+        ],
+        "xfp": "73c5da0a",
+        "data": "68656c6c6f20736f6c616e61"
+      },
+      "digests": [
+        {
+          "kind": "solana-message-hash",
+          "value": "GJ5JuWt68RU85BFeiBW6BQCugcQNwKP3hBiakrMFW4z7"
+        }
+      ]
+    },
+    {
+      "name": "tron-transaction",
+      "type": "tron-sign-request",
+      "cbor": "a501d825501234567812344321abcd1234567890ab02582076311c00db971e4a63d6d413194dda4539e0c8a90fdd40a79710c593ca68cb49030104d90130a2018a182cf518c3f500f500f400f4021a73c5da0a055541c8599111f29c1e1e061265b4af93ea1f274ad78a",
+      "expect": {
+        "family": "tron",
+        "kind": "transaction",
+        "path": "m/44'/195'/0'/0/0",
+        "steps": [
+          2147483692,
+          2147483843,
+          2147483648,
+          0,
+          0
+        ],
+        "xfp": "73c5da0a",
+        "requestId": "1234567812344321abcd1234567890ab",
+        "address": "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+        "data": "76311c00db971e4a63d6d413194dda4539e0c8a90fdd40a79710c593ca68cb49"
+      },
+      "digests": [
+        {
+          "kind": "tron-txid",
+          "value": "0xba4962b4f472542bd76780882449d6efbb1040cabf90b138307ae76bcae924d7"
+        }
+      ]
+    },
+    {
+      "name": "tron-message",
+      "type": "tron-sign-request",
+      "cbor": "a3024a68656c6c6f2074726f6e030204d90130a2018a182cf518c3f500f500f400f4021a73c5da0a",
+      "expect": {
+        "family": "tron",
+        "kind": "message",
+        "path": "m/44'/195'/0'/0/0",
+        "steps": [
+          2147483692,
+          2147483843,
+          2147483648,
+          0,
+          0
+        ],
+        "xfp": "73c5da0a",
+        "data": "68656c6c6f2074726f6e"
+      },
+      "digests": [
+        {
+          "kind": "tron-message-digest",
+          "value": "0x85fdc81d273d14847afd4ef8b63674e9c9b9a285f00c4fcc792e541a98d25c16"
+        }
+      ]
+    },
+    {
+      "name": "bitcoin-psbt",
+      "type": "crypto-psbt",
+      "cbor": "58be70736274ff010055020000000103030303030303030303030303030303030303030303030303030303030303030000000000ffffffff01905f0100000000001976a914751e76e8199196d454941c45d1b3a323f1433bd688ac000000000001011fa086010000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e222060330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f0753bf5beef9c2d91af3c1873c5da0a54000080000000800000008000000000000000000000",
+      "expect": {
+        "family": "bitcoin",
+        "kind": "psbt",
+        "urType": "crypto-psbt",
+        "psbt": "70736274ff010055020000000103030303030303030303030303030303030303030303030303030303030303030000000000ffffffff01905f0100000000001976a914751e76e8199196d454941c45d1b3a323f1433bd688ac000000000001011fa086010000000000160014c0cebcd6c3d3ca8c75dc5ec62ebe55330ef910e222060330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f0753bf5beef9c2d91af3c1873c5da0a54000080000000800000008000000000000000000000"
+      },
+      "digests": []
+    }
+  ]
+}

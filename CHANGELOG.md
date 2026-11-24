@@ -15,7 +15,9 @@ store cannot replay an old vault. The kernel signs what it can describe and refu
 cannot show unless the owner allows blind signing, broadcasts whose outcome is unknown are never
 failed, and the cloud-backup password is stretched with Argon2id. Hardware signers join software
 wallets — the Keystone 3 Pro pairs and signs over QR while `WalletInfo` becomes a `custody`
-union — and the engine gains an approvals inventory with revocation, an NFT inventory with
+union — the wallet gains a QR signer mode that answers a watch-only counterpart's animated UR
+requests through the ordinary approval pipeline — and the engine gains an approvals inventory
+with revocation, an NFT inventory with
 transfer requests, push notifications through the gateway, iCloud and Google Drive backup
 transports with versioned backup files, and a Fiat24 app on Arbitrum One. React Native gains a
 silent `device` factor and an optional app lock. TRON joins EVM, Solana and Bitcoin as a fourth
@@ -1091,6 +1093,24 @@ Gateway (operators):
   encoders.
 - `@qntx/wallet-chains/evm`: `evmSigningPreimage` — the unsigned EIP-155/EIP-2718 bytes whose
   keccak is the signer's digest; `@qntx/wallet-chains/bitcoin`: `legacyMessageHash`.
+- `@qntx/wallet`: `chain.exportAccount` / `chains(wallet).exportAccount` — the selected account's
+  public keys (the EVM account node with its chain code, per-family leaf keys, the Bitcoin
+  account xpub), behind user verification, from derived (vault) or pinned (hardware) material.
+- `@qntx/wallet-engine`: `RequestOrigin` gains `{ kind: "qr", declared? }` — a request that
+  entered through a scanned UR frame, attributed to the counterpart's self-declared label
+  (display-only, untrusted). Every switch on `RequestOrigin["kind"]` must name it. (MIGRATION §31)
+- `@qntx/wallet-engine`: `EngineOptions.devices` (`DeviceTransport`) — called once per signature
+  for a hardware-custody account, whatever the request's origin; the host aborts through the
+  io's `signal`. Absent, hardware wallets cannot sign (`device-required`). (MIGRATION §31)
+- `@qntx/wallet-engine/qr`: QR signer mode — `createQrScanner` folds scanned UR frames into a
+  payload, `readQrRequest` decodes and re-checks it, `inspectQrRequest` decodes without binding,
+  `qrSigner({ engine, wallet }).prepare` binds it (per-family network binding, account match,
+  refuse-list) into an ordinary engine request (`prepare` → approve → `respond`) and `exportAccount`
+  produces the pairing QR (`crypto-hdkey`, `crypto-account`, `crypto-multi-accounts`) with a
+  `discloses` list for the prompt, `qrFrames` animates the answer. The counterpart side:
+  `readQrExport`, `qrSignRequest`, `readQrSignature` and the `QrLink`/`QrSignInput`/
+  `QrSentRequest`/`QrSignature` types. `WatchAccount.qr` persists a phone link on a watch-only
+  account so a Web session can sign through it without holding keys. (MIGRATION §31)
 
 ### Changed
 
@@ -1274,6 +1294,11 @@ Gateway (operators):
   an upgrade never discards persisted user data from the first production release on. Fenced
   TypeScript blocks in README.md, MIGRATION.md and every package/app README compile under
   `bun run typecheck`.
+- `@qntx/ur` is pinned at 4.0.0 across the workspace; the kernel's Keystone driver encodes and
+  decodes through it — the hand-written CBOR and firmware-3.2.2 registry copies are gone.
+- `@qntx/wallet-engine`: `BitcoinPsbtInput.sign[].template` accepts all four account templates —
+  a QR counterpart may name `btc.bip44`/`btc.bip49` where a dApp only uses `btc.bip84`/`btc.bip86`.
+  Hosts switching on the template need the new members. (MIGRATION §31)
 
 ### Fixed
 
@@ -1479,6 +1504,9 @@ Gateway (operators):
   gets Simplified-Chinese verification prompts — the tag parses as BCP-47 (an explicit script
   maps Hans to zh-Hans and anything else to English; without one, TW/HK/MO map to English, else
   zh-Hans).
+- `@qntx/wallet`: pinned hardware-wallet material bytes are copied out of kernel replies — a
+  reply transfer detached the stored pin buffers, so a later answer (a QR account export) read
+  empty or invalid keys.
 
 ### Security
 

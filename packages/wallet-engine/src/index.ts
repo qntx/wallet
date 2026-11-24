@@ -127,6 +127,7 @@ export type {
   NostrSignResult,
   PayInput,
   PendingRequest,
+  QrOrigin,
   RequestAcknowledgement,
   RequestCheckCode,
   RequestInput,
@@ -142,6 +143,7 @@ export type {
   SparkDepositInput,
   SparkExitInput,
   SignatureResult,
+  SignedTransactionResult,
   SignLogEntry,
   SignLogOutcome,
   TokenWatchDisplay,
@@ -201,6 +203,7 @@ export type {
 export type { AcrossBridgeQuote, AcrossBridgeStatus } from "./swaps/bridge.ts";
 export type { WatchAccount } from "./accounts/watch.ts";
 export { createWalletEngine } from "./engine.ts";
+export type { DeviceTransport } from "./chains/signing.ts";
 export type {
   DeepReadonly,
   EngineOptions,

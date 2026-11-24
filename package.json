@@ -33,6 +33,7 @@
     "native:consumer": "bun scripts/native-consumer.ts"
   },
   "devDependencies": {
+    "@keystonehq/base-eth-keyring": "0.15.1",
     "@keystonehq/bc-ur-registry": "0.8.1",
     "@keystonehq/bc-ur-registry-btc": "0.1.1",
     "@keystonehq/bc-ur-registry-eth": "0.23.0",
@@ -55,6 +56,7 @@
     "@vitest/coverage-v8": "5.0.5",
     "bumpp": "12.3.0",
     "cborg": "6.1.5",
+    "hdkey": "2.1.0",
     "madge": "8.0.0",
     "micro-key-producer": "0.10.2",
     "tronweb": "6.5.2",

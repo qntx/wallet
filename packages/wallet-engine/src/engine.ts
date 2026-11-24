@@ -34,6 +34,8 @@ import type { AccountBalances } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
 import { prepareDappPsbts, signDappPsbts } from "./chains/bitcoin-dapp.ts";
+import { signingApis } from "./chains/signing.ts";
+import type { DeviceTransport } from "./chains/signing.ts";
 import { SOLANA_MAX_PROCESSING_AGE, SolanaChainAdapter } from "./chains/solana.ts";
 import { BITCOIN_CHAIN_IDS, BitcoinWalletHandler } from "./connect/bitcoin.ts";
 import { ConnectionController } from "./connect/controller.ts";
@@ -141,6 +143,12 @@ export type EngineOptions = {
    * loops re-arm it after every run. Defaults to setTimeout.
    */
   readonly setTimer?: (ms: number, fn: () => void) => () => void;
+  /**
+   * The host transport for a hardware wallet's device, called once per signature the kernel asks a
+   * hardware-custody account for: the host shows or sends the kernel's exchanges and aborts the
+   * operation through the io's signal. Absent → hardware wallets cannot sign (`device-required`).
+   */
+  readonly devices?: DeviceTransport;
   /** Kind-30078 wallet-metadata sync; absent → no wallet metadata is synced. */
   readonly metaSync?: MetaSyncConfig;
   /**
@@ -530,9 +538,13 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
   });
 
+  /* Every signature the engine produces goes through this one seam: vault keys sign in the
+     kernel, a hardware-custody account on its device through options.devices. */
+  const signing = signingApis(options.wallet, options.devices);
   const transactions = new TransactionController({
     wallet: options.wallet,
     networks,
+    chains: signing,
     openStore: sessionStore,
     random: options.random,
     setTimer,
@@ -723,7 +735,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         for (const wire of request.transactions) {
           const { message } = decodeSolanaTransaction(wire, account.address);
           // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
-          const result = await chains(options.wallet).sign({
+          const result = await signing.sign({
             request: {
               kind: "solana.transaction",
               network,
@@ -786,7 +798,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         },
         account.address,
       );
-      const result = await chains(options.wallet).sign({
+      const result = await signing.sign({
         request: {
           kind: "solana.message",
           format: "raw",
@@ -803,7 +815,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
     bitcoinPrepare: async (account, network, psbts) =>
       prepareDappPsbts(
-        chains(options.wallet),
+        signing,
         networks.esplora(network),
         account,
         network,
@@ -817,7 +829,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       ),
     bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
       const { signedPsbts, txids, stopped } = await signDappPsbts(
-        chains(options.wallet),
+        signing,
         prepared,
         send,
         verify,
@@ -832,7 +844,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       };
     },
     bitcoinSign: async (account, network, request, verify) => {
-      const result = await chains(options.wallet).sign({
+      const result = await signing.sign({
         request: {
           kind: "bitcoin.message",
           network,

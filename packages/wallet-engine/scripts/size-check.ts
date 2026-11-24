@@ -17,6 +17,8 @@
  * - `push`: the `@qntx/wallet-engine/push` opener with nothing external — notification extensions
  *   ship the bundle standalone, so the number includes @noble/@scure. It must stay free of zod,
  *   which the wire-format module deliberately avoids.
+ * - `qr`: the `@qntx/wallet-engine/qr` air-gapped codec layer with `@qntx/*` external like `apps`;
+ *   the bundled share is the UR/CBOR transport plus the viem/ox codecs the decoders pull.
  */
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -149,6 +151,18 @@ const ENTRIES: ReadonlyArray<Entry> = [
     budget: 7 * 1024,
     external: [],
     forbidden: ["zod"],
+  },
+  {
+    name: "qr",
+    source: "src/qr/index.ts",
+    /* Measured 84491 B: the bounded scanner, request/response/export codecs, the watch-only
+       counterpart (export reader, request writer, signature verifier — HDKey and the ox
+       secp256k1 closure) and the inspect-only digest helpers plus their bundled viem/ox/dcbor
+       closure — the @qntx/* workspace packages (ur, wallet, wallet-chains) are the host's peer
+       deps and stay external. */
+    budget: 86 * 1024,
+    external: ["@qntx/*"],
+    forbidden: [],
   },
   {
     name: "gateway-contract",

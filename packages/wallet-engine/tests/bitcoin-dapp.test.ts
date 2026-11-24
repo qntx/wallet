@@ -3,6 +3,7 @@ import { mnemonicToSeedSync } from "@scure/bip39";
 import { NETWORK, p2tr, p2wpkh, Transaction } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { BitcoinTemplate } from "@qntx/wallet-chains";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import type { ChainAccount, ChainsApi } from "@qntx/wallet/chains";
 
@@ -26,12 +27,18 @@ const scriptOf = (template: BitcoinAccountTemplate, chain = 0, index = 0): Uint8
     ? p2tr(nodeOf(template, chain, index).publicKey!.slice(1)).script
     : p2wpkh(nodeOf(template, chain, index).publicKey!).script;
 
-const accountFor = (template: BitcoinAccountTemplate): ChainAccount => ({
+const PURPOSE: Record<BitcoinTemplate, number> = {
+  "btc.bip44": 44,
+  "btc.bip49": 49,
+  "btc.bip84": 84,
+  "btc.bip86": 86,
+};
+const accountFor = (template: BitcoinTemplate): ChainAccount => ({
   template,
   network: MAINNET,
-  xpub: master.derive(`m/${template === "btc.bip86" ? 86 : 84}'/0'/0'`).publicExtendedKey,
+  xpub: master.derive(`m/${PURPOSE[template]}'/0'/0'`).publicExtendedKey,
   fingerprint: master.fingerprint.toString(16).padStart(8, "0"),
-  path: `m/${template === "btc.bip86" ? 86 : 84}'/0'/0'`,
+  path: `m/${PURPOSE[template]}'/0'/0'`,
 });
 
 /** Raw previous transactions the mock esplora serves by txid — registered per input below. */
@@ -78,8 +85,8 @@ const rig = () => {
   const apis = {
     account: async (params: { template: string }): Promise<ChainAccount> =>
       Promise.resolve(
-        params.template === "btc.bip84" || params.template === "btc.bip86"
-          ? accountFor(params.template)
+        params.template.startsWith("btc.")
+          ? accountFor(params.template as BitcoinTemplate)
           : { template: "evm.bip44", network: "eip155:1", address: "0x0" },
       ),
   };

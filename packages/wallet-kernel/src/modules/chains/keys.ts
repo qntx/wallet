@@ -37,6 +37,29 @@ export type PublicMaterial = {
   readonly fingerprint: () => Promise<Uint8Array>;
 };
 
+/** An account node's public fields, read back out of its own serialized extended public key. */
+export type AccountKey = {
+  readonly publicKey: Uint8Array;
+  readonly chainCode: Uint8Array;
+  readonly parentFingerprint: number;
+};
+
+export const accountKey = async (
+  material: PublicMaterial,
+  path: KeyPath,
+  versions: Versions,
+): Promise<AccountKey> => {
+  const parsed = HDKey.fromExtendedKey(await material.extendedPublicKey(path, versions), versions);
+  if (parsed.publicKey === null || parsed.chainCode === null) {
+    throw new KernelError("integrity", "extended public key carries no node");
+  }
+  return {
+    publicKey: parsed.publicKey,
+    chainCode: parsed.chainCode,
+    parentFingerprint: parsed.parentFingerprint,
+  };
+};
+
 /** Supplies one 64-byte signature per task — the local seed backend today, a card later. */
 export type SigningBackend = {
   readonly sign: (task: SignTask) => Promise<Uint8Array>;
