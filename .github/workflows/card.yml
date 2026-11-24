@@ -42,3 +42,8 @@ jobs:
       - run: bunx vp run @qntx/wallet#build
       - name: Card protocol + simulator tests
         run: QNTX_CARD_SIM="$QNTX_CARD_SIM" bun run --cwd packages/wallet-kernel test -- card
+      # The engine suite resolves @qntx/wallet(-worker) dist — build them first, same as ci.yml.
+      - run: bunx vp run @qntx/wallet-engine#build
+      - name: Engine card e2e on the simulator
+        run: QNTX_CARD_SIM="$QNTX_CARD_SIM" bunx vp test --project unit tests/signers-e2e/card.test.ts
+        working-directory: packages/wallet-engine
