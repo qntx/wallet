@@ -16,11 +16,10 @@ import { connectKernel } from "@qntx/wallet/host";
 
 import { shortId } from "../../wallet-kernel/src/modules/card/protocol/identity.ts";
 import { createFakeCard } from "../../wallet-kernel/tests/card/fake-card.ts";
-import type { FakeCard } from "../../wallet-kernel/tests/card/fake-card.ts";
 import { testSecureInput } from "../../wallet-kernel/tests/card/input.ts";
 import type { TestSecureInput } from "../../wallet-kernel/tests/card/input.ts";
 import { testCardReader } from "../../wallet-kernel/tests/card/reader.ts";
-import type { TestCardReader } from "../../wallet-kernel/tests/card/reader.ts";
+import type { FieldCard, TestCardReader } from "../../wallet-kernel/tests/card/reader.ts";
 import { CA1_ANCHOR } from "../../wallet-kernel/tests/card/sim.ts";
 import { createHarness } from "../../wallet-kernel/tests/harness.ts";
 import { MNEMONIC } from "./apps-helpers.ts";
@@ -28,15 +27,21 @@ import { MNEMONIC } from "./apps-helpers.ts";
 export const CARD_CODE = "card rig access";
 export const CARD_VERIFY = { kind: "password" as const, password: "card rig password" };
 
+/** The card the rig's create flow imports onto — the fake by default, a sim card when given. */
+export type RigCard = FieldCard & { readonly identity: Uint8Array };
+
 export type CardRig = {
   wallet: Wallet;
   cardWalletId: string;
   input: TestSecureInput;
   reader: TestCardReader;
-  member: FakeCard;
+  member: RigCard;
 };
 
-export const cardRig = async (options?: { readonly now?: number }): Promise<CardRig> => {
+export const cardRig = async (options?: {
+  readonly now?: number;
+  readonly member?: RigCard;
+}): Promise<CardRig> => {
   const field = testCardReader();
   const input = testSecureInput();
   let ended = false;
@@ -101,7 +106,7 @@ export const cardRig = async (options?: { readonly now?: number }): Promise<Card
     mnemonic: MNEMONIC,
     factor: CARD_VERIFY,
   });
-  const member = createFakeCard();
+  const member = options?.member ?? createFakeCard();
   const created = card(wallet).start(
     { kind: "create", cards: 1, source: { kind: "wallet", walletId: sourceId } },
     { verify: CARD_VERIFY },
