@@ -7,7 +7,7 @@
  * (`wrong-device`), and the record-identity → DeviceInfo synthesis `display` runs against.
  */
 import { equalBytes } from "@noble/ciphers/utils.js";
-import { utf8ToBytes } from "@noble/hashes/utils.js";
+import { concatBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { HDKey } from "@scure/bip32";
 
 import type { KeyPath } from "@qntx/wallet-chains";
@@ -22,6 +22,7 @@ import { tronAddressFromPublicKey } from "@qntx/wallet-chains/tron";
 import type { ChainSignRequest, DeviceDisplay } from "@qntx/wallet/protocol";
 
 import type { PinnedNode } from "../../../derive/pinned.ts";
+import { fingerprintNumber, samePath } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
 import type { KernelErrorCode } from "../../../errors.ts";
 import type { ChainPlan } from "../../chains/run.ts";
@@ -124,9 +125,6 @@ function kernelError(error: unknown): Error {
   return error instanceof Error ? error : integrity("the device exchange failed");
 }
 
-const samePath = (a: KeyPath, b: KeyPath): boolean =>
-  a.length === b.length && a.every((v, i) => v === b[i]);
-
 const atLeast = (
   firmware: readonly [number, number, number],
   version: readonly [number, number, number],
@@ -136,13 +134,6 @@ const atLeast = (
       ? firmware[2] >= version[2]
       : firmware[1] > version[1]
     : firmware[0] > version[0];
-
-const concatBytes = (a: Uint8Array, b: Uint8Array): Uint8Array => {
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a, 0);
-  out.set(b, a.length);
-  return out;
-};
 
 /** The Protocol-V1 exchange over the generic message transport: `message` answers only. */
 const exchangeOf = (link: DeviceLink): Exchange => {
@@ -369,9 +360,6 @@ const deriveLeaf = (node: PinnedNode, tail: ReadonlyArray<number>): Uint8Array =
   }
   return child.publicKey;
 };
-
-const fingerprintNumber = (bytes: Uint8Array): number =>
-  new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
 
 /** The account node's serialized xpub — the same fields the pinned material serializes. */
 const xpubOf = (node: PinnedNode, versions: { public: number; private: number }): string => {

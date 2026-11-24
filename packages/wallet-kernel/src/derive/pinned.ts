@@ -179,7 +179,7 @@ export function parsePinnedEd25519(value: unknown): PinnedEd25519[] {
   }));
 }
 
-const samePath = (a: KeyPath, b: KeyPath): boolean =>
+export const samePath = (a: KeyPath, b: KeyPath): boolean =>
   a.length === b.length && a.every((v, i) => v === b[i]);
 
 /**
@@ -206,8 +206,16 @@ const nodeAt = (pin: Pin, path: KeyPath): HDKey | undefined => {
   return node;
 };
 
-const fingerprintNumber = (bytes: Uint8Array): number =>
+/** The BIP-32 master/parent fingerprint's first four bytes as the u32 device answers carry. */
+export const fingerprintNumber = (bytes: Uint8Array): number =>
   new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0);
+
+/** The inverse of `fingerprintNumber`: a u32 fingerprint as its four big-endian bytes. */
+export const fingerprintBytes = (n: number): Uint8Array => {
+  const out = new Uint8Array(4);
+  new DataView(out.buffer).setUint32(0, n);
+  return out;
+};
 
 /** The pin's public material; misses are `device-required`, corrupt pins are `integrity`. */
 export const pinnedMaterial = (pin: Pin): PublicMaterial => ({

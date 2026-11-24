@@ -13,6 +13,7 @@ import type { KeyPath } from "@qntx/wallet-chains";
 import type { DeviceResponse } from "@qntx/wallet/protocol";
 
 import type { PinnedEd25519, PinnedNode } from "../../../derive/pinned.ts";
+import { fingerprintBytes, samePath } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
 import type { PairingResult } from "../driver.ts";
 import { decodeRegistry } from "./registry.ts";
@@ -52,15 +53,6 @@ export const pathOf = (keyPath: Keypath): KeyPath | undefined => {
 };
 
 /** A registry uint32 fingerprint as the four-byte big-endian form the kernel pins. */
-export const fingerprintBytes = (n: number): Uint8Array => {
-  const out = new Uint8Array(4);
-  new DataView(out.buffer).setUint32(0, n);
-  return out;
-};
-
-export const samePath = (a: KeyPath, b: KeyPath): boolean =>
-  a.length === b.length && a.every((v, i) => v === b[i]);
-
 /** Parses the QR response: exactly a `crypto-multi-accounts` UR or `integrity`. */
 export const parseSync = (response: DeviceResponse): PairingResult => {
   if (response.kind !== "qr" || response.ur.type !== "crypto-multi-accounts") {

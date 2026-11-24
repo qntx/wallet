@@ -12,7 +12,7 @@ import { equalBytes } from "@noble/ciphers/utils.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { concatBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 
 import type { UrCodec } from "@qntx/ur/interop";
@@ -30,6 +30,7 @@ import type { ChainSignRequest, DeviceDisplay } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../../../errors.ts";
 import type { ChainPlan } from "../../chains/run.ts";
+import { expectDigest, personalDigest } from "../digest.ts";
 import type { DeviceIdentity, DeviceLink, SignContext } from "../driver.ts";
 import {
   btcSignRequest,
@@ -111,18 +112,6 @@ const compactSecp256k1 = (
     integrity();
   }
   return signature.signature.subarray(0, 64);
-};
-
-/** The EIP-191 digest of `message` — what a personal-message task must equal. */
-const personalDigest = (message: Uint8Array): Uint8Array =>
-  keccak_256(
-    concatBytes(utf8ToBytes(`\u0019Ethereum Signed Message:\n${message.length}`), message),
-  );
-
-const expectDigest = (computed: Uint8Array, task: { readonly digest: Uint8Array }): void => {
-  if (!equalBytes(computed, task.digest)) {
-    integrity();
-  }
 };
 
 const evm = async (

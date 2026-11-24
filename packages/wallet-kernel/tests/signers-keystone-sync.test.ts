@@ -23,11 +23,12 @@ import { describe, expect, it } from "vite-plus/test";
 import { cryptoMultiAccountsCodec } from "@qntx/ur/interop";
 import type { DeviceRequest, DeviceResponse, ProtocolValue } from "@qntx/wallet/protocol";
 
+import { fingerprintBytes } from "../src/derive/pinned.ts";
 import { KernelError } from "../src/errors.ts";
 import type { DeviceLink } from "../src/modules/signers/driver.ts";
 import { KEYSTONE_DRIVER } from "../src/modules/signers/keystone/driver.ts";
 import { decodeRegistry } from "../src/modules/signers/keystone/registry.ts";
-import { fingerprintBytes, parseSync } from "../src/modules/signers/keystone/sync.ts";
+import { parseSync } from "../src/modules/signers/keystone/sync.ts";
 import { hardwareWalletId } from "../src/modules/signers/record.ts";
 import type { KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";

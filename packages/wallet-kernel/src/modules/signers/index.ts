@@ -31,7 +31,7 @@ import { HARDWARE_DEVICES } from "@qntx/wallet/types";
 
 import type { Handler, KernelContext, VaultHooks } from "../../commands/context.ts";
 import type { PublicMaterial } from "../../derive/material.ts";
-import { pinnedMaterial } from "../../derive/pinned.ts";
+import { pinnedMaterial, samePath } from "../../derive/pinned.ts";
 import type { PinnedKeys } from "../../derive/pinned.ts";
 import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt, KernelPlatform } from "../../platform.ts";
@@ -84,9 +84,6 @@ const authenticatedBody = (keys: PinnedKeys): Uint8Array => {
   parseHardwareBody(body);
   return body;
 };
-
-const samePath = (a: KeyPath, b: KeyPath): boolean =>
-  a.length === b.length && a.every((v, i) => v === b[i]);
 
 /**
  * The live pin for a record: the authenticated body's keys under the claimed header fingerprint. An

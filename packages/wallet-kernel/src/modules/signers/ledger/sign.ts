@@ -31,6 +31,7 @@ import type { ChainSignRequest } from "@qntx/wallet/protocol";
 import { pinnedMaterial } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
 import type { ChainPlan } from "../../chains/run.ts";
+import { expectDigest, personalDigest } from "../digest.ts";
 import type { DeviceLink, SignContext } from "../driver.ts";
 import { solanaClears, solanaOffchain, tronSettings } from "./display.ts";
 import { call } from "./errors.ts";
@@ -62,18 +63,6 @@ function integrity(): never {
 
 const blind = (): KernelError =>
   new KernelError("blind-signing-disabled", "the device setting required to sign is off");
-
-const expectDigest = (computed: Uint8Array, task: { readonly digest: Uint8Array }): void => {
-  if (!equalBytes(computed, task.digest)) {
-    integrity();
-  }
-};
-
-/** The EIP-191 digest of `message` — what a personal-message task must equal. */
-const personalDigest = (message: Uint8Array): Uint8Array =>
-  keccak_256(
-    concatBytes(utf8ToBytes(`\u0019Ethereum Signed Message:\n${message.length}`), message),
-  );
 
 const evmBlind = (tx: { readonly data: string; readonly to?: string }): boolean =>
   tx.to === undefined || (tx.data !== "0x" && tx.data !== "");

@@ -13,11 +13,11 @@ import { cryptoMultiAccountsCodec } from "@qntx/ur/interop";
 import type { KeyPath } from "@qntx/wallet-chains";
 
 import type { PinnedEd25519, PinnedNode } from "../../../derive/pinned.ts";
-import { pathToString } from "../../../derive/pinned.ts";
+import { pathToString, fingerprintBytes, samePath } from "../../../derive/pinned.ts";
 import { KernelError } from "../../../errors.ts";
 import type { DeviceLink, PairingResult } from "../driver.ts";
 import { decodeRegistry, hardwareCall } from "./registry.ts";
-import { fingerprintBytes, pathOf, samePath } from "./sync.ts";
+import { pathOf } from "./sync.ts";
 
 const HARDENED = 0x80000000;
 const ORIGIN = "qntx";
