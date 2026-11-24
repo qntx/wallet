@@ -7,8 +7,11 @@
  * fixed keys verify through `readQrSignature`. Prints HERMES_QR_OK when every check passes — the
  * typed UR layer must decode AND encode under Hermes' global set.
  *
- * The minimal globals are installed first and every dependent module is imported dynamically so
- * shim ordering always precedes first use (dcbor touches TextDecoder at module load).
+ * Only the globals the harness itself needs are installed (console over `print`, a test-grade
+ * crypto.getRandomValues, queueMicrotask, TextEncoder). TextDecoder is NOT shimmed: the typed UR
+ * layer constructs `new TextDecoder("utf-8", { fatal: true })` at module load, so the entry first
+ * asserts Hermes ships a native fatal decoder — that is the check this smoke exists for. Every
+ * dependent module is imported dynamically so these globals precede first use.
  */
 
 import type { QrPayload } from "@qntx/wallet/hardware";
@@ -93,62 +96,6 @@ if (!has("TextEncoder")) {
   install("TextEncoder", HermesTextEncoder);
 }
 
-if (!has("TextDecoder")) {
-  class HermesTextDecoder {
-    readonly encoding = "utf8";
-    decode(input?: ArrayBuffer | Uint8Array): string {
-      if (input === undefined) {
-        return "";
-      }
-      const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-      let out = "";
-      let i = 0;
-      while (i < bytes.length) {
-        const b0 = bytes[i];
-        if (b0 === undefined) {
-          break;
-        }
-        if (b0 < 0x80) {
-          out += String.fromCodePoint(b0);
-          i += 1;
-          continue;
-        }
-        let len: number;
-        if (b0 >= 0xc2 && b0 <= 0xdf) {
-          len = 2;
-        } else if (b0 >= 0xe0 && b0 <= 0xef) {
-          len = 3;
-        } else if (b0 >= 0xf0 && b0 <= 0xf4) {
-          len = 4;
-        } else {
-          out += "�";
-          i += 1;
-          continue;
-        }
-        let cp = b0 & (0x7f >> len);
-        let ok = true;
-        for (let j = 1; j < len; j++) {
-          const bj = bytes[i + j];
-          if (bj === undefined || bj < 0x80 || bj > 0xbf) {
-            ok = false;
-            break;
-          }
-          cp = (cp << 6) | (bj & 0x3f);
-        }
-        if (!ok) {
-          out += "�";
-          i += 1;
-          continue;
-        }
-        out += String.fromCodePoint(cp);
-        i += len;
-      }
-      return out;
-    }
-  }
-  install("TextDecoder", HermesTextDecoder);
-}
-
 const assert = (ok: boolean, what: string): void => {
   if (!ok) {
     throw new Error(`qr hermes check failed: ${what}`);
@@ -176,6 +123,20 @@ const concatBytes = (a: Uint8Array, b: Uint8Array): Uint8Array => {
 const random = (n: number): Uint8Array => new Uint8Array(n).fill(7);
 
 const main = async (): Promise<void> => {
+  /* The pinned Hermes CLI ships a native TextDecoder with fatal support — the typed UR layer
+     reads it at module load. If it is absent or non-fatal the smoke must say so, not shim it. */
+  assert(
+    typeof TextDecoder === "function",
+    "Hermes lacks a native TextDecoder the typed UR layer needs",
+  );
+  let fatal = false;
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.of(0xff));
+  } catch {
+    fatal = true;
+  }
+  assert(fatal, "Hermes' TextDecoder(utf-8, { fatal: true }) does not reject 0xff");
+
   const qr = await import("../../src/qr/index.ts");
   const { ed25519 } = await import("@noble/curves/ed25519.js");
   const { secp256k1 } = await import("@noble/curves/secp256k1.js");
