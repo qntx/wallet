@@ -79,11 +79,11 @@
     "@scure/base": "2.4.0",
     "@scure/bip32": "2.4.0",
     "@scure/btc-signer": "2.4.1",
-    "@solana/addresses": "8.5.0",
-    "@solana/codecs": "8.5.0",
-    "@solana/transaction-messages": "8.5.0",
-    "@solana/transactions": "8.5.0",
-    "ox": "1.8.12"
+    "@solana/addresses": "8.6.0",
+    "@solana/codecs": "8.6.0",
+    "@solana/transaction-messages": "8.6.0",
+    "@solana/transactions": "8.6.0",
+    "ox": "1.8.16"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
