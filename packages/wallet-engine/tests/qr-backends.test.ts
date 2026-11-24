@@ -70,7 +70,8 @@ import type {
   PreparedRequest,
 } from "../src/transactions/route.ts";
 import { approval } from "./approval.ts";
-import { until, VERIFY, nodeWallet } from "./apps-helpers.ts";
+import { until, VERIFY, freshNodeWallet, nodeWallet } from "./apps-helpers.ts";
+import { CARD_VERIFY, cardRig } from "./card-rig.ts";
 import { keystoneSimIo } from "./keystone-io.ts";
 import { bookDeps, idleNetworkDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 
@@ -401,9 +402,10 @@ const signersOf = (wallet: Wallet, deviceIo?: (device: HardwareDevice) => Device
  * the seam an engine builds from `options.deviceIo` — the kernel for vault wallets, the device
  * for hardware custody.
  */
-const world = async (deviceIo: ((device: HardwareDevice) => DeviceIo) | undefined): Promise<World> => {
-  const { wallet } = await nodeWallet();
-  await wallet.vault.unlock(VERIFY).catch(() => undefined);
+const worldOver = async (
+  wallet: Wallet,
+  deviceIo: ((device: HardwareDevice) => DeviceIo) | undefined,
+): Promise<World> => {
   const signers = signersOf(wallet, deviceIo);
   const signing = signers.apis;
   const signedTransaction = (
@@ -645,6 +647,14 @@ const world = async (deviceIo: ((device: HardwareDevice) => DeviceIo) | undefine
     signers: { apis: signers.apis },
   } as unknown as WalletEngine;
   return { wallet, requests, signer: qrSigner({ engine, wallet }), signers };
+};
+
+const world = async (
+  deviceIo: ((device: HardwareDevice) => DeviceIo) | undefined,
+): Promise<World> => {
+  const { wallet } = await nodeWallet();
+  await wallet.vault.unlock(VERIFY).catch(() => undefined);
+  return worldOver(wallet, deviceIo);
 };
 
 /** One signature round-trip through the QR facade; `prepare` never asks the device. */
@@ -1267,6 +1277,122 @@ describe("the signers dispatch", () => {
           error.code !== "unsupported" &&
           error.code !== "cancelled",
       );
+    },
+  );
+});
+
+describe("qr account facts — partial pins and card custody", () => {
+  it(
+    "a hardware wallet with only evm material pinned signs evm and refuses solana device-required",
+    { timeout: 60_000 },
+    async () => {
+      /* A fresh vault — the shared node's keystone is already paired with every family. */
+      const { wallet } = await freshNodeWallet();
+      await wallet.vault.unlock(VERIFY).catch(() => undefined);
+      /* The pair sync publishes only the EVM account — every other family's material is missing
+         from the wallet's pin. */
+      const pairIo = keystoneSimIo(DEVICE_SEED, deviceFingerprint, {
+        sync: { secp256k1: ["m/44'/60'/0'"], ed25519: [] },
+      });
+      const pairResult = await hardware(wallet)
+        .start({ kind: "pair", device: "keystone" }, { io: pairIo.io })
+        .result;
+      if (pairResult.kind !== "pair") {
+        throw new Error("expected a pair result");
+      }
+      const { walletId } = pairResult.wallet;
+      const info = wallet.getSnapshot().wallets.find((entry) => entry.walletId === walletId);
+      if (info === undefined || info.custody !== "hardware") {
+        throw new Error("expected a hardware wallet");
+      }
+      const evm = await chains(wallet).account({
+        walletId,
+        groupIndex: 0,
+        template: "evm.bip44",
+        network: EVM_MAINNET,
+      });
+      if (!("address" in evm)) {
+        throw new Error("expected an address account");
+      }
+      const f: Facts = {
+        walletId,
+        fingerprint: Number.parseInt(info.fingerprint, 16),
+        evm: evm.address,
+        tron: "",
+        solana: "",
+        btcXpub: "",
+      };
+      const io = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
+      const w = await worldOver(wallet, () => io.io);
+      const payload = await signQr(w, qrPersonal(f), { walletId, groupIndex: 0 }, io);
+      expect(payload.type).toBe("eth-signature");
+      expect(io.exchanges()).toBe(1);
+      /* A solana request's own family is missing — the refusal is the kernel's typed
+         device-required, not a QR error, so the host can fetch accounts and retry. */
+      await expect(
+        w.signer.prepare(
+          {
+            family: "solana",
+            kind: "transaction",
+            path: SOLANA_PATH,
+            xfp: f.fingerprint,
+            address: "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM",
+            data: solanaMessage("4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM"),
+          },
+          { walletId, groupIndex: 0 },
+        ),
+      ).rejects.toMatchObject({ code: "device-required" });
+      expect(io.exchanges()).toBe(1);
+    },
+  );
+
+  it(
+    "a card wallet prepares an evm qr request and exports with zero taps",
+    { timeout: 60_000 },
+    async () => {
+      const rig = await cardRig();
+      const w = await worldOver(rig.wallet, undefined);
+      const apis = chains(rig.wallet);
+      const [evm, bitcoin] = await Promise.all([
+        apis.account({
+          walletId: rig.cardWalletId,
+          groupIndex: 0,
+          template: "evm.bip44",
+          network: EVM_MAINNET,
+        }),
+        apis.account({
+          walletId: rig.cardWalletId,
+          groupIndex: 0,
+          template: "btc.bip84",
+          network: BITCOIN_MAINNET,
+        }),
+      ]);
+      if (!("address" in evm) || !("fingerprint" in bitcoin) || bitcoin.fingerprint === undefined) {
+        throw new Error("expected an evm address and a bitcoin fingerprint");
+      }
+      const f: Facts = {
+        walletId: rig.cardWalletId,
+        fingerprint: Number.parseInt(bitcoin.fingerprint, 16),
+        evm: evm.address,
+        tron: "",
+        solana: "",
+        btcXpub: "",
+      };
+      const pending = await w.signer.prepare(qrPersonal(f), {
+        walletId: rig.cardWalletId,
+        groupIndex: 0,
+      });
+      expect(pending.method).toBe("evm-sign");
+      const sentBefore = rig.reader.sent.length;
+      const exported = await w.signer.exportAccount({
+        account: { walletId: rig.cardWalletId, groupIndex: 0 },
+        form: "crypto-multi-accounts",
+        families: ["evm", "tron", "solana"],
+        bitcoin: { template: "btc.bip84", network: BITCOIN_MAINNET },
+        verify: CARD_VERIFY,
+      });
+      expect(exported.payload.type).toBe("crypto-multi-accounts");
+      expect(rig.reader.sent.length).toBe(sentBefore);
     },
   );
 });

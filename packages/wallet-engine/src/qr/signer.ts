@@ -22,6 +22,7 @@ import type { QrExport } from "./export.ts";
 import { BITCOIN_MAINNET } from "./link.ts";
 import type { QrRequest } from "./request.ts";
 import { qrResponse } from "./response.ts";
+import type { QrSigner } from "./response.ts";
 
 /** The account a QR request is bound to: a wallet group the request must have been built for. */
 export type QrAccount = { readonly walletId: string; readonly groupIndex: number };
@@ -53,7 +54,14 @@ const mainnetFirst = (ids: ReadonlyArray<string>, mainnet: string): ReadonlyArra
   ...ids.filter((id) => id !== mainnet),
 ];
 
-type Bound = { readonly request: QrRequest; readonly signer: { readonly address: string } };
+/** The account template and account-network the request family's leaf address comes from. */
+const LEAF_ACCOUNT = {
+  evm: { template: "evm.bip44", network: EVM_ACCOUNT_NETWORK },
+  tron: { template: "tron.bip44", network: TRON_MAINNET },
+  solana: { template: "solana.bip44-change", network: SOLANA_MAINNET },
+} as const;
+
+type Bound = { readonly request: QrRequest; readonly signer: QrSigner | undefined };
 
 /** A chain account's address — a reply without one is never bound against an empty string. */
 const accountAddress = (chain: ChainAccount, family: "evm" | "tron" | "solana"): string => {
@@ -67,40 +75,34 @@ const accountAddress = (chain: ChainAccount, family: "evm" | "tron" | "solana"):
 };
 
 /**
- * The account's authenticated facts for binding: hardware fingerprints come from the device's
- * attested wallet info, a vault's from its Bitcoin account material; addresses always come from
- * `chain.account` — never from the request.
+ * The account's authenticated facts for binding: a hardware fingerprint comes from the device's
+ * attested wallet info, a vault's or card's from its Bitcoin account material; the address comes
+ * from `chain.account` — never from the request. Only the request's own family resolves: a card or
+ * hardware wallet missing another family's pinned material must not blind this request. A missing
+ * node surfaces the kernel's typed `device-required` unwrapped so the host can fetch accounts and
+ * retry; nothing here wraps it in a QrError.
  */
 const accountFacts = async (
   deps: { readonly engine: QrEngineSurface; readonly wallet: Wallet },
   account: QrAccount,
+  family: QrRequest["family"],
 ): Promise<QrAccountFacts> => {
   const info = deps.wallet.getSnapshot().wallets.find((w) => w.walletId === account.walletId);
-  if (info === undefined || (info.custody !== "vault" && info.custody !== "hardware")) {
+  if (info === undefined) {
     throw new QrError(
       "wallet-unsupported",
-      "a QR signer must be a vault or hardware wallet — imported keys cannot sign",
+      "a QR signer must be a vault, card or hardware wallet — imported keys cannot sign",
     );
   }
   const apis = deps.engine.signers.apis;
   const { walletId, groupIndex } = account;
-  const [evm, tron, solana, bitcoin] = await Promise.all([
-    apis.account({
-      walletId,
-      groupIndex,
-      template: "evm.bip44",
-      network: EVM_ACCOUNT_NETWORK,
-    }),
-    apis.account({ walletId, groupIndex, template: "tron.bip44", network: TRON_MAINNET }),
-    apis.account({
-      walletId,
-      groupIndex,
-      template: "solana.bip44-change",
-      network: SOLANA_MAINNET,
-    }),
-    info.custody === "vault"
-      ? apis.account({ walletId, groupIndex, template: "btc.bip84", network: BITCOIN_MAINNET })
-      : Promise.resolve(undefined),
+  const [chain, bitcoin] = await Promise.all([
+    family === "bitcoin"
+      ? Promise.resolve(undefined)
+      : apis.account({ walletId, groupIndex, ...LEAF_ACCOUNT[family] }),
+    info.custody === "hardware"
+      ? Promise.resolve(undefined)
+      : apis.account({ walletId, groupIndex, template: "btc.bip84", network: BITCOIN_MAINNET }),
   ]);
   const fingerprint =
     info.custody === "hardware"
@@ -115,11 +117,10 @@ const accountFacts = async (
     walletId,
     groupIndex,
     fingerprint,
-    addresses: {
-      evm: accountAddress(evm, "evm"),
-      tron: accountAddress(tron, "tron"),
-      solana: accountAddress(solana, "solana"),
-    },
+    addresses:
+      chain === undefined || family === "bitcoin"
+        ? {}
+        : { [family]: accountAddress(chain, family) },
     networks: {
       evm: deps.engine.networks.enabled("evm"),
       solana: mainnetFirst(deps.engine.networks.enabled("solana"), SOLANA_MAINNET),
@@ -129,17 +130,20 @@ const accountFacts = async (
   };
 };
 
-/** The address `qrResponse` verifies the signature against — the request's family decides which. */
-const signerOf = (request: QrRequest, facts: QrAccountFacts): { readonly address: string } => ({
-  address:
-    request.family === "evm"
-      ? facts.addresses.evm
-      : request.family === "solana"
-        ? facts.addresses.solana
-        : request.family === "tron"
-          ? facts.addresses.tron
-          : "",
-});
+/* The address `qrResponse` verifies the signature against — the request's family decides which.
+   Bitcoin responses carry no signer (the PSBT itself is the answer), so they bind nothing. */
+const signerOf = (request: QrRequest, facts: QrAccountFacts): QrSigner | undefined => {
+  if (request.family === "bitcoin") {
+    return undefined;
+  }
+  const address = facts.addresses[request.family];
+  if (address === undefined) {
+    /* `accountFacts` resolves the request's own family or already refused — this is the
+       integrity floor, not a reachable wallet state. */
+    throw new QrError("wallet-unsupported", `the account has no ${request.family} address`);
+  }
+  return { address };
+};
 
 /** The 64-byte ed25519 signature this account contributed to a signed transaction wire. */
 const solanaSignature = (wire: Uint8Array, address: string): Uint8Array => {
@@ -164,7 +168,7 @@ const solanaSignature = (wire: Uint8Array, address: string): Uint8Array => {
 /** A pipeline outcome as the `chain.sign` result `qrResponse` verifies against the request. */
 const toChainResult = (
   result: RequestResult,
-  signer: { readonly address: string },
+  signer: QrSigner | undefined,
 ): ChainSignResult => {
   if (!("kind" in result)) {
     throw new QrError("result-mismatch", "a QR request never produces a tracked transaction");
@@ -187,7 +191,8 @@ const toChainResult = (
         result.send ||
         result.stopped !== undefined ||
         wires === undefined ||
-        wires.length !== 1
+        wires.length !== 1 ||
+        signer === undefined
       ) {
         throw new QrError("result-mismatch", "a QR request signs exactly one transaction");
       }
@@ -224,7 +229,7 @@ export const qrSigner = (deps: {
   const bound = new Map<string, Bound>();
   return {
     prepare: async (request, account) => {
-      const facts = await accountFacts(deps, account);
+      const facts = await accountFacts(deps, account, request.family);
       const candidates = bindQrRequest(request, facts);
       for (const candidate of candidates) {
         try {

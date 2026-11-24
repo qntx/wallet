@@ -27,18 +27,19 @@ import type { QrRequest } from "./request.ts";
 
 /**
  * Everything binding checks against: the selected account's authenticated facts — the master
- * fingerprint (hardware's is authenticated device info; a vault's comes from its Bitcoin account),
- * the account's three single-address-family addresses, and the enabled networks per family.
+ * fingerprint (hardware's is authenticated device info; a vault's or card's comes from its Bitcoin
+ * account), the resolved leaf addresses per family, and the enabled networks per family.
  */
 export type QrAccountFacts = {
   readonly walletId: string;
   readonly groupIndex: number;
   /** The master key fingerprint as a number — what a UR request's `sourceFingerprint` carries. */
   readonly fingerprint: number;
+  /** The resolved leaf address per family — only the request's own family is guaranteed present. */
   readonly addresses: {
-    readonly evm: string;
-    readonly tron: string;
-    readonly solana: string;
+    readonly evm?: string;
+    readonly tron?: string;
+    readonly solana?: string;
   };
   /** Enabled CAIP-2 ids per family; `solana`/`tron` are ordered mainnet first. */
   readonly networks: {
@@ -85,7 +86,7 @@ const requireAccount = (
     return;
   }
   const own = facts.addresses[family];
-  if (family === "evm" ? address.toLowerCase() !== own.toLowerCase() : address !== own) {
+  if (family === "evm" ? address.toLowerCase() !== own?.toLowerCase() : address !== own) {
     throw mismatch("address");
   }
 };
@@ -141,7 +142,7 @@ const evmCandidates = (
     if (!facts.networks.evm.includes(network)) {
       throw new QrError("network-unknown", `network ${network} is not enabled`);
     }
-    if (tx.data !== "0x" && tx.to.toLowerCase() === facts.addresses.evm.toLowerCase()) {
+    if (tx.data !== "0x" && tx.to.toLowerCase() === facts.addresses.evm?.toLowerCase()) {
       throw new QrError("self-call", "a QR request cannot call the signing account");
     }
     return {
@@ -206,11 +207,13 @@ const solanaCandidates = (
   facts: QrAccountFacts,
 ): ReadonlyArray<SolanaSignInput> => {
   requireAccount(request, facts, "solana");
-  const account = {
-    walletId: facts.walletId,
-    groupIndex: facts.groupIndex,
-    address: facts.addresses.solana,
-  };
+  const address = facts.addresses.solana;
+  if (address === undefined) {
+    /* `accountFacts` resolves the request's own family or already refused — never bind a
+       signature slot against an empty address. */
+    throw new QrError("wallet-unsupported", "the account has no solana address");
+  }
+  const account = { walletId: facts.walletId, groupIndex: facts.groupIndex, address };
   const origin = qrOrigin(request.declared);
   if (request.kind === "message") {
     const [network] = facts.networks.solana;

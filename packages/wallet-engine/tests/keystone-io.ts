@@ -53,12 +53,13 @@ export const keystoneIo = (hang?: () => Promise<unknown>): DeviceIo => {
 export const keystoneSimIo = (
   seed: Uint8Array,
   fingerprint: Uint8Array,
+  mutant?: Parameters<typeof keystoneDevice>[2],
 ): {
   readonly io: DeviceIo;
   readonly exchanges: () => number;
   readonly fail: (error: Error | undefined) => void;
 } => {
-  const device = keystoneDevice(seed, fingerprint);
+  const device = keystoneDevice(seed, fingerprint, mutant);
   let count = 0;
   let failure: Error | undefined;
   return {

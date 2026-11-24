@@ -236,15 +236,21 @@ const bitcoinResponse = (request: QrRequest, result: ChainSignResult): QrPayload
 export const qrResponse = (
   request: QrRequest,
   result: ChainSignResult,
-  signer: QrSigner,
+  signer: QrSigner | undefined,
 ): QrPayload => {
+  const signerOrThrow = (): QrSigner => {
+    if (signer === undefined) {
+      mismatch("the request bound no signer to verify against");
+    }
+    return signer;
+  };
   switch (request.family) {
     case "evm":
-      return evmResponse(request, result, signer);
+      return evmResponse(request, result, signerOrThrow());
     case "solana":
-      return solanaResponse(request, result, signer);
+      return solanaResponse(request, result, signerOrThrow());
     case "tron":
-      return tronResponse(request, result, signer);
+      return tronResponse(request, result, signerOrThrow());
     case "bitcoin":
       return bitcoinResponse(request, result);
   }

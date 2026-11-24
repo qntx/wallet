@@ -74,6 +74,11 @@ export type DeviceMutant = {
     /** Corrupt the public key bytes sent for this path. */
     readonly badKeyPath?: string;
   };
+  /** The accounts the pair sync publishes — a device exposing only some of its keys. */
+  readonly sync?: {
+    readonly secp256k1?: ReadonlyArray<string>;
+    readonly ed25519?: ReadonlyArray<string>;
+  };
 };
 
 const pathNumbers = (rendered: string): number[] =>
@@ -432,8 +437,12 @@ export const keystoneDevice = (
         new CryptoMultiAccounts(
           Buffer.from(fingerprint),
           [
-            ...SYNC_SECP256K1_PATHS.map((rendered) => keyFor(rendered, false)),
-            ...SYNC_ED25519_PATHS.map((rendered) => keyFor(rendered, true)),
+            ...(mutant.sync?.secp256k1 ?? SYNC_SECP256K1_PATHS).map((rendered) =>
+              keyFor(rendered, false),
+            ),
+            ...(mutant.sync?.ed25519 ?? SYNC_ED25519_PATHS).map((rendered) =>
+              keyFor(rendered, true),
+            ),
           ],
           "Keystone 3 Pro",
           undefined,
