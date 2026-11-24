@@ -989,12 +989,12 @@ for Solana, same-content plus a new under-link signature for a PSBT — before h
 
 ### Counterparts
 
-| Counterpart | Export | Request | Response | Verified |
-| --- | --- | --- | --- | --- |
-| MetaMask / Rabby | crypto-hdkey, crypto-account | eth-sign-request | eth-signature | Differential against the keyring's `@keystonehq/*` codecs; not verified against the app |
-| BlueWallet / Sparrow / Nunchuk | crypto-account | crypto-psbt | crypto-psbt | Differential at BlueWallet's exact codec pin; Sparrow is source-read only; Nunchuk unverified |
-| Keystone-compatible JS | crypto-multi-accounts | sol/tron-sign-request | sol/tron-signature | Differential against Keystone Rust 1.0.9 and firmware goldens |
-| qntx Web wallet | crypto-multi-accounts | all families above | matching signatures | End to end in Node: two wallets exchanging only frames |
+| Counterpart                    | Export                       | Request               | Response            | Verified                                                                                      |
+| ------------------------------ | ---------------------------- | --------------------- | ------------------- | --------------------------------------------------------------------------------------------- |
+| MetaMask / Rabby               | crypto-hdkey, crypto-account | eth-sign-request      | eth-signature       | Differential against the keyring's `@keystonehq/*` codecs; not verified against the app       |
+| BlueWallet / Sparrow / Nunchuk | crypto-account               | crypto-psbt           | crypto-psbt         | Differential at BlueWallet's exact codec pin; Sparrow is source-read only; Nunchuk unverified |
+| Keystone-compatible JS         | crypto-multi-accounts        | sol/tron-sign-request | sol/tron-signature  | Differential against Keystone Rust 1.0.9 and firmware goldens                                 |
+| qntx Web wallet                | crypto-multi-accounts        | all families above    | matching signatures | End to end in Node: two wallets exchanging only frames                                        |
 
 ### Binding
 
