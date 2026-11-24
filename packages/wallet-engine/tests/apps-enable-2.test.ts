@@ -580,7 +580,8 @@ describe("enable failure and lifecycle gaps", () => {
 
   it("create failure leaves enabling + error, nothing posted, and retry succeeds", async () => {
     const w = await world(37);
-    // Exhaust the kernel's per-scheme session cap first so create fails.
+    /* Exhaust the kernel's per-scheme session cap first so create fails — each fill session
+       takes its own group so the per-owner cap stays out of the way. */
     const api = sessions(w.wallet);
     const existing = await api.list();
     for (let i = existing.length; i < 16; i++) {
@@ -589,7 +590,7 @@ describe("enable failure and lifecycle gaps", () => {
         scheme: "hyperliquid-l1-agent",
         limits: HL_LIMITS,
         verify: VERIFY,
-        owner: { walletId: w.walletId, groupIndex: 0 },
+        owner: { walletId: w.walletId, groupIndex: 1000 + i },
         scope: "Testnet",
         name: `cap-${i}`,
         validUntil: w.timers.time + DAY,
