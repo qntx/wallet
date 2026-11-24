@@ -17,6 +17,7 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryPublicStore } from "../src/store/memory.ts";
 import type { EngineCollection, EngineStore } from "../src/store/port.ts";
+import { keystoneIo, pairKeystone } from "./keystone-io.ts";
 
 /**
  * A persistent EngineStore: the same contract as the memory one but `close()` keeps the backing,
@@ -209,6 +210,95 @@ describe("engine collections across lock, unlock and reset", () => {
       ).resolves.toBeUndefined();
       await expect(opened!.collection("approvals").get("eip155:1:0xbbbb")).resolves.toBeUndefined();
     } finally {
+      engine.unsubscribe();
+      await wallet.destroy();
+    }
+  }, 60_000);
+
+  it("a reset cancels a running signer activity and the new vault's tree has no signers", async () => {
+    const backing = new Map<string, Map<string, Uint8Array>>();
+    let opens = 0;
+    const wallet = await createNodeWallet({
+      verifyEvent,
+      passkey: {
+        rpId: "qntx.test",
+        rpName: "qntx",
+        walletSalt: "qntx/wallet",
+        backupSalt: "qntx/backup",
+        vaultSalt: "qntx/vault",
+      },
+      autoLock: { platform: "web", idleMinutes: 15 },
+      authenticator: createSoftwarePasskey(randomBytes(32)),
+      kernelUrl: KERNEL_URL,
+    });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const engine = createWalletEngine({
+      publicStore: createMemoryPublicStore(),
+      verifyEvent,
+      weblnAlias: "test",
+      lightningMaxFee: () => 0,
+      wallet,
+      sparkNetwork: "regtest",
+      fetch: async () => Promise.reject(new Error("offline")),
+      random: (n) => randomBytes(n),
+      now: () => Date.now(),
+      logger: { warn: () => undefined },
+      showCallsStatus: () => undefined,
+      deviceIo: () => keystoneIo(async () => gate),
+      openStore: async () => {
+        opens += 1;
+        return persistentStore(backing);
+      },
+      rpc: { [SOL_NET]: ["https://solana.invalid"] },
+    });
+    try {
+      await wallet.wallets.importMnemonic({
+        mnemonic: MNEMONIC_A,
+        factor: { kind: "password", password: PASSWORD },
+      });
+      await until(() => opens === 1);
+      const hwId = await pairKeystone(wallet);
+      // Group 1 solana is unpinned — the accounts op parks on the device exchange.
+      const fetch = engine.signers.fetchAccounts({ walletId: hwId, groupIndex: 1, family: "solana" });
+      const settled = expect(fetch).rejects.toMatchObject({ code: "cancelled" });
+      await until(() => engine.signers.getState().active?.step.kind === "device");
+      await wallet.vault.reset();
+      /* The lock hook cancels the task; the parked transport still has to return before the
+         coroutine sees the flag and unwinds — a real device answers or errors here. */
+      release();
+      await until(() => engine.signers.getState().active === null);
+      await settled;
+      // Same respawn-window retry as the collection test above.
+      const deadline = Date.now() + 20_000;
+      for (;;) {
+        try {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- retrying the respawn window
+          await wallet.wallets.importMnemonic({
+            mnemonic: MNEMONIC_B,
+            factor: { kind: "password", password: PASSWORD },
+          });
+          break;
+        } catch (error) {
+          if (!(error instanceof WalletError && error.code === "locked") || Date.now() > deadline) {
+            throw error;
+          }
+          // oxlint-disable-next-line eslint/no-await-in-loop -- retrying the respawn window
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      }
+      await until(() => engine.accounts.getState().wallets.length === 1);
+      const tree = engine.accounts.getState();
+      expect(tree.wallets.map((w) => w.custody)).toStrictEqual(["vault"]);
+      expect(
+        Object.values(tree.groups)
+          .flat()
+          .every((g) => Object.keys(g.signer ?? {}).length === 0),
+      ).toBe(true);
+    } finally {
+      release();
       engine.unsubscribe();
       await wallet.destroy();
     }

@@ -715,6 +715,70 @@ describe("card operations (fake card)", () => {
     await expect(errCode(held)).resolves.toBe("cancelled");
   });
 
+  it("a held secure input answers cancelled and a queued vault.reset follows it", async () => {
+    const r = await rig();
+    const first = ok(
+      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+    ) as { opId: string; step: Step };
+    expect(first.step.kind).toBe("input");
+    const held = r.h.call("card.step", { opId: first.opId }, r.session); // blocks on secure input
+    while (!r.input.pending()) {
+      await r.h.settle();
+    }
+    // Requests are serial — the reset runs once the held input is dismissed.
+    const reset = r.h.call("vault.reset", null, r.session);
+    r.input.secureInput.cancel();
+    await expect(errCode(held)).resolves.toBe("cancelled");
+    expect(ok(await reset)).toBeNull();
+    // The session died with the vault — the op id resolves nothing.
+    await expect(errCode(r.h.call("card.step", { opId: first.opId }, r.session))).resolves.toBe(
+      "locked",
+    );
+  });
+
+  it("vault.reset discards a suspended op — the code it holds is wiped", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const added = await drive(
+      r,
+      { kind: "add", groups: 1 },
+      { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+    );
+    const walletId = strField(added, "walletId");
+    const first = ok(
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "change-access", walletId }, verify: verifyPasskey() },
+        r.session,
+      ),
+    ) as { opId: string; step: Step };
+    expect(first.step.kind).toBe("input");
+    // Answer the old-code ask — the generator suspends at the new-code ask holding this buffer.
+    const code = utf8ToBytes("correct horse");
+    r.input.push(code);
+    const next = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    expect(next.kind).toBe("input");
+    ok(await r.h.call("vault.reset", null, r.session));
+    await r.h.settle(); // let the discarded op's finally wipe the code it was holding
+    expect(code.every((b) => b === 0)).toBe(true);
+    await expect(errCode(r.h.call("card.step", { opId: first.opId }, r.session))).resolves.toBe(
+      "locked",
+    );
+    // A freshly established vault lists no card wallets.
+    const res = ok(
+      await r.h.call("wallet.createWithPasskey", {
+        ceremony: "host",
+        credentialId: CREDENTIAL_ID,
+        prfWallet: new Uint8Array(32).fill(2),
+        synced: true,
+        factor: verifyPasskey(),
+      }),
+    );
+    const session2 = strField(res, "session");
+    const status = ok(await r.h.call("status", null, session2)) as { wallets: WalletInfo[] };
+    expect(status.wallets.some((w) => w.custody === "card")).toBe(false);
+  });
+
   it("cancel, timeout and lock between steps wipe the code the suspended op holds", async () => {
     for (const how of ["cancel", "timeout", "lock"] as const) {
       const r = await rig();

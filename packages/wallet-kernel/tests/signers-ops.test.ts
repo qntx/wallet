@@ -537,6 +537,35 @@ describe("operation lifecycle", () => {
     );
   });
 
+  it("vault.reset aborts a parked exchange and the fresh vault has no hardware wallets", async () => {
+    const { h, device, session } = await boot();
+    const walletId = await pairDevice(h, session);
+    const { opId } = await beginOp(h, session, {
+      kind: "accounts",
+      walletId,
+      groupIndex: 1, // group-1 solana is unpinned — the op asks the device
+      templates: ["solana.bip44-change"],
+      network: SOLANA_NETWORK,
+    });
+    const rejection = rejectionOf(device.exchanges.at(-1)!);
+    ok(await h.call("vault.reset", null, session));
+    // The parked exchange rejects and the session died with the vault — the op resolves nothing.
+    await expect(rejection).resolves.toBe("cancelled");
+    expect(
+      errCode(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session)),
+    ).toBe("locked");
+    // A freshly established vault lists no hardware wallets.
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: FACTOR(),
+      }),
+    );
+    const session2 = strField(res, "session");
+    const status = ok(await h.call("status", undefined, session2));
+    expect(arrField(status, "wallets").some((w) => field(w, "custody") === "hardware")).toBe(false);
+  });
+
   it("a second begin discards the first operation", async () => {
     const { h, device, session } = await boot();
     const first = await beginOp(h, session, PAIR_OP);
