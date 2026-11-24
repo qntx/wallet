@@ -30,7 +30,8 @@ const HARDENED = 0x80000000;
 /** The device's own strings are untrusted — only printable ASCII under 64 chars survives. */
 const DEVICE_TEXT = /^[ -~]{1,64}$/;
 /** The device-kind shape: a lowercase slug — unknown kinds are authenticated but inert. */
-export const DEVICE_KIND = /^[a-z][a-z0-9-]{1,31}$/;
+// oxlint-disable-next-line no-inferrable-types -- isolatedDeclarations requires the annotation.
+export const DEVICE_KIND: RegExp = /^[a-z][a-z0-9-]{1,31}$/;
 
 export type HardwareHeader = {
   /** The device kind — possibly one this build does not know. */

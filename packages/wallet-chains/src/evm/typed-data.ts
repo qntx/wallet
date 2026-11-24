@@ -1,3 +1,4 @@
+import * as Hex from "ox/Hex";
 import * as TypedData from "ox/TypedData";
 
 import { displayExcerpt, hasHiddenCharacters, isEncodedBytes } from "../display.ts";
@@ -52,6 +53,30 @@ export type TypedDataMessage = Readonly<Record<string, unknown>>;
 
 export const isTypedDataMessage = (value: unknown): value is TypedDataMessage =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * The EIP-712 domain separator and message struct hash of a parsed document — the same encoder
+ * `planEvmTypedData` signs (`keccak256(0x1901 | domain | message)` is the task digest). `message`
+ * is `undefined` when the primary type is `EIP712Domain` itself.
+ */
+export const typedDataHashes = (
+  json: TypedDataInput,
+): { readonly domain: Uint8Array; readonly message: Uint8Array | undefined } => {
+  // ox encodes `0x19 ‖ 0x01 ‖ domainSeparator ‖ hashStruct(message)`; the struct hash is absent
+  // when the primary type is EIP712Domain itself.
+  const encoded = Hex.toBytes(
+    TypedData.encode({
+      domain: json.domain,
+      types: json.types,
+      primaryType: json.primaryType,
+      message: json.message,
+    }),
+  );
+  return {
+    domain: encoded.subarray(2, 34),
+    message: json.primaryType === "EIP712Domain" ? undefined : encoded.subarray(34),
+  };
+};
 
 /** `value` is an array of message objects (empty allowed). */
 export const typedDataMessages = (value: unknown): ReadonlyArray<TypedDataMessage> | undefined =>

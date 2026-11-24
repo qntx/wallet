@@ -395,7 +395,7 @@ export function createSignersModule(
       throw new KernelError("invalid-input", "an imported key is not a hardware wallet");
     }
     const record = hardwareRecord(ctx, request.account.walletId);
-    const { driver, device } = driverFor(record);
+    const { driver, device, header } = driverFor(record);
     const pin = pinAt(pins, record);
     // The same approval pipeline chain.sign runs (I2): template checks, prepare on public
     // material, agent binding, the blind-signing policy — then the device's display gate and the
@@ -406,7 +406,7 @@ export function createSignersModule(
       pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin }),
       dek,
     );
-    const display = driver.display(request, prepared.plan);
+    const display = driver.display(request, prepared.plan, header);
     if (display === "unsupported") {
       throw new KernelError("unsupported", "the device cannot sign this request");
     }
@@ -421,7 +421,7 @@ export function createSignersModule(
     return executorOf(ctx.platform).begin(device, display, async (link) => ({
       kind: "sign",
       result: await signStages(prepared.plan, async (stage) =>
-        driver.sign(link, { request, stage, pin, random: ctx.platform.random }),
+        driver.sign(link, { request, stage, pin, display, random: ctx.platform.random }),
       ),
     }));
   };

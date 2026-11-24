@@ -19,6 +19,7 @@ import { bitcoinNetwork, verifyBitcoinPsbtSignatures } from "@qntx/wallet-chains
 import { EVM_DELEGATOR, normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
 import { devicePromptLine } from "../src/modules/signers/prompt.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
@@ -107,7 +108,9 @@ const boot = async (
   opts?: FakeDeviceOptions,
 ): Promise<Boot & { device: ReturnType<typeof fakeDevice> }> => {
   const device = fakeDevice(SEED, opts);
-  const h = createHarness({ drivers: { keystone: device.driver, ledger: device.driver } });
+  const h = createHarness({
+    drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER },
+  });
   await h.settle();
   const res = ok(
     await h.call("wallet.importMnemonic", { mnemonic: utf8ToBytes(MNEMONIC), factor: FACTOR() }),
@@ -523,7 +526,7 @@ describe("hardware sign refusals", () => {
     const device = fakeDevice(SEED);
     const h = createHarness({
       keystore: fake.keystore,
-      drivers: { keystone: device.driver, ledger: device.driver },
+      drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER },
     });
     await h.settle();
     const res = ok(

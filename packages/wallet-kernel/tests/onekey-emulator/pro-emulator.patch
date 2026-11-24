@@ -1,0 +1,1779 @@
+diff --git a/core/SConscript.unix b/core/SConscript.unix
+index 5bcffcf..b7c1561 100644
+--- a/core/SConscript.unix
++++ b/core/SConscript.unix
+@@ -82,6 +82,10 @@ RASPI = os.getenv('TREZOR_EMULATOR_RASPI') == '1'
+ CPPPATH_MOD += [
+     'embed/extmod/modtrezorconfig',
+     'vendor/trezor-storage',
++    'embed/trezorhal',
++    'embed/bytewords',
++    'embed/lite_card',
++    'embed/pn532',
+ ]
+ SOURCE_MOD += [
+     'embed/extmod/modtrezorconfig/modtrezorconfig.c',
+@@ -104,9 +108,11 @@ CPPDEFINES_MOD += [
+     ('USE_CARDANO', '1' if EVERYTHING else '0'),
+     ('USE_NEM', '1' if EVERYTHING else '0'),
+     ('USE_EOS', '1' if EVERYTHING else '0'),
++    ('LODEPNG_NO_COMPILE_ALLOCATORS',),
+ ]
+ SOURCE_MOD += [
+     'embed/extmod/trezorobj.c',
++    'embed/bytewords/bc_bytewords.c',
+     'embed/extmod/modtrezorcrypto/crc.c',
+     'embed/extmod/modtrezorcrypto/modtrezorcrypto.c',
+     'vendor/trezor-crypto/address.c',
+@@ -410,6 +416,8 @@ SOURCE_UNIX = [
+     'embed/unix/profile.c',
+     'embed/unix/random_delays.c',
+     'embed/unix/rng.c',
++    'embed/unix/se_stubs.c',
++    'vendor/lvgl_mp/driver/png/mp_lodepng.c',
+     'embed/unix/touch.c',
+     'embed/unix/usb.c',
+     'vendor/micropython/shared/runtime/gchelper_generic.c',
+diff --git a/core/embed/bytewords/bc_bytewords.c b/core/embed/bytewords/bc_bytewords.c
+index 9ab9665..1d1c2b0 100644
+--- a/core/embed/bytewords/bc_bytewords.c
++++ b/core/embed/bytewords/bc_bytewords.c
+@@ -11,6 +11,7 @@
+ #include <string.h>
+ // #include <assert.h>
+ #include <ctype.h>
++#include <assert.h>
+ #include"secure_heap.h"
+ 
+ // #ifdef ARDUINO
+@@ -183,6 +184,7 @@ char* bytewords_encode(bw_style style, const uint8_t* in_buf, size_t in_len) {
+         default:
+             assert(false);
+     }
++    return NULL;
+ }
+ 
+ static bool decode(const char* in_string, uint8_t** out_buf, size_t* out_len, char separator, size_t word_len) {
+diff --git a/core/embed/extmod/modtrezorconfig/modtrezorconfig.c b/core/embed/extmod/modtrezorconfig/modtrezorconfig.c
+index ec87553..8761e58 100644
+--- a/core/embed/extmod/modtrezorconfig/modtrezorconfig.c
++++ b/core/embed/extmod/modtrezorconfig/modtrezorconfig.c
+@@ -42,6 +42,9 @@
+ 
+ #define MAX_MNEMONIC_LEN 240
+ 
++#else
++#include "se_stubs.h"
++
+ #endif
+ 
+ typedef struct {
+@@ -74,10 +77,6 @@ static secbool wrapped_ui_wait_callback(uint32_t wait, uint32_t progress,
+   return secfalse;
+ }
+ 
+-#ifdef TREZOR_EMULATOR
+-#error "Emulator not support SE_THD89"
+-#endif
+-
+ /// def init(
+ ///    ui_wait_callback: Callable[[int, int, str], bool] | None = None
+ /// ) -> None:
+@@ -96,6 +95,7 @@ STATIC mp_obj_t mod_trezorconfig_init(size_t n_args, const mp_obj_t *args) {
+ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mod_trezorconfig_init_obj, 0, 1,
+                                            mod_trezorconfig_init);
+ 
++#if USE_THD89
+ /// def is_initialized() -> bool:
+ ///     """
+ ///     Returns True if device is initialized.
+@@ -109,6 +109,7 @@ STATIC mp_obj_t mod_trezorconfig_is_initialized(void) {
+ }
+ STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_trezorconfig_is_initialized_obj,
+                                  mod_trezorconfig_is_initialized);
++#endif
+ 
+ /// def unlock(pin: str, ext_salt: bytes | None, pin_use_type: int = 0)
+ /// -> tuple[bool, int]:
+@@ -339,6 +340,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(
+     mod_trezorconfig_change_wipe_code_obj, 3, 3,
+     mod_trezorconfig_change_wipe_code);
+ 
++#ifndef TREZOR_EMULATOR
+ /// def get_needs_backup() -> bool:
+ ///     """
+ ///     Returns needs_backup.
+@@ -370,6 +372,7 @@ STATIC mp_obj_t mod_trezorconfig_set_needs_backup(mp_obj_t needs_backup) {
+ 
+ STATIC MP_DEFINE_CONST_FUN_OBJ_1(mod_trezorconfig_set_needs_backup_obj,
+                                  mod_trezorconfig_set_needs_backup);
++#endif
+ 
+ /// def get_val_len(app: int, key: int, public: bool = False) -> int:
+ ///     """
+@@ -383,12 +386,22 @@ STATIC mp_obj_t mod_trezorconfig_get_val_len(size_t n_args,
+ 
+   bool is_private = key & (1 << 31);
+ 
++#ifndef TREZOR_EMULATOR
+   secbool (*reader)(uint16_t, void *, uint16_t) =
+       is_private ? se_get_private_region : se_get_public_region;
++#endif
+ 
+   // key is position
+   key &= ~(1 << 31);
+ 
++#ifdef TREZOR_EMULATOR
++  // int-tag keys are logical tags, not byte offsets — use the keyed store
++  int kv_len = se_emu_kv_len(is_private ? 1 : 0, key);
++  if (kv_len < 0) {
++    return mp_const_none;
++  }
++  return mp_obj_new_int_from_uint((uint32_t)kv_len);
++#else
+   uint8_t temp[4] = {0};
+   if (sectrue != reader(key, temp, 3)) {
+     return mp_const_none;
+@@ -402,6 +415,7 @@ STATIC mp_obj_t mod_trezorconfig_get_val_len(size_t n_args,
+   len = (temp[1] << 8) + temp[2];
+ 
+   return mp_obj_new_int_from_uint(len);
++#endif
+ }
+ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mod_trezorconfig_get_val_len_obj, 2,
+                                            3, mod_trezorconfig_get_val_len);
+@@ -431,12 +445,32 @@ STATIC mp_obj_t mod_trezorconfig_get(size_t n_args, const mp_obj_t *args) {
+ 
+   bool is_private = key & (1 << 31);
+ 
++#ifndef TREZOR_EMULATOR
+   secbool (*reader)(uint16_t, void *, uint16_t) =
+       is_private ? se_get_private_region : se_get_public_region;
++#endif
+ 
+   // key is position
+   key &= ~(1 << 31);
+ 
++#ifdef TREZOR_EMULATOR
++  int kv_len = se_emu_kv_len(is_private ? 1 : 0, key);
++  if (kv_len < 0) {
++    return mp_const_none;
++  }
++  if (kv_len == 0) {
++    return mp_const_empty_bytes;
++  }
++  vstr_t vstr = {0};
++  vstr_init_len(&vstr, kv_len);
++  vstr.len = kv_len;
++  if (sectrue != se_emu_kv_get(is_private ? 1 : 0, key, (uint8_t *)vstr.buf,
++                              vstr.len)) {
++    vstr_clear(&vstr);
++    mp_raise_msg(&mp_type_RuntimeError, "Failed to get value from storage.");
++  }
++  return mp_obj_new_str_from_vstr(&mp_type_bytes, &vstr);
++#else
+   uint8_t temp[4] = {0};
+   if (sectrue != reader(key, temp, 3)) {
+     return mp_const_none;
+@@ -460,6 +494,7 @@ STATIC mp_obj_t mod_trezorconfig_get(size_t n_args, const mp_obj_t *args) {
+     mp_raise_msg(&mp_type_RuntimeError, "Failed to get value from storage.");
+   }
+   return mp_obj_new_str_from_vstr(&mp_type_bytes, &vstr);
++#endif
+ }
+ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mod_trezorconfig_get_obj, 2, 3,
+                                            mod_trezorconfig_get);
+@@ -488,14 +523,23 @@ STATIC mp_obj_t mod_trezorconfig_set(size_t n_args, const mp_obj_t *args) {
+ 
+   uint32_t key = trezor_obj_get_uint(args[1]);
+   bool is_private = key & (1 << 31);
++#ifndef TREZOR_EMULATOR
+   secbool (*writer)(uint16_t, const void *, uint16_t) =
+       is_private ? se_set_private_region : se_set_public_region;
++#endif
+ 
+   mp_buffer_info_t value;
+   mp_get_buffer_raise(args[2], &value, MP_BUFFER_READ);
+   if (value.len > UINT16_MAX) {
+     mp_raise_msg(&mp_type_RuntimeError, "Could not save value");
+   }
++
++#ifdef TREZOR_EMULATOR
++  if (sectrue != se_emu_kv_set(is_private ? 1 : 0, key & ~(1U << 31),
++                              value.buf, value.len)) {
++    mp_raise_msg(&mp_type_RuntimeError, "Could not save value");
++  }
++#else
+   uint8_t temp[4] = {0};
+   temp[0] = 1;
+   temp[1] = (value.len >> 8) & 0xff;
+@@ -507,6 +551,7 @@ STATIC mp_obj_t mod_trezorconfig_set(size_t n_args, const mp_obj_t *args) {
+   if (sectrue != writer(key + 3, value.buf, value.len)) {
+     mp_raise_msg(&mp_type_RuntimeError, "Could not save value");
+   }
++#endif
+   return mp_const_none;
+ }
+ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mod_trezorconfig_set_obj, 3, 4,
+@@ -531,6 +576,11 @@ STATIC mp_obj_t mod_trezorconfig_delete(size_t n_args, const mp_obj_t *args) {
+ 
+   uint32_t key = trezor_obj_get_uint(args[1]);
+   bool is_private = key & (1 << 31);
++#ifdef TREZOR_EMULATOR
++  if (sectrue != se_emu_kv_delete(is_private ? 1 : 0, key & ~(1U << 31))) {
++    mp_raise_msg(&mp_type_RuntimeError, "Could not delete key");
++  }
++#else
+   secbool (*writer)(uint16_t, const void *, uint16_t) =
+       is_private ? se_set_private_region : se_set_public_region;
+ 
+@@ -539,6 +589,7 @@ STATIC mp_obj_t mod_trezorconfig_delete(size_t n_args, const mp_obj_t *args) {
+   if (sectrue != writer(key, temp, 1)) {
+     mp_raise_msg(&mp_type_RuntimeError, "Could not delete key");
+   }
++#endif
+   return mp_const_true;
+ }
+ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mod_trezorconfig_delete_obj, 2, 4,
+diff --git a/core/embed/extmod/modtrezorconfig/norcow_config.h b/core/embed/extmod/modtrezorconfig/norcow_config.h
+index 6df8817..5b6017c 100644
+--- a/core/embed/extmod/modtrezorconfig/norcow_config.h
++++ b/core/embed/extmod/modtrezorconfig/norcow_config.h
+@@ -25,6 +25,8 @@
+ #define NORCOW_HEADER_LEN 0
+ #define NORCOW_SECTOR_COUNT 2
+ #define NORCOW_SECTOR_SIZE (64 * 1024)
++#define NORCOW_SECTORS \
++  { 4, 16 }
+ 
+ /*
+  * Current storage version.
+diff --git a/core/embed/extmod/modtrezorcrypto/modtrezorcrypto-bip32.h b/core/embed/extmod/modtrezorcrypto/modtrezorcrypto-bip32.h
+index a72a931..3f697a0 100644
+--- a/core/embed/extmod/modtrezorcrypto/modtrezorcrypto-bip32.h
++++ b/core/embed/extmod/modtrezorcrypto/modtrezorcrypto-bip32.h
+@@ -237,7 +237,11 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_2(mod_trezorcrypto_HDNode_derive_path_obj,
+ ///     """
+ STATIC mp_obj_t mod_trezorcrypto_HDNode_derive_fido_path(mp_obj_t self,
+                                                          mp_obj_t path) {
++#if USE_THD89
+   mp_obj_HDNode_t *o = MP_OBJ_TO_PTR(self);
++#else
++  (void)self;
++#endif
+ 
+   // get path objects and length
+   size_t plen = 0;
+diff --git a/core/embed/extmod/modtrezorcrypto/modtrezorcrypto-nist256p1.h b/core/embed/extmod/modtrezorcrypto/modtrezorcrypto-nist256p1.h
+index d092dc2..2003efb 100644
+--- a/core/embed/extmod/modtrezorcrypto/modtrezorcrypto-nist256p1.h
++++ b/core/embed/extmod/modtrezorcrypto/modtrezorcrypto-nist256p1.h
+@@ -214,7 +214,11 @@ STATIC mp_obj_t mod_trezorcrypto_nist256p1_multiply(size_t n_args,
+   mp_buffer_info_t sk = {0}, pk = {0};
+   mp_get_buffer_raise(args[0], &sk, MP_BUFFER_READ);
+   mp_get_buffer_raise(args[1], &pk, MP_BUFFER_READ);
++#if USE_THD89
+   bool inner_secret_key = (n_args == 3 && args[2] == mp_const_true);
++#else
++  (void)n_args;
++#endif
+   if (sk.len != 32) {
+     mp_raise_ValueError("Invalid length of secret key");
+   }
+diff --git a/core/embed/extmod/modtrezorcrypto/modtrezorcrypto-schnorr-bch.h b/core/embed/extmod/modtrezorcrypto/modtrezorcrypto-schnorr-bch.h
+index e61f1fe..e8a6cc6 100644
+--- a/core/embed/extmod/modtrezorcrypto/modtrezorcrypto-schnorr-bch.h
++++ b/core/embed/extmod/modtrezorcrypto/modtrezorcrypto-schnorr-bch.h
+@@ -20,7 +20,9 @@
+ #include "py/objstr.h"
+ 
+ #include "schnorr_bch.h"
++#if USE_THD89
+ #include "se_thd89.h"
++#endif
+ #include "vendor/trezor-crypto/secp256k1.h"
+ 
+ /// package: trezorcrypto.schnorr_bch
+diff --git a/core/embed/extmod/modtrezorio/modtrezorio-motor.h b/core/embed/extmod/modtrezorio/modtrezorio-motor.h
+index 1e1938b..2451e1f 100644
+--- a/core/embed/extmod/modtrezorio/modtrezorio-motor.h
++++ b/core/embed/extmod/modtrezorio/modtrezorio-motor.h
+@@ -18,7 +18,11 @@
+  */
+ 
+ #include "embed/extmod/trezorobj.h"
++#ifdef TREZOR_EMULATOR
++#include "se_stubs.h"
++#else
+ #include "motor.h"
++#endif
+ 
+ /// package: trezorio.__init__
+ 
+diff --git a/core/embed/extmod/modtrezorio/modtrezorio-nfc.h b/core/embed/extmod/modtrezorio/modtrezorio-nfc.h
+index b930a6a..52fc994 100644
+--- a/core/embed/extmod/modtrezorio/modtrezorio-nfc.h
++++ b/core/embed/extmod/modtrezorio/modtrezorio-nfc.h
+@@ -2,7 +2,11 @@
+ #include "embed/extmod/trezorobj.h"
+ 
+ #include "lite_card.h"
++#ifdef TREZOR_EMULATOR
++#include "se_stubs.h"
++#else
+ #include "nfc.h"
++#endif
+ 
+ /// package: trezorio.nfc
+ 
+diff --git a/core/embed/extmod/modtrezorio/modtrezorio-poll.h b/core/embed/extmod/modtrezorio/modtrezorio-poll.h
+index 630ed2b..02d63f4 100644
+--- a/core/embed/extmod/modtrezorio/modtrezorio-poll.h
++++ b/core/embed/extmod/modtrezorio/modtrezorio-poll.h
+@@ -23,7 +23,9 @@
+ #include "common.h"
+ #include "display.h"
+ #include "embed/extmod/trezorobj.h"
++#ifndef TREZOR_EMULATOR
+ #include "fpsensor_platform.h"
++#endif
+ #include "spi_legacy.h"
+ #include "usart.h"
+ 
+@@ -132,12 +134,14 @@ STATIC mp_obj_t mod_trezorio_poll(mp_obj_t ifaces, mp_obj_t list_ref,
+           ret->items[1] = MP_OBJ_FROM_PTR(tuple);
+           return mp_const_true;
+         }
++#ifndef TREZOR_EMULATOR
+       } else if (iface == FINGERPRINT_IFACE) {
+         if (fpsensor_detect()) {
+           ret->items[0] = MP_OBJ_NEW_SMALL_INT(i);
+           ret->items[1] = mp_obj_new_bool(true);
+           return mp_const_true;
+         }
++#endif
+       } else if (mode == POLL_READ) {
+         if (sectrue == usb_hid_can_read(iface)) {
+           uint8_t buf[64] = {0};
+diff --git a/core/embed/extmod/modtrezorio/modtrezorio.c b/core/embed/extmod/modtrezorio/modtrezorio.c
+index e2017b1..8167338 100644
+--- a/core/embed/extmod/modtrezorio/modtrezorio.c
++++ b/core/embed/extmod/modtrezorio/modtrezorio.c
+@@ -47,9 +47,13 @@ bool local_interface_ready = false;
+ #include "modtrezorio-usb.h"
+ #include "modtrezorio-hwinfo.h"
+ #include "modtrezorio-ble.h"
++#ifndef TREZOR_EMULATOR
+ #include "modtrezorio-camera.h"
++#endif
+ #include "modtrezorio-fatfs.h"
++#ifndef TREZOR_EMULATOR
+ #include "modtrezorio-fingerprint.h"
++#endif
+ #include "modtrezorio-local.h"
+ #include "modtrezorio-motor.h"
+ #include "modtrezorio-nfc.h"
+@@ -126,9 +130,11 @@ STATIC const mp_rom_map_elem_t mp_module_trezorio_globals_table[] = {
+     {MP_ROM_QSTR(MP_QSTR_fatfs), MP_ROM_PTR(&mod_trezorio_fatfs_module)},
+     {MP_ROM_QSTR(MP_QSTR_SBU), MP_ROM_PTR(&mod_trezorio_SBU_type)},
+     {MP_ROM_QSTR(MP_QSTR_sdcard), MP_ROM_PTR(&mod_trezorio_sdcard_module)},
++#ifndef TREZOR_EMULATOR
+     {MP_ROM_QSTR(MP_QSTR_camera), MP_ROM_PTR(&mod_trezorio_camera_module)},
+     {MP_ROM_QSTR(MP_QSTR_fingerprint),
+      MP_ROM_PTR(&mod_trezorio_fingerprint_module)},
++#endif
+ 
+     {MP_ROM_QSTR(MP_QSTR_TOUCH), MP_ROM_INT(TOUCH_IFACE)},
+     {MP_ROM_QSTR(MP_QSTR_TOUCH_START), MP_ROM_INT((TOUCH_START >> 24) & 0xFFU)},
+diff --git a/core/embed/extmod/modtrezorui/mipi_lcd.h b/core/embed/extmod/modtrezorui/mipi_lcd.h
+index 82df904..33aefba 100644
+--- a/core/embed/extmod/modtrezorui/mipi_lcd.h
++++ b/core/embed/extmod/modtrezorui/mipi_lcd.h
+@@ -3,6 +3,15 @@
+ 
+ #include <stdint.h>
+ 
++#ifdef TREZOR_EMULATOR
++#define DISPLAY_MEMORY_BASE 0
++#define LCD_BL_CTRL_PIN 0
++#define LCD_BL_CTRL_GPIO_PORT 0
++#define LCD_RESET_PIN 0
++#define LCD_RESET_GPIO_PORT 0
++#define LCD_TE_PIN 0
++#define LCD_TE_GPIO_PORT 0
++#else
+ #include "sdram.h"
+ 
+ // #ifdef __cplusplus
+@@ -22,6 +31,7 @@
+ /* LCD tearing effect pin */
+ #define LCD_TE_PIN GPIO_PIN_2
+ #define LCD_TE_GPIO_PORT GPIOJ
++#endif
+ 
+ typedef struct {
+   uint32_t hres;
+diff --git a/core/embed/extmod/modtrezorutils/modtrezorutils.c b/core/embed/extmod/modtrezorutils/modtrezorutils.c
+index 212e6f8..32070fb 100644
+--- a/core/embed/extmod/modtrezorutils/modtrezorutils.c
++++ b/core/embed/extmod/modtrezorutils/modtrezorutils.c
+@@ -44,6 +44,8 @@
+ #include "image.h"
+ #include "low_power.h"
+ #include "mini_printf.h"
++#else
++#include "se_stubs.h"
+ #endif
+ 
+ // static void ui_progress(mp_obj_t ui_wait_callback, uint32_t current,
+@@ -328,7 +330,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_trezorutils_board_hash_obj,
+ ///     """
+ STATIC mp_obj_t mod_trezorutils_board_build_id(void) {
+ #ifdef TREZOR_EMULATOR
+-  mp_obj_new_str_copy(&mp_type_str, (const uint8_t *)"EMULATOR", 8);
++  return mp_obj_new_str_copy(&mp_type_str, (const uint8_t *)"EMULATOR", 8);
+ #else
+   char *str = get_boardloader_build_id();
+ 
+@@ -344,7 +346,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_trezorutils_board_build_id_obj,
+ ///     """
+ STATIC mp_obj_t mod_trezorutils_boot_build_id(void) {
+ #ifdef TREZOR_EMULATOR
+-  mp_obj_new_str_copy(&mp_type_str, (const uint8_t *)"EMULATOR", 8);
++  return mp_obj_new_str_copy(&mp_type_str, (const uint8_t *)"EMULATOR", 8);
+ #else
+   char *str = get_bootloader_build_id();
+ 
+@@ -488,7 +490,11 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_trezorutils_usb_data_connected_obj,
+ STATIC mp_obj_t mod_trezorutils_get_tick(void) {
+   uint32_t tick_cnts = 0;
+ 
++#ifdef TREZOR_EMULATOR
++  tick_cnts = hal_ticks_ms();
++#else
+   tick_cnts = HAL_GetTick();
++#endif
+ 
+   return mp_obj_new_int_from_uint(tick_cnts);
+ }
+@@ -536,18 +542,25 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_2(mod_trezorutils_bytewords_decode_obj,
+ ///     """
+ STATIC mp_obj_t mod_trezorutils_enter_lowpower(size_t n_args,
+                                                const mp_obj_t *args) {
++#ifndef TREZOR_EMULATOR
+   bool val_restart = mp_obj_is_true(args[0]);
+   int val_ms = mp_obj_get_int(args[1]);
+-
+   bool wake_up = n_args > 2 && args[2] == mp_const_true;
+-
+   enter_stop_mode(val_restart, val_ms / 1000, wake_up);
++#endif
+   return mp_const_none;
+ }
+ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mod_trezorutils_enter_lowpower_obj,
+                                            2, 3,
+                                            mod_trezorutils_enter_lowpower);
+ 
++#ifndef SCM_REVISION
++#define SCM_REVISION "unknown"
++#endif
++#ifndef BUILD_ID
++#define BUILD_ID "unknown"
++#endif
++
+ STATIC mp_obj_str_t mod_trezorutils_revision_obj = {
+     {&mp_type_bytes}, 0, sizeof(SCM_REVISION) - 1, (const byte *)SCM_REVISION};
+ 
+@@ -644,6 +657,8 @@ STATIC const mp_rom_map_elem_t mp_module_trezorutils_globals_table[] = {
+ #endif
+ #if USE_THD89
+     {MP_ROM_QSTR(MP_QSTR_USE_THD89), mp_const_true},
++#else
++    {MP_ROM_QSTR(MP_QSTR_USE_THD89), mp_const_false},
+ #endif
+     {MP_ROM_QSTR(MP_QSTR_BW_STANDARD), MP_ROM_INT(bw_standard)},
+     {MP_ROM_QSTR(MP_QSTR_BW_URL), MP_ROM_INT(bw_uri)},
+diff --git a/core/embed/trezorhal/touch.h b/core/embed/trezorhal/touch.h
+index 547887d..95558b9 100644
+--- a/core/embed/trezorhal/touch.h
++++ b/core/embed/trezorhal/touch.h
+@@ -20,6 +20,7 @@
+ #ifndef TREZORHAL_TOUCH_H
+ #define TREZORHAL_TOUCH_H
+ 
++#include <stdbool.h>
+ #include <stdint.h>
+ 
+ #if PRODUCTION_MODEL == 'H'
+@@ -108,6 +109,7 @@ void touch_power_off(void);
+ void touch_sensitivity(uint8_t value);
+ uint32_t touch_num_detected(void);
+ uint32_t touch_read(void);
++void touch_inject(uint32_t event);
+ uint32_t touch_click(void);
+ uint32_t touch_is_detected(void);
+ uint32_t boot_touch_detect(uint32_t timeout);
+diff --git a/core/embed/unix/ble.h b/core/embed/unix/ble.h
+index dbcd38e..49d4e49 100644
+--- a/core/embed/unix/ble.h
++++ b/core/embed/unix/ble.h
+@@ -1,6 +1,15 @@
+ #ifndef __BLE_H__
+ #define __BLE_H__
+ 
++#include <stdint.h>
++
+ #define ble_cmd_req(...)
+ 
++static inline void ble_cmd_req_ex(uint8_t cmd, const uint8_t *value,
++                                  uint32_t value_len) {
++  (void)cmd;
++  (void)value;
++  (void)value_len;
++}
++
+ #endif
+diff --git a/core/embed/unix/common.h b/core/embed/unix/common.h
+index 8b34195..38c300b 100644
+--- a/core/embed/unix/common.h
++++ b/core/embed/unix/common.h
+@@ -46,6 +46,7 @@ __fatal_error(const char *expr, const char *msg, const char *file, int line,
+ void __attribute__((noreturn))
+ error_shutdown(const char *line1, const char *line2, const char *line3,
+                const char *line4);
++void error_pin_max_prompt(void);
+ 
+ void error_reset(const char *line1, const char *line2, const char *line3,
+                  const char *line4);
+@@ -56,6 +57,7 @@ void error_reset(const char *line1, const char *line2, const char *line3,
+        : __fatal_error(#expr, msg, __FILE__, __LINE__, __func__))
+ 
+ void hal_delay(uint32_t ms);
++uint32_t hal_ticks_ms(void);
+ void emulator_poll_events(void);
+ 
+ void collect_hw_entropy(void);
+diff --git a/core/embed/unix/flash.c b/core/embed/unix/flash.c
+index c9a400b..59d20f6 100644
+--- a/core/embed/unix/flash.c
++++ b/core/embed/unix/flash.c
+@@ -60,7 +60,20 @@ static const uint32_t FLASH_SECTOR_TABLE[FLASH_SECTOR_COUNT + 1] = {
+     [21] = 0x081A0000,  // - 0x081BFFFF | 128 KiB
+     [22] = 0x081C0000,  // - 0x081DFFFF | 128 KiB
+     [23] = 0x081E0000,  // - 0x081FFFFF | 128 KiB
++#if USE_EXTERN_FLASH
++    // external QSPI sectors mapped contiguously after the internal bank
++    [24] = 0x08200000,  // - 0x0821FFFF | 128 KiB
++    [25] = 0x08220000,  // - 0x0823FFFF | 128 KiB
++    [26] = 0x08240000,  // - 0x0825FFFF | 128 KiB
++    [27] = 0x08260000,  // - 0x0827FFFF | 128 KiB
++    [28] = 0x08280000,  // - 0x0829FFFF | 128 KiB
++    [29] = 0x082A0000,  // - 0x082BFFFF | 128 KiB
++    [30] = 0x082C0000,  // - 0x082DFFFF | 128 KiB
++    [31] = 0x082E0000,  // - 0x082FFFFF | 128 KiB
++    [32] = 0x08300000,  // last element - not a valid sector
++#else
+     [24] = 0x08200000,  // last element - not a valid sector
++#endif
+ #elif defined TREZOR_MODEL_1
+     [12] = 0x08100000,  // last element - not a valid sector
+ #else
+@@ -84,11 +97,6 @@ const uint8_t FIRMWARE_SECTORS[FIRMWARE_SECTORS_COUNT] = {
+     FLASH_SECTOR_FIRMWARE_EXTRA_END,
+ };
+ 
+-const uint8_t STORAGE_SECTORS[STORAGE_SECTORS_COUNT] = {
+-    FLASH_SECTOR_STORAGE_1,
+-    FLASH_SECTOR_STORAGE_2,
+-};
+-
+ static uint8_t *FLASH_BUFFER = NULL;
+ static uint32_t FLASH_SIZE;
+ 
+diff --git a/core/embed/unix/flash.h b/core/embed/unix/flash.h
+deleted file mode 120000
+index 46dc1c0..0000000
+--- a/core/embed/unix/flash.h
++++ /dev/null
+@@ -1 +0,0 @@
+-../trezorhal/flash.h
+\ No newline at end of file
+diff --git a/core/embed/unix/flash.h b/core/embed/unix/flash.h
+new file mode 100644
+index 0000000..3de5ac4
+--- /dev/null
++++ b/core/embed/unix/flash.h
+@@ -0,0 +1,136 @@
++/*
++ * This file is part of the Trezor project, https://trezor.io/
++ *
++ * Copyright (c) SatoshiLabs
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#ifndef TREZORHAL_FLASH_H
++#define TREZORHAL_FLASH_H
++
++#include <stdbool.h>
++#include <stdint.h>
++#include <stdlib.h>
++
++#include "secbool.h"
++
++#define USE_EXTERN_FLASH 1
++
++#if USE_EXTERN_FLASH
++// 16 internal + 16 external code(2x64K)
++#define FLASH_SECTOR_COUNT (32)
++#define FLASH_BOOTLOADER_SECTOR_SIZE (128 * 1024)
++#define FLASH_FIRMWARE_SECTOR_SIZE (128 * 1024)
++#define FLASH_INNER_COUNT 16
++#else
++#define FLASH_SECTOR_COUNT 16
++#endif
++
++#define FLASH_SECTOR_BOARDLOADER 0
++#define FLASH_SECTOR_BOOTLOADER_1 1
++#define FLASH_SECTOR_BOOTLOADER_2 2
++#define FLASH_SECTOR_OTP_EMULATOR 15
++
++#if USE_EXTERN_FLASH
++#define FLASH_SECTOR_FIRMWARE_START 3
++#define FLASH_SECTOR_FIRMWARE_END 14
++#define FLASH_SECTOR_FIRMWARE_EXTRA_START 16
++#define FLASH_SECTOR_FIRMWARE_EXTRA_END 31
++#else
++#define FLASH_SECTOR_FIRMWARE_START 4
++#define FLASH_SECTOR_FIRMWARE_END 14
++#endif
++
++#define BOOTLOADER_SECTORS_COUNT (2)
++#define FIRMWARE_INNER_SECTORS_COUNT (12)
++#define FIRMWARE_SECTORS_COUNT (12 + 16)
++// #define STORAGE_SECTORS_COUNT (2)
++
++extern const uint8_t BOOTLOADER_SECTORS[BOOTLOADER_SECTORS_COUNT];
++extern const uint8_t FIRMWARE_SECTORS[FIRMWARE_SECTORS_COUNT];
++
++#define FLASH_STATUS_ALL_FLAGS                                             \
++  (FLASH_SR_PGSERR | FLASH_SR_PGPERR | FLASH_SR_PGAERR | FLASH_SR_WRPERR | \
++   FLASH_SR_SOP | FLASH_SR_EOP)
++
++void flash_init(void);
++
++secbool __wur flash_unlock_write(void);
++secbool __wur flash_lock_write(void);
++
++const void* flash_get_address(uint8_t sector, uint32_t offset, uint32_t size);
++uint32_t flash_sector_size(uint8_t sector);
++secbool __wur flash_erase_sectors(const uint8_t* sectors, int len,
++                                  void (*progress)(int pos, int len));
++static inline secbool flash_erase(uint8_t sector) {
++  return flash_erase_sectors(&sector, 1, NULL);
++}
++secbool __wur flash_write_byte(uint8_t sector, uint32_t offset, uint8_t data);
++secbool __wur flash_write_word(uint8_t sector, uint32_t offset, uint32_t data);
++secbool __wur flash_write_words(uint8_t sector, uint32_t offset,
++                                uint32_t data[8]);
++
++bool flash_check_ecc_fault();
++bool flash_clear_ecc_fault(uint32_t address);
++#if !PRODUCTION
++bool flash_fix_ecc_fault_BOARDLOADER(uint32_t address);
++#endif
++bool flash_fix_ecc_fault_BOOTLOADER(uint32_t address);
++bool flash_fix_ecc_fault_FIRMWARE(uint32_t address);
++bool flash_fix_ecc_fault_FIRMWARE_v2(uint32_t address);
++
++#define FLASH_OTP_NUM_BLOCKS 32
++#define FLASH_OTP_BLOCK_SIZE 32
++
++typedef struct __attribute__((packed)) {
++  uint8_t flag[32];
++  uint8_t flash_otp[FLASH_OTP_NUM_BLOCKS][FLASH_OTP_BLOCK_SIZE];
++} FlashLockedData;
++
++// OTP blocks allocation
++#define FLASH_OTP_BLOCK_BATCH 0
++#define FLASH_OTP_BLOCK_BOOTLOADER_VERSION 1
++#define FLASH_OTP_BLOCK_VENDOR_HEADER_LOCK 2
++#define FLASH_OTP_BLOCK_RANDOMNESS 3
++#define FLASH_OTP_BLOCK_BURNIN_TEST 7
++#define FLASH_OTP_BLOCK_THD89_SESSION_KEY 8
++#define FLASH_OTP_DEVICE_SERIAL 12
++#define FLASH_OTP_FACTORY_TEST 13
++#define FLASH_OTP_RANDOM_KEY 14
++#define FLASH_OTP_CPU_FIRMWARE_INFO 15
++#define FLASH_OTP_BLOCK_THD89_1_PUBKEY1 16
++#define FLASH_OTP_BLOCK_THD89_1_PUBKEY2 17
++#define FLASH_OTP_BLOCK_THD89_2_PUBKEY1 18
++#define FLASH_OTP_BLOCK_THD89_2_PUBKEY2 19
++#define FLASH_OTP_BLOCK_THD89_3_PUBKEY1 20
++#define FLASH_OTP_BLOCK_THD89_3_PUBKEY2 21
++#define FLASH_OTP_BLOCK_THD89_4_PUBKEY1 22
++#define FLASH_OTP_BLOCK_THD89_4_PUBKEY2 23
++#define FLASH_OTP_BLOCK_BLE_PUBKEY1 24
++#define FLASH_OTP_BLOCK_BLE_PUBKEY2 25
++
++extern FlashLockedData* flash_otp_data;
++
++void flash_otp_init(void);
++secbool __wur flash_otp_read(uint8_t block, uint8_t offset, uint8_t* data,
++                             uint8_t datalen);
++secbool __wur flash_otp_write(uint8_t block, uint8_t offset,
++                              const uint8_t* data, uint8_t datalen);
++secbool __wur flash_otp_lock(uint8_t block);
++secbool __wur flash_otp_is_locked(uint8_t block);
++
++void flash_test(void);
++
++#endif  // TREZORHAL_FLASH_H
+diff --git a/core/embed/unix/main.c b/core/embed/unix/main.c
+index 74c0c11..4b0b81d 100644
+--- a/core/embed/unix/main.c
++++ b/core/embed/unix/main.c
+@@ -495,7 +495,7 @@ MP_NOINLINE int main_(int argc, char **argv) {
+ #endif
+ 
+ #if MICROPY_ENABLE_PYSTACK
+-  static mp_obj_t pystack[1024];
++  static mp_obj_t pystack[16384];
+   mp_pystack_init(pystack, &pystack[MP_ARRAY_SIZE(pystack)]);
+ #endif
+ 
+diff --git a/core/embed/unix/modlvgldrv.c b/core/embed/unix/modlvgldrv.c
+index dcaee91..9704673 100644
+--- a/core/embed/unix/modlvgldrv.c
++++ b/core/embed/unix/modlvgldrv.c
+@@ -39,6 +39,18 @@ static void mp_disp_drv_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area,
+   lv_disp_flush_ready(disp_drv);
+ }
+ 
++static mp_obj_t mp_ts_inject(mp_obj_t x_obj, mp_obj_t y_obj,
++                           mp_obj_t pressed_obj) {
++  uint16_t x = mp_obj_get_int(x_obj);
++  uint16_t y = mp_obj_get_int(y_obj);
++  uint32_t event =
++      (mp_obj_is_true(pressed_obj) ? TOUCH_START : TOUCH_END) |
++      touch_pack_xy(x, y);
++  touch_inject(event);
++  return mp_const_none;
++}
++STATIC MP_DEFINE_CONST_FUN_OBJ_3(mp_ts_inject_obj, mp_ts_inject);
++
+ static bool mp_ts_read(struct _lv_indev_drv_t *indev_drv,
+                        lv_indev_data_t *data) {
+   static lv_coord_t last_x = 0;
+@@ -80,6 +92,7 @@ STATIC const mp_rom_map_elem_t disp_indev_globals_table[] = {
+     {MP_ROM_QSTR(MP_QSTR_framebuffer),
+      MP_ROM_PTR(&PTR_OBJ(mp_disp_drv_framebuffer))},
+     {MP_ROM_QSTR(MP_QSTR_ts_read), MP_ROM_PTR(&PTR_OBJ(mp_ts_read))},
++    {MP_ROM_QSTR(MP_QSTR_inject_touch), MP_ROM_PTR(&mp_ts_inject_obj)},
+ };
+ 
+ STATIC MP_DEFINE_CONST_DICT(mp_module_disp_drv_globals,
+diff --git a/core/embed/unix/mpconfigport.h b/core/embed/unix/mpconfigport.h
+index f920134..0660957 100644
+--- a/core/embed/unix/mpconfigport.h
++++ b/core/embed/unix/mpconfigport.h
+@@ -338,6 +338,8 @@ void mp_unix_mark_exec(void);
+     const char *readline_hist[50]; \
+     void *mmap_region_head; \
+     mp_obj_t trezorconfig_ui_wait_callback; \
++    void *mp_lv_gif_cache; \
++    void *mp_fp; \
+ 
+ // We need to provide a declaration/definition of alloca()
+ // unless support for it is disabled.
+diff --git a/core/embed/unix/se_stubs.c b/core/embed/unix/se_stubs.c
+new file mode 100644
+index 0000000..ac9140d
+--- /dev/null
++++ b/core/embed/unix/se_stubs.c
+@@ -0,0 +1,419 @@
++/*
++ * Emulator stand-ins for the THD89 secure element and fingerprint sensor.
++ * The SE is the backing store for the python config layer
++ * (se_get/set_public/private_region), so the regions persist to files in
++ * the profile directory like the norcow flash file does. Everything else
++ * reports the hardware as absent: no PIN, no wipe code, no fingerprint.
++ */
++#include <stdio.h>
++#include <string.h>
++
++#include <stdlib.h>
++
++#include "memzero.h"
++#include "profile.h"
++#include "se_stubs.h"
++#include "hardware_version.h"
++
++static uint8_t public_region[PUBLIC_REGION_SIZE];
++static uint8_t private_region[PRIVATE_REGION_SIZE];
++static uint32_t u2f_counter;
++static bool regions_loaded;
++
++static void region_path(char *buf, size_t buf_len, const char *name) {
++  snprintf(buf, buf_len, "%s/se_%s.bin", profile_dir(), name);
++}
++
++static void region_load(uint8_t *region, uint16_t size, const char *name) {
++  char path[1024];
++  region_path(path, sizeof(path), name);
++  FILE *f = fopen(path, "rb");
++  if (f != NULL) {
++    if (fread(region, 1, size, f) != size) {
++      memzero(region, size);
++    }
++    fclose(f);
++  }
++}
++
++static void regions_ensure_loaded(void) {
++  if (!regions_loaded) {
++    regions_loaded = true;
++    region_load(public_region, sizeof(public_region), "public");
++    region_load(private_region, sizeof(private_region), "private");
++  }
++}
++
++static void region_store(const uint8_t *region, uint16_t size,
++                         const char *name) {
++  char path[1024];
++  region_path(path, sizeof(path), name);
++  FILE *f = fopen(path, "wb");
++  if (f != NULL) {
++    fwrite(region, 1, size, f);
++    fclose(f);
++  }
++}
++
++static secbool region_get(uint8_t *region, uint16_t size, uint16_t offset,
++                          void *val_dest, uint16_t len) {
++  regions_ensure_loaded();
++  if ((uint32_t)offset + len > size) {
++    return secfalse;
++  }
++  memcpy(val_dest, region + offset, len);
++  return sectrue;
++}
++
++static secbool region_set(uint8_t *region, uint16_t size, const char *name,
++                          uint16_t offset, const void *val_src, uint16_t len) {
++  regions_ensure_loaded();
++  if ((uint32_t)offset + len > size) {
++    return secfalse;
++  }
++  memcpy(region + offset, val_src, len);
++  region_store(region, size, name);
++  return sectrue;
++}
++
++secbool se_get_public_region(uint16_t offset, void *val_dest, uint16_t len) {
++  return region_get(public_region, sizeof(public_region), offset, val_dest,
++                    len);
++}
++
++secbool se_set_public_region(uint16_t offset, const void *val_src,
++                             uint16_t len) {
++  return region_set(public_region, sizeof(public_region), "public", offset,
++                    val_src, len);
++}
++
++secbool se_get_private_region(uint16_t offset, void *val_dest, uint16_t len) {
++  return region_get(private_region, sizeof(private_region), offset, val_dest,
++                    len);
++}
++
++secbool se_set_private_region(uint16_t offset, const void *val_src,
++                              uint16_t len) {
++  return region_set(private_region, sizeof(private_region), "private", offset,
++                    val_src, len);
++}
++
++secbool se_reset_storage(void) {
++  memzero(public_region, sizeof(public_region));
++  memzero(private_region, sizeof(private_region));
++  regions_loaded = true;
++  region_store(public_region, sizeof(public_region), "public");
++  region_store(private_region, sizeof(private_region), "private");
++  return sectrue;
++}
++
++secbool se_set_u2f_counter(uint32_t counter) {
++  u2f_counter = counter;
++  return sectrue;
++}
++
++secbool se_get_u2f_counter(uint32_t *counter) {
++  *counter = u2f_counter;
++  return sectrue;
++}
++
++secbool se_get_fido2_resident_credentials(uint32_t index, uint8_t *dest,
++                                          uint16_t *dst_len) {
++  (void)index;
++  (void)dest;
++  (void)dst_len;
++  return secfalse;
++}
++
++secbool se_set_fido2_resident_credentials(uint32_t index, const uint8_t *src,
++                                          uint16_t len) {
++  (void)index;
++  (void)src;
++  (void)len;
++  return secfalse;
++}
++
++secbool se_delete_fido2_resident_credentials(uint32_t index) {
++  (void)index;
++  return secfalse;
++}
++
++void se_set_ui_callback(UI_WAIT_CALLBACK callback) { (void)callback; }
++
++secbool se_verifyPin(const char *pin, pin_type_t pin_use_type) {
++  (void)pin;
++  (void)pin_use_type;
++  // No PIN is ever configured on the emulator stub, so verification
++  // always succeeds (mirrors hardware with no PIN set).
++  return sectrue;
++}
++
++pin_result_t se_get_pin_result_type(void) { return USER_PIN_NOT_ENTERED; }
++
++secbool se_getSecsta(void) { return sectrue; }
++
++secbool se_clearSecsta(void) { return sectrue; }
++
++secbool se_hasPin(void) { return secfalse; }
++
++secbool se_getRetryTimes(uint8_t *ptimes) {
++  *ptimes = 10;
++  return sectrue;
++}
++
++secbool se_setPin(const char *pin) {
++  (void)pin;
++  return secfalse;
++}
++
++secbool se_changePin(const char *oldpin, const char *newpin) {
++  (void)oldpin;
++  (void)newpin;
++  return secfalse;
++}
++
++secbool se_hasWipeCode(void) { return secfalse; }
++
++secbool se_changeWipeCode(const char *pin, const char *wipe_code) {
++  (void)pin;
++  (void)wipe_code;
++  return secfalse;
++}
++
++void motor_reset(void) {}
++void motor_play_whisper(void) {}
++void motor_play_light(void) {}
++void motor_play_medium(void) {}
++void motor_play_heavy(void) {}
++void motor_play_success(void) {}
++void motor_play_warning(void) {}
++void motor_play_error(void) {}
++
++bool nfc_pwr_ctl(bool on_off) {
++  (void)on_off;
++  return true;
++}
++
++bool nfc_poll_card(void) { return false; }
++
++bool lite_card_apdu(uint8_t *apdu, uint16_t apdu_len, uint8_t *response,
++                    uint16_t *response_len, uint8_t *sw1sw2, bool safe) {
++  (void)apdu;
++  (void)apdu_len;
++  (void)response;
++  (void)response_len;
++  (void)sw1sw2;
++  (void)safe;
++  return false;
++}
++
++bool fpsensor_data_init(void) { return false; }
++bool fpsensor_data_init_start(void) { return false; }
++bool fpsensor_data_init_read(void) { return false; }
++bool fpsensor_data_init_read_remaining(void) { return false; }
++bool fpsensor_data_inited(void) { return false; }
++void fpsensor_data_cache_clear(void) {}
++
++static uint8_t emulator_firmware_hash[32];
++
++uint8_t *get_firmware_hash(void) { return emulator_firmware_hash; }
++
++/* Display/LCD/SPI/host-side functions with no unix implementation. */
++int32_t spi_slave_send(uint8_t *buf, uint32_t size, int32_t timeout) {
++  (void)buf;
++  (void)size;
++  (void)timeout;
++  return -1;
++}
++
++uint32_t spi_slave_poll(uint8_t *buf) {
++  (void)buf;
++  return 0;
++}
++
++uint32_t spi_slave_poll_fido(uint8_t *buf) {
++  (void)buf;
++  return 0;
++}
++
++secbool spi_can_write(void) { return secfalse; }
++
++bool usb_3320_host_connected(void) { return true; }
++
++HW_VER_t get_hw_ver(void) { return HW_VER_3P0; }
++char const *hw_ver_to_str(HW_VER_t hw_ver) {
++  (void)hw_ver;
++  return "3.0";
++}
++uint16_t get_hw_ver_adc_raw(void) { return 0; }
++uint16_t get_hw_ver_adc_mv(void) { return 0; }
++
++void fb_fill_rect(uint32_t x_pos, uint32_t y_pos, uint32_t width,
++                  uint32_t height, uint32_t color) {
++  (void)x_pos;
++  (void)y_pos;
++  (void)width;
++  (void)height;
++  (void)color;
++}
++
++void display_buffer(int x, int y, int w, int h, uint16_t *c) {
++  (void)x;
++  (void)y;
++  (void)w;
++  (void)h;
++  (void)c;
++}
++
++void display_loader_ex(uint16_t progress, bool indeterminate, int yoffset,
++                       uint16_t fgcolor, uint16_t bgcolor, const uint8_t *icon,
++                       uint32_t iconlen, uint16_t iconfgcolor) {
++  (void)progress;
++  (void)indeterminate;
++  (void)yoffset;
++  (void)fgcolor;
++  (void)bgcolor;
++  (void)icon;
++  (void)iconlen;
++  (void)iconfgcolor;
++}
++
++int display_backlight_with_lcd_reset(int val) { return val; }
++
++void lcd_cover_background_init(void) {}
++void lcd_cover_background_show(void) {}
++void lcd_cover_background_hide(void) {}
++void lcd_cover_background_set_visible(bool visible) { (void)visible; }
++void lcd_cover_background_set_image(const void *image_data,
++                                    uint32_t image_size) {
++  (void)image_data;
++  (void)image_size;
++}
++void lcd_cover_background_load_jpeg(const char *jpeg_path) {
++  (void)jpeg_path;
++}
++void lcd_cover_background_move_to_y(int16_t y_position) {
++  (void)y_position;
++}
++void lcd_cover_background_animate_to_y(int16_t target_y,
++                                       uint16_t duration_ms) {
++  (void)target_y;
++  (void)duration_ms;
++}
++bool lcd_cover_background_is_visible(void) { return false; }
++bool lcd_cover_background_update_animation(void) { return false; }
++bool lcd_cover_background_is_animating(void) { return false; }
++bool lcd_cover_background_has_active_animation(void) { return false; }
++
++/* FreeRTOS heap shims used by lv_conf.h allocator macros. */
++void vPortFree(void *ptr) { free(ptr); }
++void *pvPortMalloc(size_t size) { return malloc(size); }
++
++int jpeg_get_decode_state(void) { return 0; }
++int jpeg_get_decode_error(void) { return 0; }
++void jpeg_save_state(void) {}
++void jpeg_restore_state(void) {}
++
++/* storage.c references this UI prompt; the unix build has no display for it. */
++void error_pin_max_prompt(void) {}
++
++/* Emulator config store. The non-THD89 (int-tag) storage scheme uses the key
++   as a logical tag, but config.set/get() present it as a byte offset into the
++   SE regions, so every entry would collide in the flat arrays above. Keep a
++   sparse (private,key) -> value map instead, persisted like the regions. */
++#define SE_KV_MAX 512
++
++typedef struct {
++  uint32_t key;
++  uint8_t priv;
++  uint16_t len;
++  uint8_t val[256];
++} se_kv_entry;
++
++static se_kv_entry se_kv[SE_KV_MAX];
++static int se_kv_count;
++static bool se_kv_loaded;
++
++static void se_kv_path(char *buf, size_t buf_len) {
++  snprintf(buf, buf_len, "%s/se_kv.bin", profile_dir());
++}
++
++static void se_kv_save(void) {
++  char path[1024];
++  se_kv_path(path, sizeof(path));
++  FILE *f = fopen(path, "wb");
++  if (f == NULL) return;
++  for (int i = 0; i < se_kv_count; i++) {
++    fwrite(&se_kv[i].key, sizeof(se_kv[i].key), 1, f);
++    fwrite(&se_kv[i].priv, sizeof(se_kv[i].priv), 1, f);
++    fwrite(&se_kv[i].len, sizeof(se_kv[i].len), 1, f);
++    fwrite(se_kv[i].val, se_kv[i].len, 1, f);
++  }
++  fclose(f);
++}
++
++static void se_kv_ensure_loaded(void) {
++  if (se_kv_loaded) return;
++  se_kv_loaded = true;
++  char path[1024];
++  se_kv_path(path, sizeof(path));
++  FILE *f = fopen(path, "rb");
++  if (f == NULL) return;
++  while (se_kv_count < SE_KV_MAX) {
++    se_kv_entry *e = &se_kv[se_kv_count];
++    if (fread(&e->key, sizeof(e->key), 1, f) != 1) break;
++    if (fread(&e->priv, sizeof(e->priv), 1, f) != 1) break;
++    if (fread(&e->len, sizeof(e->len), 1, f) != 1) break;
++    if (e->len > sizeof(e->val)) break;
++    if (fread(e->val, e->len, 1, f) != 1 && e->len > 0) break;
++    se_kv_count++;
++  }
++  fclose(f);
++}
++
++static int se_kv_find(int priv, uint32_t key) {
++  for (int i = 0; i < se_kv_count; i++) {
++    if (se_kv[i].priv == priv && se_kv[i].key == key) return i;
++  }
++  return -1;
++}
++
++int se_emu_kv_len(int priv, uint32_t key) {
++  se_kv_ensure_loaded();
++  int i = se_kv_find(priv, key);
++  return i < 0 ? -1 : se_kv[i].len;
++}
++
++secbool se_emu_kv_get(int priv, uint32_t key, uint8_t *out, uint16_t len) {
++  se_kv_ensure_loaded();
++  int i = se_kv_find(priv, key);
++  if (i < 0 || len < se_kv[i].len) return secfalse;
++  memcpy(out, se_kv[i].val, se_kv[i].len);
++  return sectrue;
++}
++
++secbool se_emu_kv_set(int priv, uint32_t key, const uint8_t *val,
++                      uint16_t len) {
++  if (len > sizeof(((se_kv_entry *)0)->val)) return secfalse;
++  se_kv_ensure_loaded();
++  int i = se_kv_find(priv, key);
++  if (i < 0) {
++    if (se_kv_count >= SE_KV_MAX) return secfalse;
++    i = se_kv_count++;
++    se_kv[i].priv = priv;
++    se_kv[i].key = key;
++  }
++  se_kv[i].len = len;
++  memcpy(se_kv[i].val, val, len);
++  se_kv_save();
++  return sectrue;
++}
++
++secbool se_emu_kv_delete(int priv, uint32_t key) {
++  se_kv_ensure_loaded();
++  int i = se_kv_find(priv, key);
++  if (i < 0) return sectrue;
++  se_kv[i] = se_kv[--se_kv_count];
++  se_kv_save();
++  return sectrue;
++}
+diff --git a/core/embed/unix/se_stubs.h b/core/embed/unix/se_stubs.h
+new file mode 100644
+index 0000000..5da1e82
+--- /dev/null
++++ b/core/embed/unix/se_stubs.h
+@@ -0,0 +1,36 @@
++#ifndef __SE_STUBS_H__
++#define __SE_STUBS_H__
++
++#include "se_thd89.h"
++
++/* Fingerprint helpers called from modtrezorconfig; the unix build has no
++   fingerprint sensor (fpsensor_platform.h pulls hardware headers). */
++uint8_t *get_firmware_hash(void);
++
++void motor_reset(void);
++void motor_play_whisper(void);
++void motor_play_light(void);
++void motor_play_medium(void);
++void motor_play_heavy(void);
++void motor_play_success(void);
++void motor_play_warning(void);
++void motor_play_error(void);
++
++bool nfc_pwr_ctl(bool on_off);
++bool nfc_poll_card(void);
++bool lite_card_apdu(uint8_t *apdu, uint16_t apdu_len, uint8_t *response,
++                    uint16_t *response_len, uint8_t *sw1sw2, bool safe);
++
++int se_emu_kv_len(int priv, uint32_t key);
++secbool se_emu_kv_get(int priv, uint32_t key, uint8_t *out, uint16_t len);
++secbool se_emu_kv_set(int priv, uint32_t key, const uint8_t *val, uint16_t len);
++secbool se_emu_kv_delete(int priv, uint32_t key);
++
++bool fpsensor_data_init(void);
++bool fpsensor_data_init_start(void);
++bool fpsensor_data_init_read(void);
++bool fpsensor_data_init_read_remaining(void);
++bool fpsensor_data_inited(void);
++void fpsensor_data_cache_clear(void);
++
++#endif
+diff --git a/core/embed/unix/touch.c b/core/embed/unix/touch.c
+index 254cb6c..3034ca8 100644
+--- a/core/embed/unix/touch.c
++++ b/core/embed/unix/touch.c
+@@ -24,6 +24,30 @@
+ extern void __shutdown(void);
+ extern const char *display_save(const char *prefix);
+ 
++// Debug-link injected touch events for headless emulator runs.
++#define TOUCH_INJECT_LEN 16
++static uint32_t touch_inject_buf[TOUCH_INJECT_LEN];
++static uint8_t touch_inject_head = 0;
++static uint8_t touch_inject_tail = 0;
++
++void touch_inject(uint32_t event) {
++  uint8_t next = (touch_inject_head + 1) % TOUCH_INJECT_LEN;
++  if (next == touch_inject_tail) {
++    return;
++  }
++  touch_inject_buf[touch_inject_head] = event;
++  touch_inject_head = next;
++}
++
++static uint32_t touch_inject_read(void) {
++  if (touch_inject_tail == touch_inject_head) {
++    return 0;
++  }
++  uint32_t event = touch_inject_buf[touch_inject_tail];
++  touch_inject_tail = (touch_inject_tail + 1) % TOUCH_INJECT_LEN;
++  return event;
++}
++
+ #if defined TREZOR_MODEL_T
+ 
+ #include "touch.h"
+@@ -32,6 +56,10 @@ extern int sdl_display_res_x, sdl_display_res_y;
+ extern int sdl_touch_offset_x, sdl_touch_offset_y;
+ 
+ uint32_t touch_read(void) {
++  uint32_t injected = touch_inject_read();
++  if (injected) {
++    return injected;
++  }
+   SDL_Event event;
+   SDL_PumpEvents();
+   if (SDL_PollEvent(&event) > 0) {
+diff --git a/core/embed/unix/usb.c b/core/embed/unix/usb.c
+index 6bc6ffa..1d4801c 100644
+--- a/core/embed/unix/usb.c
++++ b/core/embed/unix/usb.c
+@@ -196,7 +196,7 @@ secbool usb_hid_can_write(uint8_t iface_num) {
+   return usb_emulated_poll(iface_num, POLLOUT);
+ }
+ 
+-secbool usb_webusb_can_write(uint8_t iface_num) {
++int usb_webusb_can_write(uint8_t iface_num) {
+   if (iface_num >= USBD_MAX_NUM_INTERFACES ||
+       usb_ifaces[iface_num].type != USB_IFACE_TYPE_WEBUSB) {
+     return secfalse;
+diff --git a/core/src/all_modules.py b/core/src/all_modules.py
+index a15b013..c66535c 100644
+--- a/core/src/all_modules.py
++++ b/core/src/all_modules.py
+@@ -89,6 +89,8 @@ trezor.crypto.rlp
+ import trezor.crypto.rlp
+ trezor.crypto.scripts
+ import trezor.crypto.scripts
++trezor.crypto.se_thd89
++import trezor.crypto.se_thd89
+ trezor.crypto.slip39
+ import trezor.crypto.slip39
+ trezor.enums.AmountUnit
+@@ -255,6 +257,8 @@ trezor.lvglui.scrs.components.transition
+ import trezor.lvglui.scrs.components.transition
+ trezor.lvglui.scrs.deviceinfo
+ import trezor.lvglui.scrs.deviceinfo
++trezor.lvglui.scrs.fingerprint_emu
++import trezor.lvglui.scrs.fingerprint_emu
+ trezor.lvglui.scrs.fingerprints
+ import trezor.lvglui.scrs.fingerprints
+ trezor.lvglui.scrs.homescreen
+diff --git a/core/src/apps/debug/__init__.py b/core/src/apps/debug/__init__.py
+index fc1d7c4..38f6682 100644
+--- a/core/src/apps/debug/__init__.py
++++ b/core/src/apps/debug/__init__.py
+@@ -69,8 +69,9 @@ if __debug__:
+             layout_change_chan.publish(storage.current_content)
+ 
+     async def dispatch_debuglink_decision(msg: DebugLinkDecision) -> None:
+-        # from trezor.enums import DebugButton, DebugSwipeDirection
+-        # from trezor.ui import Result
++        from trezor.enums import DebugButton
++        from trezor.ui import Result
++        # from trezor.enums import DebugSwipeDirection
+         # from trezor.ui.components.common import (
+         #     SWIPE_UP,
+         #     SWIPE_DOWN,
+@@ -99,9 +100,13 @@ if __debug__:
+         #         await swipe_chan.put(SWIPE_LEFT)
+         #     elif msg.swipe == DebugSwipeDirection.RIGHT:
+         #         await swipe_chan.put(SWIPE_RIGHT)
+-        # if msg.input is not None:
+-        #     await input_chan.put(Result(msg.input))
+-        pass
++        if msg.button is not None:
++            if msg.button == DebugButton.YES:
++                await confirm_chan.put(Result(1))
++            elif msg.button == DebugButton.NO:
++                await confirm_chan.put(Result(0))
++        if msg.input is not None:
++            await input_chan.put(Result(msg.input))
+ 
+     async def debuglink_decision_dispatcher() -> None:
+         while True:
+@@ -140,7 +145,7 @@ if __debug__:
+     async def dispatch_DebugLinkDecision(
+         ctx: wire.Context, msg: DebugLinkDecision
+     ) -> None:
+-        from trezor import io
++        from trezor import io, utils
+ 
+         if debuglink_decision_chan.putters:
+             log.warning(__name__, "DebugLinkDecision queue is not empty")
+@@ -153,6 +158,14 @@ if __debug__:
+                 loop.schedule(touch_hold(msg.x, msg.y, msg.hold_ms))
+             else:
+                 loop.synthetic_events.append((io.TOUCH, evt_up))
++            if utils.EMULATOR:
++                # the lvglui screens read touch through the lvgl indev driver,
++                # not io.TOUCH — feed the same tap into the driver queue
++                import lvgldrv
++
++                lvgldrv.inject_touch(msg.x, msg.y, True)
++                if msg.hold_ms is None:
++                    lvgldrv.inject_touch(msg.x, msg.y, False)
+         else:
+             debuglink_decision_chan.publish(msg)
+ 
+diff --git a/core/src/storage/device.py b/core/src/storage/device.py
+index 2805a25..5ea9aac 100644
+--- a/core/src/storage/device.py
++++ b/core/src/storage/device.py
+@@ -409,6 +409,7 @@ else:
+     _DEVICE_NAME_DISPLAY_ENABLED = (0x93)  # bool
+     _USB_ENABLED = (0x94)  # bool
+     _BLE_ENABLED_BACKUP = (0x95)  # bool
++    _LOCKSCREEN = (0x96)  # bytes
+     # fmt: on
+ SAFETY_CHECK_LEVEL_STRICT: Literal[0] = const(0)
+ SAFETY_CHECK_LEVEL_PROMPT: Literal[1] = const(1)
+@@ -946,7 +947,7 @@ def get_label() -> str:
+     if _LABEL_VALUE is None:
+         label = common.get(_NAMESPACE, _LABEL, True)  # public
+ 
+-        if label is None:
++        if label is None and utils.USE_THD89:
+             previous_label_len = common.get_val_len(_NAMESPACE, _LABEL_DEPRECATED, True)
+             if (
+                 previous_label_len is not None
+diff --git a/core/src/trezor/crypto/__init__.py b/core/src/trezor/crypto/__init__.py
+index 756362d..2c10d4b 100644
+--- a/core/src/trezor/crypto/__init__.py
++++ b/core/src/trezor/crypto/__init__.py
+@@ -7,11 +7,15 @@ from trezorcrypto import (  # noqa: F401
+     hmac,
+     pbkdf2,
+     random,
+-    se_thd89,
+     sha512_256,
+ )
+ 
+ from trezor import utils
+ 
++if utils.USE_THD89:
++    from trezorcrypto import se_thd89  # noqa: F401
++else:
++    from trezor.crypto import se_thd89  # noqa: F401
++
+ if not utils.BITCOIN_ONLY:
+     from trezorcrypto import cardano, monero, nem  # noqa: F401
+diff --git a/core/src/trezor/crypto/se_thd89.py b/core/src/trezor/crypto/se_thd89.py
+new file mode 100644
+index 0000000..6188b05
+--- /dev/null
++++ b/core/src/trezor/crypto/se_thd89.py
+@@ -0,0 +1,142 @@
++# Emulator stub for the SE_THD89 secure element, which does not exist on
++# unix builds. Only the call sites that are not already gated on
++# utils.USE_THD89 need working behaviour; the rest are unreachable.
++
++FIDO2_CRED_COUNT_MAX = 100
++
++
++def get_pin_passphrase_space():
++    # Empty attach-pin storage: plenty of space, no attach-pin user.
++    return 0xFF
++
++
++def check_passphrase_btc_test_address(passphrase_state):
++    return False
++
++
++def get_session_current_id():
++    return None
++
++
++def get_session_state():
++    return bx00
++
++
++def start_session(session_id):
++    return session_id
++
++
++def end_session():
++    pass
++
++
++def session_is_open():
++    return True
++
++
++def clear_session():
++    pass
++
++
++def seed(passphrase, callback):
++    return True
++
++
++def cardano_seed(passphrase):
++    return False
++
++
++def check():
++    return True
++
++
++def authorization_get_type():
++    return 0
++
++
++def authorization_set(auth_type, data):
++    pass
++
++
++def authorization_get_data():
++    return b
++
++
++def authorization_clear():
++    pass
++
++
++def save_pin_passphrase(pin, passphrase):
++    return False
++
++
++def change_pin_passphrase(old_pin, new_pin, passphrase):
++    return False
++
++
++def delete_pin_passphrase(pin):
++    return False
++
++
++def slip21_node():
++    return None
++
++
++def slip21_fido_node():
++    return None
++
++
++def u2f_gen_handle_and_node():
++    return None
++
++
++def fido_seed():
++    return None
++
++
++def fido_sign_digest(digest):
++    return None
++
++
++def fido_att_sign_digest(digest):
++    return None
++
++
++def fido_u2f_validate(keyhandle, pubkey):
++    return False
++
++
++def fido_delete_all_credentials():
++    pass
++
++
++def uncompress_pubkey(pubkey):
++    return pubkey
++
++
++def aes256_encrypt(key, data):
++    return None
++
++
++def aes256_decrypt(key, data):
++    return None
++
++
++def sign_message(msg):
++    return None
++
++
++def derive_xmr(path):
++    return None
++
++
++def derive_xmr_private(path):
++    return None
++
++
++def xmr_get_tx_key():
++    return None
++
++
++def read_certificate():
++    return b
+diff --git a/core/src/trezor/lvglui/scrs/__init__.py b/core/src/trezor/lvglui/scrs/__init__.py
+index ffdd5b1..7e67e0f 100644
+--- a/core/src/trezor/lvglui/scrs/__init__.py
++++ b/core/src/trezor/lvglui/scrs/__init__.py
+@@ -17,6 +17,7 @@ if utils.EMULATOR:
+     font_GeistRegular26 = lv.font_load("A:/res/Geist-Regular-26-emu.bin")
+     font_GeistRegular20 = lv.font_load("A:/res/Geist-Regular-20-emu.bin")
+     font_GeistMono28 = lv.font_load("A:/res/GeistMono-Regular-28-emu.bin")
++    font_GeistMono38 = lv.font_load("A:/res/GeistMono-SemiBold-38.bin")
+ 
+ else:
+     font_GeistSemiBold64 = lv.font_geist_semibold_64
+diff --git a/core/src/trezor/lvglui/scrs/fingerprint_emu.py b/core/src/trezor/lvglui/scrs/fingerprint_emu.py
+new file mode 100644
+index 0000000..b6dbf0c
+--- /dev/null
++++ b/core/src/trezor/lvglui/scrs/fingerprint_emu.py
+@@ -0,0 +1,71 @@
++# Emulator stub for the fingerprint sensor, which does not exist on unix
++# builds. Every call reports absent hardware; UI flows that need the
++# sensor are unreachable.
++
++
++class EnrollDuplicate(Exception):
++    pass
++
++
++class ExtractFeatureFail(Exception):
++    pass
++
++
++class NoFp(Exception):
++    pass
++
++
++class GetImageFail(Exception):
++    pass
++
++
++def detect():
++    return False
++
++
++def get_template_count():
++    return 0
++
++
++def get_max_template_count():
++    return 0
++
++
++def list_template():
++    return ()
++
++
++def get_group():
++    return b""
++
++
++def data_version_is_new():
++    return False
++
++
++def data_upgrade_is_prompted():
++    return False
++
++
++def data_upgrade_prompted():
++    pass
++
++
++def clear_template_cache(all):
++    pass
++
++
++def clear():
++    pass
++
++
++def enroll(i):
++    raise NoFp()
++
++
++def register_template(index):
++    return False
++
++
++def save(group_id):
++    return False
+diff --git a/core/src/trezor/lvglui/scrs/fingerprints.py b/core/src/trezor/lvglui/scrs/fingerprints.py
+index d73a014..58b5f0e 100644
+--- a/core/src/trezor/lvglui/scrs/fingerprints.py
++++ b/core/src/trezor/lvglui/scrs/fingerprints.py
+@@ -1,5 +1,9 @@
+ from micropython import const
+-from trezorio import fingerprint
++try:
++    from trezorio import fingerprint
++except ImportError:
++    # unix emulator has no fingerprint sensor
++    from . import fingerprint_emu as fingerprint
+ 
+ from storage import device
+ from trezor import config, loop, motor, utils
+@@ -79,6 +83,8 @@ def unlock() -> bool:
+ 
+ 
+ def is_unlocked() -> bool:
++    if utils.EMULATOR:
++        return False
+     return config.fingerprint_is_unlocked()
+ 
+ 
+diff --git a/core/src/trezor/uart.py b/core/src/trezor/uart.py
+index 527f179..db74eb3 100644
+--- a/core/src/trezor/uart.py
++++ b/core/src/trezor/uart.py
+@@ -50,6 +50,9 @@ BLE_PAIR_ABORT = False
+ async def handle_fingerprint_data_init():
+     from trezor.lvglui.scrs import lv
+ 
++    if utils.EMULATOR:
++        return
++
+     while True:
+         if (
+             config.fingerprint_is_unlocked()
+@@ -66,6 +69,9 @@ async def handle_fingerprint_data_init():
+ 
+ 
+ async def handle_fingerprint():
++    if utils.EMULATOR:
++        return
++
+     from trezorio import fingerprint
+ 
+     from trezor.lvglui.scrs import fingerprints
+diff --git a/crypto/bip32.c b/crypto/bip32.c
+index cd8f225..c41f4e6 100644
+--- a/crypto/bip32.c
++++ b/crypto/bip32.c
+@@ -524,6 +524,12 @@ int hdnode_get_ethereum_pubkeyhash(const HDNode *node, uint8_t *pubkeyhash) {
+   uint8_t buf[65] = {0};
+   SHA3_CTX ctx = {0};
+ 
++#if TREZOR_EMULATOR
++  /* real firmware fills the public key inside the SE derive; the emulator
++     derives in software so the lazy fill must happen here */
++  hdnode_fill_public_key((HDNode *)node);
++#endif
++
+   /* get uncompressed public key */
+   ecdsa_uncompress_pubkey(node->curve->params, node->public_key, buf);
+ 
+diff --git a/vendor/lvgl_mp/lvgl/src/extra/libs/png/lv_png.c b/vendor/lvgl_mp/lvgl/src/extra/libs/png/lv_png.c
+index 87db4aa7f1..361cc84237 100644
+--- a/vendor/lvgl_mp/lvgl/src/extra/libs/png/lv_png.c
++++ b/vendor/lvgl_mp/lvgl/src/extra/libs/png/lv_png.c
+@@ -16,8 +16,10 @@
+ /*********************
+  *      DEFINES
+  *********************/
+ #ifdef LODEPNG_NO_COMPILE_ALLOCATORS
++/* provided by vendor/lvgl_mp/driver/png/mp_lodepng.c */
++void lodepng_free(void *ptr);
+ #define m_free  lodepng_free
+ #else
+ #define m_free lv_mem_free
+ #endif
+diff --git a/vendor/lvgl_mp/lvgl/src/extra/libs/gif/gifdec.c b/vendor/lvgl_mp/lvgl/src/extra/libs/gif/gifdec.c
+index 97b1ec744c..b1536b17e4 100644
+--- a/vendor/lvgl_mp/lvgl/src/extra/libs/gif/gifdec.c
++++ b/vendor/lvgl_mp/lvgl/src/extra/libs/gif/gifdec.c
+@@ -9,6 +9,11 @@
+ #include <stdbool.h>
+ #include "py/mpstate.h"
+ 
++/* provided by vendor/lvgl_mp/driver/png/mp_lodepng.c */
++void *lodepng_malloc(size_t size);
++void *lodepng_realloc(void *ptr, size_t new_size);
++void lodepng_free(void *ptr);
++
+ #define lv_mem_alloc  lodepng_malloc
+ #define lv_mem_realloc  lodepng_realloc
+ #define lv_mem_free  lodepng_free

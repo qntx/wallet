@@ -9,7 +9,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { verifyEvent } from "@qntx/nostr";
 import { signEvmPersonalMessage } from "@qntx/wallet-chains/evm/sign";
 
-import { hardware, qrParts, qrReader } from "../src/hardware/index.ts";
+import { hardware, oneKeyAnswerLength, qrParts, qrReader } from "../src/hardware/index.ts";
 import type { DeviceIo } from "../src/hardware/index.ts";
 import type { DeviceResponse, HardwareResult, HardwareStep } from "../src/protocol/hardware.ts";
 import type { WalletInfo } from "../src/types.ts";
@@ -422,5 +422,40 @@ describe("qrParts / qrReader", () => {
     const result = qrReader(["bytes"]).receive(part);
     expect(result.progress).toBe(1);
     expect(result.payload).toStrictEqual(small);
+  });
+});
+
+describe("oneKeyAnswerLength", () => {
+  const chunk = (length: number, magic: ReadonlyArray<number> = [0x3f, 0x23, 0x23]): Uint8Array => {
+    const out = new Uint8Array(64);
+    out.set(magic);
+    new DataView(out.buffer).setUint32(5, length);
+    return out;
+  };
+
+  it("counts whole USB reports: 55 payload bytes in the first, 63 in each continuation", () => {
+    for (const [length, expected] of [
+      [0, 64],
+      [55, 64],
+      [56, 128],
+      [118, 128],
+      [119, 192],
+    ] as const) {
+      expect(oneKeyAnswerLength(chunk(length), "usb")).toBe(expected);
+    }
+  });
+
+  it("is the BLE stream length: header plus the contiguous payload", () => {
+    for (const length of [0, 55, 119, 1000]) {
+      expect(oneKeyAnswerLength(chunk(length), "ble")).toBe(9 + length);
+    }
+  });
+
+  it("rejects a chunk without the OneKey magic or shorter than the header", () => {
+    for (const bad of [chunk(0, [0x00, 0x23, 0x23]), chunk(0).subarray(0, 8)]) {
+      expect(() => oneKeyAnswerLength(bad, "usb")).toThrow(
+        expect.objectContaining({ code: "invalid-input" }) as Error,
+      );
+    }
   });
 });

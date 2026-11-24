@@ -30,7 +30,7 @@ import type { ChainSignRequest, DeviceDisplay } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../../../errors.ts";
 import type { ChainPlan } from "../../chains/run.ts";
-import type { DeviceLink, SignContext } from "../driver.ts";
+import type { DeviceIdentity, DeviceLink, SignContext } from "../driver.ts";
 import {
   btcSignRequest,
   btcSignatureCodec,
@@ -55,6 +55,7 @@ function wrongDevice(): never {
 export const display = (
   _request: ChainSignRequest,
   plan: ChainPlan,
+  _identity: DeviceIdentity,
 ): DeviceDisplay | "unsupported" => {
   switch (plan.kind) {
     case "evm.transaction":

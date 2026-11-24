@@ -6,7 +6,7 @@ import type {
   WalletErrorCode,
   WalletInfo,
 } from "@qntx/wallet";
-import { hardware, qrParts, qrReader } from "@qntx/wallet/hardware";
+import { hardware, oneKeyAnswerLength, qrParts, qrReader } from "@qntx/wallet/hardware";
 import type { DeviceIo } from "@qntx/wallet/hardware";
 import type { ChainSignRequest, ChainSignResult } from "@qntx/wallet/protocol";
 
@@ -131,4 +131,59 @@ export async function signOnDevice(
     throw new WalletError("integrity", "a sign task answered another result");
   }
   return result.result;
+}
+
+/**
+ * `"onekey"` joins the device literals. A OneKey speaks Protocol-V1 frames, so its `exchange` sees
+ * `message` requests only: `request.data` is one framed command, written verbatim — 64-byte HID
+ * reports over USB, or GATT writes split at or below the negotiated MTU to characteristic
+ * `00000002-0000-1000-8000-00805f9b34fb` of service `00000001-0000-1000-8000-00805f9b34fb` — and
+ * the answer is collected until `oneKeyAnswerLength(firstChunk, transport)` bytes have arrived
+ * (whole 64-byte USB reports; concatenated BLE notifications on
+ * `00000003-0000-1000-8000-00805f9b34fb`). `qr` and `compare` requests never occur.
+ */
+export function oneKeyIo(transport: {
+  readonly kind: "usb" | "ble";
+  /** Writes one framed command, already report/MTU-split by the caller's transport layer. */
+  readonly write: (data: Uint8Array) => Promise<void>;
+  /** Resolves with the next chunk of the device's answer — one USB report or one BLE notify. */
+  readonly read: () => Promise<Uint8Array>;
+}): DeviceIo {
+  return {
+    exchange: async (request) => {
+      if (request.kind !== "message") {
+        throw new WalletError("unsupported", "onekey answers message requests only");
+      }
+      await transport.write(request.data);
+      const chunks: Uint8Array[] = [await transport.read()];
+      const [first] = chunks;
+      if (first === undefined) {
+        throw new WalletError("integrity", "the device answer is empty");
+      }
+      const total = oneKeyAnswerLength(first, transport.kind);
+      let collected = first.length;
+      while (collected < total) {
+        // oxlint-disable-next-line no-await-in-loop -- one chunk per transport read
+        const next = await transport.read();
+        chunks.push(next);
+        collected += next.length;
+      }
+      const data = new Uint8Array(collected);
+      let at = 0;
+      for (const chunk of chunks) {
+        data.set(chunk, at);
+        at += chunk.length;
+      }
+      return { kind: "message", data };
+    },
+  };
+}
+
+/** Pair a OneKey — resolves with the new `HardwareWalletInfo`, like `pairKeystone`. */
+export async function pairOneKey(wallet: Wallet, io: DeviceIo): Promise<HardwareWalletInfo> {
+  const result = await hardware(wallet).start({ kind: "pair", device: "onekey" }, { io }).result;
+  if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
+    throw new WalletError("integrity", "pair did not return a hardware wallet");
+  }
+  return result.wallet;
 }

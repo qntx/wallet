@@ -1580,7 +1580,7 @@ nothing new. Each has a compiled example and a README section.
 | `@qntx/wallet-engine/apps/fiat24`                                                                                                | [`fiat24-app.ts`](tests/migration/fiat24-app.ts)                                                                                                                                                                                                   | The Fiat24 app (§29): resumable flows, session and API reads; every write is one app-attributed request. Its REST API needs an injected `fetch` (no CORS).                                                                                                                                                                      |
 | Signing plans (`plan*` / `assemble*`, `*/sign` task signers)                                                                     | [`signing-plans.ts`](tests/migration/signing-plans.ts)                                                                                                                                                                                             | For hosts driving an external digest signer. Software-wallet signatures are byte-identical.                                                                                                                                                                                                                                     |
 
-## 24. Hardware signers (Keystone 3 Pro over QR, Ledger over USB/Bluetooth)
+## 24. Hardware signers (Keystone 3 Pro over QR, Ledger and OneKey over USB/Bluetooth)
 
 Compiled snippets: [`tests/migration/hardware-wallets.ts`](tests/migration/hardware-wallets.ts),
 [`tests/migration/ledger.ts`](tests/migration/ledger.ts). Changes affect every host that reads
@@ -1604,11 +1604,13 @@ vault alongside them.
    `device-required` (sign through the device instead); `wallet.accounts` answers
    `device-required` for a group the device has not exported yet. A host must not offer these on
    a `custody: "hardware"` wallet.
-4. **Driving a device.** `@qntx/wallet/hardware` exports `hardware(wallet)` with `pair`,
-   `accounts`, `sign` and `verifyAddress`, each taking a host `DeviceIo`. The kernel validates
-   and decodes everything; the host only transports: for an air-gapped Keystone, `qrParts`
-   produces the cyclic UR frames to animate and `qrReader` folds scanned frames back into the
-   payload (`keystoneQrIo` in the snippet). `sign` takes the same `verify` factor as
+4. **Driving a device.** `@qntx/wallet/hardware` exports `hardware(wallet)` with one `start(op,
+   { io, verify? })` per operation (`pair`, `accounts`, `sign`, `verify-address`), each taking a
+   host `DeviceIo`, and returning a `SignerTask`: `observe` reports `exchange` steps, `cancel`
+   ends the operation, `result` resolves with the operation's result. The kernel validates and
+   decodes everything; the host only transports: for an air-gapped Keystone, `qrParts` produces
+   the cyclic UR frames to animate and `qrReader` folds scanned frames back into the payload
+   (`keystoneQrIo` in the snippet). A `sign` operation takes the same `verify` factor as
    `chains().sign` and its result passes the same verification. `pairKeystone` and
    `signOnDevice` show the two calls a host makes.
 5. **Ledger.** `HARDWARE_DEVICES` gains `"ledger"`; an exhaustive switch over `HardwareDevice`
@@ -1632,6 +1634,26 @@ vault alongside them.
 8. **Unsupported on Ledger:** EIP-7702, raw (non off-chain-format) Solana messages, BIP-322
    message signing, PSBTs that sign inputs of more than one address type, and Bitcoin test
    networks — `unsupported` before any prompt.
+9. **OneKey.** `HARDWARE_DEVICES` gains `"onekey"`; an exhaustive switch over `HardwareDevice`
+   needs the new arm. `hardware(wallet).start({ kind: "pair", device: "onekey" }, { io })`
+   resolves with a `HardwareWalletInfo` whose `device` is `"onekey"` and whose `model`/`firmware`
+   are filled (`"classic1s"`/`"3.21.0"`, `"pro"`/`"4.21.0"`). The transport is byte-framed, not
+   QR: a OneKey's `exchange` sees only `message` requests — `request.data` is one framed command
+   the host writes verbatim; the device answers one framed message. USB: 64-byte HID reports —
+   the first carries `3f 23 23` + BE u16 type + BE u32 payload length + 55 payload bytes, each
+   continuation is `3f`-prefixed with 63 — collect reports until
+   `oneKeyAnswerLength(firstReport, "usb")` bytes have arrived (the final report's padding may be
+   stale; only the declared payload matters). BLE: GATT service
+   `00000001-0000-1000-8000-00805f9b34fb`, write characteristic `…0002…` (the same report
+   sequence, split at or below the negotiated MTU), notify characteristic `…0003…` whose
+   notifications concatenate into a `9 + length` stream. `oneKeyAnswerLength` throws
+   `invalid-input` on a chunk that is not a OneKey frame. `oneKeyIo` in the snippet is the
+   `DeviceIo` shape; `pairOneKey` the call.
+10. **Driver interface (kernel-private; noted for downstream driver authors).**
+    `Driver.display(request, plan, identity)` takes the record header's
+    `{ fingerprint, model, firmware }`, and `SignContext.display` carries the value the user was
+    prompted with — a driver whose display depends on model/firmware must refuse `sign` when the
+    live device can no longer show what was confirmed.
 
 ## 25. Approvals inventory and revocation
 

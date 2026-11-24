@@ -50,9 +50,30 @@ const SIGNERS_FILES = [
   "keystone/registry.ts",
   "keystone/sign.ts",
   "keystone/sync.ts",
+  "ledger/display.ts",
+  "ledger/driver.ts",
+  "ledger/errors.ts",
+  "ledger/link.ts",
+  "ledger/pair.ts",
+  "ledger/sign.ts",
+  "ledger/verify.ts",
+  "onekey/driver.ts",
+  "onekey/protocol/bitcoin.ts",
+  "onekey/protocol/device.ts",
+  "onekey/protocol/errors.ts",
+  "onekey/protocol/evm-typed-data.ts",
+  "onekey/protocol/evm.ts",
+  "onekey/protocol/frame.ts",
+  "onekey/protocol/index.ts",
+  "onekey/protocol/keys.ts",
+  "onekey/protocol/messages.ts",
+  "onekey/protocol/proto.ts",
+  "onekey/protocol/session.ts",
+  "onekey/protocol/solana.ts",
+  "onekey/protocol/tron.ts",
 ];
-// measured 90004 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
-const SIGNERS_BUDGET = 94_505;
+// measured 220339 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
+const SIGNERS_BUDGET = 232_000;
 const LEDGER_ENTRY = "qntx-budget-ledger.ts";
 const LEDGER_ENTRY_ID = "\0qntx-budget-ledger";
 const LEDGER_PROTOCOL = "packages/wallet-kernel/src/modules/ledger/protocol/";

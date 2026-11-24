@@ -33,7 +33,7 @@ type BackupApi = {
         }>;
         readonly factor?: InitialFactor;
     }) => Promise<{
-        readonly wallets: ReadonlyArray<WalletInfo>;
+        readonly wallets: ReadonlyArray<VaultWalletInfo>;
         readonly passphraseRequired: ReadonlyArray<string>;
     }>;
 };
@@ -50,7 +50,9 @@ export function card(wallet: Wallet): CardApi;
 
 // @public (undocumented)
 export type CardApi = {
-    readonly start: (op: CardOperation, verify?: VerifyFactor) => CardTask;
+    readonly start: (op: CardOperation, options?: {
+        readonly verify?: VerifyFactor;
+    }) => CardTask;
 };
 
 // @public (undocumented)
@@ -175,11 +177,7 @@ export type CardStep = {
 export type CardTapReason = "any" | "source" | "target" | "member" | "retry";
 
 // @public
-export type CardTask = {
-    readonly observe: (listener: (step: CardStep) => void) => () => void;
-    readonly cancel: () => Promise<void>;
-    readonly result: Promise<CardOpResult>;
-};
+export type CardTask = SignerTask<CardStep, CardOpResult>;
 
 // @public
 type CardWalletInfo = {
@@ -391,6 +389,18 @@ type FactorInfo = {
 };
 
 // @public
+type HardwareWalletInfo = {
+    readonly custody: "hardware";
+    readonly walletId: string;
+    readonly device: string;
+    readonly supported: boolean;
+    readonly fingerprint: string;
+    readonly model?: string;
+    readonly firmware?: string;
+    readonly createdAt: number;
+};
+
+// @public
 type InitialFactor = {
     readonly kind: "passkey";
     readonly name: string;
@@ -424,7 +434,7 @@ type MnemonicDraft = {
     readonly quiz: ReadonlyArray<number>;
     readonly confirm: (answers: ReadonlyArray<string>, options?: {
         readonly passphrase?: string;
-    }) => Promise<WalletInfo>;
+    }) => Promise<VaultWalletInfo>;
     readonly discard: () => Promise<void>;
 };
 
@@ -440,6 +450,13 @@ type NostrKeyRef = {
     readonly kind: "derived";
     readonly walletId: string;
     readonly index: number;
+};
+
+// @public
+type SignerTask<Step, Result> = {
+    readonly observe: (listener: (step: Step) => void) => () => void;
+    readonly cancel: () => Promise<void>;
+    readonly result: Promise<Result>;
 };
 
 // @public
@@ -498,17 +515,17 @@ type Wallet = {
 };
 
 // @public (undocumented)
-type WalletInfo = VaultWalletInfo | CardWalletInfo;
+type WalletInfo = VaultWalletInfo | HardwareWalletInfo | CardWalletInfo;
 
 // @public (undocumented)
 type WalletsApi = {
     readonly createWithPasskey: (options: {
         readonly name: string;
         readonly factor?: InitialFactor;
-    }) => Promise<WalletInfo>;
+    }) => Promise<VaultWalletInfo>;
     readonly restoreWithPasskey: (options?: {
         readonly factor?: InitialFactor;
-    }) => Promise<WalletInfo>;
+    }) => Promise<VaultWalletInfo>;
     readonly createMnemonic: (options: {
         readonly words: 12 | 24;
         readonly factor?: InitialFactor;
@@ -517,7 +534,7 @@ type WalletsApi = {
         readonly mnemonic: string;
         readonly passphrase?: string;
         readonly factor?: InitialFactor;
-    }) => Promise<WalletInfo>;
+    }) => Promise<VaultWalletInfo>;
     readonly exportMnemonic: (walletId: string, verify: VerifyFactor) => Promise<ExportedMnemonic>;
     readonly delete: (walletId: string, verify: VerifyFactor) => Promise<void>;
 };

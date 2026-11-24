@@ -46,6 +46,26 @@ type BackupInfo = {
 };
 
 // @public (undocumented)
+type CardInfo = {
+    readonly cardId: string;
+    readonly shortId?: string;
+    readonly state: "ready" | "unknown" | "pending";
+    readonly tries?: number;
+    readonly verifiedAt?: number;
+};
+
+// @public
+type CardWalletInfo = {
+    readonly custody: "card";
+    readonly walletId: string;
+    readonly origin: "card-generated" | "card-imported";
+    readonly backup: "cards";
+    readonly createdAt: number;
+    readonly members: number;
+    readonly cards: ReadonlyArray<CardInfo>;
+};
+
+// @public (undocumented)
 type ChainAccount = {
     readonly template: "evm.bip44";
     readonly network: string;
@@ -180,7 +200,6 @@ export type DeviceIo = {
         readonly device: HardwareDevice;
         readonly display?: DeviceDisplay;
     }) => Promise<DeviceResponse>;
-    readonly signal?: AbortSignal;
 };
 
 // @public (undocumented)
@@ -285,31 +304,14 @@ type FactorInfo = {
 export function hardware(wallet: Wallet): HardwareApi;
 
 // @public
-const HARDWARE_DEVICES: readonly ["keystone", "ledger"];
+const HARDWARE_DEVICES: readonly ["keystone", "ledger", "onekey"];
 
 // @public (undocumented)
 export type HardwareApi = {
-    readonly pair: (device: HardwareDevice, io: DeviceIo) => Promise<WalletInfo>;
-    readonly accounts: (params: {
-        readonly walletId: string;
-        readonly groupIndex: number;
-        readonly templates: ReadonlyArray<ChainTemplate>;
-        readonly network: string;
-    }, io: DeviceIo) => Promise<ReadonlyArray<ChainAccount>>;
-    readonly sign: (params: {
-        readonly request: ChainSignRequest;
-        readonly verify: VerifyFactor;
-    }, io: DeviceIo) => Promise<ChainSignResult>;
-    readonly verifyAddress: (params: {
-        readonly walletId: string;
-        readonly groupIndex: number;
-        readonly template: ChainTemplate;
-        readonly network: string;
-        readonly index?: number;
-    }, io: DeviceIo) => Promise<{
-        readonly address: string;
-        readonly method: "device" | "compare";
-    }>;
+    readonly start: (op: HardwareOperation, options: {
+        readonly io: DeviceIo;
+        readonly verify?: VerifyFactor;
+    }) => HardwareTask;
 };
 
 // @public
@@ -365,10 +367,14 @@ export type HardwareStep = {
 };
 
 // @public
+export type HardwareTask = SignerTask<HardwareStep, HardwareResult>;
+
+// @public
 type HardwareWalletInfo = {
     readonly custody: "hardware";
     readonly walletId: string;
-    readonly device: HardwareDevice;
+    readonly device: string;
+    readonly supported: boolean;
     readonly fingerprint: string;
     readonly model?: string;
     readonly firmware?: string;
@@ -419,7 +425,7 @@ export type LedgerHidPort = {
 };
 
 // @public
-export function ledgerIo(apdu: (apdu: Uint8Array) => Promise<Uint8Array>, signal?: AbortSignal): DeviceIo;
+export function ledgerIo(apdu: (apdu: Uint8Array) => Promise<Uint8Array>): DeviceIo;
 
 // @public
 type LockReason = "cold-start" | "user" | "idle" | "background" | "expired" | "crashed" | "invalidated";
@@ -449,6 +455,9 @@ type NostrKeyRef = {
 };
 
 // @public
+export const oneKeyAnswerLength: (firstChunk: Uint8Array, transport: "usb" | "ble") => number;
+
+// @public
 export const qrParts: (payload: QrPayload, options?: {
     readonly maxFragmentLength?: number;
 }) => (() => string);
@@ -469,6 +478,13 @@ export type QrReader = {
 
 // @public
 export const qrReader: (scan: ReadonlyArray<string>) => QrReader;
+
+// @public
+type SignerTask<Step, Result> = {
+    readonly observe: (listener: (step: Step) => void) => () => void;
+    readonly cancel: () => Promise<void>;
+    readonly result: Promise<Result>;
+};
 
 // @public
 type UnlockFactor = {
@@ -497,7 +513,7 @@ type VaultApi = {
 // @public
 type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
 
-// @public (undocumented)
+// @public
 type VaultWalletInfo = {
     readonly custody: "vault";
     readonly walletId: string;
@@ -526,7 +542,7 @@ type Wallet = {
 };
 
 // @public (undocumented)
-type WalletInfo = VaultWalletInfo | HardwareWalletInfo;
+type WalletInfo = VaultWalletInfo | HardwareWalletInfo | CardWalletInfo;
 
 // @public (undocumented)
 type WalletsApi = {

@@ -1075,9 +1075,10 @@ Gateway (operators):
   `HardwareWalletInfo` (`device`, `fingerprint`, optional `model`/`firmware`). `HARDWARE_DEVICES`
   lists the supported devices. Error codes `device-required`, `device-locked`,
   `device-app-closed`, `device-rejected`, `wrong-device`.
-- `@qntx/wallet/hardware`: `hardware(wallet)` — `pair`, `accounts`, `sign`, `verifyAddress` over a
-  host-supplied `DeviceIo`; `sign` takes the same `verify` factor and re-runs the same result
-  checks as `chains().sign`. `qrParts`/`qrReader` are the UR plumbing for air-gapped transports:
+- `@qntx/wallet/hardware`: `hardware(wallet)` — `start(op, { io, verify? })` runs one operation
+  (`pair`, `accounts`, `sign`, `verify-address`) over a host-supplied `DeviceIo` and returns a
+  `SignerTask`; `sign` takes the same `verify` factor and re-runs the same result checks as
+  `chains().sign`. `qrParts`/`qrReader` are the UR plumbing for air-gapped transports:
   cyclic uppercase fountain parts and a strict incremental decoder over `@qntx/ur` (optional
   peer).
 - **Keystone 3 Pro over QR** (`modules/signers/keystone/`): pairing from the sync
@@ -1089,8 +1090,24 @@ Gateway (operators):
   request-id binding, `samePsbtContent` on returned PSBTs. `vectors/keystone/` +
   `scripts/vectors/keystone.ts` pin sync, sign and hardware-call frames against the vendor
   encoders.
+- **OneKey hardware wallets over USB or BLE** (`modules/signers/onekey/`; emulator-tested on Classic 1S
+  3.21.0 and Pro 4.21.0; Classic, Mini and Touch follow the same protocol under firmware gates from
+  source, untested on hardware): `"onekey"` in
+  `HARDWARE_DEVICES` and a Protocol-V1 wire client with the driver over it. Pairing pins six
+  secp256k1 account nodes (BIP-44/49/84/86, EVM, TRON) and the SLIP-10 ed25519 Solana leaf with
+  root-fingerprint agreement and host-side address cross-checks; `sign` re-probes the pinned
+  account node and re-checks the live device display against the confirmed one before any
+  signing exchange. EVM legacy/EIP-1559/EIP-7702 (both stages)/personal/typed-data, Solana
+  transaction/message, TRON transaction/message, Bitcoin PSBT (streaming `SignTx`, incl.
+  taproot) and legacy/BIP-322 messages (BIP-322 on Pro ≥ 4.9.3). `@qntx/wallet/hardware` exports
+  `oneKeyAnswerLength` — the byte count of one device answer for USB report or BLE stream reads,
+  with the transport contract in its doc comment. `vectors/onekey/` pins emulator recordings at
+  protocol and driver level for Classic 1S 3.21.0 and Pro 4.21.0; `onekey.yml` re-records them
+  in CI.
 - `@qntx/wallet-chains/evm`: `evmSigningPreimage` — the unsigned EIP-155/EIP-2718 bytes whose
-  keccak is the signer's digest; `@qntx/wallet-chains/bitcoin`: `legacyMessageHash`.
+  keccak is the signer's digest; `typedDataHashes` — the domain separator and struct hash of an
+  EIP-712 document, for signers that take the two hashes; `@qntx/wallet-chains/bitcoin`:
+  `legacyMessageHash`.
 - **Ledger Nano S Plus / Nano X / Stax / Flex** (`modules/signers/ledger/`, device literal
   `"ledger"`): pairing from the Bitcoin app (the only Ledger app that reveals the BIP-32 master
   fingerprint) with the four group-0 Bitcoin account keys pinned; per-family account keys from the

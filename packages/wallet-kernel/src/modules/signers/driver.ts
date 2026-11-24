@@ -39,6 +39,8 @@ export type SignContext = {
   readonly request: ChainSignRequest;
   readonly stage: ChainPlan;
   readonly pin: HardwarePin;
+  /** The display the user was prompted with — the live device must still be able to show it. */
+  readonly display: DeviceDisplay;
   /** Fresh platform randomness for request ids and challenges — never a device input. */
   readonly random: (length: number) => Uint8Array;
 };
@@ -55,8 +57,16 @@ export type VerifyVerdict = {
 export type Driver = {
   /** The pairing ceremony: claims the identity and publishes the initial pinned keys. */
   readonly pair: (link: DeviceLink) => Promise<PairingResult>;
-  /** What the device shows for this request and plan; `unsupported` refuses before any prompt. */
-  readonly display: (request: ChainSignRequest, plan: ChainPlan) => DeviceDisplay | "unsupported";
+  /**
+   * What the device shows for this request and plan; `unsupported` refuses before any prompt.
+   * `identity` is the paired record's claimed identity — a driver whose display depends on the
+   * model or firmware must refuse when the record cannot promise what the device would show.
+   */
+  readonly display: (
+    request: ChainSignRequest,
+    plan: ChainPlan,
+    identity: DeviceIdentity,
+  ) => DeviceDisplay | "unsupported";
   /** Signs one plan stage: one 64-byte signature per task, in order; assemble verifies. */
   readonly sign: (link: DeviceLink, context: SignContext) => Promise<ReadonlyArray<Uint8Array>>;
   /** Fetches missing public material (hardened nodes); the claimed fingerprint must match `pin`. */

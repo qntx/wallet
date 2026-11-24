@@ -29,6 +29,7 @@ import type { TronContract, TronContractSlot } from "@qntx/wallet-chains/tron";
 import type { ChainSignRequest, DeviceDisplay } from "@qntx/wallet/protocol";
 
 import type { ChainPlan } from "../../chains/run.ts";
+import type { DeviceIdentity } from "../driver.ts";
 
 /** TRC20 selectors the device ABI-decodes to a token screen (parse.c SELECTOR). */
 const TRC20_SELECTORS = [
@@ -178,6 +179,7 @@ export const solanaOffchain = (message: Uint8Array): "ascii" | "utf8" | undefine
 export const display = (
   request: ChainSignRequest,
   plan: ChainPlan,
+  _identity: DeviceIdentity,
 ): DeviceDisplay | "unsupported" => {
   if (plan.kind === "evm.transaction") {
     const { tx } = plan;

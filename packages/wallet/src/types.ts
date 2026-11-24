@@ -21,7 +21,7 @@ export type FactorInfo =
   | { readonly kind: "password"; readonly id: string; readonly createdAt: number };
 
 /** The hardware-signing device families the kernel knows; each signer lane adds a literal. */
-export const HARDWARE_DEVICES = ["keystone", "ledger"] as const;
+export const HARDWARE_DEVICES = ["keystone", "ledger", "onekey"] as const;
 
 /** A hardware-signing device family the kernel knows; each signer adds a literal. */
 export type HardwareDevice = (typeof HARDWARE_DEVICES)[number];

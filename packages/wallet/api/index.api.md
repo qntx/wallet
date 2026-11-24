@@ -75,6 +75,26 @@ export type BackupInfo = {
 };
 
 // @public (undocumented)
+export type CardInfo = {
+    readonly cardId: string;
+    readonly shortId?: string;
+    readonly state: "ready" | "unknown" | "pending";
+    readonly tries?: number;
+    readonly verifiedAt?: number;
+};
+
+// @public
+export type CardWalletInfo = {
+    readonly custody: "card";
+    readonly walletId: string;
+    readonly origin: "card-generated" | "card-imported";
+    readonly backup: "cards";
+    readonly createdAt: number;
+    readonly members: number;
+    readonly cards: ReadonlyArray<CardInfo>;
+};
+
+// @public (undocumented)
 export type DataKeyApi = {
     readonly get: (purpose: string) => Promise<Uint8Array>;
 };
@@ -118,7 +138,7 @@ export type FactorInfo = {
 };
 
 // @public
-export const HARDWARE_DEVICES: readonly ["keystone", "ledger"];
+export const HARDWARE_DEVICES: readonly ["keystone", "ledger", "onekey"];
 
 // @public
 export type HardwareDevice = (typeof HARDWARE_DEVICES)[number];
@@ -127,7 +147,8 @@ export type HardwareDevice = (typeof HARDWARE_DEVICES)[number];
 export type HardwareWalletInfo = {
     readonly custody: "hardware";
     readonly walletId: string;
-    readonly device: HardwareDevice;
+    readonly device: string;
+    readonly supported: boolean;
     readonly fingerprint: string;
     readonly model?: string;
     readonly firmware?: string;
@@ -215,6 +236,13 @@ type SignedEvent = {
 };
 
 // @public
+export type SignerTask<Step, Result> = {
+    readonly observe: (listener: (step: Step) => void) => () => void;
+    readonly cancel: () => Promise<void>;
+    readonly result: Promise<Result>;
+};
+
+// @public
 export type StatusPayload = {
     readonly protocol: 3;
     readonly vault: VaultState;
@@ -257,7 +285,7 @@ export type VaultApi = {
 // @public
 export type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
 
-// @public (undocumented)
+// @public
 export type VaultWalletInfo = {
     readonly custody: "vault";
     readonly walletId: string;
@@ -296,10 +324,10 @@ export class WalletError extends Error {
 }
 
 // @public (undocumented)
-export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "crashed" | "device-required" | "device-locked" | "device-app-closed" | "device-rejected" | "wrong-device";
+export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "card-not-genuine" | "card-id-mismatch" | "card-erased" | "card-locked" | "card-tampered" | "card-fault" | "card-unsupported" | "crashed" | "device-required" | "device-locked" | "device-app-closed" | "device-rejected" | "wrong-device";
 
 // @public (undocumented)
-export type WalletInfo = VaultWalletInfo | HardwareWalletInfo;
+export type WalletInfo = VaultWalletInfo | HardwareWalletInfo | CardWalletInfo;
 
 // @public (undocumented)
 export type WalletOptions = {

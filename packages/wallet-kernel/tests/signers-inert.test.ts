@@ -87,7 +87,9 @@ const arrField = (value: ProtocolValue, key: string): ProtocolValue[] => {
 
 const boot = async (): Promise<{ h: Harness; session: string }> => {
   const device = fakeDevice(SEED);
-  const h = createHarness({ drivers: { keystone: device.driver, ledger: device.driver } });
+  const h = createHarness({
+    drivers: { keystone: device.driver, ledger: device.driver, onekey: device.driver },
+  });
   await h.settle();
   const res = ok(
     await h.call("wallet.importMnemonic", {
