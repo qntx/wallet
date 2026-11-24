@@ -13,7 +13,7 @@ import { spark } from "@qntx/wallet/spark";
 
 import { approval } from "./approval.ts";
 import type { Arb1Rpc } from "./apps-helpers.ts";
-import { until, world } from "./apps-helpers.ts";
+import { manualTimer, until, world } from "./apps-helpers.ts";
 import type { CardRig } from "./card-rig.ts";
 import { cardRig, CARD_CODE, CARD_VERIFY } from "./card-rig.ts";
 
@@ -244,18 +244,27 @@ describe("card wallet × engine features", () => {
   });
 
   it("a card group's Hyperliquid enable ends typed and resumable, not stuck", async () => {
-    const { w, rig } = await cardWorld();
+    /* The kernel clock and the engine clock must agree — sessions.create checks the agent's
+       validUntil window against the kernel's own now(). */
+    const T = 1_700_000_000_000;
+    const rig = await cardRig({ now: T });
+    const w = await world(12, {
+      wallet: { wallet: rig.wallet, walletId: rig.cardWalletId },
+      timers: manualTimer(T),
+    });
     const group = { walletId: rig.cardWalletId, groupIndex: 0 };
     const gkey = `${rig.cardWalletId}/0`;
     await w.apps.acknowledgeTerms(group, "hyperliquid");
+    /* The flow reaches sessions.create — the kernel refuses the seedless wallet unsupported,
+       exactly like the hardware sibling. */
     await expect(w.apps.enable(group, "hyperliquid")).rejects.toMatchObject({
-      code: "invalid-input",
+      code: "unsupported",
     });
     const state = () => w.apps.getState().groups[gkey]?.hyperliquid;
     expect(state()?.status).toBe("enabling");
     expect(state()?.error).toBeDefined();
     await expect(w.apps.enable(group, "hyperliquid")).rejects.toMatchObject({
-      code: "invalid-input",
+      code: "unsupported",
     });
     await w.destroy();
   });

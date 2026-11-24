@@ -36,7 +36,7 @@ export type CardRig = {
   member: FakeCard;
 };
 
-export const cardRig = async (): Promise<CardRig> => {
+export const cardRig = async (options?: { readonly now?: number }): Promise<CardRig> => {
   const field = testCardReader();
   const input = testSecureInput();
   let ended = false;
@@ -78,6 +78,7 @@ export const cardRig = async (): Promise<CardRig> => {
   };
   const h = createHarness({
     card: { reader: reader.reader, secureInput: input.secureInput, anchors: [CA1_ANCHOR] },
+    ...(options?.now === undefined ? {} : { start: options.now }),
   });
   const wallet = await connectKernel({
     verifyEvent,
