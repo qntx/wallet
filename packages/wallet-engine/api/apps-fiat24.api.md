@@ -9,6 +9,7 @@ import { AccountView } from '@qntx/fiat24/flows';
 import { Bank } from '@qntx/fiat24/api';
 import { Banks } from '@qntx/fiat24/api';
 import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
+import { BitcoinOwn } from '@qntx/wallet-chains/bitcoin';
 import { BitcoinTemplate } from '@qntx/wallet-chains';
 import { Card } from '@qntx/fiat24/api';
 import { CardCurrency } from '@qntx/fiat24/flows';
@@ -1218,7 +1219,7 @@ type PreparedBitcoinPsbt = {
     readonly request: Extract<SignRequest, {
         kind: "bitcoin.psbt";
     }>;
-    readonly ownScripts: ReadonlySet<string>;
+    readonly own: BitcoinOwn;
     readonly inputs: ReadonlyArray<{
         readonly index: number;
         readonly value: number;
@@ -1398,7 +1399,7 @@ type RequestStage = "awaiting-approval" | "signing" | "signed" | "submitted" | "
 
 // @public
 type RiskFinding = {
-    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-account-move" | "fiat24-account-burn" | "qr-sign-in-unverified";
+    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "bitcoin-unusual-output" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-account-move" | "fiat24-account-burn" | "qr-sign-in-unverified";
     readonly level: "warning" | "danger";
 };
 

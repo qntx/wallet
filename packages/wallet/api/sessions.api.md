@@ -104,7 +104,19 @@ type HardwareWalletInfo = {
 export type HyperliquidAgentLimits = {
     readonly notional: string;
     readonly maxLeverage: number;
-    readonly assets: ReadonlyArray<number>;
+    readonly assets: ReadonlyArray<HyperliquidAssetLimit>;
+};
+
+// @public
+type HyperliquidAgentSpent = {
+    readonly notional: string;
+    readonly size: ReadonlyArray<string>;
+};
+
+// @public
+type HyperliquidAssetLimit = {
+    readonly asset: number;
+    readonly size: string;
 };
 
 export { HyperliquidL1Action }
@@ -188,7 +200,7 @@ export type SessionInfo = {
     readonly validUntil: number;
     readonly createdAt: number;
     readonly limits: ProtocolValue;
-    readonly spent: string;
+    readonly spent: ProtocolValue;
 };
 
 // @public (undocumented)
@@ -227,6 +239,7 @@ export type SessionSchemes = {
         readonly scope: HyperliquidNetwork;
         readonly params: HyperliquidL1Params;
         readonly limits: HyperliquidAgentLimits;
+        readonly spent: HyperliquidAgentSpent;
     };
 };
 

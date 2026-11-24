@@ -82,6 +82,7 @@ type AssetFlow = {
     } | {
         readonly payee: string;
     };
+    readonly ownPath?: string;
     readonly name?: string;
 };
 
@@ -268,7 +269,7 @@ type IntentWarning = {
 };
 
 // @public
-type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-issuer-rate" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-swap-quote" | "fiat24-account-link" | "fiat24-account-move" | "fiat24-account-burn";
+type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-issuer-rate" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-swap-quote" | "fiat24-account-link" | "fiat24-account-move" | "fiat24-account-burn" | "unusual-own-output";
 
 // @public
 type MessageContent = {

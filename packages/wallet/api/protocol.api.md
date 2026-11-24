@@ -697,7 +697,19 @@ export type HtlcTimeoutSignRequest = {
 export type HyperliquidAgentLimits = {
     readonly notional: string;
     readonly maxLeverage: number;
-    readonly assets: ReadonlyArray<number>;
+    readonly assets: ReadonlyArray<HyperliquidAssetLimit>;
+};
+
+// @public
+export type HyperliquidAgentSpent = {
+    readonly notional: string;
+    readonly size: ReadonlyArray<string>;
+};
+
+// @public
+export type HyperliquidAssetLimit = {
+    readonly asset: number;
+    readonly size: string;
 };
 
 export { HyperliquidL1Action }
@@ -1065,9 +1077,6 @@ export type Rumor = {
 // @public
 export const SECRET_FIELDS: readonly ["password", "prf", "prfWallet", "prfBackup", "mnemonic", "passphrase", "secret", "answers"];
 
-// @public
-export const SESSION_SPENT: RegExp;
-
 // @public (undocumented)
 export type SessionInfo = {
     readonly address: string;
@@ -1081,7 +1090,7 @@ export type SessionInfo = {
     readonly validUntil: number;
     readonly createdAt: number;
     readonly limits: ProtocolValue;
-    readonly spent: string;
+    readonly spent: ProtocolValue;
 };
 
 // @public (undocumented)
@@ -1126,6 +1135,7 @@ export type SessionSchemes = {
         readonly scope: HyperliquidNetwork;
         readonly params: HyperliquidL1Params;
         readonly limits: HyperliquidAgentLimits;
+        readonly spent: HyperliquidAgentSpent;
     };
 };
 
