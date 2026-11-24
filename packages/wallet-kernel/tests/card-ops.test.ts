@@ -2388,7 +2388,7 @@ describe("card sign (fake card)", () => {
       ),
     ).resolves.toBe("blind-signing-disabled");
     expect(r.fake.calls.slice(before)).toStrictEqual([]);
-    expect(r.input.requests.length).toBe(asks);
+    expect(r.input.requests).toHaveLength(asks);
   });
 
   it("sign requires a verify factor and a card wallet account", async () => {
