@@ -180,7 +180,9 @@ Engine options, facades and the in-app browser:
   removed). `engine.bridges.quote` requires `maxFeeBps`. (MIGRATION §2, §13)
 - `@qntx/wallet-engine`: `TransactionController`'s `Options.chains` is required — the controller
   signs through the injected apis so an external-custody request routes to its signer; what was a
-  test seam defaulting to `chains(wallet)` is a constructor requirement. (MIGRATION §32)
+  test seam defaulting to `chains(wallet)` is a constructor requirement. `createApps`'s `account`
+  option and `AppContext.account` are required — an app derives through the same apis; a host
+  composing apps without the engine passes `chains(wallet).account`. (MIGRATION §32)
 - `@qntx/wallet-engine`: `RequestEndedError`'s constructor takes a third `signed` argument; read
   `error.signed` to tell whether anything may have been broadcast. `EvmSignInput.nonce` pins the
   nonce of an app's `evm.transaction` (`NonceConflictError` at `prepare`). (MIGRATION §29)
@@ -1226,9 +1228,10 @@ Gateway (operators):
 - `@qntx/wallet-engine`: `RequestOrigin` gains `{ kind: "qr", declared? }` — a request that
   entered through a scanned UR frame, attributed to the counterpart's self-declared label
   (display-only, untrusted). Every switch on `RequestOrigin["kind"]` must name it. (MIGRATION §33)
-- `@qntx/wallet-engine`: `EngineOptions.devices` (`DeviceTransport`) — called once per signature
-  for a hardware-custody account, whatever the request's origin; the host aborts through the
-  io's `signal`. Absent, hardware wallets cannot sign (`device-required`). (MIGRATION §33)
+- `@qntx/wallet-engine`: `EngineOptions.deviceIo` is the one transport seam for every hardware
+  signature whatever the request's origin — the interim `devices` (`DeviceTransport`)
+  per-signature callback is removed; absent, hardware signatures fail `unsupported`.
+  (MIGRATION §32, §33)
 - `@qntx/wallet-engine/qr`: QR signer mode — `createQrScanner` folds scanned UR frames into a
   payload, `readQrRequest` decodes and re-checks it, `inspectQrRequest` decodes without binding,
   `qrSigner({ engine, wallet }).prepare` binds it (per-family network binding, account match,
@@ -1247,6 +1250,20 @@ Gateway (operators):
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - `@qntx/wallet`: password re-verification (signing, exports, factor and backup management) is
   rate-limited like unlock. `keys.list` no longer renews the idle timer. The call watchdog is
   suspended while a system verification prompt is open, so a slow user no longer crashes the
@@ -1818,6 +1835,20 @@ kernel shows it, and typed data that grants execution rights is refused in the k
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - **BREAKING** `@qntx/wallet-chains`: `decodeEvm(request, signer, table)` and
   `verifiabilityEvm(request, signer)` take the signer. Typed data whose `verifyingContract` is the
   signer, the MetaMask DelegationManager or the ERC-4337 v0.8 EntryPoint is refused with
@@ -1855,6 +1886,20 @@ do, and `@qntx/nostr` moves to 0.15.4.
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - **BREAKING**: `bitcoin.psbt` requests name a wallet group (`account: { kind: "hd", walletId,
   groupIndex }`) and give every input to sign its own BTC template (`sign: { index, template }[]`,
   normalized to ascending index) instead of an `AccountRef` and bare input indices; `bitcoin-sign`
@@ -1872,6 +1917,20 @@ always asking for a device passcode (qntx/social#275), plus a platform diagnosti
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - **BREAKING**: `WalletErrorCode` drops `factor-unavailable`, which collapsed every keystore and
   passkey platform failure into one bucket. Three precise codes replace it, and every remaining
   site moved to an existing code:
@@ -1960,6 +2019,20 @@ Bitcoin Wallet Standard dApp provider. `@qntx/siwx` 0.8.0 is a new dependency.
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - **BREAKING** `@qntx/wallet-chains`: `ApprovalChange` is an `allowance` | `operator` union.
 - **BREAKING** `@qntx/wallet-chains`: `parseTypedData(typedData)` takes only the source;
   `normalizeEvm` refuses a malformed or mismatched `domain.chainId` (`chain-id-mismatch`, the kernel
@@ -2031,6 +2104,20 @@ source. Closes #99, #100, #101 and #102. Includes the 0.8.1 native fix.
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - **Breaking:** `WeblnHandlerOptions.now`, `ConnectionControllerOptions.setTimer`, `NetworkController` options `setTimer` and `random` are required; `ConnectionController.request(origin, { kind, namespace?, network?, activate? })` takes an options object; `esplora(endpoints, fetch, { setTimer, random }, timeoutMs?)` takes injected timers and randomness. The engine no longer uses `AbortSignal.timeout` or `Math.random`.
 - `@qntx/wallet-chains`: BIP-322 script pushes longer than 252 bytes are rejected instead of mis-encoded.
 - `@qntx/wallet-engine`: the Solana and EIP-1193 handlers share one session-event helper and the Solana sign path one request method.
@@ -2058,6 +2145,20 @@ A native wallet can unlock again after it locks, without restarting the app.
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - `packages/wallet-native`: `NativeWalletOptions.host` is replaced by `createHost`, a factory called
   once per kernel runtime. Hosts that passed `host: fake` pass `createHost: () => fake`, creating
   a new fake per call when the test must survive a lock.
@@ -2101,6 +2202,20 @@ NIP-07 providers are in.
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - BREAKING: `createWebWallet`, `createNodeWallet` and `createNativeWallet` require a
   `verifyEvent: (event) => boolean` option (added to `WalletOptions`), and `createWalletEngine`
   requires the same `verifyEvent`. The wallet signer used to import `verifyEvent` from
@@ -2123,6 +2238,20 @@ and backups change format with no migration: recreate existing vaults.
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - BREAKING: the in-app-browser page→host message now requires a `provider` field —
   `"eip1193"` for `window.ethereum` and `"nostr"` for `window.nostr` — and the bridge routes by it;
   a message without it is dropped as malformed.
@@ -2199,6 +2328,20 @@ recipient risk checks, a sign log and metadata sync; `@qntx/wallet-native` build
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - **BREAKING** `@qntx/wallet-engine`: the wallet metadata document is now `v: 2`
   (`{ v, wallet, groups, contacts }`) and `v: 1` documents are no longer read. A remote `v: 1`
   document is reported as unreadable (`corrupt`) and the wallet will not overwrite it. Entries are
@@ -2352,6 +2495,20 @@ request, and the engine sends, tracks and replaces transactions on all three cha
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - **BREAKING:** on React Native the hardware factor is the only vault factor; password and
   passkey factors are rejected with `factor-unavailable` (the web and Node hosts keep passkey
   and password factors).
@@ -2384,6 +2541,20 @@ request, and the engine sends, tracks and replaces transactions on all three cha
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - **BREAKING:** `@qntx/spark` is pinned at `0.5.0` in the kernel and the optional peer range is
   `^0.5.0` (was `^0.3.0`). Spark 0.4.0 adds `transfers.history` and renames the invoice payload
   type to `SparkInvoicePayment`; 0.5.0 replaces `addressToScript` with the network-strict
@@ -2447,6 +2618,20 @@ engine is in this repository but not yet published to npm.
 
 ### Changed
 
+- `@qntx/wallet-engine`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
+  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
+  any factor ceremony. A remembered card access code is suspended while the app lock is off —
+  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
+- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
+  the request's own family only, and surfaces a family with no pinned material as `device-required`;
+  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
+  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
+- `@qntx/wallet-engine`: hardware prompts lead with the device line (`clear` — check it on the
+  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
+  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
+  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
+- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
+  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - **BREAKING:** `PasskeyConfig` gains a required `backupSalt` — passkey backup factors run the
   WebAuthn ceremony with `prf` over it, distinct from `vaultSalt`/`walletSalt` (#9).
 - `@qntx/wallet` peer dependencies: `@qntx/nostr` `^0.15.0` and `@qntx/spark` `^0.3.0`, both

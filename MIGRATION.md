@@ -1885,7 +1885,8 @@ that does not opt in. Gateway operators deploy a new Durable Object class.
    `engine.notifications.getState()` shows per-wallet, per-family `active` / `pending` /
    `failed`, and `device-required` for a family whose addresses only an external signer can
    answer — a hardware device that has not pinned that path, or a card wallet with no cached
-   material for it — while families with material and other wallets subscribe normally.
+   material for it — while the wallet's provable families and every other wallet subscribe
+   normally (a partially pinned wallet keeps the subscriptions its readable groups can serve).
 3. **Handle deliveries.** iOS: ship a Notification Service Extension; the alert carries
    `mutable-content: 1` and the message under `userInfo.qntx`. Open it with `openPush` from
    `@qntx/wallet-engine/push` (or a native AES-256-GCM port checked against `vectors/push.json`)
@@ -2391,9 +2392,10 @@ engine drives the same signers for its own signing paths.
    wires its transports once at `createWalletEngine`: `deviceIo: (device) => DeviceIo` resolves
    the paired device kind to the same `DeviceIo` a `hardware(wallet)` call takes
    (`withDeviceIo` — a Keystone's QR channel is the host's own `DeviceIo`, Ledger and OneKey reuse
-   the shipped `ledgerIo` / `oneKeyIo` over `HidPort` / `BlePort`). Without it every hardware
-   operation answers `unavailable` and nothing publishes an activity. Card wallets need no entry:
-   the kernel talks to the reader itself.
+   the shipped `ledgerIo` / `oneKeyIo` over `HidPort` / `BlePort`). The interim
+   `EngineOptions.devices` / `DeviceTransport` per-signature callback is gone — `deviceIo` is the
+   only transport seam, and without it every hardware operation answers `unsupported` and nothing
+   publishes an activity. Card wallets need no entry: the kernel talks to the reader itself.
 2. **`engine.signers` — one activity at a time.** `getState` / `store.subscribe` reports
    `SignersState.active`, a single `SignerActivity` (`walletId`, `custody`, `operation`
    `sign | accounts | verify-address`, `step` `starting | card | device`); a card operation's
@@ -2408,7 +2410,9 @@ engine drives the same signers for its own signing paths.
    origin — sends, dApp requests, in-engine apps and scanned QR requests (§33) alike: there is
    one seam, and hardware custody signs through `deviceIo` regardless of how the request
    arrived. What the kernel already refuses stays refused and lands before any activity
-   publishes: `sessions.create`, Spark and Nostr answer `unsupported`, a Fiat24 session grant
+   publishes: `sessions.create` / `sessions.open` on a card or hardware wallet answer
+   `unsupported` before the app-lock check, the limits text, the session-approval secure input
+   and any factor ceremony; Spark and Nostr answer `unsupported`, a Fiat24 session grant
    `invalid-input`.
 4. **`fetchAccounts` and `AccountGroup.signer`.** A group on an external signer has no public
    material for a family until the signer exports it: the family's entry in the group's `signer`
@@ -2426,7 +2430,12 @@ engine drives the same signers for its own signing paths.
    seam defaulting to `chains(wallet)` is now a required option. A host constructing the
    controller directly passes `chains(wallet)` for vault-only use or the engine's signer-aware
    `apis`.
-7. **Account-tree wallet entries carry `custody` and `state`** (`walletRow`). `incomplete` — a
+7. **One `account` seam for apps.** `CreateAppsOptions.account` and `AppContext.account` are
+   required: an app derives through the same apis as every other signer path — the engine passes
+   `engine.signers.apis.account`; a host composing `createApps` without the engine passes
+   `chains(wallet).account`. A provider-level `account?` stays optional: a reads-only provider
+   throws `not-enabled` before any signing call.
+8. **Account-tree wallet entries carry `custody` and `state`** (`walletRow`). `incomplete` — a
    card wallet still waiting on a member card — has no groups and no addresses:
    `transactions.nextReceiveAddress` and any send on it throw until the wallet is `ready`, and
    notifications report `device-required` for a card wallet's uncached families exactly like a
@@ -2809,7 +2818,14 @@ BITCOIN_GAP_LIMIT`; an index past the bound reuses index `bound` rather than hid
 Two cross-cutting hardenings land with it. Kernel prompts render every warning/danger row first
 and detail rows after: a bounded prompt drops only detail rows (with a "N more lines" tail), and
 when the warning rows alone do not fit the dialog the request is `unsupported` even with blind
-signing on — a bound can no longer truncate a warning out of view. And the React Native session
+signing on — a bound can no longer truncate a warning out of view. A hardware prompt leads with
+its device line — `clear` tells the user to check the request on the device, `blind` warns —
+ahead of the chain prompt's rows, its room reserved by the same bound. And for Ledger the engine
+strips the wallet's own BIP-32 derivations from every PSBT output the prompt shows before the
+device sees the transaction: app-bitcoin hides a change-chain output carrying the policy's
+fingerprint with no index bound, so an unusual-path own-key output the phone shows would
+otherwise be hidden on the device — the stripped output renders by address on both. And the
+React Native session
 policy gains a 15-minute idle lock counted on presence-bearing methods only (`idle:
 { ms: 15 * 60_000, activity: "presence" }`): trading or background traffic cannot hold the vault
 open — the 24 h `maxSessionMs` is unchanged.
