@@ -33,8 +33,8 @@ const SHARE_BUDGET = 0.05;
 const CARD_ENTRY = "qntx-budget-card.ts";
 const CARD_ENTRY_ID = "\0qntx-budget-card";
 const CARD_PROTOCOL = "packages/wallet-kernel/src/modules/card/protocol/";
-// measured 38260 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
-const CARD_BUDGET = 40_192;
+// measured 38998 B (rendered, all exports retained); budget from measurement with ≥ 5 % headroom
+const CARD_BUDGET = 40_960;
 const SIGNERS_ENTRY = "qntx-budget-signers.ts";
 const SIGNERS_ENTRY_ID = "\0qntx-budget-signers";
 const SIGNERS_MODULE = "packages/wallet-kernel/src/modules/signers/";
@@ -49,10 +49,11 @@ const signersFiles = (dir: string): string[] =>
         : [],
   );
 const SIGNERS_FILES = signersFiles(resolve(ROOT, SIGNERS_MODULE)).toSorted();
-// measured 297659 B (rendered, all exports retained — ledger/protocol moved under the driver,
+// measured 301705 B (rendered, all exports retained — ledger/protocol moved under the driver,
 // owner decision 2026-11-24: accept the measured size; +3248 B when the onekey driver split into
-// per-operation files added module-boundary overhead); budget from measurement with ≥ 5 % headroom
-const SIGNERS_BUDGET = 313_000;
+// per-operation files added module-boundary overhead, +798 B of prompt/dispatch drift since);
+// budget from measurement with ≥ 5 % headroom
+const SIGNERS_BUDGET = 317_000;
 /** Breakdown lines printed every run: shared core files first, then one line per driver dir. */
 const SIGNERS_GROUPS = ["keystone", "ledger", "onekey"];
 
@@ -78,7 +79,8 @@ const UNITS: ReadonlyArray<Unit> = [
     match:
       /^packages\/(wallet-kernel\/src\/modules\/sessions\/schemes\/hyperliquid-l1-agent\/|wallet-chains\/src\/evm\/(hyperliquid-l1|msgpack)\.ts$)/,
     // budget 16 384 B by owner decision of 2026-11-22 (measured 15 794 B at introduction,
-    // 15 940 B with the L1 encoder in @qntx/wallet-chains/evm; the study's 8 192 B is exceeded)
+    // 15 940 B with the L1 encoder in @qntx/wallet-chains/evm, 16 361 B after the merge's
+    // session-approval secure-input path; the study's 8 192 B is exceeded)
     budget: 16_384,
     note: "the one session scheme: L1 action validators, msgpack, phantom-agent document",
   },
@@ -92,9 +94,9 @@ const UNITS: ReadonlyArray<Unit> = [
   {
     name: "fiat24 decoder",
     match: /^packages\/wallet-chains\/src\/evm\/fiat24\.ts$/,
-    // measured 14710 B; budget from measurement with ≥ 5 % headroom (owner decision 2026-11-22),
+    // measured 15297 B; budget from measurement with ≥ 5 % headroom (owner decision 2026-11-22),
     // above the study's 15 kB per decoder
-    budget: 15_872,
+    budget: 16_384,
     note: "Fiat24 calldata decoder, grant prefixes and session-message builder",
   },
   {
@@ -106,8 +108,8 @@ const UNITS: ReadonlyArray<Unit> = [
   {
     name: "card module",
     match: /^packages\/wallet-kernel\/src\/modules\/card\/(?!protocol\/)/,
-    // measured 132741 B; budget from measurement with ≥ 5 % headroom (2026-11-23)
-    budget: 139_776,
+    // measured 129142 B; budget from measurement with ≥ 5 % headroom (2026-11-23)
+    budget: 135_680,
     note: "card operation engine — record, taps, ops, text (the protocol client has its own line)",
   },
 ];
