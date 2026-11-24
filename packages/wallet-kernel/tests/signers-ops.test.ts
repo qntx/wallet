@@ -29,6 +29,7 @@ import { hardwareWalletId } from "../src/modules/signers/record.ts";
 import type { KernelPlatform } from "../src/platform.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
+import { loadTranscript, replayExchange, transcriptSession } from "./onekey-emulator/index.ts";
 import { ACCOUNT_NODES, fakeDevice, masterFingerprint } from "./signers-fake.ts";
 import type { FakeDevice, FakeDeviceOptions } from "./signers-fake.ts";
 
@@ -93,6 +94,13 @@ const arrField = (value: ProtocolValue, key: string): ProtocolValue[] => {
   }
   return v;
 };
+const bytesField = (value: ProtocolValue, key: string): Uint8Array => {
+  const v = field(value, key);
+  if (!(v instanceof Uint8Array)) {
+    throw new TypeError(`${key} is not bytes`);
+  }
+  return v;
+};
 
 type Boot = {
   readonly h: Harness;
@@ -136,6 +144,32 @@ const pairDevice = async (h: Harness, session: string): Promise<string> => {
     ),
   );
   const wallet = field(field(done, "result"), "wallet");
+  expect(strField(wallet, "custody")).toBe("hardware");
+  return strField(wallet, "walletId");
+};
+
+/** Runs onekey pair through begin/step, replaying the recorded driver transcript. */
+const pairOneKey = async (h: Harness, session: string): Promise<string> => {
+  const transcript = loadTranscript("pro", "driver");
+  const device = replayExchange(transcriptSession(transcript, "driver-pair"));
+  const begin = ok(
+    await h.call("hardware.begin", { op: { kind: "pair", device: "onekey" } }, session),
+  );
+  const opId = strField(begin, "opId");
+  let step = field(begin, "step");
+  for (let guard = 0; strField(step, "kind") === "exchange" && guard < 64; guard++) {
+    const request = field(step, "request");
+    // oxlint-disable-next-line no-await-in-loop -- the coroutine answers one turn per step
+    const data = await device(bytesField(request, "data"));
+    // oxlint-disable-next-line no-await-in-loop -- the coroutine advances one turn per step
+    const next = await h.call(
+      "hardware.step",
+      { opId, response: { kind: "message", data } },
+      session,
+    );
+    step = ok(next);
+  }
+  const wallet = field(field(step, "result"), "wallet");
   expect(strField(wallet, "custody")).toBe("hardware");
   return strField(wallet, "walletId");
 };
@@ -598,30 +632,45 @@ describe("executor (unit)", () => {
 });
 
 describe("hardware wallet refusals", () => {
+  /** The seed-bound calls every hardware record must refuse. */
+  const seedBoundCalls = (
+    h: Harness,
+    session: string,
+    hwId: string,
+  ): ReadonlyArray<Promise<KernelResponse>> => [
+    h.call("nostr.deriveKey", { walletId: hwId, index: 0 }, session),
+    h.call(
+      "sessions.create",
+      {
+        scheme: "hyperliquid-l1-agent",
+        owner: { walletId: hwId, groupIndex: 0 },
+        scope: "Mainnet",
+        name: "bot-1",
+        validUntil: h.wallNow() + 86_400_000,
+      },
+      session,
+    ),
+    h.call("wallet.exportMnemonic", { walletId: hwId, verify: PASSKEY() }, session),
+    h.call(
+      "spark.identityPublicKey",
+      { account: { walletId: hwId, groupIndex: 0, network: "mainnet" } },
+      session,
+    ),
+  ];
+
   it("seed-only commands refuse the hardware record", async () => {
     const { h, session } = await boot();
     const hwId = await pairDevice(h, session);
-    const verify = PASSKEY();
-    const results = await Promise.all([
-      h.call("nostr.deriveKey", { walletId: hwId, index: 0 }, session),
-      h.call(
-        "sessions.create",
-        {
-          scheme: "hyperliquid-l1-agent",
-          owner: { walletId: hwId, groupIndex: 0 },
-          scope: "Mainnet",
-          name: "bot-1",
-          validUntil: h.wallNow() + 86_400_000,
-        },
-        session,
-      ),
-      h.call("wallet.exportMnemonic", { walletId: hwId, verify }, session),
-      h.call(
-        "spark.identityPublicKey",
-        { account: { walletId: hwId, groupIndex: 0, network: "mainnet" } },
-        session,
-      ),
-    ]);
+    const results = await Promise.all(seedBoundCalls(h, session, hwId));
+    for (const res of results) {
+      expect(errCode(res)).toBe("unsupported");
+    }
+  });
+
+  it("seed-only commands refuse the onekey record too", async () => {
+    const { h, session } = await boot();
+    const hwId = await pairOneKey(h, session);
+    const results = await Promise.all(seedBoundCalls(h, session, hwId));
     for (const res of results) {
       expect(errCode(res)).toBe("unsupported");
     }
