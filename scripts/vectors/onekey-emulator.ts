@@ -317,25 +317,71 @@ type EngineHarness = {
   readonly TRON_NETWORK: string;
   readonly TRON_TO: string;
   readonly btcAddressFromXpub: (xpub: string) => string;
-  readonly e2eWorld: (options: { readonly deviceIo: () => DeviceIo }) => Promise<{
-    readonly w: {
-      readonly wallet: Wallet;
-      readonly destroy: () => Promise<void>;
-    };
-    readonly fund: (
-      address: string,
-      sats: number,
-    ) => {
-      readonly txid: string;
-      readonly vout: number;
-      readonly value: number;
-      readonly address: string;
-    };
-  }>;
+  readonly e2eWorld: (options: {
+    readonly deviceIo: () => DeviceIo;
+    readonly wallet?: { wallet: Wallet; walletId: string };
+  }) => Promise<E2eShape>;
   readonly sendOnce: (
     w: { readonly wallet: Wallet },
     params: EngineSendParams,
   ) => Promise<{ readonly state: string }>;
+  readonly matrixAccount: (
+    w: E2eShape["w"],
+    walletId: string,
+    groupIndex?: number,
+  ) => Promise<MatrixAccountShape>;
+  readonly dappConnect: (
+    e2e: E2eShape,
+    account: MatrixAccountShape,
+    family: string,
+  ) => Promise<void>;
+  readonly dappOnce: (
+    e2e: E2eShape,
+    account: MatrixAccountShape,
+    family: string,
+    verify: { readonly kind: "password"; readonly password: string },
+  ) => Promise<void>;
+  readonly qrOnce: (
+    e2e: E2eShape,
+    account: MatrixAccountShape,
+    family: string,
+    verify: { readonly kind: "password"; readonly password: string },
+  ) => Promise<unknown>;
+};
+
+/* apps-helpers carries `freshNodeWallet`; the same dynamic-import URL trick as the harness so
+   both load the one module instance the engine's dist resolves. */
+type AppsHelpers = {
+  readonly freshNodeWallet: () => Promise<{ wallet: Wallet; walletId: string }>;
+};
+
+type MatrixAccountShape = {
+  readonly walletId: string;
+  readonly groupIndex: number;
+  readonly fingerprint: number;
+  readonly evm: string;
+  readonly solana: string;
+  readonly tron: string;
+  readonly bitcoinXpub: string;
+};
+
+type E2eShape = {
+  readonly w: {
+    readonly wallet: Wallet;
+    readonly destroy: () => Promise<void>;
+  };
+  readonly fund: (
+    address: string,
+    sats: number,
+  ) => {
+    readonly txid: string;
+    readonly vout: number;
+    readonly value: number;
+    readonly address: string;
+  };
+  readonly dapp: unknown;
+  readonly signer: unknown;
+  readonly caught: unknown[];
 };
 
 const recordEngineSessions = async (): Promise<void> => {
@@ -358,7 +404,8 @@ const recordEngineSessions = async (): Promise<void> => {
     },
   };
 
-  const { w, fund } = await harness.e2eWorld({ deviceIo: () => io });
+  const e2e = await harness.e2eWorld({ deviceIo: () => io });
+  const { w, fund } = e2e;
   try {
     const result = await hardware(w.wallet).start({ kind: "pair", device: "onekey" }, { io })
       .result;
@@ -443,6 +490,51 @@ const recordEngineSessions = async (): Promise<void> => {
     /* The engine's destroy unwinds its controllers; the node wallet's kernel worker would keep
        this process alive — a recorder must exit when the transcript is written. */
     await w.wallet.destroy();
+  }
+
+  /* The dApp and QR cells on a SECOND fresh world: the matrix replays every cell on a fresh
+     world too, and the engine raises a family's next nonce after it broadcasts — a dApp cell
+     recorded behind the send sessions would carry nonce 1 where a fresh world sends 0. The
+     second pair replays the same deterministic exchanges; they go into a throwaway session so
+     `engine-pair` stays the single recorded pair. */
+  session = { name: "engine-pair", exchanges: [] as Step[] };
+  const { freshNodeWallet } = (await import(
+    new URL("../../packages/wallet-engine/tests/apps-helpers.ts", import.meta.url).href
+  )) as AppsHelpers;
+  /* e2eWorld falls back to a shared node wallet that the send world's destroy already tore
+     down — the dApp/QR world gets its own. */
+  const e2e2 = await harness.e2eWorld({
+    deviceIo: () => io,
+    wallet: await freshNodeWallet(),
+  });
+  const w2 = e2e2.w;
+  try {
+    const result2 = await hardware(w2.wallet).start({ kind: "pair", device: "onekey" }, { io })
+      .result;
+    if (result2.kind !== "pair" || result2.wallet.custody !== "hardware") {
+      throw new Error("pair did not return a hardware wallet");
+    }
+    const verify = { kind: "password" as const, password: "correct horse battery staple" };
+    const account = await harness.matrixAccount(w2, result2.wallet.walletId);
+    for (const family of ["evm", "bitcoin", "solana", "tron"] as const) {
+      session = { name: `engine-dapp-${family}`, exchanges: [] as Step[] };
+      sessions.push(session);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+      await harness.dappConnect(e2e2, account, family);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+      await harness.dappOnce(e2e2, account, family, verify);
+      console.log(`engine-dapp-${family}: ${session.exchanges.length} exchanges`);
+    }
+    for (const family of ["evm", "bitcoin", "solana", "tron"] as const) {
+      session = { name: `engine-qr-${family}`, exchanges: [] as Step[] };
+      sessions.push(session);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
+      await harness.qrOnce(e2e2, account, family, verify);
+      console.log(`engine-qr-${family}: ${session.exchanges.length} exchanges`);
+    }
+  } finally {
+    await w2.destroy();
+    await w2.wallet.destroy();
   }
 };
 

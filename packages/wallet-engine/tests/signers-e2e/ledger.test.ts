@@ -15,16 +15,21 @@ import { hardware, ledgerIo } from "@qntx/wallet/hardware";
 import type { DeviceIo } from "@qntx/wallet/hardware";
 
 import { exchange, hasEndpoints, Screen } from "../../../wallet-kernel/tests/speculos/harness.ts";
-import { freshNodeWallet } from "../apps-helpers.ts";
+import { freshNodeWallet, VERIFY } from "../apps-helpers.ts";
 import {
   BTC_NETWORK,
   BTC_TO,
   btcAddressFromXpub,
   caughtOne,
+  dappRefusal,
   e2eWorld,
   EVM_NETWORK,
   EVM_TO,
+  matrix,
+  matrixAccount,
+  qrRefusal,
   sendOnce,
+  SITE,
   SOL_NETWORK,
   SOL_TO,
   TRON_NETWORK,
@@ -35,7 +40,7 @@ import {
   verifyTron,
   watchSignerActivity,
 } from "./harness.ts";
-import type { E2eWorld } from "./harness.ts";
+import type { E2eWorld, MatrixFamily, MatrixHooks } from "./harness.ts";
 
 /* Exactly the kernel speculos suite's gating: the endpoints file exists only while the app
    containers run. */
@@ -213,4 +218,109 @@ describe.skipIf(!UP)("ledger engine sends (speculos)", () => {
 
     await w.destroy();
   }, 300_000);
+});
+
+/* The app each family's sign needs open — pairing stays on Bitcoin, the only app that reveals
+   the master fingerprint. */
+const FAMILY_APP: Record<MatrixFamily, LedgerApp> = {
+  evm: "ethereum",
+  bitcoin: "bitcoin",
+  solana: "solana",
+  tron: "tron",
+};
+
+describe.skipIf(!UP)("ledger origins (speculos)", () => {
+  let speculos: ReturnType<typeof speculosIo>;
+
+  matrix(
+    "ledger",
+    VERIFY,
+    async () => {
+      speculos = speculosIo();
+      const wallet = await freshNodeWallet();
+      const e2e = await e2eWorld({ deviceIo: () => speculos.io, wallet });
+      speculos.open("bitcoin");
+      const hwId = await pairLedger(e2e.w, speculos.io);
+      /* Pairing pins only bitcoin: fetch the other families' material once, on their own apps,
+         so every origin can sign for them. */
+      for (const [family, app] of [
+        ["evm", "ethereum"],
+        ["solana", "solana"],
+        ["tron", "tron"],
+      ] as const) {
+        speculos.open(app);
+        // oxlint-disable-next-line eslint/no-await-in-loop -- device ops are strictly sequential
+        await e2e.w.signers.fetchAccounts({ walletId: hwId, groupIndex: 0, family });
+      }
+      const account = await matrixAccount(e2e.w, hwId);
+      return { e2e, account };
+    },
+    { beforeCell: (_origin, family) => speculos.open(FAMILY_APP[family]) } satisfies MatrixHooks,
+  );
+
+  describe("ledger typed refusals", () => {
+    /* The driver's display requires a `solana.message` to be the formal v0 off-chain document —
+       anything else is `unsupported`, and the refusal must reach the caller before any APDU
+       touches the device. */
+    it(
+      "a non-offchain solana message is refused on the dApp and QR origins with zero APDUs",
+      { timeout: 120_000 },
+      async () => {
+        const speculos = speculosIo();
+        let apdus = 0;
+        const wallet = await freshNodeWallet();
+        const e2e = await e2eWorld({
+          deviceIo: () => ({
+            exchange: async (request, context) => {
+              apdus += 1;
+              return speculos.io.exchange(request, context);
+            },
+          }),
+          wallet,
+        });
+        speculos.open("bitcoin");
+        const hwId = await pairLedger(e2e.w, speculos.io);
+        /* exportAccount covers every pinned family — fetch them all like the matrix setup. */
+        for (const [family, app] of [
+          ["evm", "ethereum"],
+          ["solana", "solana"],
+          ["tron", "tron"],
+        ] as const) {
+          speculos.open(app);
+          // oxlint-disable-next-line eslint/no-await-in-loop -- device ops are strictly sequential
+          await e2e.w.signers.fetchAccounts({ walletId: hwId, groupIndex: 0, family });
+        }
+        const account = await matrixAccount(e2e.w, hwId);
+        const before = apdus;
+
+        /* Plain text: shown, not blind — the refusal is the device's, not the vault gate's. */
+        const message = new TextEncoder().encode("hello, not an offchain document");
+        const dapp = await dappRefusal(e2e, account, "solana", VERIFY, async () =>
+          e2e.dapp.solanaWallet.handle(SITE, {
+            method: "solana:signMessage",
+            params: { message },
+          }),
+        );
+        expect(dapp.approve).toBeInstanceOf(WalletError);
+        expect((dapp.approve as WalletError).code).toBe("unsupported");
+        expect(dapp.call).toBeInstanceOf(Error);
+        expect((dapp.call as Error).message).toContain("unsupported");
+
+        const qr = await qrRefusal(
+          e2e,
+          account,
+          "solana",
+          { family: "solana", kind: "message", data: message },
+          VERIFY,
+        );
+        expect(qr.approve).toBeInstanceOf(WalletError);
+        expect((qr.approve as WalletError).code).toBe("unsupported");
+        expect(qr.call).toBeInstanceOf(Error);
+        expect((qr.call as Error).message).toContain("unsupported");
+
+        expect(apdus).toBe(before);
+        await e2e.w.destroy();
+      },
+    );
+  });
 });

@@ -544,6 +544,9 @@ export type World = {
   approve: (id: string) => Promise<void>;
   /** The one signing path — its `active` mirrors a running device operation. */
   signers: SignersController;
+  /** The real controllers the dApp/QR lanes need beyond `requests`. */
+  networks: NetworkController;
+  transactions: TransactionController;
 };
 
 export const world = async (
@@ -589,6 +592,16 @@ export const world = async (
     wrapRequests?: (
       requests: RequestController,
     ) => Pick<RequestController, "prepare" | "outcome" | "reject">;
+    /**
+     * Overrides for the RequestController's injected lanes — the world stubs the dApp/QR signing
+     * lanes; a harness that drives them for real passes the engine's wiring here, built over the
+     * world's own controllers.
+     */
+    requestOptions?: (deps: {
+      networks: NetworkController;
+      signers: SignersController;
+      transactions: TransactionController;
+    }) => Partial<ConstructorParameters<typeof RequestController>[0]>;
   } = {},
 ): Promise<World> => {
   const { wallet, walletId } = options.wallet ?? (await nodeWallet());
@@ -695,6 +708,7 @@ export const world = async (
     now: () => timers.time,
     setTimer: timers.setTimer,
     logger,
+    ...options.requestOptions?.({ networks, signers, transactions }),
   });
   /* Session stores are restartable facades over `tables` — a lock closes the session, never the
      records; `w.store` is a persistent read handle over the same backing. A caller-supplied
@@ -844,6 +858,8 @@ export const world = async (
     destroy,
     requests,
     signers,
+    networks,
+    transactions,
     posted,
     timers,
     hl,
