@@ -314,6 +314,8 @@ describe("card-wallet record", () => {
           scope: "Mainnet",
           name: "bot-1",
           validUntil: T0 + 86_400_000,
+          limits: { notional: "1000000000", maxLeverage: 100, assets: [0, 1] },
+          verify: verifyPasskey(),
         },
       ],
       ["spark.identityPublicKey", { account: { walletId, groupIndex: 0, network: "mainnet" } }],
