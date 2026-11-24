@@ -13,7 +13,7 @@ import { spark } from "@qntx/wallet/spark";
 
 import { approval } from "./approval.ts";
 import type { Arb1Rpc } from "./apps-helpers.ts";
-import { manualTimer, until, world } from "./apps-helpers.ts";
+import { HL_LIMITS, manualTimer, until, world } from "./apps-helpers.ts";
 import type { CardRig } from "./card-rig.ts";
 import { cardRig, CARD_CODE, CARD_VERIFY } from "./card-rig.ts";
 
@@ -257,13 +257,14 @@ describe("card wallet × engine features", () => {
     await w.apps.acknowledgeTerms(group, "hyperliquid");
     /* The flow reaches sessions.create — the kernel refuses the seedless wallet unsupported,
        exactly like the hardware sibling. */
-    await expect(w.apps.enable(group, "hyperliquid")).rejects.toMatchObject({
+    const enable = { limits: HL_LIMITS, verify: CARD_VERIFY };
+    await expect(w.apps.enable(group, "hyperliquid", enable)).rejects.toMatchObject({
       code: "unsupported",
     });
     const state = () => w.apps.getState().groups[gkey]?.hyperliquid;
     expect(state()?.status).toBe("enabling");
     expect(state()?.error).toBeDefined();
-    await expect(w.apps.enable(group, "hyperliquid")).rejects.toMatchObject({
+    await expect(w.apps.enable(group, "hyperliquid", enable)).rejects.toMatchObject({
       code: "unsupported",
     });
     await w.destroy();
