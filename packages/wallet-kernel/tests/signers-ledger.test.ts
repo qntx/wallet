@@ -1,3 +1,4 @@
+// oxlint-disable vitest/no-conditional-in-test -- recorded fixtures narrow via guard throws
 /**
  * The Ledger driver against a scripted device link: pairing and account fetches answer with
  * material derived from the speculos seed, sign replays the recorded speculos transcripts
@@ -24,13 +25,13 @@ import type { ChainPlan } from "../src/modules/chains/run.ts";
 import type { HardwarePin, SignContext } from "../src/modules/signers/driver.ts";
 import { LEDGER_DRIVER } from "../src/modules/signers/ledger/driver.ts";
 import { call, mapLedgerError } from "../src/modules/signers/ledger/errors.ts";
-import { LedgerError } from "../src/modules/signers/ledger/protocol/errors.ts";
 import { leafHash, merkleRoot } from "../src/modules/signers/ledger/protocol/bitcoin/merkle.ts";
 import {
   mapCommitment,
   psbtV2Maps,
   stripUnhiddenDerivations,
 } from "../src/modules/signers/ledger/protocol/bitcoin/psbt.ts";
+import { LedgerError } from "../src/modules/signers/ledger/protocol/errors.ts";
 import { edAt, nodeAt } from "./signers-fake.ts";
 import {
   caseSteps,
@@ -1107,7 +1108,7 @@ describe("ledger driver sign", () => {
        change chain, with no index bound — while the kernel only hides discoverable change and
        shows e.g. m/84'/0'/0'/1/5000 by address. The driver strips the wallet's derivation pairs
        from every output the kernel did not hide, so the device displays the same rows. */
-    const fingerprint = HDKey.fromMasterSeed(SEED).fingerprint;
+    const { fingerprint } = HDKey.fromMasterSeed(SEED);
     const pathAt = (index: number): KeyPath => [H + 84, H, H, 1, index];
     const spendPub = BTC84_KEY.publicKey;
     const changePub = publicKeyAt(pathAt(0));
@@ -1125,13 +1126,13 @@ describe("ledger driver sign", () => {
     });
     tx.addOutput({
       script: p2wpkh(changePub).script,
-      amount: 4_000n,
-      bip32Derivation: [[changePub, { fingerprint, path: pathAt(0) }]],
+      amount: 4000n,
+      bip32Derivation: [[changePub, { fingerprint, path: [...pathAt(0)] }]],
     });
     tx.addOutput({
       script: p2wpkh(farPub).script,
-      amount: 3_000n,
-      bip32Derivation: [[farPub, { fingerprint, path: pathAt(5000) }]],
+      amount: 3000n,
+      bip32Derivation: [[farPub, { fingerprint, path: [...pathAt(5000)] }]],
     });
     const psbt = tx.toPSBT(2);
     const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
@@ -1161,9 +1162,7 @@ describe("ledger driver sign", () => {
         leafHash(mapCommitment(map)),
       ),
     );
-    const rawRoot = merkleRoot(
-      psbtV2Maps(psbt).outputs.map((map) => leafHash(mapCommitment(map))),
-    );
+    const rawRoot = merkleRoot(psbtV2Maps(psbt).outputs.map((map) => leafHash(mapCommitment(map))));
     const signPsbtApdu = fake.sent[1] ?? "";
     expect(signPsbtApdu).toContain(hex(strippedRoot));
     expect(signPsbtApdu).not.toContain(hex(rawRoot));

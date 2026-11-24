@@ -366,6 +366,11 @@ export function createHarness(opts?: {
   };
 }
 
+/** `ArrayBuffer#transfer` is newer than the lib the tests compile against — guard, don't assert. */
+const canTransfer = (
+  buffer: ArrayBuffer,
+): buffer is ArrayBuffer & { transfer: () => ArrayBuffer } => "transfer" in buffer;
+
 /**
  * Detaches every exact-view `Uint8Array` buffer inside `value` — what a real `port.post` does to
  * the buffers `collectTransferables` lists. Hand the awaited kernel reply to it: kernel internals
@@ -376,13 +381,14 @@ export const detachTransferables = (value: unknown, depth = 0): void => {
     return;
   }
   if (value instanceof Uint8Array) {
-    const buffer = value.buffer;
+    const { buffer } = value;
     if (
       buffer instanceof ArrayBuffer &&
       value.byteOffset === 0 &&
-      value.byteLength === buffer.byteLength
+      value.byteLength === buffer.byteLength &&
+      canTransfer(buffer)
     ) {
-      (buffer as ArrayBuffer & { transfer(): ArrayBuffer }).transfer();
+      buffer.transfer();
     }
     return;
   }

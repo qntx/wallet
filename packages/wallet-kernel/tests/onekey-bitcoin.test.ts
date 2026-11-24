@@ -43,9 +43,13 @@ import {
   sighash,
   sighashTweakedKey,
 } from "./onekey-emulator/bitcoin-verify.ts";
-import { replayExchange, loadTranscript, transcriptSession } from "./onekey-emulator/index.ts";
+import {
+  replayExchange,
+  loadTranscript,
+  transcriptSession,
+  TEST_MNEMONIC,
+} from "./onekey-emulator/index.ts";
 import type { Transcript } from "./onekey-emulator/index.ts";
-import { TEST_MNEMONIC } from "./onekey-emulator/index.ts";
 
 const H = 0x80_00_00_00;
 const hex = hexToBytes;
@@ -535,8 +539,8 @@ describe("bitcoinPrepare refusals", () => {
       throw new Error("no change key");
     }
     const psbt = psbtWithOutputs([
-      { script: p2wpkh(farPub).script, amount: 3_000n },
-      { script: p2wpkh(changePub).script, amount: 2_000n },
+      { script: p2wpkh(farPub).script, amount: 3000n },
+      { script: p2wpkh(changePub).script, amount: 2000n },
     ]);
     const tx = ScureTransaction.fromPSBT(psbt, { allowUnknownInputs: true });
     tx.updateOutput(0, {
@@ -553,8 +557,8 @@ describe("bitcoinPrepare refusals", () => {
     expect(prepared.outputs).toHaveLength(2);
     for (const output of prepared.outputs) {
       expect(output.addressN).toBeUndefined();
-      expect(typeof output.address).toBe("string");
-      expect(typeof output.amount).toBe("bigint");
+      expect(output.address).toBeTypeOf("string");
+      expect(output.amount).toBeTypeOf("bigint");
     }
   });
 });

@@ -17,9 +17,9 @@ export type BitcoinPsbtPlan = {
   readonly kind: "bitcoin.psbt";
   readonly psbt: Uint8Array;
   /**
-   * Script hexes of the outputs the prompt hides as discoverable change. A device signer can
-   * strip the wallet's derivation entries from the other outputs so its display matches the
-   * prompt; undefined means no classification was computed.
+   * Script hexes of the outputs the prompt hides as discoverable change. A device signer can strip
+   * the wallet's derivation entries from the other outputs so its display matches the prompt;
+   * undefined means no classification was computed.
    */
   readonly hiddenChange?: ReadonlySet<string>;
   readonly inputs: ReadonlyArray<{

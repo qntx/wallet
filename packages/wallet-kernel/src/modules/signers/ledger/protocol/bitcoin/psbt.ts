@@ -185,7 +185,12 @@ const encodeMap = (kvs: ReadonlyArray<KeyValue>): Uint8Array =>
 
 /** The v2 wire form back: `MAGIC ‖ (map ‖ 0x00)×` — the inverse of what psbtV2Maps reads. */
 export const encodePsbtV2 = (maps: PsbtV2Maps): Uint8Array =>
-  concat(MAGIC, encodeMap(maps.global), ...maps.inputs.map(encodeMap), ...maps.outputs.map(encodeMap));
+  concat(
+    MAGIC,
+    encodeMap(maps.global),
+    ...maps.inputs.map(encodeMap),
+    ...maps.outputs.map(encodeMap),
+  );
 
 const derivationFingerprint = (kv: KeyValue): Uint8Array | undefined => {
   if (kv.key[0] === OUT_BIP32_DERIVATION) {
@@ -206,8 +211,8 @@ const derivationFingerprint = (kv: KeyValue): Uint8Array | undefined => {
  * derivation under the wallet's fingerprint on the policy's change chain, with no index bound —
  * while the kernel's own rule shows the unusual entries by address. Strip the wallet's derivation
  * pairs from every output the kernel did not hide as change so the device displays it too; pairs
- * under a foreign fingerprint stay. Output derivations are not signed, so the signatures the
- * device yields are unaffected. `hiddenChange` holds the script hexes the kernel classified.
+ * under a foreign fingerprint stay. Output derivations are not signed, so the signatures the device
+ * yields are unaffected. `hiddenChange` holds the script hexes the kernel classified.
  */
 export const stripUnhiddenDerivations = (
   psbt: Uint8Array,
@@ -228,9 +233,7 @@ export const stripUnhiddenDerivations = (
     stripped ||= kept.length !== kvs.length;
     return kept;
   });
-  return stripped
-    ? encodePsbtV2({ global: maps.global, inputs: maps.inputs, outputs })
-    : psbt;
+  return stripped ? encodePsbtV2({ global: maps.global, inputs: maps.inputs, outputs }) : psbt;
 };
 
 /**

@@ -166,10 +166,7 @@ const solanaSignature = (wire: Uint8Array, address: string): Uint8Array => {
 };
 
 /** A pipeline outcome as the `chain.sign` result `qrResponse` verifies against the request. */
-const toChainResult = (
-  result: RequestResult,
-  signer: QrSigner | undefined,
-): ChainSignResult => {
+const toChainResult = (result: RequestResult, signer: QrSigner | undefined): ChainSignResult => {
   if (!("kind" in result)) {
     throw new QrError("result-mismatch", "a QR request never produces a tracked transaction");
   }

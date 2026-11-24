@@ -3231,13 +3231,7 @@ describe("card sign (fake card)", () => {
       await expect(errCode(create())).resolves.toBe("unsupported");
       expect(pr.fake.calls).toHaveLength(calls);
       expect(pr.input.requests).toHaveLength(asks);
-      ok(
-        await pr.h.call(
-          "vault.setAppLock",
-          { enabled: true, verify: HARDWARE },
-          pr.session,
-        ),
-      );
+      ok(await pr.h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, pr.session));
       calls = pr.fake.calls.length;
       await expect(errCode(create())).resolves.toBe("unsupported");
       expect(pr.fake.calls).toHaveLength(calls);
@@ -3446,9 +3440,7 @@ describe("card sign (fake card)", () => {
         ),
       );
     const pubHexes = (res: unknown): ReadonlyArray<string> =>
-      (field(res, "keys") as unknown[]).map((k) =>
-        bytesToHex(field(k, "publicKey") as Uint8Array),
-      );
+      (field(res, "keys") as unknown[]).map((k) => bytesToHex(field(k, "publicKey") as Uint8Array));
     const first = await exportOnce();
     const firstHexes = pubHexes(first);
     /* A real port detaches every exact-view buffer the reply carries — the pin must keep its

@@ -434,9 +434,7 @@ describe("chain.exportAccount", () => {
     /* A real port detaches every exact-view buffer the reply carries — the pin must keep its
        own arrays or the next read sees zeroed keys. */
     detachTransferables(first);
-    const second = keysOf(
-      await exportAccount(h, session, { walletId, groupIndex: 0, nodes }),
-    );
+    const second = keysOf(await exportAccount(h, session, { walletId, groupIndex: 0, nodes }));
     const byPath = new Map(wallet.keys.map((k) => [k.path, k]));
     for (const key of second) {
       expectKey(key, byPath.get(key["path"] as string)!);

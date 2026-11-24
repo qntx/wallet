@@ -1,3 +1,4 @@
+// oxlint-disable eslint/no-await-in-loop -- device ops step one exchange per call, sequentially
 /**
  * The signers module through the real protocol against the fake device: pairing commits a
  * hardware-wallet record and status lists it, accounts fills exactly the missing hardened paths and
@@ -31,8 +32,8 @@ import type { KernelPlatform } from "../src/platform.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
-import { fakeSecureInput } from "./secure-input.ts";
 import { loadTranscript, replayExchange, transcriptSession } from "./onekey-emulator/index.ts";
+import { fakeSecureInput } from "./secure-input.ts";
 import { ACCOUNT_NODES, fakeDevice, masterFingerprint } from "./signers-fake.ts";
 import type { FakeDevice, FakeDeviceOptions } from "./signers-fake.ts";
 

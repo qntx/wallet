@@ -1,3 +1,4 @@
+// oxlint-disable vitest/no-conditional-in-test -- recorded fixtures narrow via guard throws
 /**
  * Keystone signing end to end: the real driver sends its QR sign request, a fake device — decoding
  * through the independent `@keystonehq/bc-ur-registry-*` packages — answers it like firmware 3.2.2,
@@ -292,11 +293,7 @@ const signOnDevice = async (
   verify: unknown = PASSKEY(),
 ): Promise<KernelResponse> => {
   const device = keystoneDevice(SEED, MFP, mutant);
-  const begin = await h.call(
-    "hardware.begin",
-    { op: { kind: "sign", request }, verify },
-    session,
-  );
+  const begin = await h.call("hardware.begin", { op: { kind: "sign", request }, verify }, session);
   if ("err" in begin) {
     console.error("BEGIN-ERR", JSON.stringify(begin.err));
     return begin;
@@ -742,14 +739,14 @@ describe("keystone signing byte-identical to local signing", () => {
     }
     tx.addOutput({
       script: p2wpkh(nearPub).script,
-      amount: 5_000n,
+      amount: 5000n,
       bip32Derivation: [
         [nearPub, { fingerprint: MFP_NUMBER, path: [HARDENED + 84, HARDENED, HARDENED, 1, 0] }],
       ],
     });
     tx.addOutput({
       script: p2wpkh(farPub).script,
-      amount: 4_000n,
+      amount: 4000n,
       bip32Derivation: [
         [farPub, { fingerprint: MFP_NUMBER, path: [HARDENED + 84, HARDENED, HARDENED, 1, 5000] }],
       ],

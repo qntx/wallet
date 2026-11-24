@@ -358,24 +358,24 @@ describe("ledger bitcoin output derivation stripping", () => {
     tx.addInput({ txid: "11".repeat(32), index: 0 });
     tx.addOutput({
       script: p2wpkh(CHANGE_PUB).script,
-      amount: 4_000n,
+      amount: 4000n,
       bip32Derivation: [[CHANGE_PUB, { fingerprint: fp, path: [H + 84, H, H, 1, 0] }]],
     });
     tx.addOutput({
       script: p2wpkh(FAR_PUB).script,
-      amount: 3_000n,
+      amount: 3000n,
       bip32Derivation: [[FAR_PUB, { fingerprint: fp, path: [H + 84, H, H, 1, 5000] }]],
     });
     tx.addOutput({
       script: p2tr(TAP_PUB).script,
-      amount: 2_000n,
+      amount: 2000n,
       tapBip32Derivation: [
         [TAP_PUB, { hashes: [], der: { fingerprint: fp, path: [H + 86, H, H, 1, 5000] } }],
       ],
     });
     tx.addOutput({
       script: p2wpkh(FOREIGN_PUB).script,
-      amount: 1_000n,
+      amount: 1000n,
       bip32Derivation: [[FOREIGN_PUB, { fingerprint: 0xde_ad_be_ef, path: [H + 84, H, H, 0, 9] }]],
     });
     return tx.toPSBT(2);

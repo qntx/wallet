@@ -197,8 +197,10 @@ const shrinkBound = (bound: PromptBound, line: string): PromptBound => ({
   characters: bound.characters - codePoints(line) - 1,
 });
 
-/** The verification prompt's device line, ahead of every chain-prompt row — it is the most
-    important instruction (blind is itself a warning; clear says where the real check happens). */
+/**
+ * The verification prompt's device line, ahead of every chain-prompt row — it is the most important
+ * instruction (blind is itself a warning; clear says where the real check happens).
+ */
 const devicePrompt = (
   base: KeystorePrompt,
   locale: "zh-Hans" | "en",

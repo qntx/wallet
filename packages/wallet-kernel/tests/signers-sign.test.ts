@@ -1,3 +1,4 @@
+// oxlint-disable eslint/no-await-in-loop -- pairing and sign stepping are sequential per driver
 import { ed25519 } from "@noble/curves/ed25519.js";
 /**
  * Hardware signing end to end: `hardware.begin`/`step` drive the fake device through the same
@@ -197,7 +198,7 @@ const UNUSUAL_WARNING =
  */
 const warningPsbt = (outputs: number, own: number): Uint8Array => {
   const master = HDKey.fromMasterSeed(SEED);
-  const fingerprint = master.fingerprint;
+  const { fingerprint } = master;
   const inputKey = master.derive("m/84'/0'/0'/0/0");
   const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
   prev.addInput({ txid: new Uint8Array(32).fill(0x11), index: 0, sequence: 0xffffffff });
@@ -211,10 +212,7 @@ const warningPsbt = (outputs: number, own: number): Uint8Array => {
     witnessUtxo: { script: p2wpkh(inputKey.publicKey!).script, amount: 100_000n },
     nonWitnessUtxo: prev.toBytes(true, false),
     bip32Derivation: [
-      [
-        inputKey.publicKey!,
-        { fingerprint, path: [84 + HARDENED, HARDENED, HARDENED, 0, 0] },
-      ],
+      [inputKey.publicKey!, { fingerprint, path: [84 + HARDENED, HARDENED, HARDENED, 0, 0] }],
     ],
   });
   for (let i = 0; i < outputs; i++) {
@@ -226,10 +224,7 @@ const warningPsbt = (outputs: number, own: number): Uint8Array => {
     tx.addOutput({ script: p2wpkh(key.publicKey!).script, amount: 4000n });
     tx.updateOutput(tx.outputsLength - 1, {
       bip32Derivation: [
-        [
-          key.publicKey!,
-          { fingerprint, path: [84 + HARDENED, HARDENED, HARDENED, 0, 5000 + i] },
-        ],
+        [key.publicKey!, { fingerprint, path: [84 + HARDENED, HARDENED, HARDENED, 0, 5000 + i] }],
       ],
     });
   }
@@ -717,9 +712,7 @@ describe("hardware sign refusals", () => {
           session,
         ),
       );
-      const begin = ok(
-        await h.call("hardware.begin", { op: { kind: "pair", device } }, session),
-      );
+      const begin = ok(await h.call("hardware.begin", { op: { kind: "pair", device } }, session));
       ok(
         await h.call(
           "hardware.step",
@@ -747,7 +740,7 @@ describe("hardware sign refusals", () => {
       );
       expect("err" in signRes).toBe(false);
       const prompt = opens(fake.calls).at(-1)!;
-      const description = prompt.description;
+      const { description } = prompt;
       expect(description.startsWith(devicePromptLine("en", "clear", device))).toBe(true);
       // Lead rows survive the bound in order, right behind the device line.
       expect(description).toContain(CATALOGS.en.otherOutflows);
