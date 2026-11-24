@@ -1,11 +1,9 @@
-/**
- * The strict validators of the hyperliquid-l1-agent scheme — the network scope and the wire params
- * with the ten allow-listed action schemas (research H2-T). They moved into the kernel with the
- * scheme: the main runtime does not need them, and a failure inside `document` answers
- * `invalid-input`.
- */
+/* The scheme's strict validators — the network scope and the wire params over the ten
+   allow-listed action schemas (research H2-T); a failure inside `document` answers
+   `invalid-input`. */
 import { arr, bool, int, literal, obj, opt, str, union } from "@qntx/wallet/protocol";
 import type {
+  HyperliquidAgentLimits,
   HyperliquidL1Action,
   HyperliquidL1Order,
   HyperliquidL1Params,
@@ -22,7 +20,10 @@ const lowerAddress = str(42, /^0x[0-9a-f]{40}$/);
 const safeTime = int(0, Number.MAX_SAFE_INTEGER);
 
 /** A positive canonical decimal (nktkas's normalised output) — prices, sizes, trigger prices. */
-const positive = str(24, /^(?:[1-9][0-9]{0,14}(?:\.[0-9]{0,7}[1-9])?|0\.[0-9]{0,7}[1-9])$/);
+export const positive: Validator<string> = str(
+  24,
+  /^(?:[1-9][0-9]{0,14}(?:\.[0-9]{0,7}[1-9])?|0\.[0-9]{0,7}[1-9])$/,
+);
 const cloid = str(34, /^0x[0-9a-f]{32}$/);
 const asset = int(0, 4294967295);
 const id = int(0, 9007199254740991);
@@ -54,12 +55,10 @@ const orderWire: Validator<HyperliquidL1Order> = obj({
 
 const oid = union(id, cloid);
 
-/**
- * The strict wire validator: every action is an exact-key object; unknown `type` or extra keys
- * fail. `grouping` admits only the free groupings — `{p}` is a priority fee of up to 100 % of
- * notional (nktkas order.ts:69-84) — and builder `s` splits are not accepted; twapOrder's optional
- * `details` is rejected too.
- */
+/* Every action is an exact-key object; unknown `type` or extra keys fail. `grouping` admits only
+   the free groupings — `{p}` is a priority fee of up to 100 % of notional (nktkas order.ts:69-84)
+   — and builder `s` splits are not accepted. `twapOrder` is not admitted: a TWAP's slices carry
+   no price the kernel could meter against the session budget. */
 export const hyperliquidL1Action: Validator<HyperliquidL1Action> = union(
   obj({
     type: literal("order"),
@@ -96,10 +95,6 @@ export const hyperliquidL1Action: Validator<HyperliquidL1Action> = union(
     isBuy: bool,
     ntli: int(-9007199254740991, 9007199254740991),
   }),
-  obj({
-    type: literal("twapOrder"),
-    twap: obj({ a: asset, b: bool, s: positive, r: bool, m: int(5, 1440), t: bool }),
-  }),
   obj({ type: literal("twapCancel"), a: asset, t: id }),
 );
 
@@ -109,4 +104,29 @@ export const hyperliquidL1Params: Validator<HyperliquidL1Params> = obj({
   nonce: safeTime,
   vaultAddress: opt(lowerAddress),
   expiresAfter: safeTime,
+});
+
+/* 1..16 asset ids, strictly ascending — an unsorted or duplicated list is a different commitment
+   than the one the prompt shows, so it is refused rather than reordered. Ids stay below 100000:
+   builder-deployed (HIP-3) perps live at `100000 + dex_index*10000 + index`
+   (@nktkas/hyperliquid utils/_symbolConverter.js) and the engine leaves them out of scope, so
+   an approved list can never contain one — a charged order outside the list is limit-exceeded. */
+const assetList: Validator<ReadonlyArray<number>> = (value) => {
+  const list = arr(int(0, 99_999), 16, 1)(value);
+  let prev = -1;
+  for (const entry of list) {
+    if (entry <= prev) {
+      throw new Error("assets must be sorted and distinct");
+    }
+    prev = entry;
+  }
+  return list;
+};
+
+/* `notional` shares the order's `positive` grammar (canonical, ≤ 1e15), `maxLeverage` caps
+   `updateLeverage`, `assets` is the sorted allow-list every charged action must stay within. */
+export const hyperliquidL1Limits: Validator<HyperliquidAgentLimits> = obj({
+  notional: positive,
+  maxLeverage: int(1, 100),
+  assets: assetList,
 });

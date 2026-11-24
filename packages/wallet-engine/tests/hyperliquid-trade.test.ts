@@ -27,6 +27,13 @@ const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.met
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const PASSWORD = "correct horse battery staple";
+const VERIFY = { kind: "password" as const, password: PASSWORD };
+/** Agent limits generous enough for every fixture trade — the metering tests pin their own. */
+const HL_LIMITS = {
+  notional: "1000000000000",
+  maxLeverage: 100,
+  assets: [0, 1, 3, 4, 5, 7, 40, 42],
+} as const;
 const NOW = Date.now();
 const DAY = 86_400_000;
 
@@ -290,6 +297,8 @@ const createEnabledAgent = async (
   if (address === undefined) {
     address = await sessions(wallet).create({
       scheme: "hyperliquid-l1-agent",
+      limits: HL_LIMITS,
+      verify: VERIFY,
       owner: { walletId, groupIndex },
       scope: "Testnet",
       name: `a${groupIndex}t`,
@@ -297,6 +306,8 @@ const createEnabledAgent = async (
     });
     agents.set(key, address);
   }
+  /* A cached agent loses its opened mark on lock+unlock — reopen it before signing. */
+  await sessions(wallet).open(address, VERIFY);
   await provider.agents.refresh();
   provider.agents.markEnabled(address);
   return address;

@@ -35,6 +35,13 @@ const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.met
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const PASSWORD = "correct horse battery staple";
+const VERIFY = { kind: "password" as const, password: PASSWORD };
+/** Agent limits generous enough for every fixture trade — the metering tests pin their own. */
+const HL_LIMITS = {
+  notional: "1000000000000",
+  maxLeverage: 100,
+  assets: [0, 1, 3, 4, 5, 7, 40, 42],
+} as const;
 const NOW = Date.now();
 const DAY = 86_400_000;
 const CLOID = "0x07070707070707070707070707070707";
@@ -340,11 +347,16 @@ const enable = async (
 ): Promise<{ address: string; group: { walletId: string; groupIndex: number } }> => {
   agentAddress ??= await sessions(wallet).create({
     scheme: "hyperliquid-l1-agent",
+    limits: HL_LIMITS,
+    verify: VERIFY,
     owner: { walletId, groupIndex: 0 },
     scope: "Testnet",
     name: "reconcile",
     validUntil: NOW + DAY,
   });
+  /* The agent is shared across tests; a lock+unlock in one clears its opened mark, so a cached
+     address must be re-opened (idempotent on a session just created). */
+  await sessions(wallet).open(agentAddress, VERIFY);
   await provider.agents.refresh();
   provider.agents.markEnabled(agentAddress);
   return { address: agentAddress, group: { walletId, groupIndex: 0 } };
@@ -684,6 +696,7 @@ describe("hyperliquid trade — late reconciliation", () => {
 
     // The POST is lost; step until the in-call orderStatus polling has begun.
     const placing = provider.trade.place(group, ORDER);
+    placing.catch(() => undefined);
     await stepUntil(timers, () => posted.some(isOrderStatusPost));
 
     // The session that placed the order ends while its reconcile is still polling.
@@ -718,11 +731,14 @@ describe("hyperliquid trade — late reconciliation", () => {
     });
     agentAddress ??= await sessions(wallet).create({
       scheme: "hyperliquid-l1-agent",
+      limits: HL_LIMITS,
+      verify: VERIFY,
       owner: { walletId, groupIndex: 0 },
       scope: "Testnet",
       name: "reconcile",
       validUntil: NOW + DAY,
     });
+    await sessions(wallet).open(agentAddress, VERIFY);
     const group: HyperliquidGroup = { walletId, groupIndex: 0 };
     const exchange = createHyperliquidExchange({
       wallet,
@@ -781,11 +797,14 @@ describe("hyperliquid trade — late reconciliation", () => {
     });
     agentAddress ??= await sessions(wallet).create({
       scheme: "hyperliquid-l1-agent",
+      limits: HL_LIMITS,
+      verify: VERIFY,
       owner: { walletId, groupIndex: 0 },
       scope: "Testnet",
       name: "reconcile",
       validUntil: NOW + DAY,
     });
+    await sessions(wallet).open(agentAddress, VERIFY);
     const group: HyperliquidGroup = { walletId, groupIndex: 0 };
     const exchange = createHyperliquidExchange({
       wallet,
@@ -1165,27 +1184,6 @@ describe("hyperliquid trade — response mapping", () => {
       { kind: "rejected", message: "Order was never placed, already canceled, or filled." },
     ]);
   });
-
-  it("a running twap reports its twapId", async () => {
-    const posted: Posted[] = [];
-    const timers = manualTimer();
-    const { provider, wallet, walletId } = await rig(posted, timers, {
-      exchange: () => ({
-        status: "ok",
-        response: { type: "twapOrder", data: { status: { running: { twapId: 4242 } } } },
-      }),
-    });
-    const { group } = await enable(provider, wallet, walletId);
-
-    const result = await provider.trade.twap(group, {
-      coin: "BTC",
-      side: "buy",
-      size: "1",
-      minutes: 30,
-      randomize: true,
-    });
-    expect(result).toStrictEqual({ kind: "ok", twapId: 4242 });
-  });
 });
 
 describe("hyperliquid trade — wire actions", () => {
@@ -1334,32 +1332,14 @@ describe("hyperliquid trade — wire actions", () => {
     expect(exchangeCount(posted)).toBe(0);
   });
 
-  it("twap and twapCancel use the twap wire shapes", async () => {
+  it("twapCancel uses the twap wire shape", async () => {
     const posted: Posted[] = [];
     const timers = manualTimer();
-    const { provider, wallet, walletId } = await rig(posted, timers, {
-      exchange: () => ({
-        status: "ok",
-        response: { type: "twapOrder", data: { status: { running: { twapId: 42 } } } },
-      }),
-    });
+    const { provider, wallet, walletId } = await rig(posted, timers);
     const { group } = await enable(provider, wallet, walletId);
 
-    await provider.trade.twap(group, {
-      coin: "BTC",
-      side: "sell",
-      size: "0.5",
-      minutes: 30,
-      randomize: false,
-      reduceOnly: true,
-    });
-    expect(actionOf(posted)).toStrictEqual({
-      type: "twapOrder",
-      twap: { a: 3, b: false, s: "0.5", r: true, m: 30, t: false },
-    });
     await provider.trade.twapCancel(group, { coin: "BTC", twapId: 42 });
-    const posts = posted.filter((entry) => entry.endpoint === "exchange");
-    expect(posts[1]?.body["action"]).toStrictEqual({ type: "twapCancel", a: 3, t: 42 });
+    expect(actionOf(posted)).toStrictEqual({ type: "twapCancel", a: 3, t: 42 });
   });
 
   it("setLeverage and adjustMargin post the account wire actions", async () => {
@@ -1460,6 +1440,8 @@ describe("hyperliquid trade — agents and vectors", () => {
       name: "forged",
       validUntil: NOW + DAY,
       createdAt: NOW,
+      limits: null,
+      spent: "0",
     };
     const registry = createHyperliquidAgentRegistry({
       agents: { list: async () => Promise.resolve([agent]) },
@@ -1486,6 +1468,8 @@ describe("hyperliquid trade — agents and vectors", () => {
       name: address,
       validUntil,
       createdAt: NOW,
+      limits: null,
+      spent: "0",
     });
     const registry = createHyperliquidAgentRegistry({
       agents: {
@@ -1525,6 +1509,8 @@ describe("hyperliquid trade — agents and vectors", () => {
               name: "main",
               validUntil: NOW + DAY,
               createdAt: NOW,
+              limits: null,
+              spent: "0",
             },
           ]),
       },

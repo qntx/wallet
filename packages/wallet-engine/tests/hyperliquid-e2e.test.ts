@@ -270,7 +270,7 @@ describe.runIf(RUN && MNEMONIC !== undefined)("hyperliquid e2e: testnet enable +
       const cancelled = await hyperliquid.trade.cancelAll(group);
       expect(cancelled.length).toBeGreaterThan(0);
 
-      const disabling = controller.disable(group, "hyperliquid", { revoke: true });
+      const disabling = controller.disable(group, "hyperliquid", { revoke: true, verify: VERIFY });
       await waitFor(() => !["enabled", "enabling"].includes(String(groupState()?.status)));
       await disabling;
       expect(groupState()?.status).toBe("disabled");

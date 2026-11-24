@@ -64,6 +64,14 @@ const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const PASSWORD = "correct horse battery staple";
 const VERIFY = { kind: "password" as const, password: PASSWORD };
+/** Agent limits generous enough for every fixture trade — the metering tests pin their own. */
+export const HL_LIMITS = {
+  notional: "1000000000000",
+  maxLeverage: 100,
+  assets: [0, 1, 3, 4, 5, 7, 40, 42],
+} as const;
+/** The `enable`/`renew` input the Hyperliquid flows take. */
+export const HL_ENABLE = { limits: HL_LIMITS, verify: VERIFY } as const;
 const RANDOM = (length: number): Uint8Array => new Uint8Array(length).fill(7);
 const DAY = 86_400_000;
 

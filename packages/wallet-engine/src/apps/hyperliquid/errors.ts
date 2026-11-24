@@ -15,6 +15,12 @@ export type HyperliquidErrorCategory =
   | "unlock-required"
   /** The enabled agent expired, was rejected by Hyperliquid, or is gone — re-enable is required. */
   | "reauthorization-required"
+  /** The kernel session is closed since the last lock — `reopen` must verify the user again. */
+  | "reopen-required"
+  /** The vault has a device factor — the app lock must be on for a value-moving session. */
+  | "app-lock-required"
+  /** The action exceeds the agent's approved limits — the kernel refused to sign it. */
+  | "limit-exceeded"
   /** The account has no enabled, owner-verified agent on this network. */
   | "not-enabled"
   /** The account has no Hyperliquid presence yet — a deposit must land before enabling. */
@@ -33,3 +39,17 @@ export class HyperliquidError extends Error {
     this.category = category;
   }
 }
+
+/* Kernel `WalletError` codes a session sign/open surfaces, mapped to the app's typed answer.
+   `exchange.ts` handles `not-found`/`invalid-input` itself — they need the agent's validUntil
+   and a markRejected side-effect — and looks up only the uniform entries. */
+const reauthorization = ["reauthorization-required", "the agent is gone"] as const;
+export const SESSION_ERRORS: Readonly<Record<string, readonly [HyperliquidErrorCategory, string]>> =
+  {
+    "app-lock-required": ["app-lock-required", "app lock off"],
+    "approval-required": ["reopen-required", "re-approve"],
+    "invalid-input": reauthorization,
+    "limit-exceeded": ["limit-exceeded", "over the agent's limits"],
+    locked: ["unlock-required", "vault locked"],
+    "not-found": reauthorization,
+  };

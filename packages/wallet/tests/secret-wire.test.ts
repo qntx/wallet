@@ -787,6 +787,8 @@ describe("method classification", () => {
       | "nostr.exportKey"
       | "chain.sign"
       | "spark.approve"
+      | "sessions.create"
+      | "sessions.open"
       | "hardware.begin"
     >();
 
@@ -825,6 +827,7 @@ describe("method classification", () => {
       | "hiding"
       | "identityPublicKey"
       | "invoice"
+      | "limits"
       | "message"
       | "ownerPublicKey"
       | "package"

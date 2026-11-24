@@ -38,6 +38,8 @@ import {
   describe,
   expect,
   finishFlow,
+  HL_ENABLE,
+  HL_LIMITS,
   it,
   kernelAgents,
   nodeWallet,
@@ -256,7 +258,7 @@ describe("user-signed signatures recover to the owner", () => {
   it("approveAgent and approveBuilderFee sign with the owner key", async () => {
     const w = await world(30, { builder: BUILDER });
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     // approveAgent request → approve → POST.
     await until(() => w.state()?.requestId !== undefined);
     expect(hlKind(w, requestId(w))).toBe("approve-agent");
@@ -365,7 +367,7 @@ const builderFailure = async (group: number, mode: "err" | "timeout"): Promise<v
   };
   modes[mode]?.();
   await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-  const done = w.apps.enable(w.group, "hyperliquid");
+  const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
   void swallow(done);
   await until(() => w.state()?.requestId !== undefined);
   await w.approve(requestId(w));
@@ -388,7 +390,7 @@ describe("builder approval flow", () => {
     withMeta(w);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
     const agentAsk = nextRequest(w);
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     await w.approve(await agentAsk);
     // Reject the builder request: the agent is HL-approved and kept; the flow enables declined.
     w.requests.reject(await nextRequest(w));
@@ -436,6 +438,8 @@ describe("builder approval flow", () => {
     const owner = await ownerOf(w);
     const address = await sessions(w.wallet).create({
       scheme: "hyperliquid-l1-agent",
+      limits: HL_LIMITS,
+      verify: VERIFY,
       owner: w.group,
       scope: "Testnet",
       name: "qntx-test",
@@ -469,7 +473,7 @@ describe("builder approval flow", () => {
     const w1 = await world(34, { builder: BUILDER, openStore });
     withMeta(w1);
     await w1.apps.acknowledgeTerms(w1.group, "hyperliquid");
-    const done = w1.apps.enable(w1.group, "hyperliquid");
+    const done = w1.apps.enable(w1.group, "hyperliquid", HL_ENABLE);
     await until(() => w1.state()?.requestId !== undefined);
     await w1.approve(requestId(w1));
     await awaitStep(w1, "approve-builder");
@@ -503,7 +507,7 @@ describe("builder approval flow", () => {
     const w = await world(36, { builder: BUILDER });
     withMeta(w);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     void swallow(done);
     await until(() => w.state()?.requestId !== undefined);
     await w.approve(requestId(w));
@@ -513,7 +517,7 @@ describe("builder approval flow", () => {
     await done;
     expect(w.state()?.builder).toBe("approved");
     // Renew stalls on the new agent's ApproveAgent request; cancel restores the old agent.
-    const renewing = w.apps.renew(w.group, "hyperliquid");
+    const renewing = w.apps.renew(w.group, "hyperliquid", HL_ENABLE);
     void swallow(renewing);
     await until(() => w.state()?.requestId !== undefined);
     const cancelled = w.apps.cancel(w.group, "hyperliquid");
@@ -539,7 +543,7 @@ describe("enable failure and lifecycle gaps", () => {
   it("approve POST ok but never listed within the window → agent deleted, disabled", async () => {
     const w = await world(35, { hl: { noAutoList: true } });
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     let settled = false;
     void (async () => {
       await swallow(done);
@@ -557,7 +561,7 @@ describe("enable failure and lifecycle gaps", () => {
   it("lost POST but the agent got listed within the window → enabled", async () => {
     const w = await world(36, { hl: { exchangeError: () => undefined } });
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     await until(() => w.state()?.requestId !== undefined);
     await w.approve(requestId(w));
     // The POST "failed" but the approval committed — the verify poll finds it listed.
@@ -583,6 +587,8 @@ describe("enable failure and lifecycle gaps", () => {
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential kernel calls.
       await api.create({
         scheme: "hyperliquid-l1-agent",
+        limits: HL_LIMITS,
+        verify: VERIFY,
         owner: { walletId: w.walletId, groupIndex: 0 },
         scope: "Testnet",
         name: `cap-${i}`,
@@ -590,7 +596,7 @@ describe("enable failure and lifecycle gaps", () => {
       });
     }
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     void swallow(done);
     await until(() => w.state()?.error !== undefined);
     await expect(done).rejects.toBeInstanceOf(Error);
@@ -602,7 +608,7 @@ describe("enable failure and lifecycle gaps", () => {
       // oxlint-disable-next-line eslint/no-await-in-loop -- deletes are sequential.
       await api.delete(a.address);
     }
-    const retry = w.apps.enable(w.group, "hyperliquid");
+    const retry = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     await finishFlow(w, retry, "enabled");
     expect(w.state()?.status).toBe("enabled");
     await w.destroy();
@@ -612,7 +618,7 @@ describe("enable failure and lifecycle gaps", () => {
     const openStore = restartableStore();
     const w = await world(38, { openStore });
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     void swallow(done);
     await until(() => w.state()?.requestId !== undefined);
     const pending = requestId(w);
@@ -629,7 +635,7 @@ describe("enable failure and lifecycle gaps", () => {
     await expect(kernelAgents(w)).resolves.toHaveLength(1);
     // Resume re-requests ApproveAgent for the SAME agent.
     const same = agentAddress(w);
-    const resume = w.apps.enable(w.group, "hyperliquid");
+    const resume = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     await until(() => w.state()?.requestId !== undefined);
     await w.approve(requestId(w));
     await pumpUntil(w.timers, () => w.state()?.status === "enabled", 80);
@@ -653,9 +659,9 @@ describe("enable failure and lifecycle gaps", () => {
   it("renew enables the new agent and deletes the old only after success", async () => {
     const w = await world(40);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    await finishFlow(w, w.apps.enable(w.group, "hyperliquid"), "enabled");
+    await finishFlow(w, w.apps.enable(w.group, "hyperliquid", HL_ENABLE), "enabled");
     const oldAddress = agentAddress(w);
-    const done = w.apps.renew(w.group, "hyperliquid");
+    const done = w.apps.renew(w.group, "hyperliquid", HL_ENABLE);
     await until(() => w.state()?.requestId !== undefined);
     // Mid-renew the old agent still signs — registry keeps it enabled.
     const owner = await ownerOf(w);
@@ -677,13 +683,15 @@ describe("enable failure and lifecycle gaps", () => {
     // Persist an enabledAgent record by enabling once.
     const w1 = await world(41, { openStore });
     await w1.apps.acknowledgeTerms(w1.group, "hyperliquid");
-    await finishFlow(w1, w1.apps.enable(w1.group, "hyperliquid"), "enabled");
+    await finishFlow(w1, w1.apps.enable(w1.group, "hyperliquid", HL_ENABLE), "enabled");
     await w1.destroy();
     const w2 = await world(41, { openStore });
     // A never-enabled group gets an agent valid against the kernel clock but expired on ours
     // once the manual clock advances past it.
     const orphan = await sessions(w2.wallet).create({
       scheme: "hyperliquid-l1-agent",
+      limits: HL_LIMITS,
+      verify: VERIFY,
       owner: { walletId: w2.walletId, groupIndex: 42 },
       scope: "Testnet",
       name: "qntx-test",
@@ -711,6 +719,8 @@ describe("enable failure and lifecycle gaps", () => {
     const owner = { walletId: w.walletId, groupIndex: w.group.groupIndex };
     const first = await api.create({
       scheme: "hyperliquid-l1-agent",
+      limits: HL_LIMITS,
+      verify: VERIFY,
       owner,
       scope: "Testnet",
       name: "qntx-test",
@@ -718,6 +728,8 @@ describe("enable failure and lifecycle gaps", () => {
     });
     const second = await api.create({
       scheme: "hyperliquid-l1-agent",
+      limits: HL_LIMITS,
+      verify: VERIFY,
       owner,
       scope: "Testnet",
       name: "qntx-test",
@@ -738,6 +750,8 @@ describe("enable failure and lifecycle gaps", () => {
     w.timers.time += 11 * 60 * 1000;
     const stale = await api.create({
       scheme: "hyperliquid-l1-agent",
+      limits: HL_LIMITS,
+      verify: VERIFY,
       owner: { walletId: w.walletId, groupIndex: 45 },
       scope: "Testnet",
       name: "qntx-test",
@@ -758,7 +772,7 @@ describe("declined builder", () => {
   const declineBuilder = async (w: World): Promise<Promise<void>> => {
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
     const agentAsk = nextRequest(w);
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     await w.approve(await agentAsk);
     w.requests.reject(await nextRequest(w));
     return done;
@@ -835,7 +849,7 @@ describe("declined builder", () => {
     const builderAsks = countBuilderAsks(w);
 
     const asked = nextRequest(w);
-    const renewing = w.apps.renew(w.group, "hyperliquid");
+    const renewing = w.apps.renew(w.group, "hyperliquid", HL_ENABLE);
     const renewRequest = await asked;
     // The renew still needs the agent approval — only the builder ask is skipped.
     expect(hlKind(w, renewRequest)).toBe("approve-agent");
@@ -860,7 +874,7 @@ describe("declined builder", () => {
     const builderAsks = countBuilderAsks(w);
 
     const asked = nextRequest(w);
-    const reenabling = w.apps.enable(w.group, "hyperliquid");
+    const reenabling = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     const reenableRequest = await asked;
     expect(hlKind(w, reenableRequest)).toBe("approve-agent");
     await w.approve(reenableRequest);
@@ -917,7 +931,7 @@ describe("declined builder", () => {
 
     const plain = await world(44);
     await plain.apps.acknowledgeTerms(plain.group, "hyperliquid");
-    const enabled = plain.apps.enable(plain.group, "hyperliquid");
+    const enabled = plain.apps.enable(plain.group, "hyperliquid", HL_ENABLE);
     await finishFlow(plain, enabled, "enabled");
     await expect(plain.provider.approveBuilder(plain.group)).rejects.toMatchObject({
       category: "invalid-input",
@@ -1205,7 +1219,7 @@ describe("app context accessors and guards", () => {
   it("the app api's context.flow is busy while a same-app enable runs on the group", async () => {
     const w = await world(48);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     void swallow(done);
     await until(() => w.state()?.requestId !== undefined);
     /* `approveBuilder` runs through `context.flow` — the parked enable holds the group's
@@ -1268,6 +1282,8 @@ describe("malformed records", () => {
        needs-reauthorization; the malformed record reads as empty, so it lands disabled. */
     await sessions(w.wallet).create({
       scheme: "hyperliquid-l1-agent",
+      limits: HL_LIMITS,
+      verify: VERIFY,
       owner: w.group,
       scope: "Testnet",
       name: "qntx-test",

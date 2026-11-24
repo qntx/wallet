@@ -1,16 +1,11 @@
-/**
- * Hyperliquid L1 action encoding (research H2): msgpack with the schema key order spelled out
- * literally per action type — the order is semantic, it feeds the phantom-agent connectionId.
- *
- * ConnectionId = keccak256(msgpack(action) ‖ u64be(nonce) ‖ (vaultAddress ? 0x01 ‖ 20 address bytes
- * : 0x00) ‖ (expiresAfter !== undefined ? 0x00 ‖ u64be(expiresAfter) : ε)) (nktkas _l1.ts:31-46,
- * python signing.py action_hash — note the 0x00 marker before expiresAfter; the vault marker is
- * 0x00/0x01.)
- *
- * The connectionId then signs as `Agent(string source,bytes32 connectionId)` under domain
- * {name:"Exchange", version:"1", chainId:1337, verifyingContract:0x0…0}, `source` "a" mainnet / "b"
- * testnet (nktkas _l1.ts:150-170, python signing.py construct_phantom_agent).
- */
+/* Hyperliquid L1 action encoding (research H2): msgpack with the schema key order spelled out
+   literally per action type — the order is semantic, it feeds the phantom-agent connectionId.
+   ConnectionId = keccak256(msgpack(action) ‖ u64be(nonce) ‖ (vaultAddress ? 0x01 ‖ 20 address
+   bytes : 0x00) ‖ (expiresAfter !== undefined ? 0x00 ‖ u64be(expiresAfter) : ε)) (nktkas
+   _l1.ts:31-46, python signing.py action_hash). The connectionId signs as
+   `Agent(string source,bytes32 connectionId)` under domain {name:"Exchange", version:"1",
+   chainId:1337, verifyingContract:0x0…0}, `source` "a" mainnet / "b" testnet (nktkas
+   _l1.ts:150-170). */
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
@@ -81,17 +76,6 @@ export type HyperliquidL1Action =
       readonly isBuy: boolean;
       readonly ntli: number;
     }
-  | {
-      readonly type: "twapOrder";
-      readonly twap: {
-        readonly a: number;
-        readonly b: boolean;
-        readonly s: string;
-        readonly r: boolean;
-        readonly m: number;
-        readonly t: boolean;
-      };
-    }
   | { readonly type: "twapCancel"; readonly a: number; readonly t: number };
 
 export type HyperliquidL1Params = {
@@ -142,10 +126,15 @@ const orderWire = (order: HyperliquidL1Order): Uint8Array => {
 const packOid = (oid: number | string): Uint8Array =>
   typeof oid === "number" ? packInt(oid) : packStr(oid);
 
-/**
- * Msgpack(action) with every map's keys written in the H2-T schema order. The switch is exhaustive
- * over the action union; a trailing return is unreachable code (TS7027).
- */
+const optFlag = (entries: Entry[], key: string, flag: true | undefined): Uint8Array => {
+  if (flag !== undefined) {
+    entries.push([key, packBool(flag)]);
+  }
+  return packMap(entries);
+};
+
+/* Msgpack(action) with every map's keys in the H2-T schema order. The switch is exhaustive over
+   the action union; a trailing return is unreachable code (TS7027). */
 // oxlint-disable-next-line typescript/consistent-return
 export function encodeL1Action(action: HyperliquidL1Action): Uint8Array {
   switch (action.type) {
@@ -181,10 +170,7 @@ export function encodeL1Action(action: HyperliquidL1Action): Uint8Array {
           ),
         ],
       ];
-      if (action.f !== undefined) {
-        entries.push(["f", packBool(action.f)]);
-      }
-      return packMap(entries);
+      return optFlag(entries, "f", action.f);
     }
     case "cancelByCloid": {
       const entries: Entry[] = [
@@ -201,10 +187,7 @@ export function encodeL1Action(action: HyperliquidL1Action): Uint8Array {
           ),
         ],
       ];
-      if (action.f !== undefined) {
-        entries.push(["f", packBool(action.f)]);
-      }
-      return packMap(entries);
+      return optFlag(entries, "f", action.f);
     }
     case "modify": {
       const entries: Entry[] = [
@@ -212,10 +195,7 @@ export function encodeL1Action(action: HyperliquidL1Action): Uint8Array {
         ["oid", packOid(action.oid)],
         ["order", orderWire(action.order)],
       ];
-      if (action.a !== undefined) {
-        entries.push(["a", packBool(action.a)]);
-      }
-      return packMap(entries);
+      return optFlag(entries, "a", action.a);
     }
     case "batchModify": {
       const entries: Entry[] = [
@@ -232,10 +212,7 @@ export function encodeL1Action(action: HyperliquidL1Action): Uint8Array {
           ),
         ],
       ];
-      if (action.a !== undefined) {
-        entries.push(["a", packBool(action.a)]);
-      }
-      return packMap(entries);
+      return optFlag(entries, "a", action.a);
     }
     case "scheduleCancel": {
       const entries: Entry[] = [["type", packStr("scheduleCancel")]];
@@ -258,21 +235,6 @@ export function encodeL1Action(action: HyperliquidL1Action): Uint8Array {
         ["isBuy", packBool(action.isBuy)],
         ["ntli", packInt(action.ntli)],
       ]);
-    case "twapOrder":
-      return packMap([
-        ["type", packStr("twapOrder")],
-        [
-          "twap",
-          packMap([
-            ["a", packInt(action.twap.a)],
-            ["b", packBool(action.twap.b)],
-            ["s", packStr(action.twap.s)],
-            ["r", packBool(action.twap.r)],
-            ["m", packInt(action.twap.m)],
-            ["t", packBool(action.twap.t)],
-          ]),
-        ],
-      ]);
     case "twapCancel":
       return packMap([
         ["type", packStr("twapCancel")],
@@ -282,10 +244,6 @@ export function encodeL1Action(action: HyperliquidL1Action): Uint8Array {
   }
 }
 
-/**
- * Keccak256(msgpack ‖ u64be(nonce) ‖ (vault ? 0x01 ‖ address : 0x00) ‖ (expiresAfter !== undefined
- * ? 0x00 ‖ u64be(expiresAfter) : ε)).
- */
 export function l1ConnectionId(args: {
   readonly action: HyperliquidL1Action;
   readonly nonce: number;
@@ -304,10 +262,8 @@ export function l1ConnectionId(args: {
   return keccak_256(concat(packed, u64be(args.nonce), vault, expiry));
 }
 
-/**
- * The phantom-agent document the L1 signature actually covers — the kernel builds it, the host
- * never supplies one. `source` is "a" on mainnet, "b" on testnet.
- */
+/* The phantom-agent document the L1 signature covers — the kernel builds it, the host never
+   supplies one. `source` is "a" on mainnet, "b" on testnet. */
 export function phantomAgentTypedData(
   connectionId: Uint8Array,
   network: HyperliquidNetwork,
@@ -339,7 +295,7 @@ export function phantomAgentTypedData(
   });
 }
 
-/** The phantom-agent typed-data JSON an L1 `params` signs, shared by the kernel and the host. */
+/** The phantom-agent typed-data JSON an L1 `params` signs, shared by kernel and host. */
 export function hyperliquidL1Document(
   params: HyperliquidL1Params,
   network: HyperliquidNetwork,

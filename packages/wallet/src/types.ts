@@ -94,6 +94,8 @@ export type WalletErrorCode =
   | "integrity"
   | "blind-signing-disabled"
   | "approval-required"
+  | "app-lock-required"
+  | "limit-exceeded"
   | "crashed"
   | "device-required"
   | "device-locked"

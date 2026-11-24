@@ -8,6 +8,7 @@ import {
   describe,
   expect,
   finishFlow,
+  HL_ENABLE,
   isApprovePost,
   it,
   kernelAgents,
@@ -43,7 +44,7 @@ describe("apps hyperliquid enablement on the node host", () => {
   it("enables through the approval request and leaves no orphan", async () => {
     const w = await world(10);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     await finishFlow(w, done, "enabled");
     expect(w.state()?.status).toBe("enabled");
     expect(agentAddress(w)).toMatch(/^0x[0-9a-fA-F]{40}$/);
@@ -60,7 +61,7 @@ describe("apps hyperliquid enablement on the node host", () => {
   it("request rejected: cleans the orphan agent and disables", async () => {
     const w = await world(11);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     void swallow(done);
     await until(() => w.state()?.requestId !== undefined);
     w.requests.reject(requestId(w));
@@ -76,7 +77,7 @@ describe("apps hyperliquid enablement on the node host", () => {
   it("POST status:err: cleans the orphan agent and disables", async () => {
     const w = await world(12, { hl: { exchange: () => ({ status: "err", response: "nope" }) } });
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     void swallow(done);
     await until(() => w.state()?.requestId !== undefined);
     await w.approve(requestId(w));
@@ -93,7 +94,7 @@ describe("apps hyperliquid enablement on the node host", () => {
     async () => {
       const w = await world(13, { hl: { exchangeError: () => undefined } });
       await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-      const done = w.apps.enable(w.group, "hyperliquid");
+      const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
       let settled = false;
       void (async () => {
         await swallow(done);
@@ -114,7 +115,7 @@ describe("apps hyperliquid enablement on the node host", () => {
     const w = await world(14);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
     // Enable fully first.
-    await finishFlow(w, w.apps.enable(w.group, "hyperliquid"), "enabled");
+    await finishFlow(w, w.apps.enable(w.group, "hyperliquid", HL_ENABLE), "enabled");
     const enabled = agentAddress(w);
     expect(enabled).not.toBe("");
     // Cancel against an enabled agent is invalid-input and deletes nothing.
@@ -126,7 +127,7 @@ describe("apps hyperliquid enablement on the node host", () => {
     // Cancel mid-enable (waiting on the request) aborts and cleans.
     const w2 = await world(15);
     await w2.apps.acknowledgeTerms(w2.group, "hyperliquid");
-    const done = w2.apps.enable(w2.group, "hyperliquid");
+    const done = w2.apps.enable(w2.group, "hyperliquid", HL_ENABLE);
     void swallow(done);
     await until(() => w2.state()?.requestId !== undefined);
     await w2.apps.cancel(w2.group, "hyperliquid");
@@ -140,10 +141,10 @@ describe("apps hyperliquid enablement on the node host", () => {
   it("a second flow while one runs is busy; acknowledging terms does not stale it", async () => {
     const w = await world(16);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    const done = w.apps.enable(w.group, "hyperliquid");
+    const done = w.apps.enable(w.group, "hyperliquid", HL_ENABLE);
     await until(() => w.state()?.requestId !== undefined);
     // Concurrent flows for the same group are busy.
-    await expect(w.apps.enable(w.group, "hyperliquid")).rejects.toMatchObject({
+    await expect(w.apps.enable(w.group, "hyperliquid", HL_ENABLE)).rejects.toMatchObject({
       category: "busy",
     });
     await expect(w.apps.disable(w.group, "hyperliquid", { revoke: false })).rejects.toMatchObject({
@@ -159,10 +160,10 @@ describe("apps hyperliquid enablement on the node host", () => {
   it("disable without revoke deletes the kernel agent; revoke signs and cleans the throwaway", async () => {
     const w = await world(17);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    await finishFlow(w, w.apps.enable(w.group, "hyperliquid"), "enabled");
+    await finishFlow(w, w.apps.enable(w.group, "hyperliquid", HL_ENABLE), "enabled");
     /* Revoke: the throwaway ApproveAgent request must sign under the kernel binding — a second
        clock read for `valid_until` would make the kernel reject it. */
-    const done = w.apps.disable(w.group, "hyperliquid", { revoke: true });
+    const done = w.apps.disable(w.group, "hyperliquid", { revoke: true, verify: VERIFY });
     await until(() => w.state()?.requestId !== undefined);
     await w.approve(requestId(w));
     await until(() => w.state()?.status === "disabled");
@@ -175,10 +176,10 @@ describe("apps hyperliquid enablement on the node host", () => {
   it("renew failure cleans the new agent and restores the old enabled state", async () => {
     const w = await world(18);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    await finishFlow(w, w.apps.enable(w.group, "hyperliquid"), "enabled");
+    await finishFlow(w, w.apps.enable(w.group, "hyperliquid", HL_ENABLE), "enabled");
     const oldAddress = agentAddress(w);
     w.hl.exchange = () => ({ status: "err", response: "renew denied" });
-    const done = w.apps.renew(w.group, "hyperliquid");
+    const done = w.apps.renew(w.group, "hyperliquid", HL_ENABLE);
     void swallow(done);
     await until(() => w.state()?.requestId !== undefined);
     await w.approve(requestId(w));
@@ -200,7 +201,7 @@ describe("apps hyperliquid enablement on the node host", () => {
     await expect(w.apps.acknowledgeTerms(w.group, "hyperliquid")).rejects.toMatchObject({
       category: "unlock-required",
     });
-    await expect(w.apps.enable(w.group, "hyperliquid")).rejects.toMatchObject({
+    await expect(w.apps.enable(w.group, "hyperliquid", HL_ENABLE)).rejects.toMatchObject({
       category: "unlock-required",
     });
     expect(w.session()).toBeUndefined();
@@ -211,7 +212,7 @@ describe("apps hyperliquid enablement on the node host", () => {
   it("persisted record keeps only termsAcknowledged; the app record keeps the last enabled agent", async () => {
     const w = await world(20);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    await finishFlow(w, w.apps.enable(w.group, "hyperliquid"), "enabled");
+    await finishFlow(w, w.apps.enable(w.group, "hyperliquid", HL_ENABLE), "enabled");
     const enabled = agentAddress(w);
     await tick();
     const key = `${w.walletId}/20/hyperliquid`;
@@ -237,7 +238,7 @@ describe("apps hyperliquid enablement on the node host", () => {
     // agent even though the store knows nothing about it.
     const w1 = await world(24);
     await w1.apps.acknowledgeTerms(w1.group, "hyperliquid");
-    await finishFlow(w1, w1.apps.enable(w1.group, "hyperliquid"), "enabled");
+    await finishFlow(w1, w1.apps.enable(w1.group, "hyperliquid", HL_ENABLE), "enabled");
     const agent = agentAddress(w1);
     await w1.destroy();
     const hl2: HlState = { listed: new Map(), maxBuilderFee: 0, role: "user" };
@@ -461,7 +462,7 @@ describe("apps hyperliquid enablement on the node host", () => {
     const openStore = restartableStore();
     const w1 = await world(40, { hl: { noAutoList: true }, openStore });
     await w1.apps.acknowledgeTerms(w1.group, "hyperliquid");
-    const first = w1.apps.enable(w1.group, "hyperliquid");
+    const first = w1.apps.enable(w1.group, "hyperliquid", HL_ENABLE);
     void swallow(first);
     await until(() => w1.state()?.requestId !== undefined);
     await w1.wallet.vault.lock();
@@ -470,7 +471,7 @@ describe("apps hyperliquid enablement on the node host", () => {
     /* Meta needed for the order build below; the exchange stub's default answer never lists. */
     w2.hl.info = metaInfo;
     await until(() => w2.state()?.status === "enabling", 15000);
-    const second = w2.apps.enable(w2.group, "hyperliquid");
+    const second = w2.apps.enable(w2.group, "hyperliquid", HL_ENABLE);
     void swallow(second);
     await until(() => w2.state()?.requestId !== undefined);
     await w2.approve(requestId(w2));
@@ -500,7 +501,7 @@ describe("apps hyperliquid enablement on the node host", () => {
     await off.destroy();
     const w = await world(42);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    await finishFlow(w, w.apps.enable(w.group, "hyperliquid"), "enabled");
+    await finishFlow(w, w.apps.enable(w.group, "hyperliquid", HL_ENABLE), "enabled");
     await expect(w.apps.cancel(w.group, "hyperliquid")).rejects.toMatchObject({
       category: "invalid-input",
     });
@@ -512,7 +513,7 @@ describe("apps hyperliquid enablement on the node host", () => {
   it("cancel on an enabled group is refused — the enabled agent is never at risk", async () => {
     const w = await world(41);
     await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-    await finishFlow(w, w.apps.enable(w.group, "hyperliquid"), "enabled");
+    await finishFlow(w, w.apps.enable(w.group, "hyperliquid", HL_ENABLE), "enabled");
     await expect(w.apps.cancel(w.group, "hyperliquid")).rejects.toMatchObject({
       category: "invalid-input",
     });
@@ -528,7 +529,7 @@ describe("apps hyperliquid enablement on the node host", () => {
     async () => {
       const w = await world(50, { openStore: restartableStore() });
       await w.apps.acknowledgeTerms(w.group, "hyperliquid");
-      await finishFlow(w, w.apps.enable(w.group, "hyperliquid"), "enabled");
+      await finishFlow(w, w.apps.enable(w.group, "hyperliquid", HL_ENABLE), "enabled");
       expect(w.state()?.agent?.address).toMatch(/^0x/);
       await w.wallet.vault.lock();
       await until(() => w.apps.getState().locked, 2000);
@@ -559,4 +560,29 @@ describe("apps hyperliquid enablement on the node host", () => {
       await w.destroy();
     },
   );
+
+  it("a malformed enable input is invalid-input before any flow write", async () => {
+    const w = await world(60);
+    await w.apps.acknowledgeTerms(w.group, "hyperliquid");
+    const malformed: ReadonlyArray<unknown> = [
+      undefined,
+      {},
+      { limits: HL_ENABLE.limits },
+      { verify: HL_ENABLE.verify },
+      { limits: { ...HL_ENABLE.limits, assets: ["0"] }, verify: HL_ENABLE.verify },
+      { limits: HL_ENABLE.limits, verify: { kind: "device" } },
+      { limits: HL_ENABLE.limits, verify: { kind: "password" } },
+      { limits: HL_ENABLE.limits, verify: "password" },
+    ];
+    for (const input of malformed) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- each rejection is asserted in turn.
+      await expect(w.apps.enable(w.group, "hyperliquid", input)).rejects.toMatchObject({
+        category: "invalid-input",
+      });
+    }
+    /* The shape check runs before `hints.track`, so no flow ever wrote: the state stays the
+       terms record acknowledgeTerms left. */
+    expect(w.state()).toEqual({ status: "disabled", termsAcknowledged: true });
+    await w.destroy();
+  });
 });

@@ -48,7 +48,11 @@
   strictly validated params. Applications add no vault record kinds and no kernel command
   namespaces; material that cannot authorise moving value (API keys, HMAC secrets, bearer tokens)
   stays out of the vault. A session scheme ships with the worst case of a stolen key argued from
-  the protocol's source (it may trade or cancel, never withdraw), a strict params validator that
+  the protocol's source (a Hyperliquid agent key may trade or cancel, never withdraw — and trading
+  is itself a value-transfer channel, so a value-moving scheme is kernel-metered: a notional
+  budget, leverage cap and asset allow-list bound into the record and the approval prompt, `spent`
+  committed before each signature, and presence-bound — a verifying factor at create and after
+  every lock, refused outright while the app lock is off), a strict params validator that
   is the allow-list, time-window and TTL caps, byte-exact signing vectors from the protocol's
   official SDK, and mutation tests that kill every guard. The kernel budget for the
   `hyperliquid-l1-agent` scheme is 16 384 B by owner decision of 2026-11-22.

@@ -6,8 +6,12 @@
  * The flow never holds secrets: the agent private key stays in the kernel, the user-signed
  * approvals go through the request pipeline.
  */
-import type { Wallet } from "@qntx/wallet";
-import type { HyperliquidNetwork, SessionInfo } from "@qntx/wallet/protocol";
+import type { VerifyFactor, Wallet } from "@qntx/wallet";
+import type {
+  HyperliquidAgentLimits,
+  HyperliquidNetwork,
+  SessionInfo,
+} from "@qntx/wallet/protocol";
 import { sessions } from "@qntx/wallet/sessions";
 
 import type {
@@ -36,6 +40,53 @@ const VERIFY_TIMEOUT_MS = 30_000;
 const ORPHAN_AGE_MS = 10 * 60 * 1000;
 /** The host surfaces a renew prompt when less than this remains. */
 const RENEWAL_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * What the host passes to `enable`/`renew`: the limits the kernel shows in its approval prompt and
+ * binds into the agent's record, and the factor that proves the approval. `enable` takes the same
+ * shape — every call may reach the create step, including a resume that lost its agent.
+ */
+export type HyperliquidEnableInput = {
+  readonly limits: HyperliquidAgentLimits;
+  readonly verify: VerifyFactor;
+};
+
+/**
+ * The limits of a revoke throwaway: it lives ten minutes and never trades — the smallest legal
+ * budget is the honest statement of that.
+ */
+const REVOKE_LIMITS: HyperliquidAgentLimits = {
+  notional: "0.00000001",
+  maxLeverage: 1,
+  assets: [0],
+};
+
+/* `sessions.create` treats `limits` as an opaque protocol value — the scheme's grammar runs
+   inside the kernel, which answers `invalid-input` the same way, and the facade resolves the
+   factor. Here only the facade shape needs checking so a malformed input fails with the app's
+   own typed error before any flow writes or kernel call. */
+const record = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const isVerifyFactor = (value: unknown): value is VerifyFactor =>
+  record(value) &&
+  (value["kind"] === "hardware" ||
+    value["kind"] === "passkey" ||
+    (value["kind"] === "password" && typeof value["password"] === "string"));
+
+const isLimits = (value: unknown): value is HyperliquidAgentLimits =>
+  record(value) &&
+  typeof value["notional"] === "string" &&
+  Number.isInteger(value["maxLeverage"]) &&
+  Array.isArray(value["assets"]) &&
+  value["assets"].every(Number.isInteger);
+
+const requireEnableInput = (input: unknown): HyperliquidEnableInput => {
+  if (!record(input) || !isLimits(input["limits"]) || !isVerifyFactor(input["verify"])) {
+    throw new HyperliquidError("invalid-input", "bad input");
+  }
+  return { limits: input["limits"], verify: input["verify"] };
+};
 
 /**
  * Canonical percent string for `maxFeeRate` — `feeRateTenthsBps` hundredths of a percent
@@ -74,14 +125,16 @@ const errorOf = (error: unknown): { category: string; message: string } =>
         message: error instanceof Error ? error.message : String(error),
       };
 
-const fail = (
+/* A function declaration, not a const arrow: only the former narrows never-returning calls for
+   the control-flow analysis at the call sites below. */
+function fail(
   flow: AppFlow<HyperliquidDetail>,
   category: HyperliquidErrorCategory,
   message: string,
-): never => {
+): never {
   flow.write({ error: { category, message } });
   throw new HyperliquidError(category, message);
-};
+}
 
 /** Run `body`; a stale flow stops writing but a thrown error still surfaces to the caller. */
 const guard = async (
@@ -174,7 +227,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
     flow: AppFlow<HyperliquidDetail>,
   ): Promise<string> => {
     if (!flow.current().termsAcknowledged) {
-      fail(flow, "invalid-input", "Hyperliquid terms have not been acknowledged");
+      fail(flow, "invalid-input", "terms not acknowledged");
     }
     if (provider.clock.skew() === undefined) {
       await provider.markets.mids();
@@ -183,7 +236,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
     const owner = await provider.agents.owner(group);
     const { role } = await provider.account.role(owner);
     if (role === "missing") {
-      fail(flow, "deposit-required", "deposit to Hyperliquid before enabling trading");
+      fail(flow, "deposit-required", "deposit to Hyperliquid");
     }
     if (role !== "user") {
       fail(flow, "invalid-input", `a ${role} account cannot approve agents`);
@@ -287,8 +340,16 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
     return "approved";
   };
 
-  /** The enable state machine — every step writes; a failure leaves a resumable state. */
-  const enableFlow = async (group: AppGroup, flow: HyperliquidFlow): Promise<void> => {
+  /**
+   * The enable state machine — every step writes; a failure leaves a resumable state. `input`
+   * supplies the kernel ceremony: the limits the approval prompt binds into the record and the
+   * factor that proves it. A resume past `create-agent` never reaches them again.
+   */
+  const enableFlow = async (
+    group: AppGroup,
+    flow: HyperliquidFlow,
+    input: HyperliquidEnableInput,
+  ): Promise<void> => {
     const now = options.now();
     if (flow.current().status !== "enabling") {
       flow.write({ status: "enabling", step: "create-agent", error: undefined });
@@ -310,6 +371,8 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
         scope: options.network,
         name: options.agentName,
         validUntil: now + AGENT_VALID_MS,
+        limits: input.limits,
+        verify: input.verify,
       });
       agents = await kernelAgents(group);
       agent = agents.find((a) => a.address.toLowerCase() === address.toLowerCase());
@@ -356,13 +419,15 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
       }
       return [...seen.values()];
     },
-    enable: async (group, raw) => {
+    enable: async (group, raw, input) => {
+      const parsed = requireEnableInput(input);
       const flow = await options.hints.track(group, raw);
       await guard(flow, async () => {
-        await enableFlow(group, flow);
+        await enableFlow(group, flow, parsed);
       });
     },
-    renew: async (group, raw) => {
+    renew: async (group, raw, input) => {
+      const parsed = requireEnableInput(input);
       const flow = await options.hints.track(group, raw);
       const before = await kernelAgents(group);
       try {
@@ -374,7 +439,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
           agent: undefined,
           error: undefined,
         });
-        await enableFlow(group, flow);
+        await enableFlow(group, flow, parsed);
         for (const old of before) {
           if (old.address.toLowerCase() !== flow.current().agent?.address.toLowerCase()) {
             // oxlint-disable-next-line eslint/no-await-in-loop -- deletes are sequential cleanup.
@@ -415,7 +480,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
         throw error;
       }
     },
-    disable: async (group, { revoke }, raw) => {
+    disable: async (group, { revoke, verify }, raw) => {
       const flow = await options.hints.track(group, raw);
       await guard(flow, async () => {
         await provider.agents.refresh();
@@ -430,7 +495,11 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
         if (revoke) {
           flow.write({ step: "revoke" });
           /* No revoke action exists: a same-name approval deregisters the old agent. A
-             throwaway valid for ten minutes does it, and is deleted in every outcome. */
+             throwaway valid for ten minutes does it, and is deleted in every outcome. Creating it
+             is the value-moving scheme's approval ceremony — degenerate limits, user-verified. */
+          if (!isVerifyFactor(verify)) {
+            fail(flow, "invalid-input", "needs a verify factor");
+          }
           let throwaway: string | undefined;
           try {
             const address = await wallet().create({
@@ -439,6 +508,8 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
               scope: options.network,
               name: options.agentName,
               validUntil: options.now() + REVOKE_VALID_MS,
+              limits: REVOKE_LIMITS,
+              verify,
             });
             throwaway = address;
             /* The kernel binding needs the record's own validUntil — a second clock read here

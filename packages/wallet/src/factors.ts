@@ -360,6 +360,7 @@ export type PublicBytesField =
   | "hiding"
   | "identityPublicKey"
   | "invoice"
+  | "limits"
   | "message"
   | "ownerPublicKey"
   | "package"

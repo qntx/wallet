@@ -43,7 +43,14 @@ import { tronContractType } from "@qntx/wallet-chains/tron";
 
 import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt } from "../../platform.ts";
-import { codePoints, formatUnits, joinLines, promptFits } from "../../prompts.ts";
+import {
+  codePoints,
+  formatUnits,
+  joinLines,
+  promptFits,
+  utcDate,
+  utcDateTime,
+} from "../../prompts.ts";
 import type { PromptBound, PromptLocale } from "../../prompts.ts";
 
 export type PromptIntent = Pick<
@@ -946,26 +953,6 @@ export function formatAmount(catalog: Catalog, amount: AssetAmount): string {
     ? catalog.unverifiedToken(amount.amount, amount.asset)
     : `${formatUnits(amount.amount, amount.decimals)} ${amount.symbol ?? amount.asset}`;
 }
-
-/** `YYYY-MM-DD` of a Unix-seconds instant in UTC (civil-from-days; no `Date` in the enclave). */
-function utcDate(seconds: number): string {
-  const z = Math.floor(seconds / 86_400) + 719_468;
-  const era = Math.floor(z / 146_097);
-  const doe = z - era * 146_097;
-  const yoe = Math.floor(
-    (doe - Math.floor(doe / 1460) + Math.floor(doe / 36_524) - Math.floor(doe / 146_096)) / 365,
-  );
-  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
-  const mp = Math.floor((5 * doy + 2) / 153);
-  const day = doy - Math.floor((153 * mp + 2) / 5) + 1;
-  const month = mp < 10 ? mp + 3 : mp - 9;
-  const year = yoe + era * 400 + (month <= 2 ? 1 : 0);
-  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-/** `YYYY-MM-DD HH:MM` of a Unix-seconds instant in UTC (no `Date` in the enclave). */
-const utcDateTime = (seconds: number): string =>
-  `${utcDate(seconds)} ${String(Math.floor(seconds / 3600) % 24).padStart(2, "0")}:${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}`;
 
 /** The network's display name: the registry name, a generic EVM label, or the raw CAIP-2 id. */
 const networkLabel = (catalog: Catalog, id: string): string => {

@@ -5,8 +5,10 @@
  * key is. A record's scheme only decides what it signs: records of schemes this build does not know
  * are inert — listed as unsupported, unsignable, deletable — and never make the vault unsupported.
  *
- * There is no live state: like imported keys, the session's private key stays sealed and is opened
- * per signature, so `lock`/`forget` have nothing to dispose.
+ * The only live state is the opened set: the ids of value-moving sessions whose approval the user
+ * verified since the last unlock. It is memory on purpose — a lock clears it and a forgotten
+ * record's mark dies with the record, so a reopened kernel answers `approval-required` until
+ * `sessions.open` verifies again.
  */
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 
@@ -20,7 +22,13 @@ import type { StoreOp } from "../../vault/store.ts";
 import type { OpenedRecord } from "../../vault/vault.ts";
 import { parseSessionHeader, SESSION_KIND } from "./record.ts";
 import { schemeOf } from "./schemes/index.ts";
-import { createSession, deleteSession, listSessions, signSession } from "./sessions.ts";
+import {
+  createSession,
+  deleteSession,
+  listSessions,
+  openSession,
+  signSession,
+} from "./sessions.ts";
 
 export type SessionsModule = {
   readonly vault: VaultHooks;
@@ -28,6 +36,8 @@ export type SessionsModule = {
 };
 
 export function createSessionsModule(): SessionsModule {
+  /* Value-moving sessions approved since the last unlock — cleared by the vault hooks below. */
+  const opened = new Set<string>();
   const vault: VaultHooks = {
     ownsRecord: (kind) => kind === SESSION_KIND,
 
@@ -60,8 +70,13 @@ export function createSessionsModule(): SessionsModule {
       return unclaimed;
     },
 
-    forget: () => undefined,
-    lock: () => undefined,
+    /* The opened mark follows the record: a record the store forgets loses its approval with it,
+       and a lock drops them all — the next signature must be preceded by sessions.open verifying
+       a factor again. */
+    forget: (_kind, id) => {
+      opened.delete(id);
+    },
+    lock: () => opened.clear(),
 
     parseHeader: (record) => {
       const header = parseSessionHeader(record.header);
@@ -85,10 +100,11 @@ export function createSessionsModule(): SessionsModule {
   };
 
   const handlers: { [M in keyof typeof SESSIONS_METHODS & MethodName]: Handler<M> } = {
-    "sessions.create": createSession,
+    "sessions.create": createSession(opened),
     "sessions.list": listSessions,
-    "sessions.delete": deleteSession,
-    "sessions.sign": signSession,
+    "sessions.open": openSession(opened),
+    "sessions.delete": deleteSession(opened),
+    "sessions.sign": signSession(opened),
   };
 
   return { vault, handlers };

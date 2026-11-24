@@ -308,6 +308,8 @@ export const walletErrorCode: Validator<WalletErrorCode> = union(
   literal("unavailable"),
   literal("integrity"),
   literal("approval-required"),
+  literal("app-lock-required"),
+  literal("limit-exceeded"),
   literal("crashed"),
   literal("device-required"),
   literal("device-locked"),

@@ -434,7 +434,7 @@ async function backupMaterial(
 
 /**
  * The kernel's backup-password ceremony: the bytes arrive through the secure input, never the wire.
- * Enable asks for the new password and a repeat — a mismatch or an entry under the 12-code- point
+ * Enable asks for the new password and a repeat — a mismatch or an entry under the 12-code-point
  * policy is re-asked with the reason in the label, three rounds at most. Restore asks once; a wrong
  * entry fails later at the envelope unwrap (`wrong-password`). Every buffer the input did not
  * return is wiped on every path.
