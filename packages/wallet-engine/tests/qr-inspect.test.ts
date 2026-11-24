@@ -196,4 +196,26 @@ describe("inspectQrRequest frames a PSBT by its derivation coin types", () => {
   it("a PSBT with no derivations is refused as ambiguous", () => {
     expect(ambiguous(psbt({ derivations: false }))).toBe("network-ambiguous");
   });
+
+  it("a derivation whose path carries no hardened coin type is refused as ambiguous", () => {
+    const tx = new Transaction();
+    tx.addInput({
+      txid: new Uint8Array(32).fill(0x07),
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: {
+        script: new Uint8Array([0x00, 0x14, ...new Uint8Array(20).fill(0x02)]),
+        amount: 100_000n,
+      },
+      bip32Derivation: derivation(0).bip32Derivation,
+    });
+    tx.addOutput({
+      script: new Uint8Array([0x00, 0x14, ...new Uint8Array(20).fill(0x03)]),
+      amount: 90_000n,
+      bip32Derivation: [
+        [new Uint8Array(33).fill(2), { fingerprint: XFP, path: [84 + HARDENED, 5] as number[] }],
+      ],
+    });
+    expect(ambiguous(tx.toPSBT(0))).toBe("network-ambiguous");
+  });
 });

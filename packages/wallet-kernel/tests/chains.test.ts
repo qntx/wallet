@@ -1915,6 +1915,20 @@ describe("chain.sign", () => {
       });
       expect("signedPsbt" in result).toBe(true);
     });
+
+    it("a signed receive-chain input does not raise the bound", async () => {
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84", change: 0, index: 30 }],
+        [{ purpose: 84, change: 1, index: 25 }],
+      );
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe("m/84'/0'/0'/1/25");
+      expect(prompt.warnings).toContainEqual({
+        kind: "unusual-own-output",
+        message: "m/84'/0'/0'/1/25",
+      });
+      expect("signedPsbt" in result).toBe(true);
+    });
   });
 });
 
