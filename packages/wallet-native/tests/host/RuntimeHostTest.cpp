@@ -1522,9 +1522,9 @@ __qntx.secureInput.request("access-code", "r2", function (v, c) {
       "secure-input-binding: bridge behaviour drifted");
   {
     std::lock_guard<std::mutex> sinkLock(sinkMutex);
-    CHECK(prompts.size() >= 4 && prompts[1].has_value() &&
-              prompts[1]->kind == qntx::SecureInputKind::accessCode &&
-              prompts[1]->label == "输入访问码",
+    CHECK(prompts.size() >= 4 && prompts[3].has_value() &&
+              prompts[3]->kind == qntx::SecureInputKind::accessCode &&
+              prompts[3]->label == "输入访问码",
         "secure-input-binding: the prompt did not reach the view verbatim");
   }
   for (const auto& error : box.errors) {
