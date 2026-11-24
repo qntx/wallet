@@ -49,6 +49,7 @@ import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
 import { quickArgon2id, subtlePbkdf2 } from "./helpers.ts";
 import { fakeKeystore } from "./keystore.ts";
+import { LOOKUP_RECIPIENT, lookupTransferRequest } from "./solana-lookup-fixture.ts";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -2453,6 +2454,70 @@ describe("card sign (fake card)", () => {
     ).resolves.toBe("blind-signing-disabled");
     expect(r.fake.calls.slice(before)).toStrictEqual([]);
     expect(r.input.requests).toHaveLength(asks);
+  });
+
+  it("a lookup-table sign is refused before any input or tap while blind signing is off", async () => {
+    const r = await keystoreRig();
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    const own = strField(
+      ok(
+        await r.h.call(
+          "wallet.accounts",
+          {
+            walletId,
+            groupIndex: 0,
+            template: "solana.bip44-change",
+            network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          },
+          r.session,
+        ),
+      ),
+      "address",
+    );
+    const request = lookupTransferRequest(
+      signAccount(walletId, "solana.bip44-change"),
+      own,
+      LOOKUP_RECIPIENT,
+    );
+    const before = r.fake.calls.length;
+    const asks = r.input.requests.length;
+    const opens = r.reader.prompts.length;
+    await expect(
+      errCode(r.h.call("card.begin", { op: { kind: "sign", request }, verify: HARDWARE }, r.session)),
+    ).resolves.toBe("blind-signing-disabled");
+    // The refusal precedes the presence ceremony, the code ask and the first tap alike.
+    expect(r.fake.calls.slice(before)).toStrictEqual([]);
+    expect(r.input.requests).toHaveLength(asks);
+    expect(r.reader.prompts).toHaveLength(opens);
+
+    /* Policy on: the verify prompt is the blind prompt and the tap text says it cannot show
+       the request — the table-resolved recipient is never named. */
+    ok(await r.h.call("vault.setBlindSigning", { enabled: true, verify: HARDWARE }, r.session));
+    const opensAt = r.fake.calls.length;
+    const result = signResult(
+      await drive(
+        r,
+        { kind: "sign", request },
+        { codes: [freshCode()], cards: taps(card) },
+        HARDWARE,
+      ),
+    );
+    const verifyText = r.fake.calls
+      .slice(opensAt)
+      .flatMap((call) =>
+        call.op === "open" && call.prompt !== undefined
+          ? [`${call.prompt.title}\n${call.prompt.description}`]
+          : [],
+      )
+      .join("\n");
+    expect(verifyText).toContain("Confirm blind signing");
+    expect(verifyText).toContain("address lookup table");
+    const tapText = r.reader.prompts.join("\n");
+    expect(tapText).toContain("Confirm blind signing");
+    expect(tapText).toContain("address lookup table");
+    expect(tapText).not.toContain(LOOKUP_RECIPIENT);
+    expect(field(result, "signature")).toBeDefined();
   });
 
   it("sign requires a verify factor and a card wallet account", async () => {
