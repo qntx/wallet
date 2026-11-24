@@ -1157,8 +1157,8 @@ export const ENGINE_INTEGRITY: EngineErrorCode = "integrity";
 `@qntx/wallet-engine/gateway/contract`:
 
 ```ts
-type GasPricing = "eip1559" | "legacy";
-type FeeModel =
+export type GasPricing = "eip1559" | "legacy";
+export type FeeModel =
   | { kind: "execution"; pricing: GasPricing }
   | { kind: "op-stack"; pricing: GasPricing; operatorFee: boolean; tokenRatio: boolean }
   | { kind: "scroll"; pricing: GasPricing };
@@ -1273,7 +1273,7 @@ text form is 64 hex characters without `0x`.
 `bitcoin`. The injected script also installs `window.tron`, `window.tronLink` and `window.tronWeb`
 and announces TIP-6963 with the same `ProviderInfo`.
 
-```ts
+```text
 // before
 createBrowserBridge({ eip1193, nip07, webln, solana, bitcoin, connections, inject, now });
 // after
@@ -1393,10 +1393,12 @@ Solana `signAndSendTransaction` returns the locally computed fee-payer signature
 batch that stops part-way carries `stopped`:
 
 ```ts
-readonly stopped?: {
-  readonly index: number; // input that did not go out
-  readonly reason: "refused" | "not-sent";
-  readonly error: string;
+export type SignAndSendOutcome = {
+  readonly stopped?: {
+    readonly index: number; // input that did not go out
+    readonly reason: "refused" | "not-sent";
+    readonly error: string;
+  };
 };
 ```
 
@@ -1973,7 +1975,13 @@ Compiled snippet: [`tests/migration/fiat24-app.ts`](tests/migration/fiat24-app.t
 
 ```ts
 import { createApps } from "@qntx/wallet-engine/apps";
+import type { AppGroup, CreateAppsOptions } from "@qntx/wallet-engine/apps";
 import { fiat24 } from "@qntx/wallet-engine/apps/fiat24";
+
+// From your createWalletEngine/createApps setup above; `group` is the wallet group in scope.
+declare const options: CreateAppsOptions;
+declare const fiat24Fetch: typeof fetch;
+declare const group: AppGroup;
 
 const apps = createApps({ ...options, apps: [fiat24({ fetch: fiat24Fetch })] });
 await apps.controller.acknowledgeTerms(group, "fiat24");

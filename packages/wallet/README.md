@@ -15,6 +15,7 @@ npm install @qntx/wallet @qntx/wallet-worker
 ## Usage
 
 ```ts
+import { verifyEvent } from "@qntx/nostr";
 import { createWebWallet } from "@qntx/wallet-worker/browser";
 
 const wallet = await createWebWallet({
@@ -76,7 +77,7 @@ prompts. `@qntx/ur` is an optional peer required only by this subpath.
 
 `getSnapshot` and `subscribe` are bound properties, safe to pass unbound:
 
-```tsx
+```jsx
 import { useSyncExternalStore } from "react";
 
 const snapshot = useSyncExternalStore(wallet.subscribe, wallet.getSnapshot);

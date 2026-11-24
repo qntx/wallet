@@ -80,7 +80,7 @@ Once card wallets ship, the host app will also need, on iOS:
 For the secure-input field, render `SecureInput` from the `@qntx/wallet-native/secure-input`
 subpath wherever the wallet asks for the card's access code or short ID:
 
-```tsx
+```jsx
 import { callback } from "react-native-nitro-modules";
 
 import { SecureInput } from "@qntx/wallet-native/secure-input";
@@ -96,6 +96,7 @@ subpath so importing the package root does not eagerly load the Nitro view machi
 ## Usage
 
 ```ts
+import { verifyEvent } from "@qntx/nostr";
 import { createNativeWallet } from "@qntx/wallet-native";
 
 const wallet = await createNativeWallet({
@@ -155,16 +156,24 @@ own hidden Drive folder and cannot move wallet value, so neither hybrid is a sec
 capability and registering them with Nitro is allowed.
 
 ```ts
+import { createWalletEngine } from "@qntx/wallet-engine";
+import type { EngineOptions } from "@qntx/wallet-engine";
 import { createICloudStore, createGoogleDriveStore } from "@qntx/wallet-native/cloud";
+
+// `Platform` from react-native; `engineOptions` are your usual EngineOptions minus `cloud`.
+declare const Platform: { readonly OS: "ios" | "android" };
+declare const engineOptions: Omit<EngineOptions, "cloud">;
 
 const cloud =
   Platform.OS === "ios"
     ? createICloudStore({ container: "iCloud.org.qntx.wallet" })
     : createGoogleDriveStore();
 
-const engine = createWalletEngine({ cloud });
+const engine = createWalletEngine({ ...engineOptions, cloud });
 // iOS only: re-sync when the iCloud account changes under the app.
-cloud.onAccountChange?.(() => engine.backup.sync());
+if ("onAccountChange" in cloud) {
+  cloud.onAccountChange(() => engine.backup.sync());
+}
 ```
 
 - Both `createICloudStore` and `createGoogleDriveStore` lazily create their Nitro object on

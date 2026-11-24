@@ -15,10 +15,16 @@ npm install @qntx/wallet-engine @qntx/wallet @qntx/wallet-worker @qntx/wallet-ch
 ```
 
 ```ts
+import { verifyEvent } from "@qntx/nostr";
+import type { Wallet } from "@qntx/wallet";
 import { createWalletEngine } from "@qntx/wallet-engine";
 // in-app-browser provider injection and the WebView bridge:
 import { injectedScript, createBrowserBridge } from "@qntx/wallet-engine/connect";
 import { openIndexedDbEngineStore, openIndexedDbPublicStore } from "@qntx/wallet-engine/idb";
+
+// From your wallet setup — createWebWallet / createNodeWallet / createNativeWallet.
+declare const wallet: Wallet;
+declare const showCallsSheet: (origin: string, txIds: ReadonlyArray<string>) => void;
 
 const random = (n: number) => crypto.getRandomValues(new Uint8Array(n));
 const engine = createWalletEngine({
@@ -207,7 +213,7 @@ approvals, balances and resources, fiat prices, and history.
 Host `rpc` entries are full-node HTTP base URLs — the engine appends the `/wallet/*` and
 `/walletsolidity/*` paths itself and reads both heads on the same base:
 
-```ts
+```text
 createWalletEngine({
   // …
   rpc: {
@@ -345,7 +351,7 @@ An app provider is an `AppDefinition<Id, Api, D>`: a small factory the host list
 `"example-notes"` provider that registers a per-group handle — importing only the public
 package entries.
 
-```ts
+```text
 export const exampleNotes = (
   config,
 ): AppDefinition<"example-notes", ExampleNotesApi, ExampleNotesDetail> => ({
@@ -421,13 +427,22 @@ host apps build on. Each provider ships in its own sub-entry —
 only the apps it lists.
 
 ```ts
-import { createWalletEngine } from "@qntx/wallet-engine";
+import type { Wallet } from "@qntx/wallet";
+import type { WalletEngine } from "@qntx/wallet-engine";
 import { createApps } from "@qntx/wallet-engine/apps";
 import type { AppSocket } from "@qntx/wallet-engine/apps";
 import { hyperliquid } from "@qntx/wallet-engine/apps/hyperliquid";
 import { polymarket } from "@qntx/wallet-engine/apps/polymarket";
+import type { PolymarketBuilder } from "@qntx/wallet-engine/apps/polymarket";
+import { openIndexedDbEngineStore } from "@qntx/wallet-engine/idb";
 
-const engine = createWalletEngine({/* … */});
+// The engine and wallet from the examples above; the sign oracle is your server endpoint.
+declare const engine: WalletEngine;
+declare const wallet: Wallet;
+declare const random: (length: number) => Uint8Array;
+declare const myBuilderEndpoint: PolymarketBuilder["sign"];
+
+const dataKey = await wallet.dataKeys.get("app-apps");
 const apps = await createApps({
   wallet, // the same Wallet the engine was built on
   requests: engine.requests, // user-signed actions open approval requests here
@@ -587,7 +602,7 @@ from the group's `evm.bip44` signer. Everything else is discovered, not persiste
 live in the engine's encrypted apps store, deployment is proven on-chain (relayer answers are
 hints only), approvals from the Data API.
 
-```ts
+```text
 const apps = createApps({
   wallet,
   requests,
@@ -746,7 +761,7 @@ sides, and the SDK's own deployment check stays on, so a drifted deployment repo
 status `contract-changed` rather than signing against unexpected code. The REST API is optional:
 `fiat24({ fetch })` is for `api.fiat24.com` only.
 
-```ts
+```text
 import { fiat24 } from "@qntx/wallet-engine/apps/fiat24";
 
 const apps = createApps({
@@ -839,7 +854,15 @@ browser sessions, and every `session_request` runs through the same handlers and
 the in-app browser uses, so the approval UI and risk checks are unchanged.
 
 ```ts
+import type { Wallet } from "@qntx/wallet";
+import type { WalletEngine } from "@qntx/wallet-engine";
 import { createWalletConnect } from "@qntx/wallet-engine/walletconnect";
+import type { WalletConnectStorage } from "@qntx/wallet-engine/walletconnect";
+
+declare const projectId: string;
+declare const storage: WalletConnectStorage;
+declare const wallet: Wallet;
+declare const engine: WalletEngine;
 
 const walletConnect = await createWalletConnect({
   projectId, // from the Reown dashboard — see the checklist below

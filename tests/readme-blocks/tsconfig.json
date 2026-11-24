@@ -1,0 +1,45 @@
+{
+  // Compiles the fenced ```ts blocks extracted from the READMEs and MIGRATION.md by
+  // scripts/readme-blocks.ts, against the package sources the way a host imports them.
+  "extends": "../migration/tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    // Snippets are fragments of a host flow — a trailing value need not be consumed.
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "paths": {
+      "@qntx/wallet": ["../../packages/wallet/src/index.ts"],
+      "@qntx/wallet/*": ["../../packages/wallet/src/*/index.ts"],
+      "@qntx/wallet-chains": ["../../packages/wallet-chains/src/index.ts"],
+      "@qntx/wallet-chains/*": ["../../packages/wallet-chains/src/*/index.ts"],
+      "@qntx/wallet-engine": ["../../packages/wallet-engine/src/index.ts"],
+      "@qntx/wallet-engine/idb": ["../../packages/wallet-engine/src/idb/indexeddb.ts"],
+      "@qntx/wallet-engine/push": ["../../packages/wallet-engine/src/push/index.ts"],
+      "@qntx/wallet-engine/connect": ["../../packages/wallet-engine/src/connect/index.ts"],
+      "@qntx/wallet-engine/walletconnect": [
+        "../../packages/wallet-engine/src/walletconnect/index.ts"
+      ],
+      "@qntx/wallet-engine/apps": ["../../packages/wallet-engine/src/apps/index.ts"],
+      "@qntx/wallet-engine/apps/fiat24": ["../../packages/wallet-engine/src/apps/fiat24/index.ts"],
+      "@qntx/wallet-engine/apps/hyperliquid": [
+        "../../packages/wallet-engine/src/apps/hyperliquid/index.ts"
+      ],
+      "@qntx/wallet-engine/apps/polymarket": [
+        "../../packages/wallet-engine/src/apps/polymarket/index.ts"
+      ],
+      "@qntx/wallet-engine/gateway/contract": [
+        "../../packages/wallet-engine/src/gateway/contract/index.ts"
+      ],
+      "@qntx/wallet-worker/browser": ["../../packages/wallet-worker/src/browser/index.ts"],
+      "@qntx/wallet-worker/node": ["../../packages/wallet-worker/src/node/index.ts"],
+      "@qntx/wallet-native": ["../../packages/wallet-native/src/index.ts"],
+      "@qntx/wallet-native/secure-input": ["../../packages/wallet-native/src/secure-input.ts"],
+      "@qntx/wallet-native/cloud": ["../../packages/wallet-native/src/cloud.ts"],
+      "@qntx/nostr": ["../../packages/wallet-engine/node_modules/@qntx/nostr/dist/index.d.mts"],
+      "react-native-nitro-modules": [
+        "../../packages/wallet-native/node_modules/react-native-nitro-modules/lib/typescript/index.d.ts"
+      ]
+    }
+  },
+  "include": ["."]
+}
