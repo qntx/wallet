@@ -7,6 +7,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { base58 } from "@scure/base";
+import { Transaction } from "@scure/btc-signer";
 import * as TypedData from "ox/TypedData";
 
 import type { AccountRef, DisplayIntent, SignRequest, TaskKey } from "@qntx/wallet-chains";
@@ -15,7 +16,9 @@ import { decodeEvm, parseTypedData, planEvm } from "@qntx/wallet-chains/evm";
 import { decodeSolana } from "@qntx/wallet-chains/solana";
 import { decodeTron, tronMessageDigest } from "@qntx/wallet-chains/tron";
 
-import { QrError } from "./errors.ts";
+import { inputEntries } from "./bind.ts";
+import { QrError, qrGuard } from "./errors.ts";
+import { BITCOIN_MAINNET, BITCOIN_TESTNET } from "./link.ts";
 import type { QrRequest } from "./request.ts";
 
 export type QrDigestKind =
@@ -34,9 +37,25 @@ export type QrDigest = {
   readonly shownBy: ReadonlyArray<"ledger-ethereum" | "ledger-solana">;
 };
 
+/**
+ * One decoded view of the request: `networks` names every network the address encoding serves —
+ * several when one bech32 prefix covers them (a coin-type-1' PSBT shows its `tb1…` outputs for
+ * testnet and signet alike, so one intent is labelled by both; regtest's `bcrt1…` is a separate
+ * entry). `intent.network` is the id the decode ran under — always a member of `networks`.
+ */
+export type QrDisplay = {
+  readonly networks: ReadonlyArray<string>;
+  readonly intent: DisplayIntent;
+};
+
 export type QrInspection = {
   readonly request: QrRequest;
-  readonly display?: DisplayIntent;
+  /**
+   * One decoded intent per output encoding the request permits — a single entry for every request
+   * but a coin-type-1' PSBT, which carries both the `tb1…` and `bcrt1…` decodings. Absent when the
+   * request lacks what a decoder needs (a missing counterpart address) or every decode failed.
+   */
+  readonly displays?: ReadonlyArray<QrDisplay>;
   readonly digests: ReadonlyArray<QrDigest>;
 };
 
@@ -98,20 +117,90 @@ const tronProbe = (
         message: request.data,
       };
 
+/* The coin-type-1' encodings, in CAIP-2 ids from @qntx/wallet-chains' `bitcoin/networks.ts`:
+   testnet and signet share the `tb1…` prefix (one display serves both); regtest's `bcrt1…` is its
+   own display. */
+const BITCOIN_SIGNET = "bip122:00000008819873e925422c1ff0f99f7c";
+const BITCOIN_REGTEST = "bip122:0f9188f13cb7b2c71f2a335e3a4fc328";
+
+const HARDENED = 0x80000000;
+
+/**
+ * The network labels a PSBT's derivations permit, one entry per address encoding: coin type 0' is
+ * mainnet alone; coin type 1' is ambiguous between the `tb1…` test networks and regtest's `bcrt1…`,
+ * so both encodings are returned. A derivation with no hardened coin type, a coin type this wallet
+ * never serves, derivations across several coin types, or no derivations at all leave the network
+ * unreadable — refuse rather than show outputs on a guessed one (the same `network-ambiguous`
+ * `bindQrRequest` raises).
+ */
+const psbtEncodings = (psbt: Uint8Array): ReadonlyArray<ReadonlyArray<string>> => {
+  const tx = qrGuard("malformed", () => Transaction.fromPSBT(psbt));
+  const coins = new Set<number>();
+  const collect = (
+    io: Parameters<typeof inputEntries>[0],
+    side: "input" | "output",
+    index: number,
+  ): void => {
+    for (const entry of inputEntries(io)) {
+      const [, coin] = entry.path;
+      if (entry.path.length < 2 || coin === undefined || coin < HARDENED) {
+        throw new QrError(
+          "network-ambiguous",
+          `a ${side} ${index} derivation carries no coin type`,
+        );
+      }
+      coins.add(coin - HARDENED);
+    }
+  };
+  for (let index = 0; index < tx.inputsLength; index += 1) {
+    collect(
+      qrGuard("malformed", () => tx.getInput(index)),
+      "input",
+      index,
+    );
+  }
+  for (let index = 0; index < tx.outputsLength; index += 1) {
+    collect(
+      qrGuard("malformed", () => tx.getOutput(index)),
+      "output",
+      index,
+    );
+  }
+  if (coins.size !== 1) {
+    throw new QrError(
+      "network-ambiguous",
+      coins.size === 0
+        ? "the PSBT carries no derivation to read a network from"
+        : "the derivations span several bitcoin coin types",
+    );
+  }
+  const [coin] = coins;
+  if (coin === 0) {
+    return [[BITCOIN_MAINNET]];
+  }
+  if (coin === 1) {
+    return [[BITCOIN_TESTNET, BITCOIN_SIGNET], [BITCOIN_REGTEST]];
+  }
+  throw new QrError(
+    "network-ambiguous",
+    `coin type ${coin ?? "unknown"}' is not a bitcoin network we serve`,
+  );
+};
+
 const bitcoinProbe = (
   request: Extract<QrRequest, { family: "bitcoin" }>,
+  network: string,
 ): Extract<SignRequest, { kind: "bitcoin.psbt" }> => ({
-  // A PSBT carries no declared network; the mainnet coder frames the outputs.
   kind: "bitcoin.psbt",
-  network: "bip122:000000000019d6689c085ae165831e93",
+  network,
   account: { kind: "hd", walletId: "", groupIndex: 0 },
   psbt: request.psbt,
   sign: [],
 });
 
-/** A normalized `chain.sign` request for the decoders/plans; account fields are never read. */
+/** A normalized `chain.sign` request for the decoders; account fields are never read. */
 // oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
-const probe = (request: QrRequest): SignRequest => {
+const probe = (request: Extract<QrRequest, { family: "evm" | "solana" | "tron" }>): SignRequest => {
   switch (request.family) {
     case "evm": {
       const network = evmNetwork(request);
@@ -125,8 +214,6 @@ const probe = (request: QrRequest): SignRequest => {
       return solanaProbe(request);
     case "tron":
       return tronProbe(request);
-    case "bitcoin":
-      return bitcoinProbe(request);
   }
 };
 
@@ -147,6 +234,8 @@ const evmDigests = (request: Extract<QrRequest, { family: "evm" }>): ReadonlyArr
       {
         kind: "evm-transaction-hash",
         value: hex(planEvm(evmProbe(request), probeKey(request)).tasks[0].digest),
+        /* Ledger app-ethereum ≥ 1.14.0: the blind-signing flow shows the transaction hash —
+           CHANGELOG "Changed" (n10/qr-signer/research.md §Device displays). */
         shownBy: ["ledger-ethereum"],
       },
     ];
@@ -160,6 +249,8 @@ const evmDigests = (request: Extract<QrRequest, { family: "evm" }>): ReadonlyArr
           domain: json.domain,
           types: json.types,
         }),
+        /* Ledger app-ethereum ≥ 1.18.0: a setting shows the EIP-712 domain and message hashes —
+           same CHANGELOG (research.md §Device displays). */
         shownBy: ["ledger-ethereum"],
       },
       {
@@ -170,12 +261,15 @@ const evmDigests = (request: Extract<QrRequest, { family: "evm" }>): ReadonlyArr
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- parseTypedData validated the shape
           types: json.types as TypedData.TypedData,
         }),
+        // Same app-ethereum ≥ 1.18.0 source as the domain hash above.
         shownBy: ["ledger-ethereum"],
       },
       {
         kind: "eip712-digest",
         value: hex(planEvm(evmProbe(request), probeKey(request)).tasks[0].digest),
-        shownBy: ["ledger-ethereum"],
+        /* No source says the device shows the final digest — compare only the domain and message
+           hashes above. */
+        shownBy: [],
       },
     ];
   }
@@ -183,54 +277,71 @@ const evmDigests = (request: Extract<QrRequest, { family: "evm" }>): ReadonlyArr
     {
       kind: "eip191-digest",
       value: hex(planEvm(evmProbe(request), probeKey(request)).tasks[0].digest),
-      shownBy: ["ledger-ethereum"],
+      // No primary source shows which hash app-ethereum displays for a personal message.
+      shownBy: [],
     },
   ];
 };
 
-/** The display decode, or `undefined` when the request lacks what a decoder needs. */
+/** One decode per network the PSBT's derivations permit; a failed decode drops that entry. */
+const bitcoinDisplays = (
+  request: Extract<QrRequest, { family: "bitcoin" }>,
+): ReadonlyArray<QrDisplay> | undefined => {
+  const encodings = psbtEncodings(request.psbt);
+  const out: QrDisplay[] = [];
+  for (const networks of encodings) {
+    const [network] = networks;
+    if (network === undefined) {
+      continue;
+    }
+    try {
+      out.push({ networks, intent: decodeBitcoinPsbt(bitcoinProbe(request, network)) });
+    } catch {
+      /* An undecodable frame loses that encoding's display, not the inspection. */
+    }
+  }
+  return out.length === 0 ? undefined : out;
+};
+
+/** The display decodes, or `undefined` when the request lacks what a decoder needs. */
 // oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
-const display = (request: QrRequest): DisplayIntent | undefined => {
-  if (request.family !== "bitcoin" && request.address === undefined) {
+const displays = (request: QrRequest): ReadonlyArray<QrDisplay> | undefined => {
+  if (request.family === "bitcoin") {
+    return bitcoinDisplays(request);
+  }
+  if (request.address === undefined) {
     return undefined;
   }
   try {
     switch (request.family) {
       case "evm": {
-        const probe_ = probe(request);
-        if (request.address === undefined) {
-          return undefined;
-        }
-        return decodeEvm(probe_, request.address);
+        const intent = decodeEvm(probe(request), request.address);
+        return [{ networks: [intent.network], intent }];
       }
       case "solana": {
-        if (request.kind !== "transaction" || request.address === undefined) {
+        if (request.kind !== "transaction") {
           return undefined;
         }
         const probed = solanaProbe(request);
         if (probed.kind !== "solana.transaction") {
           return undefined;
         }
-        return decodeSolana(probed, request.address);
+        const intent = decodeSolana(probed, request.address);
+        return [{ networks: [intent.network], intent }];
       }
-
-      case "tron":
-        if (request.address === undefined) {
-          return undefined;
-        }
-        return decodeTron(probe(request), request.address);
-
-      case "bitcoin":
-        return decodeBitcoinPsbt(bitcoinProbe(request));
+      case "tron": {
+        const intent = decodeTron(probe(request), request.address);
+        return [{ networks: [intent.network], intent }];
+      }
     }
   } catch {
     return undefined;
   }
 };
 
-const displayed = (request: QrRequest): { readonly display?: DisplayIntent } => {
-  const intent = display(request);
-  return intent === undefined ? {} : { display: intent };
+const displayed = (request: QrRequest): { readonly displays?: ReadonlyArray<QrDisplay> } => {
+  const decoded = displays(request);
+  return decoded === undefined ? {} : { displays: decoded };
 };
 
 // oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
@@ -247,6 +358,9 @@ export const inspectQrRequest = (request: QrRequest): QrInspection => {
             {
               kind: "solana-message-hash",
               value: base58.encode(sha256(request.data)),
+              /* Ledger app-solana blind signing shows base58(sha256(message)) as "Message Hash" —
+                 handle_sign_message.c (cx_hash_sha256 over the message; research.md §Device
+                 displays). */
               shownBy: ["ledger-solana"],
             },
           ],

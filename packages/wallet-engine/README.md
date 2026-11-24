@@ -1053,7 +1053,17 @@ must surface and the user must acknowledge to approve.
 `account-addresses`, `single-addresses`) — the UI should say so before showing the QR.
 `inspectQrRequest(request)` decodes the display intent and the digests a signing device would
 show; it proves what the scanned bytes mean, not that the desktop sent the same bytes to the
-device — compare the digest on the device.
+device — compare the digest on the device. Only digests a primary source says the device
+renders carry a `shownBy` label (Ledger app-ethereum ≥ 1.14 the transaction hash, ≥ 1.18 the
+EIP-712 domain and message hashes; Ledger app-solana the message hash) — a digest with no
+source is still listed, unlabelled, as the protocol value.
+`inspectQrRequest` reports `displays`: one decoded intent per output encoding the request
+permits, each labelled by the networks that encoding serves. A PSBT carries no declared
+network, so its derivations' coin types decide — `0'` is mainnet; `1'` is ambiguous between the
+`tb1…` test networks (testnet and signet share the prefix — one display, labelled by both) and
+regtest's `bcrt1…`, so it yields two displays; mixed or missing coin types fail with
+`network-ambiguous`, the same refusal `bindQrRequest` raises, rather than show outputs on a
+guessed network.
 
 ### Limits
 

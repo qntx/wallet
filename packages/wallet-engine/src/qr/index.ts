@@ -9,7 +9,7 @@ export type { QrSigner } from "./response.ts";
 export { qrExport } from "./export.ts";
 export type { QrExport, QrExportForm } from "./export.ts";
 export { inspectQrRequest } from "./inspect.ts";
-export type { QrDigest, QrDigestKind, QrInspection } from "./inspect.ts";
+export type { QrDigest, QrDigestKind, QrDisplay, QrInspection } from "./inspect.ts";
 export { BITCOIN_MAINNET } from "./link.ts";
 export { bindQrRequest } from "./bind.ts";
 export type { QrAccountFacts } from "./bind.ts";
