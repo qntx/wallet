@@ -61,6 +61,7 @@ import { collectChecks, feesDiffer } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { RiskFinding } from "../requests/risk.ts";
 import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
+import { TronBindingError } from "./binding.ts";
 import { submitSigned } from "./broadcast.ts";
 import { corroborated } from "./drop-evidence.ts";
 import type { DropEvidence } from "./drop-evidence.ts";
@@ -1210,22 +1211,8 @@ const dappTrc20Changes = (
   return { status: "success", changes };
 };
 
-/** Why a transaction's TaPoS reference could not be bound to this network. */
-export type TronBindingReason = "reference-block-unknown";
-
-/**
- * A `tron-sign` transaction whose reference block cannot be proven to belong to this network —
- * `code` is `invalid-request` like every other binding refusal; `reason` names which check failed.
- */
-export class TronBindingError extends ChainError {
-  readonly reason: TronBindingReason;
-
-  constructor(reason: TronBindingReason, message: string) {
-    super("invalid-request", message);
-    this.name = "TronBindingError";
-    this.reason = reason;
-  }
-}
+export { TronBindingError } from "./binding.ts";
+export type { TronBindingReason } from "./binding.ts";
 
 /**
  * A dApp-built transaction: the wallet never re-encodes the `raw_data` — the bytes the dApp sent

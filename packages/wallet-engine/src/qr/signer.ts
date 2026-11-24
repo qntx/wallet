@@ -6,7 +6,6 @@
  * secrets — the kernel remains the final authority over every signature.
  */
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
-import { ChainError } from "@qntx/wallet-chains";
 import { parseCompiledMessage } from "@qntx/wallet-chains/solana";
 import { chains } from "@qntx/wallet/chains";
 import type { QrPayload } from "@qntx/wallet/hardware";
@@ -14,6 +13,7 @@ import type { ChainAccount, ChainExportNode, ChainSignResult } from "@qntx/walle
 
 import type { NetworkController } from "../networks/controller.ts";
 import type { PendingRequest, RequestController, RequestResult } from "../requests/controller.ts";
+import { SolanaClusterBindingError, TronBindingError } from "../transactions/binding.ts";
 import { BITCOIN_MAINNET, bindQrRequest } from "./bind.ts";
 import type { QrAccountFacts } from "./bind.ts";
 import { QrError, qrGuard } from "./errors.ts";
@@ -25,14 +25,8 @@ import { qrResponse } from "./response.ts";
 /** The account a QR request is bound to: a wallet group the request must have been built for. */
 export type QrAccount = { readonly walletId: string; readonly groupIndex: number };
 
-/**
- * SolanaClusterBindingError / TronBindingError by name: the classes live in the transactions
- * modules, which the air-gapped `qr` entry must not bundle.
- */
 const isBindingRefusal = (error: unknown): boolean =>
-  error instanceof ChainError &&
-  error.code === "invalid-request" &&
-  (error.name === "SolanaClusterBindingError" || error.name === "TronBindingError");
+  error instanceof SolanaClusterBindingError || error instanceof TronBindingError;
 
 /**
  * The slice of the engine a QR signer drives: the request pipeline every origin feeds and the
