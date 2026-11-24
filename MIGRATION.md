@@ -2820,13 +2820,12 @@ and detail rows after: a bounded prompt drops only detail rows (with a "N more l
 when the warning rows alone do not fit the dialog the request is `unsupported` even with blind
 signing on — a bound can no longer truncate a warning out of view. A hardware prompt leads with
 its device line — `clear` tells the user to check the request on the device, `blind` warns —
-ahead of the chain prompt's rows, its room reserved by the same bound. And for Ledger the engine
+ahead of the chain prompt's rows, its room reserved by the same bound. And for Ledger the kernel
 strips the wallet's own BIP-32 derivations from every PSBT output the prompt shows before the
 device sees the transaction: app-bitcoin hides a change-chain output carrying the policy's
 fingerprint with no index bound, so an unusual-path own-key output the phone shows would
-otherwise be hidden on the device — the stripped output renders by address on both. And the
-React Native session
-policy gains a 15-minute idle lock counted on presence-bearing methods only (`idle:
+otherwise be hidden on the device — the stripped output renders by address on both. The React
+Native session policy gains a 15-minute idle lock counted on presence-bearing methods only (`idle:
 { ms: 15 * 60_000, activity: "presence" }`): trading or background traffic cannot hold the vault
 open — the 24 h `maxSessionMs` is unchanged.
 
