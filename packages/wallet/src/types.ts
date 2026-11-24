@@ -105,8 +105,10 @@ export type WalletErrorCode =
 
 /**
  * The vault half of the status payload: `corrupted` means authentication or structural data failed
- * to verify, `unsupported` means a newer build wrote it (data untouched, update the app),
- * `unavailable` means a transient store I/O failure (retried on the next request or change).
+ * to verify, `unsupported` means a different build wrote it — a newer one, or (before 1.0) an older
+ * one whose format this build never read; the data is left untouched either way and the only way
+ * out is the explicit `vault.reset` — `unavailable` means a transient store I/O failure (retried on
+ * the next request or change).
  */
 export type VaultState =
   | "uninitialized"

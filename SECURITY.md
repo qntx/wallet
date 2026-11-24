@@ -68,6 +68,11 @@ disclosure timeline with you.
     backoff never slows an attacker who can read storage: the password factor can be attacked
     offline at its PBKDF2 cost.
   - Node keeps the store and the anchor in the host process's memory; neither outlives it.
+- **Persisted data:** an image this build cannot read is surfaced as `unsupported` and left
+  untouched — never silently wiped; `vault.reset` is an explicit user call. Starting at the
+  first production release (1.0), no upgrade discards persisted user data (vault, backup
+  envelope, engine store): every format change ships a one-step, tested forward upgrade from
+  the previous released format.
 - **Secret buffers:** every secret field of a kernel request must own its memory; a request whose
   secret shares bytes with another field is refused, because the kernel wipes secrets in place.
 - **Gateway privacy:** the gateway sees a fresh client id per session and per scope (one per chain

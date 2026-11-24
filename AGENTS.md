@@ -58,6 +58,13 @@
   `hyperliquid-l1-agent` scheme is 16 384 B by owner decision of 2026-11-22.
 - The application share of the native kernel bundle stays within the budgets enforced by
   `scripts/check-kernel-budget.ts` (run by `bun run lint`); raising one needs a recorded decision.
+- Starting at the first production release (1.0), persisted user data — the vault image, the
+  backup envelope, the engine store — is never discarded by an upgrade: every persisted-format
+  change from then on ships a one-step, tested forward upgrade from the previous released
+  format. The "no backward compatibility" rule above governs code APIs and pre-1.0 formats
+  only (there are no installed users to migrate before 1.0); an image this build cannot read
+  is surfaced as `unsupported` — never silently wiped — and `vault.reset` stays an explicit
+  user call.
 - An application signs only through the request pipeline — requests attributed to it with origin
   `{ kind: "app", id }`, approved by the user and decoded by the kernel — or through a kernel
   session scheme; it never holds a private key.
