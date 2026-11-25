@@ -731,7 +731,12 @@ describe("chains(wallet)", () => {
       const kernel = new FakeKernel(unlockedStatus());
       kernel.handlers.set("chain.sign", () => ({ ok: result }));
       kernel.handlers.set("wallet.accounts", () => ({
-        ok: { template: "tron.bip44", network: "tron:728126428", address: TRON_ADDR, confirmed: true },
+        ok: {
+          template: "tron.bip44",
+          network: "tron:728126428",
+          address: TRON_ADDR,
+          confirmed: true,
+        },
       }));
       kernel.handlers.set("keys.list", () => ({
         ok: [{ keyId: KEY_ID, family: "tron", address: TRON_ADDR, createdAt: 1 }],
@@ -1076,17 +1081,32 @@ describe("chains(wallet)", () => {
       const { template, network } = request.params as { template: string; network: string };
       if (template === "evm.bip44") {
         return {
-          ok: { template, network, address: evmAddressFromPublicKey(pubOf(evmLeaf)), confirmed: true },
+          ok: {
+            template,
+            network,
+            address: evmAddressFromPublicKey(pubOf(evmLeaf)),
+            confirmed: true,
+          },
         };
       }
       if (template === "tron.bip44") {
         return {
-          ok: { template, network, address: tronAddressFromPublicKey(pubOf(tronLeaf)), confirmed: true },
+          ok: {
+            template,
+            network,
+            address: tronAddressFromPublicKey(pubOf(tronLeaf)),
+            confirmed: true,
+          },
         };
       }
       if (template === "solana.bip44-change") {
         return {
-          ok: { template, network, address: solanaAddressFromPublicKey(solanaPub), confirmed: true },
+          ok: {
+            template,
+            network,
+            address: solanaAddressFromPublicKey(solanaPub),
+            confirmed: true,
+          },
         };
       }
       return {
