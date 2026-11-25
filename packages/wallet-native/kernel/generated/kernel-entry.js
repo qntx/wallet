@@ -9315,9 +9315,13 @@
 	* `integrity` (the keystore opened a KEK for another DEK). `prompt` renders the system verification
 	* text and runs only for hardware. Password re-verification shares `unlock`'s rate limiting: the
 	* same armed-backoff rejection, the same atomic `failedAttempts` increment on a miss and the same
-	* clearing write on a success — all against the vault anchor, not the store.
+	* clearing write on a success — all against the vault anchor, not the store. A success is the one
+	* event that re-arms the idle deadline on a keystore host — the verification proved presence the
+	* runtime cannot forge — so it touches the session itself; every other caller-side touch stays a
+	* presence-marked-method decision of the request loop.
 	*/
-	async function verifyFactor(platform, image, factor, dek, commit, prompt) {
+	async function verifyFactor(ctx, factor, dek, prompt) {
+		const { platform, image, commit } = ctx;
 		if (factor.kind === "device") throw new KernelError("invalid-input", "the device factor cannot verify");
 		assertFactorKindAvailable(platform, factor.kind);
 		const candidates = image.factors.filter((stored) => {
@@ -9355,7 +9359,10 @@
 				} finally {
 					opened.wipe();
 				}
-				if (verified) break;
+				if (verified) {
+					ctx.session.touch();
+					break;
+				}
 			} catch (error) {
 				if (!(error instanceof KernelError) || error.code !== "wrong-password" && error.code !== "wrong-passkey") throw error;
 			} finally {
@@ -34343,7 +34350,7 @@ zoo`.split("\n"));
 		if (ctx.platform.keystore !== void 0) throw new KernelError("unsupported", "factor management is not available on this host");
 		const { dek } = ctx.session.require(requestSession);
 		assertFactorKindAvailable(ctx.platform, params.factor.kind);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "manage-factors"));
+		await verifyFactor(ctx, params.verify, dek, corePromptFor(ctx.platform.keystore, "manage-factors"));
 		if (params.factor.kind !== "password") {
 			const stored = await makeFactor(ctx.platform, params.factor, dek);
 			await ctx.commit([{
@@ -34368,7 +34375,7 @@ zoo`.split("\n"));
 		const { dek } = ctx.session.require(requestSession);
 		if (ctx.image.factors.find((f) => f.id === params.id) === void 0) throw new KernelError("not-found", "no such factor");
 		if (ctx.image.factors.length <= 1) throw new KernelError("invalid-input", "the vault must keep at least one factor");
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "manage-factors"));
+		await verifyFactor(ctx, params.verify, dek, corePromptFor(ctx.platform.keystore, "manage-factors"));
 		const rotation = await rotateVault(ctx.platform, ctx.image, dek, /* @__PURE__ */ new Set([params.id]), []);
 		await ctx.commit(rotation.ops, { rotate: {
 			dek: rotation.dek,
@@ -34423,7 +34430,7 @@ zoo`.split("\n"));
 		const { dek } = ctx.session.require(requestSession);
 		const locked = !ctx.image.factors.some((f) => f.kind === "device");
 		if (params.enabled === locked) return null;
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(keystore, "app-lock"));
+		await verifyFactor(ctx, params.verify, dek, corePromptFor(keystore, "app-lock"));
 		const session = ctx.session.require(requestSession);
 		const deviceRow = ctx.image.factors.find((f) => f.kind === "device");
 		if (params.enabled) {
@@ -34465,7 +34472,7 @@ zoo`.split("\n"));
 	async function setBlindSigning(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
 		if (params.enabled === (policyRecord(ctx.image, "blind-signing") !== void 0)) return null;
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, params.enabled ? "enable-blind-signing" : "disable-blind-signing"));
+		await verifyFactor(ctx, params.verify, dek, corePromptFor(ctx.platform.keystore, params.enabled ? "enable-blind-signing" : "disable-blind-signing"));
 		const session = ctx.session.require(requestSession);
 		await ctx.commit([params.enabled ? {
 			op: "put-record",
@@ -34641,7 +34648,7 @@ zoo`.split("\n"));
 	}
 	async function removeKey$1(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "remove-private-key"));
+		await verifyFactor(ctx, params.verify, dek, corePromptFor(ctx.platform.keystore, "remove-private-key"));
 		findRecord(ctx.image, "key", params.keyId);
 		await ctx.commit([{
 			op: "delete-record",
@@ -34657,7 +34664,7 @@ zoo`.split("\n"));
 	*/
 	async function exportKey$2(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "export-private-key"));
+		await verifyFactor(ctx, params.verify, dek, corePromptFor(ctx.platform.keystore, "export-private-key"));
 		const record = findRecord(ctx.image, "key", params.keyId);
 		const header = parseKeyHeader(record.header);
 		const secret = openRecord(dek, record);
@@ -35278,7 +35285,7 @@ zoo`.split("\n"));
 	}
 	async function deleteWallet(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "delete-wallet"));
+		await verifyFactor(ctx, params.verify, dek, corePromptFor(ctx.platform.keystore, "delete-wallet"));
 		const record = findWalletRecord(ctx.image, params.walletId);
 		if (record === void 0) throw new KernelError("not-found", "record not found");
 		const extras = ctx.modules.flatMap((module) => module.walletDeleteOps(ctx.image, params.walletId));
@@ -35666,7 +35673,7 @@ zoo`.split("\n"));
 		let bek;
 		try {
 			const { dek } = ctx.session.require(requestSession);
-			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "backup"));
+			await verifyFactor(ctx, params.verify, dek, corePromptFor(ctx.platform.keystore, "backup"));
 			bek = ctx.platform.random(32);
 			if (bek.length !== 32) throw new KernelError("integrity", "random source returned a wrong-length BEK");
 			for (const factor of params.factors) materials.push(await backupMaterial(ctx, factor, [], "enable"));
@@ -35718,7 +35725,7 @@ zoo`.split("\n"));
 	/** Deletes the retained BEK after re-verification; a missing record still succeeds. */
 	async function disableBackup(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "disable-backup"));
+		await verifyFactor(ctx, params.verify, dek, corePromptFor(ctx.platform.keystore, "disable-backup"));
 		if (ctx.image.records.find((r) => r.kind === BACKUP_KEY_KIND && r.id === BACKUP_KEY_ID) === void 0) return null;
 		await ctx.commit([{
 			op: "delete-record",
@@ -35883,7 +35890,7 @@ zoo`.split("\n"));
 	*/
 	async function exportMnemonic(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "export-mnemonic"));
+		await verifyFactor(ctx, params.verify, dek, corePromptFor(ctx.platform.keystore, "export-mnemonic"));
 		const record = findSeedWallet(ctx.image, params.walletId);
 		const header = parseEntropyHeader(record.header);
 		const { entropy, passphrase } = openWalletSecret(dek, record);
@@ -42008,7 +42015,7 @@ zoo`.split("\n"));
 		const prompt = exportPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), params);
 		const host = (_ctx$platform$keystor3 = ctx.platform.keystore) === null || _ctx$platform$keystor3 === void 0 ? void 0 : _ctx$platform$keystor3.platform;
 		if ((host === "ios" || host === "android") && !promptFits(prompt, PROMPT_BOUNDS[host])) throw new KernelError("invalid-input", "the export prompt does not fit the verification dialog");
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => prompt);
+		await verifyFactor(ctx, params.verify, dek, () => prompt);
 		ctx.session.require(session);
 		if (record.kind !== "entropy") return result$1(ctx.externalMaterial(record), params);
 		return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
@@ -42448,7 +42455,7 @@ zoo`.split("\n"));
 		const { request, verify } = params;
 		const openKeys = request.account.kind === "imported" ? importedSource(ctx, request, dek) : hdSource(ctx, request, dek);
 		const prepared = await openKeys(async (keys) => prepareApproval(ctx, request, keys.material, dek));
-		await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () => {
+		await verifyFactor(ctx, verify, dek, () => {
 			var _prepared$shown$promp, _prepared$shown, _ctx$platform$keystor, _ctx$platform$keystor2;
 			return (_prepared$shown$promp = (_prepared$shown = prepared.shown) === null || _prepared$shown === void 0 ? void 0 : _prepared$shown.prompt) !== null && _prepared$shown$promp !== void 0 ? _prepared$shown$promp : chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prepared.prompt);
 		});
@@ -46760,7 +46767,7 @@ zoo`.split("\n"));
 						if (params.verify === void 0) throw new KernelError("invalid-input", "this card operation needs a verify");
 						rememberGated(ctx, params.op, params.verify.kind);
 						const prompt = params.op.kind === "sign" ? (prepared = await prepareSign(env, params.op, dek)).verifyPrompt : cardPromptFor(platform.keystore, promptKind(params.op), () => promptCards(ctx, params.op));
-						await verifyFactor(platform, ctx.image, params.verify, dek, ctx.commit, prompt);
+						await verifyFactor(ctx, params.verify, dek, prompt);
 					}
 					if (current !== void 0) await discard(current);
 					const gen = makeOp(env, params.op, prepared);
@@ -48102,7 +48109,7 @@ zoo`.split("\n"));
 	}
 	async function exportKey(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "export-private-key"));
+		await verifyFactor(ctx, params.verify, dek, corePromptFor(ctx.platform.keystore, "export-private-key"));
 		const secretKey = openRecord(dek, findRecord(ctx.image, NOSTR_KEY_KIND, params.publicKey));
 		try {
 			return params.format.kind === "nsec" ? nsecFromSecretKey(secretKey) : await ncryptsecFromSecretKey(secretKey, params.format.password);
@@ -48750,7 +48757,7 @@ zoo`.split("\n"));
 			}
 			const prompt = approvalPrompt(ctx.platform, metering, _objectSpread2(_objectSpread2({}, approval), {}, { spent: metering.fresh(limits) }), false);
 			await confirmLimits(ctx.platform, prompt);
-			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, prompt);
+			await verifyFactor(ctx, params.verify, dek, prompt);
 		}
 		const entropy = findSeedWallet(ctx.image, params.owner.walletId);
 		const owner = await withWalletSeed(ctx.platform.pbkdf2, dek, entropy, (seed) => {
@@ -48836,7 +48843,7 @@ zoo`.split("\n"));
 			spent
 		}, true);
 		await confirmLimits(ctx.platform, prompt);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, prompt);
+		await verifyFactor(ctx, params.verify, dek, prompt);
 		opened.add(record.id);
 		return null;
 	};
@@ -61718,7 +61725,7 @@ zoo`.split("\n"));
 			const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
 			const shown = ctx.platform.keystore === void 0 ? void 0 : boundChainPrompt(locale, prepared.prompt, shrinkBound(PROMPT_BOUNDS[ctx.platform.keystore.platform], devicePromptLine(locale, display, device)));
 			assertSignable(ctx, dek, prepared.prompt, (_shown$oversize = shown === null || shown === void 0 ? void 0 : shown.oversize) !== null && _shown$oversize !== void 0 ? _shown$oversize : false);
-			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => {
+			await verifyFactor(ctx, params.verify, dek, () => {
 				var _shown$prompt;
 				return devicePrompt((_shown$prompt = shown === null || shown === void 0 ? void 0 : shown.prompt) !== null && _shown$prompt !== void 0 ? _shown$prompt : chainPrompt(locale, prepared.prompt), locale, display, device);
 			});
@@ -71545,7 +71552,7 @@ zoo`.split("\n"));
 		const shown = keystore === void 0 ? void 0 : boundPrompt(promptLocale(keystore.locale), rowsOf(sparkPrompt(promptLocale(keystore.locale), summary)), PROMPT_BOUNDS[keystore.platform]);
 		if ((shown === null || shown === void 0 ? void 0 : shown.oversize) === true && !policyEnabled(ctx.image, dek, "blind-signing")) throw new KernelError("blind-signing-disabled", "blind signing is turned off for this vault");
 		const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => shown === void 0 ? sparkPrompt(locale, summary) : shown.prompt);
+		await verifyFactor(ctx, params.verify, dek, () => shown === void 0 ? sparkPrompt(locale, summary) : shown.prompt);
 		ctx.session.require(session);
 		const live = liveApprovals(state, ctx, key);
 		if (live.length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
@@ -72066,7 +72073,7 @@ zoo`.split("\n"));
 		const respond = async (raw) => {
 			let id = 0;
 			try {
-				var _platform$policy$idle;
+				var _platform$policy$idle, _platform$policy$idle2;
 				if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new KernelError("integrity", "malformed request");
 				if (Object.getPrototypeOf(raw) !== Object.prototype) throw new KernelError("integrity", "malformed request");
 				const request = raw;
@@ -72090,7 +72097,7 @@ zoo`.split("\n"));
 					if (ctx.health === "unavailable") throw new KernelError("unavailable", "the vault store is unavailable");
 				}
 				const result = await dispatch(method, params, typeof sessionField === "string" ? sessionField : void 0);
-				if (ctx.session.unlocked && (METHODS[method].presence || ((_platform$policy$idle = platform.policy.idle) === null || _platform$policy$idle === void 0 ? void 0 : _platform$policy$idle.activity) === "request")) ctx.session.touch();
+				if (ctx.session.unlocked && (((_platform$policy$idle = platform.policy.idle) === null || _platform$policy$idle === void 0 ? void 0 : _platform$policy$idle.activity) === "request" || ((_platform$policy$idle2 = platform.policy.idle) === null || _platform$policy$idle2 === void 0 ? void 0 : _platform$policy$idle2.activity) === "presence" && platform.keystore === void 0 && METHODS[method].presence)) ctx.session.touch();
 				return {
 					v: 3,
 					id,
@@ -74813,10 +74820,11 @@ zoo`.split("\n"));
 	}
 	// packages/wallet-native/kernel/policy.ts
 	/**
-	* The native session policy: a 15-minute presence idle lock, same semantics as the Web — only
-	* presence-bearing methods count, so `sessions.sign` trading or background traffic cannot hold the
-	* vault open — under a 24-hour absolute session. The host still locks on backgrounding after
-	* autoLock.backgroundSeconds (W7).
+	* The native session policy: a 15-minute presence idle lock under a 24-hour absolute session. On
+	* this host "presence" is stricter than on the Web: only a successful factor verification re-arms
+	* the deadline — a system keystore prompt is the one presence signal the main runtime cannot forge
+	* — so `session.touch`, `sessions.sign` trading or any other callable method cannot hold the vault
+	* open. The host still locks on backgrounding after autoLock.backgroundSeconds (W7).
 	*/
 	var NATIVE_POLICY = {
 		maxSessionMs: 864e5,

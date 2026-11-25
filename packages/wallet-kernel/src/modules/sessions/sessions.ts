@@ -300,7 +300,7 @@ export const createSession: (opened: Set<string>) => Handler<"sessions.create"> 
         false,
       );
       await confirmLimits(ctx.platform, prompt);
-      await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, prompt);
+      await verifyFactor(ctx, params.verify, dek, prompt);
     }
     const entropy = findSeedWallet(ctx.image, params.owner.walletId);
     const owner = await withWalletSeed(ctx.platform.pbkdf2, dek, entropy, (seed) => {
@@ -423,7 +423,7 @@ export const openSession: (opened: Set<string>) => Handler<"sessions.open"> =
       true,
     );
     await confirmLimits(ctx.platform, prompt);
-    await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, prompt);
+    await verifyFactor(ctx, params.verify, dek, prompt);
     opened.add(record.id);
     return null;
   };

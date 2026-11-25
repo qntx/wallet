@@ -121,11 +121,14 @@ describe("device factor cannot verify", () => {
     try {
       await expect(
         verifyFactor(
-          undefined as never,
-          image,
+          {
+            platform: undefined as never,
+            image,
+            commit: async () => Promise.resolve(),
+            session: { touch: () => undefined },
+          },
           { kind: "device" } as never,
           dek,
-          async () => Promise.resolve(),
           () => ({ title: "", description: "" }),
         ),
       ).rejects.toBeInstanceOf(KernelError);

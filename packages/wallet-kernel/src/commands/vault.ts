@@ -171,11 +171,9 @@ export async function addFactor(
   const { dek } = ctx.session.require(requestSession);
   assertFactorKindAvailable(ctx.platform, params.factor.kind);
   await verifyFactor(
-    ctx.platform,
-    ctx.image,
+    ctx,
     params.verify,
     dek,
-    ctx.commit,
     corePromptFor(ctx.platform.keystore, "manage-factors"),
   );
   if (params.factor.kind !== "password") {
@@ -219,11 +217,9 @@ export async function removeFactor(
     throw new KernelError("invalid-input", "the vault must keep at least one factor");
   }
   await verifyFactor(
-    ctx.platform,
-    ctx.image,
+    ctx,
     params.verify,
     dek,
-    ctx.commit,
     corePromptFor(ctx.platform.keystore, "manage-factors"),
   );
   const rotation = await rotateVault(ctx.platform, ctx.image, dek, new Set([params.id]), []);
@@ -289,14 +285,7 @@ export async function setAppLock(
   if (params.enabled === locked) {
     return null;
   }
-  await verifyFactor(
-    ctx.platform,
-    ctx.image,
-    params.verify,
-    dek,
-    ctx.commit,
-    corePromptFor(keystore, "app-lock"),
-  );
+  await verifyFactor(ctx, params.verify, dek, corePromptFor(keystore, "app-lock"));
   const session = ctx.session.require(requestSession);
   const deviceRow = ctx.image.factors.find((f) => f.kind === "device");
   if (params.enabled) {
@@ -355,11 +344,9 @@ export async function setBlindSigning(
     return null;
   }
   await verifyFactor(
-    ctx.platform,
-    ctx.image,
+    ctx,
     params.verify,
     dek,
-    ctx.commit,
     corePromptFor(
       ctx.platform.keystore,
       params.enabled ? "enable-blind-signing" : "disable-blind-signing",

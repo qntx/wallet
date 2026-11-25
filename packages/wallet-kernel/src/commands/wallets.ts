@@ -604,11 +604,9 @@ export async function deleteWallet(
 ): Promise<NullValue> {
   const { dek } = ctx.session.require(requestSession);
   await verifyFactor(
-    ctx.platform,
-    ctx.image,
+    ctx,
     params.verify,
     dek,
-    ctx.commit,
     corePromptFor(ctx.platform.keystore, "delete-wallet"),
   );
   const record = findWalletRecord(ctx.image, params.walletId);

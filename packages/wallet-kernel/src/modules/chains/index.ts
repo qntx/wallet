@@ -399,11 +399,9 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
     prepareApproval(ctx, request, keys.material, dek),
   );
   await verifyFactor(
-    ctx.platform,
-    ctx.image,
+    ctx,
     verify,
     dek,
-    ctx.commit,
     () =>
       prepared.shown?.prompt ??
       chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),

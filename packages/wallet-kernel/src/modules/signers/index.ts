@@ -439,7 +439,7 @@ export function createSignersModule(
             ),
           );
     assertSignable(ctx, dek, prepared.prompt, shown?.oversize ?? false);
-    await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () =>
+    await verifyFactor(ctx, params.verify, dek, () =>
       devicePrompt(shown?.prompt ?? chainPrompt(locale, prepared.prompt), locale, display, device),
     );
     ctx.session.require(session);

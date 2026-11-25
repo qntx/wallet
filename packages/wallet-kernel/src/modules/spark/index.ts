@@ -571,7 +571,7 @@ const sparkApprove = async (
     throw new KernelError("blind-signing-disabled", "blind signing is turned off for this vault");
   }
   const locale = promptLocale(ctx.platform.keystore?.locale ?? "en");
-  await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () =>
+  await verifyFactor(ctx, params.verify, dek, () =>
     shown === undefined ? sparkPrompt(locale, summary) : shown.prompt,
   );
   // Re-check after the prompt: the session may have ended and approvals may have expired or

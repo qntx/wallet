@@ -168,7 +168,7 @@ export const exportAccount = (): Handler<"chain.exportAccount"> => async (ctx, p
       "the export prompt does not fit the verification dialog",
     );
   }
-  await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => prompt);
+  await verifyFactor(ctx, params.verify, dek, () => prompt);
   // The session may have ended while the prompt was up, exactly as in chain.sign.
   ctx.session.require(session);
   if (record.kind !== "entropy") {

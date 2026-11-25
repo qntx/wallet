@@ -21,7 +21,11 @@ import { arr, bool, bytes, int, literal, nullValue, obj, opt, str, union } from 
 
 export type MethodSpec<P, R> = {
   readonly session: boolean;
-  /** Whether a successful call refreshes the idle timer — presence-bearing methods only. */
+  /**
+   * Whether a successful call counts as user presence for the idle timer. It refreshes the deadline
+   * only on a host without a platform keystore (Web, Node); on a keystore host only a successful
+   * factor verification does.
+   */
   readonly presence: boolean;
   readonly params: Validator<P>;
   readonly result: Validator<R>;

@@ -194,7 +194,8 @@ export function createCardModule(platform: KernelPlatform): CardModule {
             : cardPromptFor(platform.keystore, promptKind(params.op), () =>
                 promptCards(ctx, params.op),
               );
-        await verifyFactor(platform, ctx.image, params.verify, dek, ctx.commit, prompt);
+        // The module platform is the kernel's own — createCardModule gets it from kernel.ts.
+        await verifyFactor(ctx, params.verify, dek, prompt);
       }
       // One active operation at a time — the prior one's finally wipes its secrets.
       if (current !== undefined) {
