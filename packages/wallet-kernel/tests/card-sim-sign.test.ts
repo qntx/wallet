@@ -831,6 +831,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card sign (simulator)", () => {
 
   const psbtRequest = (walletId: string, psbt: Uint8Array, templates: string[]) => ({
     kind: "bitcoin.psbt",
+    origin: "internal",
     network: BTC_MAINNET,
     account: { kind: "hd", walletId, groupIndex: 0 },
     psbt,

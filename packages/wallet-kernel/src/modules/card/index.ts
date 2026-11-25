@@ -18,6 +18,7 @@ import { cardPromptFor, promptLocale } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import { verifyFactor } from "../../vault/vault.ts";
 import type { OpenedRecord } from "../../vault/vault.ts";
+import { commitChangeMarks } from "../chains/marks.ts";
 import { PLAN_MS } from "./budget.ts";
 import type { OpEnv, SignPrepared } from "./ops/index.ts";
 import {
@@ -196,6 +197,11 @@ export function createCardModule(platform: KernelPlatform): CardModule {
               );
         // The module platform is the kernel's own — createCardModule gets it from kernel.ts.
         await verifyFactor(ctx, params.verify, dek, prompt);
+        // Same commit point as chain.sign — the marks rise before the first tap.
+        if (prepared?.changeMarks !== undefined) {
+          const { groupIndex, network, raises } = prepared.changeMarks;
+          await commitChangeMarks(ctx, dek, prepared.walletId, groupIndex, network, raises);
+        }
       }
       // One active operation at a time — the prior one's finally wipes its secrets.
       if (current !== undefined) {

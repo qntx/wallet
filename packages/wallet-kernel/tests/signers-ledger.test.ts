@@ -742,6 +742,7 @@ describe("ledger driver display", () => {
     const psbt = unhex((vectorCase("bitcoin", "sign-psbt-wpkh").call as { psbt: string }).psbt);
     const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: "bip122:000000000019d6689c085ae165831e93",
       account: hd("btc.bip84"),
       psbt,
@@ -1086,6 +1087,7 @@ describe("ledger driver sign", () => {
     const psbt = unhex((vectorCase("bitcoin", "sign-psbt-wpkh").call as { psbt: string }).psbt);
     const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: "bip122:000000000019d6689c085ae165831e93",
       account: hd("btc.bip84"),
       psbt,
@@ -1137,6 +1139,7 @@ describe("ledger driver sign", () => {
     const psbt = tx.toPSBT(2);
     const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: "bip122:000000000019d6689c085ae165831e93",
       account: hd("btc.bip84"),
       psbt,
@@ -1253,6 +1256,7 @@ describe("ledger driver sign", () => {
     const psbt = unhex((vectorCase("bitcoin", "sign-psbt-wpkh").call as { psbt: string }).psbt);
     const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: "bip122:000000000019d6689c085ae165831e93",
       account: hd("btc.bip84"),
       psbt,
@@ -1277,6 +1281,7 @@ describe("ledger driver sign", () => {
     const psbt = unhex((vectorCase("bitcoin", "sign-psbt-wpkh").call as { psbt: string }).psbt);
     const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: "bip122:000000000019d6689c085ae165831e93",
       account: hd("btc.bip84"),
       psbt,
@@ -1298,6 +1303,7 @@ describe("ledger driver sign", () => {
     const psbt = unhex((vectorCase("bitcoin", "sign-psbt-tr").call as { psbt: string }).psbt);
     const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: "bip122:000000000019d6689c085ae165831e93",
       account: hd("btc.bip86"),
       psbt,
@@ -1318,6 +1324,7 @@ describe("ledger driver sign", () => {
     const psbt = unhex((vectorCase("bitcoin", "sign-psbt-tr").call as { psbt: string }).psbt);
     const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: "bip122:000000000019d6689c085ae165831e93",
       account: hd("btc.bip86"),
       psbt,
@@ -1342,6 +1349,7 @@ describe("ledger driver sign", () => {
     const psbt = unhex((vectorCase("bitcoin", "sign-psbt-tr").call as { psbt: string }).psbt);
     const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: "bip122:000000000019d6689c085ae165831e93",
       account: hd("btc.bip86"),
       psbt,
@@ -1365,6 +1373,7 @@ describe("ledger driver sign", () => {
     const psbt = unhex((vectorCase("bitcoin", "sign-psbt-tr").call as { psbt: string }).psbt);
     const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: "bip122:000000000019d6689c085ae165831e93",
       account: hd("btc.bip86"),
       psbt,
@@ -1385,6 +1394,7 @@ describe("ledger driver sign", () => {
     const psbt = unhex((vectorCase("bitcoin", "sign-psbt-wpkh").call as { psbt: string }).psbt);
     const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: "bip122:000000000019d6689c085ae165831e93",
       account: hd("btc.bip84"),
       psbt,
@@ -1405,6 +1415,7 @@ describe("ledger driver sign", () => {
     const psbt = unhex((vectorCase("bitcoin", "sign-psbt-wpkh").call as { psbt: string }).psbt);
     const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: "bip122:000000000019d6689c085ae165831e93",
       account: hd("btc.bip84"),
       psbt,

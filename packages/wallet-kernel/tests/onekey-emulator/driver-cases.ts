@@ -216,6 +216,7 @@ const bitcoinPsbtCase = (): DriverSignCase => {
   const planned = spend.toPSBT(0);
   const request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }> = {
     kind: "bitcoin.psbt",
+    origin: "internal",
     network: BTC_NETWORK,
     account: { kind: "hd", walletId: "onekey", groupIndex: 0 },
     psbt: planned,

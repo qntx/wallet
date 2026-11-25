@@ -16,7 +16,11 @@ import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { bitcoinNetwork, verifyBitcoinPsbtSignatures } from "@qntx/wallet-chains/bitcoin";
+import {
+  bitcoinNetwork,
+  normalizeBitcoin,
+  verifyBitcoinPsbtSignatures,
+} from "@qntx/wallet-chains/bitcoin";
 import { EVM_DELEGATOR, normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
@@ -471,6 +475,48 @@ describe("hardware sign byte-identical to local signing", () => {
     return tx.toPSBT(0);
   };
 
+  /**
+   * A bip84 PSBT spending one own key (default /0/0) to a payee plus an own change output at
+   * /1/`index`, bound by its derivation entry — the shape a crafted change output carries.
+   */
+  const psbtWithChange = (
+    index: number,
+    opts?: { readonly input?: { readonly change?: number; readonly index?: number } },
+  ): Uint8Array => {
+    const inChange = opts?.input?.change ?? 0;
+    const inIndex = opts?.input?.index ?? 0;
+    const inputKey = HDKey.fromMasterSeed(SEED).derive(`m/84'/0'/0'/${inChange}/${inIndex}`);
+    const inputPub = inputKey.publicKey!;
+    const inputSpend = p2wpkh(inputPub);
+    const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+    prev.addInput({ txid: hex("1212".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: inputSpend.script, amount: 100_000n });
+    const outKey = HDKey.fromMasterSeed(SEED).derive(`m/84'/0'/0'/1/${index}`);
+    const outPub = outKey.publicKey!;
+    const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+    tx.addInput({
+      txid: prev.id,
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: inputSpend.script, amount: 100_000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
+      bip32Derivation: [
+        [
+          inputPub,
+          { fingerprint: MASTER_FP, path: [84 + HARDENED, HARDENED, HARDENED, inChange, inIndex] },
+        ],
+      ],
+    });
+    tx.addOutput({ script: PAYEE_SCRIPT, amount: 90_000n });
+    tx.addOutput({ script: p2wpkh(outPub).script, amount: 1000n });
+    tx.updateOutput(tx.outputsLength - 1, {
+      bip32Derivation: [
+        [outPub, { fingerprint: MASTER_FP, path: [84 + HARDENED, HARDENED, HARDENED, 1, index] }],
+      ],
+    });
+    return tx.toPSBT(0);
+  };
+
   it("bitcoin psbt (bip84) is byte-identical; taproot is verified, not compared", async () => {
     const { h, session, walletId, hwId } = await boot();
     const account = (id: string): { kind: "hd"; walletId: string; groupIndex: number } => ({
@@ -480,6 +526,7 @@ describe("hardware sign byte-identical to local signing", () => {
     });
     const bip84 = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       psbt: psbt("btc.bip84"),
       sign: [{ index: 0, template: "btc.bip84" }],
@@ -525,6 +572,89 @@ describe("hardware sign byte-identical to local signing", () => {
     const sw = await signLocal(h, session, local);
     const hw = ok(await signOnDevice(h, session, hardware));
     expect(hw).toStrictEqual(sw);
+  });
+
+  it("the mark commit lands at begin — before the device signs anything", async () => {
+    const { h, session, hwId } = await boot();
+    const account = { kind: "hd", walletId: hwId, groupIndex: 0 };
+    const mark = async (): Promise<ProtocolValue> =>
+      field(
+        ok(
+          await h.call(
+            "wallet.accounts",
+            { walletId: hwId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+            session,
+          ),
+        ),
+        "changeMark",
+      );
+    expect(await mark()).toBe(0);
+    // An internal psbt hiding its own change output at /1/20 — the mark-0 bound exactly.
+    const request = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      origin: "internal",
+      network: BTC_NETWORK,
+      account,
+      psbt: psbtWithChange(20),
+      sign: [{ index: 0, template: "btc.bip84" }],
+    });
+    const begin = ok(
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "sign", request }, verify: PASSKEY() },
+        session,
+      ),
+    );
+    // `begin` already committed: the hardware wallet's sealed mark is raised before the first
+    // device exchange — a failed commit would have aborted the request with no op at all.
+    expect(await mark()).toBe(20);
+    // Drive the device to done so no op leaks into the next test.
+    const opId = strField(begin, "opId");
+    let step = field(begin, "step");
+    for (let guard = 0; strField(step, "kind") === "exchange" && guard < 16; guard++) {
+      const deviceRequest = field(step, "request");
+      const response =
+        strField(deviceRequest, "kind") === "qr"
+          ? { kind: "qr", ur: { type: "fake-sign", cbor: new Uint8Array([9]) } }
+          : strField(deviceRequest, "kind") === "compare"
+            ? { kind: "compare", matched: true }
+            : { kind: "message", data: new Uint8Array([0xaa]) };
+      // oxlint-disable-next-line no-await-in-loop -- the coroutine advances one turn per step
+      step = ok(await h.call("hardware.step", { opId, response }, session));
+    }
+    expect(strField(step, "kind")).toBe("done");
+    // A far own output at /1/5000 is shown, not hidden — it raises nothing.
+    const far = ok(
+      await signOnDevice(
+        h,
+        session,
+        normalizeBitcoin({
+          kind: "bitcoin.psbt",
+          origin: "internal",
+          network: BTC_NETWORK,
+          account,
+          psbt: psbtWithChange(5000),
+          sign: [{ index: 0, template: "btc.bip84" }],
+        }),
+      ),
+    );
+    expect(bytesField(far, "signedPsbt")).toBeInstanceOf(Uint8Array);
+    expect(await mark()).toBe(20);
+    // An external request's signed far change input never raises the bound either.
+    const external = await signOnDevice(
+      h,
+      session,
+      normalizeBitcoin({
+        kind: "bitcoin.psbt",
+        origin: "external",
+        network: BTC_NETWORK,
+        account,
+        psbt: psbtWithChange(50, { input: { change: 1, index: 30 } }),
+        sign: [{ index: 0, template: "btc.bip84" }],
+      }),
+    );
+    expect("err" in external).toBe(false);
+    expect(await mark()).toBe(20);
   });
 });
 
@@ -731,6 +861,7 @@ describe("hardware sign refusals", () => {
         session,
         {
           kind: "bitcoin.psbt",
+          origin: "internal",
           network: BTC_NETWORK,
           account: { kind: "hd", walletId: hwId, groupIndex: 0 },
           psbt: warningPsbt(10, 2),

@@ -742,6 +742,7 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
       // oxlint-disable-next-line eslint/no-await-in-loop -- one psbt review at a time
       const res = await sign("bitcoin", {
         kind: "bitcoin.psbt",
+        origin: "internal",
         network: BTC_NETWORK,
         account: { kind: "hd", walletId: hwId, groupIndex: 0 },
         psbt,

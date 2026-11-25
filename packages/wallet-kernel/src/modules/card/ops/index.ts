@@ -8,6 +8,7 @@ import type { CardOperation } from "@qntx/wallet/protocol";
 import type { KernelContext } from "../../../commands/context.ts";
 import { KernelError } from "../../../errors.ts";
 import { CARD_WALLET_KIND } from "../../../vault/store.ts";
+import { findWalletRecord } from "../../../vault/vault.ts";
 import { parseCardWalletHeader } from "../record.ts";
 import type { CardOp } from "../tap.ts";
 import { accountsOp } from "./accounts.ts";
@@ -51,7 +52,7 @@ export const checkOperation = (ctx: KernelContext, op: CardOperation): void => {
       if (cardRecord(account.walletId) === undefined) {
         // A walletId may name a vault record and a card wallet at once — only a missing card
         // record with no other wallet of that id is `not-found`; a non-card wallet is input.
-        throw ctx.image.records.some((r) => r.id === account.walletId)
+        throw findWalletRecord(ctx.image, account.walletId) !== undefined
           ? new KernelError("invalid-input", "the account's wallet is not a card wallet")
           : new KernelError("not-found", "no such card wallet");
       }
@@ -85,7 +86,7 @@ export const checkOperation = (ctx: KernelContext, op: CardOperation): void => {
         break;
       }
       const sourceId = op.source.walletId;
-      const source = ctx.image.records.find((r) => r.id === sourceId);
+      const source = findWalletRecord(ctx.image, sourceId);
       if (source === undefined) {
         throw new KernelError("not-found", "no such source wallet");
       }

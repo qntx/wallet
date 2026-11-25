@@ -504,6 +504,7 @@ const psbt = (template: "btc.bip84" | "btc.bip86"): Uint8Array => {
 
 const bip84Request = (walletId: string) => ({
   kind: "bitcoin.psbt",
+  origin: "internal",
   network: BTC_NETWORK,
   account: { kind: "hd", walletId, groupIndex: 0 },
   psbt: psbt("btc.bip84"),

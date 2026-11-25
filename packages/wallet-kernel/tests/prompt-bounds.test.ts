@@ -433,6 +433,7 @@ describe("a transaction prompt leads with its outflow line", () => {
     });
     const intent = decodeBitcoinPsbt({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NET,
       account: { kind: "hd", walletId: "w", groupIndex: 0 },
       psbt: tx.toPSBT(0),
@@ -660,6 +661,7 @@ describe("a bounded prompt keeps every warning row", () => {
     const request = (psbt: Uint8Array) =>
       normalizeBitcoin({
         kind: "bitcoin.psbt",
+        origin: "internal",
         network: BTC_NETWORK,
         account: { kind: "hd", walletId, groupIndex: 0 },
         psbt,

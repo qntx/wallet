@@ -4,6 +4,8 @@ import type { CardOperation, CardOpResult } from "@qntx/wallet/protocol";
 
 import { wipe } from "../../../secret/secret.ts";
 import { accountFor } from "../../chains/index.ts";
+import { changeMark } from "../../chains/marks.ts";
+import { BTC_PURPOSE } from "../../chains/shared.ts";
 import type { CardOp } from "../tap.ts";
 import { accessCodeLabel, tapPrompt } from "../text.ts";
 import type { OpEnv, RunOutcome } from "./shared.ts";
@@ -125,8 +127,13 @@ export async function* accountsOp(
     const material = env.ctx.externalMaterial(walletOf(env, walletId).record);
     const accounts = [];
     for (const template of op.templates) {
+      const purpose = BTC_PURPOSE[template];
+      const mark =
+        purpose === undefined
+          ? 0
+          : changeMark(env.ctx.image, walletId, op.groupIndex, purpose, op.network);
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential material lookups
-      accounts.push(await accountFor(material, template, op.network, op.groupIndex));
+      accounts.push(await accountFor(material, template, op.network, op.groupIndex, mark));
     }
     return { kind: "accounts", accounts } satisfies CardOpResult;
   } finally {

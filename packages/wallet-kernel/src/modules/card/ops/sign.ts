@@ -55,6 +55,12 @@ export type SignPrepared = {
   readonly plan: ChainPlan;
   readonly verifyPrompt: () => KeystorePrompt;
   readonly tapText: string;
+  /** Raises to the sealed change marks — committed after verification, before the first tap. */
+  readonly changeMarks?: {
+    readonly groupIndex: number;
+    readonly network: string;
+    readonly raises: ReadonlyArray<{ readonly purpose: number; readonly index: number }>;
+  };
 };
 
 /** A 7702 stage-1 plan signs the authorization, then the envelope under the same account. */
@@ -136,6 +142,15 @@ export const prepareSign = async (
       prepared.shown?.prompt ??
       chainPrompt(promptLocale(env.ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
     tapText,
+    ...(request.kind === "bitcoin.psbt" && prepared.changeMarks !== undefined
+      ? {
+          changeMarks: {
+            groupIndex: request.account.groupIndex,
+            network: request.network,
+            raises: prepared.changeMarks,
+          },
+        }
+      : {}),
   };
 };
 

@@ -49,6 +49,7 @@ import {
   leafPath,
   prepareApproval,
 } from "../chains/index.ts";
+import { changeMark, commitChangeMarks } from "../chains/marks.ts";
 import { boundChainPrompt, chainPrompt } from "../chains/prompt.ts";
 import { signStages } from "../chains/run.ts";
 import { BTC_PURPOSE } from "../chains/shared.ts";
@@ -251,7 +252,7 @@ export function createSignersModule(
         throw integrity("the device returned a malformed model or firmware string");
       }
       const id = hardwareWalletId(device, result.fingerprint);
-      if (ctx.image.records.some((record) => record.id === id)) {
+      if (ctx.image.records.some((record) => record.kind === HARDWARE_WALLET_KIND && record.id === id)) {
         throw new KernelError("already-exists", "this device is already paired");
       }
       const header: { -readonly [K in keyof HardwareHeader]: HardwareHeader[K] } = {
@@ -335,8 +336,13 @@ export function createSignersModule(
       const material = pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin });
       const accounts: ChainAccount[] = [];
       for (const template of op.templates) {
+        const purpose = BTC_PURPOSE[template];
+        const mark =
+          purpose === undefined
+            ? 0
+            : changeMark(ctx.image, op.walletId, op.groupIndex, purpose, op.network);
         // oxlint-disable-next-line eslint/no-await-in-loop -- account derivation is sequential by design
-        accounts.push(await accountFor(material, template, op.network, op.groupIndex));
+        accounts.push(await accountFor(material, template, op.network, op.groupIndex, mark));
       }
       return { kind: "accounts", accounts };
     };
@@ -445,6 +451,17 @@ export function createSignersModule(
     ctx.session.require(session);
     if (request.kind === "evm.fiat24-session") {
       assertFiat24Deadline(request, ctx.platform.now());
+    }
+    // Same commit point as chain.sign — the marks rise before the device signs anything.
+    if (request.kind === "bitcoin.psbt" && prepared.changeMarks !== undefined) {
+      await commitChangeMarks(
+        ctx,
+        dek,
+        request.account.walletId,
+        request.account.groupIndex,
+        request.network,
+        prepared.changeMarks,
+      );
     }
     return executorOf(ctx.platform).begin(device, display, async (link) => ({
       kind: "sign",

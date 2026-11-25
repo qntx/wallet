@@ -361,6 +361,7 @@ export async function main(): Promise<void> {
       {
         request: {
           kind: "bitcoin.psbt",
+          origin: "internal",
           network: "bip122:000000000019d6689c085ae165831e93",
           account: { kind: "hd", walletId: anvilWalletId, groupIndex: 0 },
           psbt: new Uint8Array(BTC_PSBT),

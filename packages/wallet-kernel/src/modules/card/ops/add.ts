@@ -5,6 +5,7 @@ import type { CardOpResult } from "@qntx/wallet/protocol";
 import { walletIdOf } from "../../../derive/wallet-id.ts";
 import { KernelError } from "../../../errors.ts";
 import { wipe } from "../../../secret/secret.ts";
+import { findWalletRecord } from "../../../vault/vault.ts";
 import { accessHash } from "../protocol/access.ts";
 import type { WalletInfo } from "../protocol/decode.ts";
 import type { CardOp } from "../tap.ts";
@@ -74,7 +75,7 @@ export async function* addOp(env: OpEnv, op: { groups?: number }): CardOp {
             return { status: "wrong-code", remaining: verified.remaining };
           }
           const walletId = walletIdOf(verified.info.masterPublicKey);
-          if (env.ctx.image.records.some((r) => r.id === walletId)) {
+          if (findWalletRecord(env.ctx.image, walletId) !== undefined) {
             throw new KernelError("already-exists", "this card's wallet is already in the vault");
           }
           tap.update((d) => {

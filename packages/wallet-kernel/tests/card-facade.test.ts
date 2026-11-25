@@ -486,6 +486,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card(wallet) facade end to end", ()
     psbtTx.addOutput({ script: p2wpkh(change).script, amount: 5000n });
     const psbtRequest: ChainSignRequest = {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: { kind: "hd", walletId, groupIndex: 0 },
       psbt: psbtTx.toPSBT(0),

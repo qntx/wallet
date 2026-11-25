@@ -1048,7 +1048,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-CpdJb-MR.mjs
+	// packages/wallet/dist/protocol-Dmn6lcRX.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1197,6 +1197,7 @@
 			walletId,
 			groupIndex
 		}),
+		origin: union(literal("internal"), literal("external")),
 		psbt: bytes(1, 131072),
 		sign: arr(obj({
 			index: int(0, 1024),
@@ -1251,7 +1252,8 @@
 		network: caip2,
 		xpub: str(111, /^[a-zA-Z0-9]{111}$/),
 		fingerprint: str(8, /^[0-9a-f]{8}$/),
-		path: str(11, /^m\/[0-9'/]+$/)
+		path: str(11, /^m\/[0-9'/]+$/),
+		changeMark: int(0, 2147483647)
 	}));
 	var exportNode = union(obj({ kind: literal("evm.account") }), obj({
 		kind: literal("leaf"),
@@ -34222,9 +34224,9 @@ zoo`.split("\n"));
 	// packages/wallet-kernel/src/vault/policy.ts
 	var POLICY_KIND = "policy";
 	var BLIND_SIGNING = "blind-signing";
-	var MARKER = 1;
+	var MARKER$1 = 1;
 	var policyRecord = (image, id) => image.records.find((record) => record.kind === "policy" && record.id === id);
-	var sealPolicy = (platform, dek, id) => sealRecord(platform, dek, POLICY_KIND, id, encodePolicyHeader(platform.now()), new Uint8Array([MARKER]));
+	var sealPolicy = (platform, dek, id) => sealRecord(platform, dek, POLICY_KIND, id, encodePolicyHeader(platform.now()), new Uint8Array([MARKER$1]));
 	/** Whether the vault's owner turned the policy `id` on. */
 	function policyEnabled(image, dek, id) {
 		const record = policyRecord(image, id);
@@ -36407,6 +36409,139 @@ zoo`.split("\n"));
 			return new Uint8Array(pin.fingerprint);
 		}
 	});
+	// packages/wallet-kernel/src/modules/chains/marks.ts
+	var CHANGE_MARKS_KIND = "change-marks";
+	var MARKER = 1;
+	var CAIP2 = /^[a-z0-9-]{3,64}:[0-9a-zA-Z-]{1,128}$/;
+	var PURPOSES$1 = /* @__PURE__ */ new Set([
+		44,
+		49,
+		84,
+		86
+	]);
+	var before = (a, b) => a.groupIndex - b.groupIndex || a.purpose - b.purpose || (a.network < b.network ? -1 : 1);
+	function parseChangeMarksHeader(text) {
+		const object = headerObject(text);
+		expectKeys(object, ["walletId", "marks"]);
+		const list = object["marks"];
+		if (!Array.isArray(list)) throw headerFailure();
+		const marks = list.map((entry) => {
+			if (typeof entry !== "object" || entry === null || Array.isArray(entry)) throw headerFailure();
+			const mark = entry;
+			expectKeys(mark, [
+				"groupIndex",
+				"purpose",
+				"network",
+				"index"
+			]);
+			const purpose = asGroupIndex(mark["purpose"]);
+			if (!PURPOSES$1.has(purpose)) throw headerFailure();
+			const network = mark["network"];
+			if (typeof network !== "string" || !CAIP2.test(network)) throw headerFailure();
+			return {
+				groupIndex: asGroupIndex(mark["groupIndex"]),
+				purpose,
+				network,
+				index: asGroupIndex(mark["index"])
+			};
+		});
+		for (let i = 1; i < marks.length; i++) if (before(marks[i - 1], marks[i]) >= 0) throw headerFailure();
+		return {
+			walletId: asWalletId(object["walletId"]),
+			marks
+		};
+	}
+	function encodeChangeMarksHeader(header) {
+		return JSON.stringify({
+			walletId: header.walletId,
+			marks: header.marks.map((mark) => ({
+				groupIndex: mark.groupIndex,
+				purpose: mark.purpose,
+				network: mark.network,
+				index: mark.index
+			}))
+		});
+	}
+	var marksRecord = (image, walletId) => image.records.find((record) => record.kind === "change-marks" && record.id === walletId);
+	/**
+	* The sealed mark for (walletId, groupIndex, purpose, network) — read from the image's public
+	* header on every call; 0 when the wallet has no marks record or no entry for the key.
+	*/
+	var changeMark = (image, walletId, groupIndex, purpose, network) => {
+		var _marks$find$index, _marks$find;
+		const record = marksRecord(image, walletId);
+		if (record === void 0) return 0;
+		const { marks } = parseChangeMarksHeader(record.header);
+		return (_marks$find$index = (_marks$find = marks.find((mark) => mark.groupIndex === groupIndex && mark.purpose === purpose && mark.network === network)) === null || _marks$find === void 0 ? void 0 : _marks$find.index) !== null && _marks$find$index !== void 0 ? _marks$find$index : 0;
+	};
+	/**
+	* Raises the stored marks for (walletId, groupIndex, network) to `max(stored, raise)` per purpose
+	* and commits the re-sealed record — only when at least one purpose actually increased. Called
+	* right after the factor verifies and before signing starts: a commit failure must abort the
+	* request before any signature exists.
+	*/
+	var commitChangeMarks = async (ctx, dek, walletId, groupIndex, network, raises) => {
+		const record = marksRecord(ctx.image, walletId);
+		const stored = record === void 0 ? [] : parseChangeMarksHeader(record.header).marks;
+		const next = new Map(stored.map((mark) => [`${mark.groupIndex}/${mark.purpose}/${mark.network}`, mark]));
+		let grew = false;
+		for (const raise of raises) {
+			var _held$index;
+			const key = `${groupIndex}/${raise.purpose}/${network}`;
+			const held = next.get(key);
+			if (raise.index > ((_held$index = held === null || held === void 0 ? void 0 : held.index) !== null && _held$index !== void 0 ? _held$index : -1)) {
+				next.set(key, {
+					groupIndex,
+					purpose: raise.purpose,
+					network,
+					index: raise.index
+				});
+				grew = true;
+			}
+		}
+		if (!grew) return;
+		const marks = [...next.values()].sort(before);
+		const sealed = sealRecord(ctx.platform, dek, CHANGE_MARKS_KIND, walletId, encodeChangeMarksHeader({
+			walletId,
+			marks
+		}), new Uint8Array([MARKER]));
+		await ctx.commit([{
+			op: "put-record",
+			record: sealed
+		}]);
+	};
+	/** The chains module's marks hooks, wired into its VaultHooks in index.ts. */
+	var marksHooks = {
+		ownsRecord: (kind) => kind === CHANGE_MARKS_KIND,
+		/**
+		* Claims marks plaintexts — the body is one marker byte; a mismatch latches the record corrupt
+		* exactly like the other sealed kinds do.
+		*/
+		claimUnlocked: (records) => {
+			const unclaimed = [];
+			for (const record of records) {
+				if (record.kind !== "change-marks") {
+					unclaimed.push(record);
+					continue;
+				}
+				try {
+					if (record.plaintext.length !== 1 || record.plaintext[0] !== MARKER) throw new KernelError("integrity", "corrupt change-marks record");
+				} finally {
+					wipe$1(record.plaintext);
+				}
+			}
+			return unclaimed;
+		},
+		walletDeleteOps: (image, walletId) => marksRecord(image, walletId) === void 0 ? [] : [{
+			op: "delete-record",
+			kind: CHANGE_MARKS_KIND,
+			id: walletId
+		}],
+		/** Strict header check plus the id binding — a marks record must name its own wallet. */
+		parseHeader: (record) => {
+			if (parseChangeMarksHeader(record.header).walletId !== record.id) throw new KernelError("integrity", "change-marks record id mismatch");
+		}
+	};
 	// packages/wallet-kernel/src/modules/card/budget.ts
 	/** The plan one tap may spend, in milliseconds. */
 	var PLAN_MS = 18e3;
@@ -40156,26 +40291,28 @@ zoo`.split("\n"));
 		const pub = xpubChild(xpub, network, change, index);
 		return template === "btc.bip86" ? pub.subarray(1) : pub;
 	}
+	/**
+	* The kernel-sealed change mark for the next classification: `stored`, raised to the highest
+	* change-chain index among the same-purpose signed inputs — but only for a request the wallet
+	* itself built. An external request can name any input path, so its inputs never raise the mark.
+	*/
+	var requestChangeMark = (stored, purpose, signed, origin) => {
+		let mark = stored;
+		if (origin === "internal") {
+			for (const input of signed) if (input.purpose === purpose && input.change === 1 && input.index > mark) mark = input.index;
+		}
+		return mark;
+	};
 	var EMPTY_BITCOIN_OWN = {
 		change: /* @__PURE__ */ new Set(),
 		unusual: /* @__PURE__ */ new Map()
 	};
 	/**
 	* An output is discoverable change only on the change chain (`/1/i`), under a purpose at least one
-	* signed input shares, at an index inside what the gap-limited scan reaches: the highest proven
-	* change index among the same-purpose signed inputs plus the gap limit.
+	* signed input shares, at an index inside what the gap-limited scan reaches: the sealed change
+	* mark plus the gap limit, bounded by the scan limit.
 	*/
-	var isDiscoverableChange = (output, signed) => {
-		if (output.change !== 1) return false;
-		let samePurpose = false;
-		let highest = -1;
-		for (const input of signed) {
-			if (input.purpose !== output.purpose) continue;
-			samePurpose = true;
-			if (input.change === 1 && input.index > highest) highest = input.index;
-		}
-		return samePurpose && output.index <= Math.max(0, highest) + 20;
-	};
+	var isDiscoverableChange = (output, signed, mark) => output.change === 1 && signed.some((input) => input.purpose === output.purpose) && output.index <= mark + 20 && output.index < 2e3;
 	var SATS = "sats";
 	var SIGHASH_SINGLE_ANYONECANPAY = 131;
 	var OP_RETURN = 106;
@@ -40346,6 +40483,8 @@ zoo`.split("\n"));
 			if (!isRecord$4(account) || account["kind"] !== "hd") throw new ChainError("invalid-request", "request.account must be a wallet group");
 			const { walletId, groupIndex } = account;
 			if (typeof walletId !== "string" || typeof groupIndex !== "number" || !Number.isSafeInteger(groupIndex) || groupIndex < 0) throw new ChainError("invalid-request", "request.account must be a wallet group");
+			const { origin } = request;
+			if (origin !== "internal" && origin !== "external") throw new ChainError("invalid-request", "request.origin must be internal or external");
 			if (!(psbt instanceof Uint8Array)) throw new ChainError("invalid-request", "psbt must be bytes");
 			const normalized = normalizeBitcoinPsbt(psbt, request["sign"], network);
 			return {
@@ -40356,6 +40495,7 @@ zoo`.split("\n"));
 					walletId,
 					groupIndex
 				},
+				origin,
 				psbt: normalized.psbt,
 				sign: normalized.sign
 			};
@@ -41749,9 +41889,11 @@ zoo`.split("\n"));
 	* hidden as change only when `isDiscoverableChange` says the wallet can reach it — anything else is
 	* shown as a send to the user's own address at the unusual path it names.
 	*/
-	var bitcoinOwn = async (b, tx, signed) => {
+	var bitcoinOwn = async (b, tx, signed, markOf) => {
 		const change = /* @__PURE__ */ new Set();
 		const unusual = /* @__PURE__ */ new Map();
+		const marks = /* @__PURE__ */ new Map();
+		const hidden = /* @__PURE__ */ new Map();
 		for (let i = 0; i < tx.outputsLength; i++) {
 			const output = tx.getOutput(i);
 			if (output.script === void 0) continue;
@@ -41759,15 +41901,21 @@ zoo`.split("\n"));
 				const entry = derivationOf$1(output, b.fingerprint, purpose);
 				if (entry === void 0) continue;
 				try {
-					var _entry$path$, _entry$path$2;
+					var _entry$path$, _entry$path$2, _marks$get;
 					const pub = await childAt(b, purpose, entry.path);
 					if (!deepEqual(output.script, expectedScript(purpose, pub))) continue;
-					if (isDiscoverableChange({
+					const tail = {
 						purpose,
 						change: (_entry$path$ = entry.path[3]) !== null && _entry$path$ !== void 0 ? _entry$path$ : 0,
 						index: (_entry$path$2 = entry.path[4]) !== null && _entry$path$2 !== void 0 ? _entry$path$2 : 0
-					}, signed)) change.add(hex(output.script));
-					else unusual.set(hex(output.script), pathString(entry.path));
+					};
+					const mark = (_marks$get = marks.get(purpose)) !== null && _marks$get !== void 0 ? _marks$get : markOf(purpose);
+					marks.set(purpose, mark);
+					if (isDiscoverableChange(tail, signed, mark)) {
+						var _hidden$get;
+						change.add(hex(output.script));
+						hidden.set(purpose, Math.max((_hidden$get = hidden.get(purpose)) !== null && _hidden$get !== void 0 ? _hidden$get : -1, tail.index));
+					} else unusual.set(hex(output.script), pathString(entry.path));
 					break;
 				} catch (error) {
 					if (error instanceof KernelError && error.code === "device-required") throw error;
@@ -41776,12 +41924,21 @@ zoo`.split("\n"));
 			}
 		}
 		return {
-			change,
-			unusual
+			own: {
+				change,
+				unusual
+			},
+			marks,
+			hidden
 		};
 	};
-	/** The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. */
-	var prepareBitcoinPsbt = async (b, request) => {
+	/**
+	* The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. The hidden
+	* change bound is the sealed mark — raised for this classification only by an `internal` request's
+	* same-purpose change inputs — and the resulting raise (the mark plus every hidden index) is what
+	* the caller commits after verification.
+	*/
+	var prepareBitcoinPsbt = async (b, request, storedMark) => {
 		const tx = Transaction.fromPSBT(request.psbt);
 		const inputs = [];
 		const signed = [];
@@ -41793,7 +41950,7 @@ zoo`.split("\n"));
 			});
 			signed.push(input.tail);
 		}
-		const own = await bitcoinOwn(b, tx, signed);
+		const { own, marks, hidden } = await bitcoinOwn(b, tx, signed, (purpose) => requestChangeMark(storedMark(purpose), purpose, signed, request.origin));
 		let normalized;
 		try {
 			normalized = normalizeBitcoin(request);
@@ -41813,10 +41970,20 @@ zoo`.split("\n"));
 		} catch (error) {
 			mapChainError(error);
 		}
-		return {
+		const raises = /* @__PURE__ */ new Map();
+		for (const [purpose, mark] of marks) {
+			var _hidden$get2;
+			const target = Math.max(mark, (_hidden$get2 = hidden.get(purpose)) !== null && _hidden$get2 !== void 0 ? _hidden$get2 : -1);
+			if (target > storedMark(purpose)) raises.set(purpose, target);
+		}
+		const changeMarks = [...raises.entries()].map(([purpose, index]) => ({
+			purpose,
+			index
+		}));
+		return _objectSpread2({
 			prompt: intent,
 			plan: _objectSpread2(_objectSpread2({}, plan), {}, { hiddenChange: own.change })
-		};
+		}, changeMarks.length > 0 ? { changeMarks } : {});
 	};
 	/** The message plan: the declared change/index must derive this address, then normalize/plan. */
 	var prepareBitcoinMessage = async (b, purpose, request) => {
@@ -41863,7 +42030,7 @@ zoo`.split("\n"));
 	* Validates and decodes the request and returns its signing plan. The account's group index and the
 	* request's per-sign-entry templates shape every derivation path.
 	*/
-	var prepareBitcoin = async (request, account, material) => {
+	var prepareBitcoin = async (request, account, material, storedMark) => {
 		const net = bitcoinNetwork(request.network);
 		const b = {
 			material,
@@ -41873,7 +42040,7 @@ zoo`.split("\n"));
 			groupIndex: account.groupIndex,
 			net
 		};
-		if (request.kind === "bitcoin.psbt") return prepareBitcoinPsbt(b, request);
+		if (request.kind === "bitcoin.psbt") return prepareBitcoinPsbt(b, request, storedMark);
 		const purpose = "template" in account ? BTC_PURPOSE[account.template] : void 0;
 		if (purpose === void 0) throw new KernelError("invalid-input", "account template is not a bitcoin template");
 		return prepareBitcoinMessage(b, purpose, request);
@@ -42265,7 +42432,8 @@ zoo`.split("\n"));
 	/**
 	* The chains module: `wallet.accounts` — the public account for a template at the wallet's group
 	* index, derived from the wallet's entropy record once per session and then served from a cache of
-	* public data only. No records: seed and every node are wiped in `finally` on every path.
+	* public data only. The one record kind it owns is `change-marks` (./marks.ts) — the sealed
+	* hidden-change bound; seed and every node are wiped in `finally` on every path.
 	* `chain.sign` runs `validate → plan → backend → assemble`: a prepare function (./evm.ts,
 	* ./bitcoin.ts, ./solana.ts, ./tron.ts) builds the serialisable plan through `PublicMaterial`
 	* (./keys.ts), the prompt is verified, then `signPlan` (./run.ts) signs it against a fresh key
@@ -42274,7 +42442,7 @@ zoo`.split("\n"));
 	init_objectSpread2();
 	/** An imported account's only path is `[]`; an HD account's is its group's leaf. */
 	var requestPath = (family, account) => account.kind === "imported" ? [] : leafPath(family, account.groupIndex);
-	var accountFor = async (material, template, network, groupIndex) => {
+	var accountFor = async (material, template, network, groupIndex, mark = 0) => {
 		if (template === "evm.bip44") return {
 			template,
 			network,
@@ -42304,7 +42472,8 @@ zoo`.split("\n"));
 			network,
 			xpub: await material.extendedPublicKey(path, net.bip32),
 			fingerprint: fingerprint.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), ""),
-			path: pathString(path)
+			path: pathString(path),
+			changeMark: mark
 		};
 	};
 	var walletAccounts = async (ctx, params, session, cache) => {
@@ -42313,17 +42482,19 @@ zoo`.split("\n"));
 		const record = findWalletRecord(ctx.image, params.walletId);
 		if (record === void 0) throw new KernelError("not-found", "no such wallet");
 		checkNetwork(params.template, params.network);
+		const purpose = BTC_PURPOSE[params.template];
+		const mark = purpose === void 0 ? 0 : changeMark(ctx.image, params.walletId, params.groupIndex, purpose, params.network);
 		const key = `${String(params.groupIndex)}/${params.template}/${params.network}`;
 		const known = (_cache$get = cache.get(record)) === null || _cache$get === void 0 ? void 0 : _cache$get.get(key);
-		if (known !== void 0) return known;
+		if (known !== void 0) return "xpub" in known ? _objectSpread2(_objectSpread2({}, known), {}, { changeMark: mark }) : known;
 		const account = record.kind === "entropy" ? await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
 			const keys = seedKeys(seed, ctx.platform.random);
 			try {
-				return await accountFor(keys.material, params.template, params.network, params.groupIndex);
+				return await accountFor(keys.material, params.template, params.network, params.groupIndex, mark);
 			} finally {
 				keys.wipe();
 			}
-		}) : await accountFor(ctx.externalMaterial(record), params.template, params.network, params.groupIndex);
+		}) : await accountFor(ctx.externalMaterial(record), params.template, params.network, params.groupIndex, mark);
 		const accounts = (_cache$get2 = cache.get(record)) !== null && _cache$get2 !== void 0 ? _cache$get2 : /* @__PURE__ */ new Map();
 		accounts.set(key, account);
 		cache.set(record, accounts);
@@ -42410,13 +42581,13 @@ zoo`.split("\n"));
 	* The family's prepare on this request — `path` applies to evm/tron/solana; bitcoin derives
 	* internally.
 	*/
-	var prepareFor = async (request, material, now) => {
+	var prepareFor = async (request, material, now, storedMark = () => 0) => {
 		const { account } = request;
 		if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.fiat24-session" || request.kind === "evm.typed-data") return prepareEvm(request, requestPath("evm", account), material, now);
 		if (request.kind === "tron.transaction" || request.kind === "tron.message" || request.kind === "tron.typed-data") return prepareTron(request, requestPath("tron", account), material);
 		if (request.kind === "solana.transaction" || request.kind === "solana.message") return prepareSolana(request, requestPath("solana", account), material);
 		if (account.kind === "imported") throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
-		return prepareBitcoin(request, account, material);
+		return prepareBitcoin(request, account, material, storedMark);
 	};
 	/**
 	* The approve-agent binding (design.md §ApproveAgent 绑定): when the decoded intent approves a
@@ -42439,16 +42610,17 @@ zoo`.split("\n"));
 	var prepareApproval = async (ctx, request, material, dek) => {
 		var _shown$oversize;
 		assertHdTemplates(request);
-		const prepared = await prepareFor(request, material, ctx.platform.now());
+		const storedMark = request.kind === "bitcoin.psbt" ? (purpose) => changeMark(ctx.image, request.account.walletId, request.account.groupIndex, purpose, request.network) : () => 0;
+		const prepared = await prepareFor(request, material, ctx.platform.now(), storedMark);
 		const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
 		const shown = ctx.platform.keystore === void 0 ? void 0 : boundChainPrompt(promptLocale(ctx.platform.keystore.locale), prompt, PROMPT_BOUNDS[ctx.platform.keystore.platform]);
 		assertSignable(ctx, dek, prompt, (_shown$oversize = shown === null || shown === void 0 ? void 0 : shown.oversize) !== null && _shown$oversize !== void 0 ? _shown$oversize : false);
-		return {
+		return _objectSpread2({
 			request,
 			prompt,
 			shown,
 			plan: prepared.plan
-		};
+		}, prepared.changeMarks === void 0 ? {} : { changeMarks: prepared.changeMarks });
 	};
 	var chainSign = async (ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
@@ -42461,20 +42633,21 @@ zoo`.split("\n"));
 		});
 		ctx.session.require(session);
 		if (request.kind === "evm.fiat24-session") assertFiat24Deadline(request, ctx.platform.now());
+		if (request.kind === "bitcoin.psbt" && prepared.changeMarks !== void 0) await commitChangeMarks(ctx, dek, request.account.walletId, request.account.groupIndex, request.network, prepared.changeMarks);
 		return openKeys(async (keys) => signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan))));
 	};
 	function createChainsModule() {
 		let accounts = /* @__PURE__ */ new WeakMap();
 		return {
 			vault: {
-				ownsRecord: () => false,
-				claimUnlocked: (records) => records,
+				ownsRecord: marksHooks.ownsRecord,
+				claimUnlocked: marksHooks.claimUnlocked,
 				forget: () => void 0,
 				lock: () => {
 					accounts = /* @__PURE__ */ new WeakMap();
 				},
-				walletDeleteOps: () => [],
-				parseHeader: () => void 0
+				walletDeleteOps: marksHooks.walletDeleteOps,
+				parseHeader: marksHooks.parseHeader
 			},
 			handlers: {
 				"wallet.accounts": async (ctx, params, session) => walletAccounts(ctx, params, session, accounts),
@@ -43655,7 +43828,11 @@ zoo`.split("\n"));
 				}
 				const material = env.ctx.externalMaterial(walletOf(env, walletId).record);
 				const accounts = [];
-				for (const template of op.templates) accounts.push(yield _awaitAsyncGenerator(accountFor(material, template, op.network, op.groupIndex)));
+				for (const template of op.templates) {
+					const purpose = BTC_PURPOSE[template];
+					const mark = purpose === void 0 ? 0 : changeMark(env.ctx.image, walletId, op.groupIndex, purpose, op.network);
+					accounts.push(yield _awaitAsyncGenerator(accountFor(material, template, op.network, op.groupIndex, mark)));
+				}
 				return {
 					kind: "accounts",
 					accounts
@@ -43724,7 +43901,7 @@ zoo`.split("\n"));
 								};
 							}
 							const walletId = walletIdOf(verified.info.masterPublicKey);
-							if (env.ctx.image.records.some((r) => r.id === walletId)) throw new KernelError("already-exists", "this card's wallet is already in the vault");
+							if (findWalletRecord(env.ctx.image, walletId) !== void 0) throw new KernelError("already-exists", "this card's wallet is already in the vault");
 							tap.update((d) => {
 								const record = recordFrom(env, tap.cardId, verified.info);
 								d.header = record.header;
@@ -46178,7 +46355,7 @@ zoo`.split("\n"));
 		const prices = prepared.plan.tasks.map(taskPrice);
 		if (isTwoStage(prepared.plan)) prices.push(priceOf("sign-ecdsa"));
 		if (estimateTaps(prices, waits, budget) > 2) throw new KernelError("card-unsupported", "the signing plan needs more than two taps");
-		return {
+		return _objectSpread2({
 			walletId,
 			prompt: prepared.prompt,
 			plan: prepared.plan,
@@ -46187,7 +46364,11 @@ zoo`.split("\n"));
 				return (_prepared$shown$promp = (_prepared$shown = prepared.shown) === null || _prepared$shown === void 0 ? void 0 : _prepared$shown.prompt) !== null && _prepared$shown$promp !== void 0 ? _prepared$shown$promp : chainPrompt(promptLocale((_env$ctx$platform$key = (_env$ctx$platform$key2 = env.ctx.platform.keystore) === null || _env$ctx$platform$key2 === void 0 ? void 0 : _env$ctx$platform$key2.locale) !== null && _env$ctx$platform$key !== void 0 ? _env$ctx$platform$key : "en"), prepared.prompt);
 			},
 			tapText
-		};
+		}, request.kind === "bitcoin.psbt" && prepared.changeMarks !== void 0 ? { changeMarks: {
+			groupIndex: request.account.groupIndex,
+			network: request.network,
+			raises: prepared.changeMarks
+		} } : {});
 	};
 	var signOp = (env, op, prepared) => _wrapAsyncGenerator(function* () {
 		const { walletId, tapText } = prepared;
@@ -46558,7 +46739,7 @@ zoo`.split("\n"));
 			case "sign": {
 				const { account } = op.request;
 				if (account.kind !== "hd") throw new KernelError("invalid-input", "only an hd account signs on a card");
-				if (cardRecord(account.walletId) === void 0) throw ctx.image.records.some((r) => r.id === account.walletId) ? new KernelError("invalid-input", "the account's wallet is not a card wallet") : new KernelError("not-found", "no such card wallet");
+				if (cardRecord(account.walletId) === void 0) throw findWalletRecord(ctx.image, account.walletId) !== void 0 ? new KernelError("invalid-input", "the account's wallet is not a card wallet") : new KernelError("not-found", "no such card wallet");
 				return;
 			}
 			case "erase": {
@@ -46575,7 +46756,7 @@ zoo`.split("\n"));
 					break;
 				}
 				const sourceId = op.source.walletId;
-				const source = ctx.image.records.find((r) => r.id === sourceId);
+				const source = findWalletRecord(ctx.image, sourceId);
 				if (source === void 0) throw new KernelError("not-found", "no such source wallet");
 				if (source.kind !== "entropy") throw new KernelError("invalid-input", "the source is not a vault HD wallet");
 				break;
@@ -46768,6 +46949,10 @@ zoo`.split("\n"));
 						rememberGated(ctx, params.op, params.verify.kind);
 						const prompt = params.op.kind === "sign" ? (prepared = await prepareSign(env, params.op, dek)).verifyPrompt : cardPromptFor(platform.keystore, promptKind(params.op), () => promptCards(ctx, params.op));
 						await verifyFactor(ctx, params.verify, dek, prompt);
+						if ((prepared === null || prepared === void 0 ? void 0 : prepared.changeMarks) !== void 0) {
+							const { groupIndex, network, raises } = prepared.changeMarks;
+							await commitChangeMarks(ctx, dek, prepared.walletId, groupIndex, network, raises);
+						}
 					}
 					if (current !== void 0) await discard(current);
 					const gen = makeOp(env, params.op, prepared);
@@ -61590,7 +61775,7 @@ zoo`.split("\n"));
 				if (result.fingerprint.length !== 4) throw integrity("the device returned a malformed fingerprint");
 				if (result.model !== void 0 && !DEVICE_TEXT.test(result.model) || result.firmware !== void 0 && !DEVICE_TEXT.test(result.firmware)) throw integrity("the device returned a malformed model or firmware string");
 				const id = hardwareWalletId(device, result.fingerprint);
-				if (ctx.image.records.some((record) => record.id === id)) throw new KernelError("already-exists", "this device is already paired");
+				if (ctx.image.records.some((record) => record.kind === "hardware-wallet" && record.id === id)) throw new KernelError("already-exists", "this device is already paired");
 				const header = {
 					device,
 					fingerprint: result.fingerprint,
@@ -61646,7 +61831,11 @@ zoo`.split("\n"));
 					keys: pin
 				});
 				const accounts = [];
-				for (const template of op.templates) accounts.push(await accountFor(material, template, op.network, op.groupIndex));
+				for (const template of op.templates) {
+					const purpose = BTC_PURPOSE[template];
+					const mark = purpose === void 0 ? 0 : changeMark(ctx.image, op.walletId, op.groupIndex, purpose, op.network);
+					accounts.push(await accountFor(material, template, op.network, op.groupIndex, mark));
+				}
 				return {
 					kind: "accounts",
 					accounts
@@ -61731,6 +61920,7 @@ zoo`.split("\n"));
 			});
 			ctx.session.require(session);
 			if (request.kind === "evm.fiat24-session") assertFiat24Deadline(request, ctx.platform.now());
+			if (request.kind === "bitcoin.psbt" && prepared.changeMarks !== void 0) await commitChangeMarks(ctx, dek, request.account.walletId, request.account.groupIndex, request.network, prepared.changeMarks);
 			return executorOf(ctx.platform).begin(device, display, async (link) => ({
 				kind: "sign",
 				result: await signStages(prepared.plan, async (stage) => driver.sign(link, {

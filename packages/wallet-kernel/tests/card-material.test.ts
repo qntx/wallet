@@ -270,6 +270,7 @@ describe("pinnedMaterial on a card pin", () => {
       tx.addOutput({ script: spend.script, amount: 90_000n });
       const request = {
         kind: "bitcoin.psbt" as const,
+        origin: "internal" as const,
         network: BTC_MAINNET,
         account: {
           kind: "hd" as const,
@@ -281,7 +282,7 @@ describe("pinnedMaterial on a card pin", () => {
         sign: [{ index: 0, template: "btc.bip84" as const }],
       };
       // m/84'/0'/3' was never cached: the ownership probe must not be swallowed as "not ours".
-      await expect(prepareBitcoin(request, request.account, material)).rejects.toSatisfy(
+      await expect(prepareBitcoin(request, request.account, material, () => 0)).rejects.toSatisfy(
         isDeviceRequired,
       );
     } finally {

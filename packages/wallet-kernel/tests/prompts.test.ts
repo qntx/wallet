@@ -834,6 +834,7 @@ describe("chain prompts via the real decoders", () => {
   const btcReq = (psbt: Uint8Array) =>
     ({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NET,
       account: { kind: "hd", walletId: "w", groupIndex: 0 },
       psbt,

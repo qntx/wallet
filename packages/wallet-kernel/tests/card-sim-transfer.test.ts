@@ -591,6 +591,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("multi-card operations (simulator)",
     const psbtResult = await sign(
       {
         kind: "bitcoin.psbt",
+        origin: "internal",
         network: BTC_MAINNET,
         account: { kind: "hd", walletId, groupIndex: 0 },
         psbt: tx.toPSBT(0),
