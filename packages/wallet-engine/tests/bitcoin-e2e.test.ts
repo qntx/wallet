@@ -820,7 +820,7 @@ const legacyFlow = async (): Promise<void> => {
     await step("utxosFromHistory matches /utxo", async () => {
       const scanned44 = await scanSourceWithHistory(
         es,
-        { kind: "xpub", template: "btc.bip44", xpub: xpub44 },
+        { kind: "xpub", template: "btc.bip44", xpub: xpub44, changeMark: 0 },
         NETWORK,
         bitcoinNetwork(NETWORK).params,
       );

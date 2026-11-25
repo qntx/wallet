@@ -95,6 +95,7 @@ const rig = (over: Partial<Rig> = {}): Rig => {
               ? "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb"
               : "bc1qabc",
         xpub: HD.publicExtendedKey,
+        changeMark: 0,
       });
     },
   };

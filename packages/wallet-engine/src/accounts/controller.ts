@@ -3,7 +3,7 @@ import { isAddress } from "viem";
 import type { SparkNetwork } from "@qntx/spark";
 import { WalletError } from "@qntx/wallet";
 import type { KeyInfo, Wallet, WalletInfo } from "@qntx/wallet";
-import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
+import { bitcoinNetwork, changeScanReach } from "@qntx/wallet-chains/bitcoin";
 import { isTronAddress } from "@qntx/wallet-chains/tron";
 import type { ChainAccountsParams } from "@qntx/wallet/protocol";
 
@@ -78,6 +78,7 @@ export type AccountTreeControllerOptions = {
     readonly account: (params: ChainAccountsParams) => Promise<{
       readonly address?: string;
       readonly xpub?: string;
+      readonly changeMark?: number;
     }>;
   };
   readonly logger: EngineLogger;
@@ -821,7 +822,15 @@ export class AccountTreeController extends Controller<AccountTreeState> {
           }
           const [receive, change] = await Promise.all([
             scanChain(es, xpub, template, network, net.params, 0),
-            scanChain(es, xpub, template, network, net.params, 1),
+            scanChain(
+              es,
+              xpub,
+              template,
+              network,
+              net.params,
+              1,
+              changeScanReach(acct.changeMark ?? 0),
+            ),
           ]);
           return receive.some((a) => a.used) || change.some((a) => a.used);
         }),

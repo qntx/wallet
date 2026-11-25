@@ -144,6 +144,7 @@ type AccountTreeControllerOptions = {
         readonly account: (params: ChainAccountsParams) => Promise<{
             readonly address?: string;
             readonly xpub?: string;
+            readonly changeMark?: number;
         }>;
     };
     readonly logger: EngineLogger;

@@ -307,6 +307,7 @@ const rig = (over: {
         psbts.map(({ psbt }): PreparedBitcoinPsbt => ({
           request: {
             kind: "bitcoin.psbt",
+            origin: "internal",
             network: BITCOIN_NET,
             account: BTC_ACCOUNT_REF,
             psbt,

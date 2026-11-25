@@ -556,6 +556,7 @@ const worldOver = async (
         psbts.map((input) => ({
           request: {
             kind: "bitcoin.psbt" as const,
+            origin: "internal",
             network,
             account: {
               kind: "hd" as const,

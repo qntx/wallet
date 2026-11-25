@@ -14,8 +14,10 @@ import {
   bitcoinAddressFromXpub,
   bitcoinNetwork,
   bitcoinPubkeyFromXpub,
+  changeScanReach,
   isDiscoverableChange,
   normalizeBitcoin,
+  requestChangeMark,
 } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinOwn, BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
 import type { ChainsApi } from "@qntx/wallet/chains";
@@ -146,6 +148,7 @@ type TemplateDerive = {
   readonly xpub: string;
   readonly fp: number;
   readonly base: ReadonlyArray<number>;
+  readonly mark: number;
 };
 
 /**
@@ -189,17 +192,26 @@ export const prepareDappPsbts = async (
       if (!("xpub" in derived) || derived.xpub === undefined) {
         throw new Error("bitcoin account carries no xpub");
       }
-      const { xpub, fingerprint, path } = derived;
+      const { xpub, fingerprint, path, changeMark } = derived;
       derives.set(template, {
         xpub,
         fp: Number.parseInt(fingerprint, 16),
         base: accountPath(path),
+        mark: changeMark,
       });
       // Scan only templates the batch signs; every template binds its fixed 0/0 address.
       const scanned = signing.has(template)
         ? [
             ...(await scanChain(es, xpub, template, network, net.params, 0)),
-            ...(await scanChain(es, xpub, template, network, net.params, 1)),
+            ...(await scanChain(
+              es,
+              xpub,
+              template,
+              network,
+              net.params,
+              1,
+              changeScanReach(changeMark),
+            )),
           ]
         : [
             {
@@ -343,6 +355,7 @@ export const prepareDappPsbts = async (
         kind: "bitcoin.psbt",
         network,
         account: { kind: "hd", walletId: group.walletId, groupIndex: group.groupIndex },
+        origin: "external",
         psbt: tx.toPSBT(0),
         sign: inputs.map(({ index, template }) => ({ index, template })),
       });
@@ -351,6 +364,15 @@ export const prepareDappPsbts = async (
       }
       // The same classification the kernel applies to the request's verified own outputs: only
       // change the wallet can reach is hidden — every other own-key output is shown with its path.
+      // The bound is the kernel-reported mark under the external origin, never the PSBT's inputs.
+      const markOf = (purpose: number): number => {
+        for (const [template, d] of derives) {
+          if (PURPOSE_OF[template] === purpose) {
+            return requestChangeMark(d.mark, purpose, signedTails, "external");
+          }
+        }
+        return 0;
+      };
       const change = new Set<string>();
       const unusual = new Map<string, string>();
       for (let i = 0; i < tx.outputsLength; i++) {
@@ -359,7 +381,7 @@ export const prepareDappPsbts = async (
         if (found === undefined || output.script === undefined) {
           continue;
         }
-        if (isDiscoverableChange(found.tail, signedTails)) {
+        if (isDiscoverableChange(found.tail, signedTails, markOf(found.tail.purpose))) {
           change.add(hex.encode(output.script));
         } else {
           unusual.set(hex.encode(output.script), pathText(found.path));

@@ -39,6 +39,7 @@ const accountFor = (template: BitcoinTemplate): ChainAccount => ({
   xpub: master.derive(`m/${PURPOSE[template]}'/0'/0'`).publicExtendedKey,
   fingerprint: master.fingerprint.toString(16).padStart(8, "0"),
   path: `m/${PURPOSE[template]}'/0'/0'`,
+  changeMark: 0,
 });
 
 /** Raw previous transactions the mock esplora serves by txid — registered per input below. */
@@ -197,8 +198,8 @@ describe("prepareDappPsbts", () => {
       new Set<string>(),
     );
     const paymentOnly = calls.length;
-    // 40 scan calls + the signed input's previous transaction.
-    expect(paymentOnly).toBe(41);
+    // 41 scan calls (20 receive + 21 change to the mark's reach) + the input's previous tx.
+    expect(paymentOnly).toBe(42);
 
     calls.length = 0;
     const both = dappPsbt(
@@ -216,8 +217,56 @@ describe("prepareDappPsbts", () => {
       [{ psbt: both, sign: [signEntry(0, "btc.bip84"), signEntry(1, "btc.bip86")] }],
       new Set<string>(),
     );
-    expect(calls).toHaveLength(82);
+    expect(calls).toHaveLength(84);
   });
+
+  it(
+    "hides own change only up to the reported mark's reach — past it the script is foreign",
+    { timeout: 20_000 },
+    async () => {
+      const change25 = scriptOf("btc.bip84", 1, 25);
+      const changeHex = Buffer.from(change25).toString("hex");
+      const psbt = dappPsbt(
+        [{ script: scriptOf("btc.bip84"), amount: 100000n }],
+        [
+          { script: PAYEE_SCRIPT, amount: 90000n },
+          { script: change25, amount: 9000n },
+        ],
+      );
+      const { es } = rig();
+      const apis = (changeMark: number) => ({
+        account: async (params: { template: string }): Promise<ChainAccount> =>
+          Promise.resolve(
+            params.template.startsWith("btc.")
+              ? { ...accountFor(params.template as BitcoinTemplate), changeMark }
+              : { template: "evm.bip44", network: "eip155:1", address: "0x0" },
+          ),
+      });
+      // Mark 0 reaches index 20 — /1/25 is beyond the wallet's scan, so it stays foreign:
+      // neither hidden change nor a shown unusual own output.
+      const [low] = await prepareDappPsbts(
+        apis(0),
+        es,
+        GROUP,
+        MAINNET,
+        [{ psbt, sign: [signEntry(0, "btc.bip84")] }],
+        new Set<string>(),
+      );
+      expect(low!.own.change.has(changeHex)).toBe(false);
+      expect(low!.own.unusual.has(changeHex)).toBe(false);
+      // Mark 10 reaches index 30 — the same output is discoverable change and hides.
+      const [high] = await prepareDappPsbts(
+        apis(10),
+        es,
+        GROUP,
+        MAINNET,
+        [{ psbt, sign: [signEntry(0, "btc.bip84")] }],
+        new Set<string>(),
+      );
+      expect(high!.own.change.has(changeHex)).toBe(true);
+      expect(high!.own.unusual.has(changeHex)).toBe(false);
+    },
+  );
 
   it("rejects a witnessUtxo that lies about the chain prevout", { timeout: 20_000 }, async () => {
     const { es, apis } = rig();

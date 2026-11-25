@@ -10,7 +10,12 @@ import type { NETWORK as BTC_NETWORK } from "@scure/btc-signer";
 
 import { ChainError } from "@qntx/wallet-chains";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
-import { BITCOIN_GAP_LIMIT, bitcoinAddressFromXpub } from "@qntx/wallet-chains/bitcoin";
+import {
+  BITCOIN_GAP_LIMIT,
+  BITCOIN_SCAN_LIMIT,
+  bitcoinAddressFromXpub,
+  changeScanReach,
+} from "@qntx/wallet-chains/bitcoin";
 
 import type { EngineLogger } from "../events.ts";
 import { readJson } from "../store/json.ts";
@@ -76,8 +81,12 @@ const windowTxs = async (
     }),
   );
 
-const MAX_SCAN_ADDRESSES = 2000;
-
+/**
+ * Gap-limited chain scan covering at least `[0, reach]`: windows of `BITCOIN_GAP_LIMIT` stop after
+ * the first all-unused window — unless the sealed mark's reach is not yet covered, in which case
+ * tail windows (the last one truncated at `reach`) keep walking; a used address in the tail
+ * resumes the gap rule from there. The `BITCOIN_SCAN_LIMIT` bound caps the total work.
+ */
 const scanChainWithHistory = async (
   es: Esplora,
   xpub: string,
@@ -85,13 +94,19 @@ const scanChainWithHistory = async (
   network: string,
   params: typeof BTC_NETWORK,
   chain: BtcChain,
+  reach: number,
 ): Promise<ReadonlyArray<ScannedAddress>> => {
   const scanned: ScannedAddress[] = [];
-  for (let start = 0; ; start += BITCOIN_GAP_LIMIT) {
-    if (start + BITCOIN_GAP_LIMIT > MAX_SCAN_ADDRESSES) {
-      throw new Error(`bitcoin address scan exceeded ${MAX_SCAN_ADDRESSES} addresses`);
+  let tail = false;
+  for (let start = 0; ; ) {
+    const end = tail ? Math.min(start + BITCOIN_GAP_LIMIT, reach + 1) : start + BITCOIN_GAP_LIMIT;
+    if (end <= start) {
+      return scanned;
     }
-    const batch: ScanAddress[] = Array.from({ length: BITCOIN_GAP_LIMIT }, (_, i) => {
+    if (end > BITCOIN_SCAN_LIMIT) {
+      throw new Error(`bitcoin address scan exceeded ${BITCOIN_SCAN_LIMIT} addresses`);
+    }
+    const batch: ScanAddress[] = Array.from({ length: end - start }, (_, i) => {
       const index = start + i;
       return {
         chain,
@@ -110,9 +125,15 @@ const scanChainWithHistory = async (
       txs: pages[i] ?? [],
     }));
     scanned.push(...marked);
-    if (!marked.some((a) => a.used)) {
-      return scanned;
+    if (marked.some((a) => a.used)) {
+      tail = false;
+    } else {
+      if (end > reach) {
+        return scanned;
+      }
+      tail = true;
     }
+    start = end;
   }
 };
 
@@ -123,8 +144,9 @@ export const scanChain = async (
   network: string,
   params: typeof BTC_NETWORK,
   chain: BtcChain,
+  reach = -1,
 ): Promise<ReadonlyArray<ScanAddress>> => {
-  const scanned = await scanChainWithHistory(es, xpub, template, network, params, chain);
+  const scanned = await scanChainWithHistory(es, xpub, template, network, params, chain, reach);
   return scanned.map(({ chain, index, address, used }) => ({ chain, index, address, used }));
 };
 
@@ -309,18 +331,24 @@ export const utxosFromHistory = async (
 
 export const BITCOIN_TEMPLATES = ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"] as const;
 
-/** What a Bitcoin balance is read from: one account template's xpub, or one watched address. */
+/**
+ * What a Bitcoin balance is read from: one account template's xpub, or one watched address.
+ * `changeMark` is the sealed mark the change chain must reach past — a watch-only xpub has none (0).
+ */
 export type BitcoinSource =
-  | { readonly kind: "xpub"; readonly template: BitcoinAccountTemplate; readonly xpub: string }
+  | {
+      readonly kind: "xpub";
+      readonly template: BitcoinAccountTemplate;
+      readonly xpub: string;
+      readonly changeMark: number;
+    }
   | { readonly kind: "address"; readonly address: string };
 
 /**
  * The scanned addresses plus each address's `/txs` page — the read path derives UTXOs from this
- * history without asking `/utxo` again. BIP-44 account discovery: an all-unused external chain ends
- * the scan — the change chain is never walked — except for btc.bip84: the send path puts every
- * legacy template's change on the group's bip84 change chain, which can therefore be used while its
- * receive chain is empty. bip44/bip49/bip86 change chains are only written by their own sends,
- * which require a used receive chain first.
+ * history without asking `/utxo` again. Both chains are always walked: a used change output can sit
+ * under a fully-unused receive chain, and the change chain is walked to `changeScanReach(mark)` so
+ * every change output the kernel could have hidden is covered.
  */
 export const scanSourceWithHistory = async (
   es: Esplora,
@@ -345,11 +373,24 @@ export const scanSourceWithHistory = async (
       },
     ];
   }
-  const receive = await scanChainWithHistory(es, source.xpub, source.template, network, params, 0);
-  if (source.template !== "btc.bip84" && !receive.some((a) => a.used)) {
-    return receive;
-  }
-  const change = await scanChainWithHistory(es, source.xpub, source.template, network, params, 1);
+  const receive = await scanChainWithHistory(
+    es,
+    source.xpub,
+    source.template,
+    network,
+    params,
+    0,
+    -1,
+  );
+  const change = await scanChainWithHistory(
+    es,
+    source.xpub,
+    source.template,
+    network,
+    params,
+    1,
+    changeScanReach(source.changeMark),
+  );
   return [...receive, ...change];
 };
 

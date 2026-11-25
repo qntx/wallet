@@ -496,6 +496,7 @@ export const world = (
           xpub: root.publicExtendedKey,
           fingerprint: "00000000",
           path: `m/${PURPOSE[t] ?? 84}'/0'/0'`,
+          changeMark: 0,
         };
       },
       sign: async (p: SignParams) => {
