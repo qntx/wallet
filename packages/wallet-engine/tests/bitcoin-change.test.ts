@@ -93,6 +93,9 @@ describe("changeAddressOf", () => {
     const spentTo55 = chainOf(Array.from({ length: 80 }, (_, i) => i < BITCOIN_GAP_LIMIT + 35));
     // Now 25 is used too: first unused 55 > bound 50 — reuse lands at 50.
     expect(changeAddressOf(spentTo55, changeInput, 0).index).toBe(50);
+    // The exact boundary: 0..20 used leaves the first unused index at bound + 1 — still reuse.
+    const spentTo21 = chainOf(Array.from({ length: 60 }, (_, i) => i <= BITCOIN_GAP_LIMIT));
+    expect(changeAddressOf(spentTo21, noChangeInput, 0).index).toBe(BITCOIN_GAP_LIMIT);
     // A receive-chain input's index never raises the bound: index 30 stays receive-only, so the
     // bound is the bare gap limit and 25 remains past it — reuse at 20, not the free 25.
     const receiveInput: BitcoinPathTail[] = [{ purpose: PURPOSE, change: 0, index: 30 }];

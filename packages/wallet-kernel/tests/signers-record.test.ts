@@ -168,6 +168,18 @@ describe("hardware-wallet body codec", () => {
     expect(decode(shape(["m/44'/60'/0'"]))).toBe("integrity");
     expect(decode(shape("m/84'/0'/0'"))).toBe("integrity");
     expect(decode(shape([42]))).toBe("integrity");
+    /* The same list pinned by the body still fails when it is not canonical — the order check
+       must fire on its own, not hide behind the unknown-path rule. */
+    const keyed = (list: unknown) => ({
+      nodes: {
+        "m/44'/60'/0'": nodeEntry({ parent: bytesToHex(FINGERPRINT) }),
+        "m/84'/0'/0'": nodeEntry(),
+      },
+      ed25519: {},
+      confirmed: list,
+    });
+    expect(decode(keyed(["m/84'/0'/0'", "m/44'/60'/0'"]))).toBe("integrity");
+    expect(decode(keyed(["m/84'/0'/0'", "m/84'/0'/0'"]))).toBe("integrity");
     // Entries that do name pinned paths parse.
     expect(
       parseHardwareBody(

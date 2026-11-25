@@ -13,6 +13,7 @@ import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { encodeSessionHeader, SESSION_KIND } from "../src/modules/sessions/record.ts";
 import type { SessionHeader } from "../src/modules/sessions/record.ts";
+import { meterHyperliquid } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/meter.ts";
 import { hyperliquidL1Spent } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/params.ts";
 import { hyperliquidApproval } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/prompt.ts";
 import { openSession, signSession } from "../src/modules/sessions/sessions.ts";
@@ -731,6 +732,29 @@ describe("metering", () => {
         }),
       ),
     ).toBe("limit-exceeded");
+  });
+
+  it("the asset cap refuses at cap plus one 1e-16 unit", () => {
+    /* Order sizes admit eight decimals, but the record's `canonical` spent grammar keeps
+       sixteen: a charged total can sit exactly one unit over the cap, and only the strict `>`
+       comparison refuses it. */
+    const limits = { notional: "1000", maxLeverage: 10, assets: [{ asset: 0, size: "1" }] };
+    const spent = { notional: "0", size: ["0.9999999900000001"] };
+    expect(() =>
+      meterHyperliquid(
+        {
+          action: {
+            type: "order",
+            orders: [order("1", "0.00000001", { b: false })],
+            grouping: "na",
+          },
+          nonce: 0,
+          expiresAfter: T0,
+        },
+        limits,
+        spent,
+      ),
+    ).toThrow("the asset's size budget is exhausted");
   });
 
   it("the asset cap is exact — size equal to the cap charges, one unit over refuses", async () => {

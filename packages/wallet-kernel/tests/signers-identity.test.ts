@@ -554,7 +554,7 @@ describe("hardware sign deadline", () => {
           kind: "sign",
           request: {
             kind: "evm.fiat24-session",
-            network: EVM_NETWORK,
+            network: "eip155:42161",
             account: { kind: "hd", walletId: hwId, groupIndex: 0, template: "evm.bip44" },
             tokenId: "123456",
             deadline,
