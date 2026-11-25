@@ -104,7 +104,10 @@ const replayIo = (
 };
 
 const pairOneKey = async (w: E2eWorld["w"], io: DeviceIo): Promise<string> => {
-  const result = await hardware(w.wallet).start({ kind: "pair", device: "onekey" }, { io }).result;
+  const result = await hardware(w.wallet).start(
+    { kind: "pair", device: "onekey" },
+    { io, verify: VERIFY },
+  ).result;
   if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
     throw new WalletError("integrity", "pair did not return a hardware wallet");
   }

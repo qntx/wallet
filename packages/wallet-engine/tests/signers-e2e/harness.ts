@@ -1358,6 +1358,7 @@ export const qrOnce = async (
     families: ["evm", "tron", "solana"],
     bitcoin: { template: "btc.bip84", network: BTC_NETWORK },
     verify,
+    acknowledgeUnconfirmed: true,
   });
   const links = readQrExport(exported.payload);
   const link = links.find((entry) => entry.family === family);
@@ -1487,6 +1488,7 @@ export const qrRefusal = async (
     families: ["evm", "tron", "solana"],
     bitcoin: { template: "btc.bip84", network: BTC_NETWORK },
     verify,
+    acknowledgeUnconfirmed: true,
   });
   const link = readQrExport(exported.payload).find((entry) => entry.family === family);
   if (link === undefined) {

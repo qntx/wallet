@@ -87,7 +87,7 @@ function rig() {
     },
     nextReceiveAddress: async (walletId: string, groupIndex: number, network: string) => {
       calls.push(`receive ${walletId}/${groupIndex}/${network}`);
-      return Promise.resolve(RECEIVE_ADDRESS);
+      return Promise.resolve({ address: RECEIVE_ADDRESS, confirmed: true });
     },
   } as unknown as TransactionController;
   const exitQuote = { feeSats: 1 };

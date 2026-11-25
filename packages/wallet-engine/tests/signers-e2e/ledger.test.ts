@@ -92,7 +92,10 @@ const speculosIo = (): { readonly io: DeviceIo; readonly open: (app: LedgerApp) 
 };
 
 const pairLedger = async (w: E2eWorld["w"], io: DeviceIo): Promise<string> => {
-  const result = await hardware(w.wallet).start({ kind: "pair", device: "ledger" }, { io }).result;
+  const result = await hardware(w.wallet).start(
+    { kind: "pair", device: "ledger" },
+    { io, verify: VERIFY },
+  ).result;
   if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
     throw new WalletError("integrity", "pair did not return a hardware wallet");
   }
@@ -145,9 +148,9 @@ describe.skipIf(!UP)("ledger engine sends (speculos)", () => {
     for (const [family, app] of families) {
       speculos.open(app);
       // oxlint-disable-next-line eslint/no-await-in-loop -- device ops are strictly sequential
-      await w.signers.fetchAccounts({ walletId: hwId, groupIndex: 0, family });
-      /* Second fetch of the same family: the pin now holds this family's material, so the driver
-         re-fetches a pinned path and compares it byte-for-byte before accepting anything. */
+      await w.signers.fetchAccounts({ walletId: hwId, groupIndex: 0, family, verify: VERIFY });
+      /* Second fetch of the same family: the pin now holds this family's material, so nothing is
+         missing and the fetch needs no verification — it stays free. */
       // oxlint-disable-next-line eslint/no-await-in-loop -- device ops are strictly sequential
       await w.signers.fetchAccounts({ walletId: hwId, groupIndex: 0, family });
     }
@@ -250,7 +253,12 @@ describe.skipIf(!UP)("ledger origins (speculos)", () => {
       ] as const) {
         speculos.open(app);
         // oxlint-disable-next-line eslint/no-await-in-loop -- device ops are strictly sequential
-        await e2e.w.signers.fetchAccounts({ walletId: hwId, groupIndex: 0, family });
+        await e2e.w.signers.fetchAccounts({
+          walletId: hwId,
+          groupIndex: 0,
+          family,
+          verify: VERIFY,
+        });
       }
       const account = await matrixAccount(e2e.w, hwId);
       return { e2e, account };
@@ -288,7 +296,12 @@ describe.skipIf(!UP)("ledger origins (speculos)", () => {
         ] as const) {
           speculos.open(app);
           // oxlint-disable-next-line eslint/no-await-in-loop -- device ops are strictly sequential
-          await e2e.w.signers.fetchAccounts({ walletId: hwId, groupIndex: 0, family });
+          await e2e.w.signers.fetchAccounts({
+            walletId: hwId,
+            groupIndex: 0,
+            family,
+            verify: VERIFY,
+          });
         }
         const account = await matrixAccount(e2e.w, hwId);
         const before = apdus;

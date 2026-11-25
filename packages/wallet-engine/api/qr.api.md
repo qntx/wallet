@@ -984,6 +984,7 @@ export type QrExportParams = {
     readonly account: QrAccount;
     readonly form: "crypto-hdkey";
     readonly verify: VerifyFactor;
+    readonly acknowledgeUnconfirmed?: true;
 } | {
     readonly account: QrAccount;
     readonly form: "crypto-account";
@@ -992,6 +993,7 @@ export type QrExportParams = {
         readonly network: string;
     };
     readonly verify: VerifyFactor;
+    readonly acknowledgeUnconfirmed?: true;
 } | {
     readonly account: QrAccount;
     readonly form: "crypto-multi-accounts";
@@ -1001,6 +1003,7 @@ export type QrExportParams = {
         readonly network: string;
     };
     readonly verify: VerifyFactor;
+    readonly acknowledgeUnconfirmed?: true;
 };
 
 export { qrFrames }
@@ -1772,7 +1775,10 @@ class TransactionController extends Controller<TransactionControllerState> {
     // (undocumented)
     lock(): void;
     markDepositClaimed(id: string): Promise<void>;
-    nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
+    nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<{
+        address: string;
+        confirmed: boolean;
+    }>;
     prepareDapp(account: AccountRef, request: SignRequest, options?: {
         readonly nonce?: number;
     }): Promise<PreparedRequest | PreparedMessage>;

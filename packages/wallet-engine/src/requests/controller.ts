@@ -1167,7 +1167,7 @@ export class RequestController extends Controller<RequestControllerState> {
     }
     if (input.method === "spark-exit") {
       const l1 = this.l1Network(input.account);
-      const address = await this.options.transactions.nextReceiveAddress(
+      const { address } = await this.options.transactions.nextReceiveAddress(
         input.account.walletId,
         input.account.groupIndex,
         l1,

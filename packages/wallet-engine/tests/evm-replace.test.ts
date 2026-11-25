@@ -181,7 +181,7 @@ const ctlWithFetch = (fetchFn: typeof fetch, sign: Sign, timers: ManualTimers) =
 };
 const apis = (sign: Sign): ReturnType<typeof chains> => {
   const account: ReturnType<typeof chains>["account"] = async () =>
-    Promise.resolve({ template: "evm.bip44", network: "eip155:1", address: ADDR });
+    Promise.resolve({ template: "evm.bip44", network: "eip155:1", address: ADDR, confirmed: true });
   const exportAccount: ReturnType<typeof chains>["exportAccount"] = async () =>
     Promise.reject(new Error("not implemented"));
   return { account, sign, exportAccount };

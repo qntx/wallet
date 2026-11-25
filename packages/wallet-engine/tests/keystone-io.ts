@@ -17,7 +17,7 @@ import { hardware } from "@qntx/wallet/hardware";
 import type { DeviceIo, DeviceRequest, DeviceResponse } from "@qntx/wallet/hardware";
 
 import { keystoneDevice } from "../../wallet-kernel/tests/signers-keystone-device.ts";
-import { MNEMONIC } from "./apps-helpers.ts";
+import { MNEMONIC, VERIFY } from "./apps-helpers.ts";
 
 const SEED = mnemonicToSeedSync(MNEMONIC);
 
@@ -109,7 +109,7 @@ export const pairKeystone = async (wallet: Wallet): Promise<string> => {
   try {
     const result = await hardware(wallet).start(
       { kind: "pair", device: "keystone" },
-      { io: keystoneSyncIo() },
+      { io: keystoneSyncIo(), verify: VERIFY },
     ).result;
     if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
       throw new WalletError("integrity", "pair did not return a hardware wallet");

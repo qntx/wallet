@@ -269,6 +269,7 @@ describe("engine collections across lock, unlock and reset", () => {
         walletId: hwId,
         groupIndex: 1,
         family: "solana",
+        verify: { kind: "password", password: PASSWORD },
       });
       const rejection = fetch.catch((error: unknown) => error);
       await until(() => engine.signers.getState().active?.step.kind === "device");

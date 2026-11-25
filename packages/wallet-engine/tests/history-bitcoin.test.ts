@@ -124,6 +124,7 @@ const chains: Pick<ChainsApi, "account"> = {
         fingerprint: "deadbeef",
         path: "m",
         changeMark: 0,
+        confirmed: true,
       });
     }
     return Promise.reject(new Error(`unexpected template ${t}`));

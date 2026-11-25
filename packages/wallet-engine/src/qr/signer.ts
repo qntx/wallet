@@ -274,6 +274,9 @@ export const qrSigner = (deps: {
         groupIndex: params.account.groupIndex,
         nodes,
         verify: params.verify,
+        ...(params.acknowledgeUnconfirmed === undefined
+          ? {}
+          : { acknowledgeUnconfirmed: params.acknowledgeUnconfirmed }),
       });
       return qrExport(result, params.form);
     },
@@ -286,6 +289,8 @@ export type QrExportParams =
       readonly account: QrAccount;
       readonly form: "crypto-hdkey";
       readonly verify: VerifyFactor;
+      /** Export nodes a device never confirmed — the prompt shows a danger row per node. */
+      readonly acknowledgeUnconfirmed?: true;
     }
   | {
       readonly account: QrAccount;
@@ -295,6 +300,7 @@ export type QrExportParams =
         readonly network: string;
       };
       readonly verify: VerifyFactor;
+      readonly acknowledgeUnconfirmed?: true;
     }
   | {
       readonly account: QrAccount;
@@ -305,6 +311,7 @@ export type QrExportParams =
         readonly network: string;
       };
       readonly verify: VerifyFactor;
+      readonly acknowledgeUnconfirmed?: true;
     };
 
 const LEAF_TEMPLATES = {

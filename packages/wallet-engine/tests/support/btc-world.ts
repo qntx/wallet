@@ -497,6 +497,7 @@ export const world = (
           fingerprint: "00000000",
           path: `m/${PURPOSE[t] ?? 84}'/0'/0'`,
           changeMark: 0,
+          confirmed: true,
         };
       },
       sign: async (p: SignParams) => {

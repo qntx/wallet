@@ -177,7 +177,7 @@ const backends = async (): Promise<Backends> => {
   const device = keystoneSimIo(DEVICE_SEED, deviceFingerprint);
   const pairResult = await hardware(wallet).start(
     { kind: "pair", device: "keystone" },
-    { io: device.io },
+    { io: device.io, verify: VERIFY },
   ).result;
   if (pairResult.kind !== "pair") {
     throw new Error("expected a pair result");
@@ -1108,6 +1108,7 @@ describe("qr backends — export and indistinguishability", () => {
         families: ["evm", "tron", "solana"],
         bitcoin: { template: "btc.bip84", network: BITCOIN_MAINNET },
         verify: VERIFY,
+        acknowledgeUnconfirmed: true,
       });
       expect(io.exchanges()).toBe(0);
       expect(exported.payload.type).toBe("crypto-multi-accounts");
@@ -1133,6 +1134,7 @@ describe("qr backends — export and indistinguishability", () => {
           families: ["evm", "tron", "solana"],
           bitcoin: { template: "btc.bip84", network: BITCOIN_MAINNET },
           verify: VERIFY,
+          acknowledgeUnconfirmed: true,
         });
         const decoded = fromUr(
           Ur.fromCborData(exported.payload.type, exported.payload.cbor),
@@ -1301,7 +1303,7 @@ describe("qr account facts — partial pins and card custody", () => {
       });
       const pairResult = await hardware(wallet).start(
         { kind: "pair", device: "keystone" },
-        { io: pairIo.io },
+        { io: pairIo.io, verify: VERIFY },
       ).result;
       if (pairResult.kind !== "pair") {
         throw new Error("expected a pair result");

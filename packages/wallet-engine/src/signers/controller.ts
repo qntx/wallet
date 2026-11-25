@@ -163,6 +163,8 @@ export class SignersController extends Controller<SignersState> {
     readonly walletId: string;
     readonly groupIndex: number;
     readonly family: SignerFamily;
+    /** Keys the pin does not serve need a verification — the kernel asks approval-required else. */
+    readonly verify?: VerifyFactor;
   }): Promise<ReadonlyArray<ChainAccount>> {
     const info = this.mustWallet(params.walletId);
     const templates = FAMILY_TEMPLATES[params.family];
@@ -188,7 +190,13 @@ export class SignersController extends Controller<SignersState> {
         const run = async () =>
           io === undefined
             ? this.runCard(id, card(this.options.wallet).start(request, {}))
-            : this.runDevice(id, hardware(this.options.wallet).start(request, { io }));
+            : this.runDevice(
+                id,
+                hardware(this.options.wallet).start(request, {
+                  io,
+                  ...(params.verify === undefined ? {} : { verify: params.verify }),
+                }),
+              );
         // oxlint-disable-next-line eslint/no-await-in-loop -- device ops are strictly sequential
         const result = await run();
         if (result.kind !== "accounts") {

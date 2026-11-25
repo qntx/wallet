@@ -67,6 +67,7 @@ const chains = (calls?: AccountParams[]): Pick<ChainsApi, "account"> => ({
         fingerprint: "deadbeef",
         path: "m",
         changeMark: 0,
+        confirmed: true,
       });
     }
     return Promise.reject(new Error(`unexpected template ${t}`));
@@ -346,7 +347,12 @@ describe("AssetsController bitcoin group", () => {
   it("rejects when the kernel answers a bitcoin template with no xpub", async () => {
     const noXpub: Pick<ChainsApi, "account"> = {
       account: async () =>
-        Promise.resolve({ template: "evm.bip44", network: "eip155:1", address: "0x0" }),
+        Promise.resolve({
+          template: "evm.bip44",
+          network: "eip155:1",
+          address: "0x0",
+          confirmed: true,
+        }),
     };
     const assets = make(esplora({}, []), undefined, undefined, noXpub);
     await assets.init();

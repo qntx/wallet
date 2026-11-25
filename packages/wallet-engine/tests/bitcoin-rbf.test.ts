@@ -129,6 +129,7 @@ const ctx = (transitions: TrackedTransaction[] = []): RouteContext => ({
           fingerprint: "00000000",
           path: "m/84'/0'/0'",
           changeMark: 0,
+          confirmed: true,
         }),
       sign: async (p: SignParams) => {
         signedCalls.push(p);
@@ -224,7 +225,10 @@ describe("bitcoin rbf", () => {
       0,
       "bip122:000000000019d6689c085ae165831e93",
     );
-    expect(next).toBe(p2wpkh(HD.deriveChild(0).deriveChild(1).publicKey!, NETWORK).address);
+    expect(next).toStrictEqual({
+      address: p2wpkh(HD.deriveChild(0).deriveChild(1).publicKey!, NETWORK).address,
+      confirmed: true,
+    });
   });
 
   it("cancel sends all inputs to the next change address", async () => {

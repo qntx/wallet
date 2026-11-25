@@ -1875,7 +1875,10 @@ class TransactionController extends Controller<TransactionControllerState> {
     // (undocumented)
     lock(): void;
     markDepositClaimed(id: string): Promise<void>;
-    nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
+    nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<{
+        address: string;
+        confirmed: boolean;
+    }>;
     prepareDapp(account: AccountRef, request: SignRequest, options?: {
         readonly nonce?: number;
     }): Promise<PreparedRequest | PreparedMessage>;

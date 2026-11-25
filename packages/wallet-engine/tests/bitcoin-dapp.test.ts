@@ -40,6 +40,7 @@ const accountFor = (template: BitcoinTemplate): ChainAccount => ({
   fingerprint: master.fingerprint.toString(16).padStart(8, "0"),
   path: `m/${PURPOSE[template]}'/0'/0'`,
   changeMark: 0,
+  confirmed: true,
 });
 
 /** Raw previous transactions the mock esplora serves by txid — registered per input below. */
@@ -88,7 +89,7 @@ const rig = () => {
       Promise.resolve(
         params.template.startsWith("btc.")
           ? accountFor(params.template as BitcoinTemplate)
-          : { template: "evm.bip44", network: "eip155:1", address: "0x0" },
+          : { template: "evm.bip44", network: "eip155:1", address: "0x0", confirmed: true },
       ),
   };
   return { es, apis, calls };
@@ -99,7 +100,7 @@ const apisWithMark = (changeMark: number) => ({
     Promise.resolve(
       params.template.startsWith("btc.")
         ? { ...accountFor(params.template as BitcoinTemplate), changeMark }
-        : { template: "evm.bip44", network: "eip155:1", address: "0x0" },
+        : { template: "evm.bip44", network: "eip155:1", address: "0x0", confirmed: true },
     ),
 });
 

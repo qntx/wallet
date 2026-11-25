@@ -221,7 +221,7 @@ const nextReceiveAddress = async (
   walletId: string,
   groupIndex: number,
   network: string,
-): Promise<string> => {
+): Promise<{ address: string; confirmed: boolean }> => {
   const apis = ctx.options.chains;
   const account = await apis.account({ walletId, groupIndex, template: "btc.bip84", network });
   if (!("xpub" in account) || account.xpub === undefined) {
@@ -243,7 +243,7 @@ const nextReceiveAddress = async (
   if (next === undefined) {
     throw new Error("no unused receive address");
   }
-  return next.address;
+  return { address: next.address, confirmed: account.confirmed };
 };
 
 /**
@@ -1479,13 +1479,13 @@ export type BitcoinRoute = {
     requestId: string,
     sparkDeposit?: SparkDepositTag,
   ) => Promise<PreparedRequest>;
-  /** The group's next unused `btc.bip84` receive address. */
+  /** The group's next unused `btc.bip84` receive address and its device confirmation. */
   readonly nextReceiveAddress: (
     ctx: RouteContext,
     walletId: string,
     groupIndex: number,
     network: string,
-  ) => Promise<string>;
+  ) => Promise<{ address: string; confirmed: boolean }>;
   readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxPoll | undefined>;
   /**
    * A reorg returned the transaction to the pool: its inputs are locked under it again so a new
