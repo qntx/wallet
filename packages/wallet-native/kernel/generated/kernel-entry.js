@@ -36436,7 +36436,7 @@ zoo`.split("\n"));
 			]);
 			const purpose = asGroupIndex(mark["purpose"]);
 			if (!PURPOSES$1.has(purpose)) throw headerFailure();
-			const network = mark["network"];
+			const { network } = mark;
 			if (typeof network !== "string" || !CAIP2.test(network)) throw headerFailure();
 			return {
 				groupIndex: asGroupIndex(mark["groupIndex"]),
@@ -36445,7 +36445,11 @@ zoo`.split("\n"));
 				index: asGroupIndex(mark["index"])
 			};
 		});
-		for (let i = 1; i < marks.length; i++) if (before(marks[i - 1], marks[i]) >= 0) throw headerFailure();
+		for (let i = 1; i < marks.length; i++) {
+			const prev = marks[i - 1];
+			const cur = marks[i];
+			if (prev === void 0 || cur === void 0 || before(prev, cur) >= 0) throw headerFailure();
+		}
 		return {
 			walletId: asWalletId(object["walletId"]),
 			marks
@@ -40309,8 +40313,8 @@ zoo`.split("\n"));
 	};
 	/**
 	* An output is discoverable change only on the change chain (`/1/i`), under a purpose at least one
-	* signed input shares, at an index inside what the gap-limited scan reaches: the sealed change
-	* mark plus the gap limit, bounded by the scan limit.
+	* signed input shares, at an index inside what the gap-limited scan reaches: the sealed change mark
+	* plus the gap limit, bounded by the scan limit.
 	*/
 	var isDiscoverableChange = (output, signed, mark) => output.change === 1 && signed.some((input) => input.purpose === output.purpose) && output.index <= mark + 20 && output.index < 2e3;
 	var SATS = "sats";
@@ -42433,11 +42437,11 @@ zoo`.split("\n"));
 	* The chains module: `wallet.accounts` — the public account for a template at the wallet's group
 	* index, derived from the wallet's entropy record once per session and then served from a cache of
 	* public data only. The one record kind it owns is `change-marks` (./marks.ts) — the sealed
-	* hidden-change bound; seed and every node are wiped in `finally` on every path.
-	* `chain.sign` runs `validate → plan → backend → assemble`: a prepare function (./evm.ts,
-	* ./bitcoin.ts, ./solana.ts, ./tron.ts) builds the serialisable plan through `PublicMaterial`
-	* (./keys.ts), the prompt is verified, then `signPlan` (./run.ts) signs it against a fresh key
-	* source — the plan itself is reused, never recomputed.
+	* hidden-change bound; seed and every node are wiped in `finally` on every path. `chain.sign` runs
+	* `validate → plan → backend → assemble`: a prepare function (./evm.ts, ./bitcoin.ts, ./solana.ts,
+	* ./tron.ts) builds the serialisable plan through `PublicMaterial` (./keys.ts), the prompt is
+	* verified, then `signPlan` (./run.ts) signs it against a fresh key source — the plan itself is
+	* reused, never recomputed.
 	*/
 	init_objectSpread2();
 	/** An imported account's only path is `[]`; an HD account's is its group's leaf. */
