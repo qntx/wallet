@@ -2924,17 +2924,17 @@ changes:
 
 ```ts
 import type { VerifyFactor } from "@qntx/wallet";
+import type { SignersController, TransactionController } from "@qntx/wallet-engine";
+import type { QrExportParams } from "@qntx/wallet-engine/qr";
 import type { ChainAccount, ChainSignRequest } from "@qntx/wallet/chains";
 import type { HardwareApi } from "@qntx/wallet/hardware";
-import type { QrExportParams } from "@qntx/wallet-engine/qr";
-import type { SignersController, TransactionController } from "@qntx/wallet-engine";
 
 /**
  * Signer confirmation and the sealed change mark (section 35): `bitcoin.psbt` requests carry a
  * required `origin`; every `ChainAccount` reports `confirmed` and the bitcoin variant adds
- * `changeMark`; fetches that add device keys take a `verify`; exports of unconfirmed material
- * need `acknowledgeUnconfirmed`; and `nextReceiveAddress` returns `{ address, confirmed }`.
- * Compiled only.
+ * `changeMark`; fetches that add device keys take a `verify`; exports of unconfirmed material need
+ * `acknowledgeUnconfirmed`; and `nextReceiveAddress` returns `{ address, confirmed }`. Compiled
+ * only.
  */
 
 /** Every `bitcoin.psbt` request declares where it came from — "external" never raises the mark. */

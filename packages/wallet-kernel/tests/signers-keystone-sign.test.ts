@@ -961,11 +961,7 @@ describe("a hostile psbt answer is refused", () => {
         throw new Error("no 65-byte 0x83 tapKeySig to tamper");
       }
       // getInput returns a deep clone — write the tampered signature back through updateInput.
-      tx.updateInput(
-        0,
-        { tapKeySig: new Uint8Array([...tap.subarray(0, 64), 0x02]) },
-        true,
-      );
+      tx.updateInput(0, { tapKeySig: new Uint8Array([...tap.subarray(0, 64), 0x02]) }, true);
       return {
         kind: "qr",
         ur: {

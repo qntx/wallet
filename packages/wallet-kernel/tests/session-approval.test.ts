@@ -123,7 +123,7 @@ const order = (p: string, s: string, extra?: Record<string, unknown>) => ({
   p,
   s,
   r: false,
-  t: { limit: { tif: "Gtc" } },
+  t: { limit: { tif: "Gtc" as const } },
   ...extra,
 });
 

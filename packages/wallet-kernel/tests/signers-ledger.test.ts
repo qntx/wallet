@@ -367,9 +367,7 @@ describe("ledger driver accounts", () => {
     const honest = HDKey.fromMasterSeed(SEED).derive("m/44'/60'/0'");
     const uncompressed = secp256k1.Point.fromBytes(foreign.publicKey!).toBytes(false);
     const response = ok(
-      `41${hex(uncompressed)}` +
-        `28${utf8Hex(evmAddressFromPublicKey(uncompressed).slice(2))}` +
-        `${hex(honest.chainCode!)}`,
+      `41${hex(uncompressed)}28${utf8Hex(evmAddressFromPublicKey(uncompressed).slice(2))}${hex(honest.chainCode!)}`,
     );
     const fake = scriptedLedger("ethereum", [{ response }]);
     await expect(

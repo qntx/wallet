@@ -244,9 +244,9 @@ describe("hardware.begin pair", () => {
   it.each([3, 5])("a %s-byte fingerprint from pair is integrity, not a wallet", async (n) => {
     const { h, session } = await boot({ fingerprint: new Uint8Array(n).fill(1) });
     const { opId } = await beginOp(h, session, PAIR_OP, PASSKEY());
-    expect(
-      errCode(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session)),
-    ).toBe("integrity");
+    expect(errCode(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session))).toBe(
+      "integrity",
+    );
     const image = await h.store.load();
     expect(image.records.filter((r) => r.kind === "hardware-wallet")).toHaveLength(0);
   });
@@ -258,9 +258,9 @@ describe("hardware.begin pair", () => {
   ])("a pair answering %s is integrity, not a wallet", async (_name, opts) => {
     const { h, session } = await boot(opts);
     const { opId } = await beginOp(h, session, PAIR_OP, PASSKEY());
-    expect(
-      errCode(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session)),
-    ).toBe("integrity");
+    expect(errCode(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session))).toBe(
+      "integrity",
+    );
     const image = await h.store.load();
     expect(image.records.filter((r) => r.kind === "hardware-wallet")).toHaveLength(0);
   });
