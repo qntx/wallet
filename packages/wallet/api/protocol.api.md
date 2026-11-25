@@ -304,6 +304,7 @@ export type ChainAccount = {
     readonly xpub: string;
     readonly fingerprint: string;
     readonly path: string;
+    readonly changeMark: number;
 };
 
 // @public (undocumented)
@@ -408,6 +409,7 @@ export type ChainSignRequest = {
         readonly walletId: string;
         readonly groupIndex: number;
     };
+    readonly origin: "internal" | "external";
     readonly psbt: Uint8Array;
     readonly sign: ReadonlyArray<{
         readonly index: number;

@@ -393,7 +393,7 @@ describe("chains(wallet)", () => {
   it("rejects a kernel psbt that signs a different transaction with integrity", async () => {
     const { wallet } = await btcConnect({
       kind: "bitcoin.psbt",
-      signedPsbt: signBitcoinPsbt(
+            signedPsbt: signBitcoinPsbt(
         btcPsbt(10000n),
         [{ index: 0, privateKey: BTC_CHILD.privateKey! }],
         () => new Uint8Array(32),
@@ -403,6 +403,7 @@ describe("chains(wallet)", () => {
       chains(wallet).sign(
         btcParams({
           kind: "bitcoin.psbt",
+          origin: "internal",
           network: BTC_NETWORK,
           account: btcAccount(),
           psbt: btcPsbt(),
@@ -415,7 +416,7 @@ describe("chains(wallet)", () => {
   it("accepts a kernel psbt signed by the account's own child key", async () => {
     const { wallet } = await btcConnect({
       kind: "bitcoin.psbt",
-      signedPsbt: signBitcoinPsbt(
+            signedPsbt: signBitcoinPsbt(
         btcPsbt(),
         [{ index: 0, privateKey: BTC_CHILD.privateKey! }],
         () => new Uint8Array(32),
@@ -424,6 +425,7 @@ describe("chains(wallet)", () => {
     const result = await chains(wallet).sign(
       btcParams({
         kind: "bitcoin.psbt",
+        origin: "internal",
         network: BTC_NETWORK,
         account: btcAccount(),
         psbt: btcPsbt(),
@@ -484,6 +486,7 @@ describe("chains(wallet)", () => {
     };
     const request = () => ({
       kind: "bitcoin.psbt" as const,
+      origin: "internal" as const,
       network: BTC_NETWORK,
       account: btcAccount(),
       psbt: mixed(),
@@ -509,6 +512,7 @@ describe("chains(wallet)", () => {
             xpub: account!.xpub,
             fingerprint: "73c5da0a",
             path: account!.path,
+            changeMark: 0,
           },
         };
       });
@@ -577,7 +581,7 @@ describe("chains(wallet)", () => {
     foreignTx.addOutput({ script: p2wpkh(foreignPub).script, amount: 90000n });
     const { wallet } = await btcConnect({
       kind: "bitcoin.psbt",
-      signedPsbt: signBitcoinPsbt(
+            signedPsbt: signBitcoinPsbt(
         foreignTx.toPSBT(0),
         [{ index: 0, privateKey: foreignNode.privateKey! }],
         () => new Uint8Array(32),
@@ -587,6 +591,7 @@ describe("chains(wallet)", () => {
       chains(wallet).sign(
         btcParams({
           kind: "bitcoin.psbt",
+          origin: "internal",
           network: BTC_NETWORK,
           account: btcAccount(),
           psbt: btcPsbt(),
@@ -947,6 +952,7 @@ describe("chains(wallet)", () => {
         name: "bitcoin.psbt",
         request: {
           kind: "bitcoin.psbt",
+          origin: "internal",
           network: BTC_NETWORK,
           account: btcAccount(),
           psbt: btcPsbt(),

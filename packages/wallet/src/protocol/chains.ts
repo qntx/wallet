@@ -51,6 +51,8 @@ export type ChainAccount =
       readonly fingerprint: string;
       /** Account derivation path, e.g. "m/84'/0'/0'". */
       readonly path: string;
+      /** Highest proven change-chain index — the sealed mark the change scan reaches beyond. */
+      readonly changeMark: number;
     };
 
 export const template: Validator<ChainTemplate> = union(
@@ -178,6 +180,8 @@ export type ChainSignRequest =
         readonly walletId: string;
         readonly groupIndex: number;
       };
+      /** Who built this request — only "internal" requests may raise the change mark. */
+      readonly origin: "internal" | "external";
       readonly psbt: Uint8Array;
       readonly sign: ReadonlyArray<{
         readonly index: number;
@@ -317,6 +321,7 @@ export const signRequest: Validator<ChainSignRequest> = union(
     kind: literal("bitcoin.psbt"),
     network: caip2,
     account: obj({ kind: literal("hd"), walletId, groupIndex }),
+    origin: union(literal("internal"), literal("external")),
     psbt: bytes(1, 131072),
     sign: arr(obj({ index: int(0, 1024), template: btcTemplate }), 1024),
   }),
@@ -388,6 +393,7 @@ export const chainAccount: Validator<ChainAccount> = union(
     xpub: str(111, /^[a-zA-Z0-9]{111}$/),
     fingerprint: str(8, /^[0-9a-f]{8}$/),
     path: str(11, /^m\/[0-9'/]+$/),
+    changeMark: int(0, 2147483647),
   }),
 );
 

@@ -124,6 +124,7 @@ function main(): void {
   const bAddress = p2wpkh(pub, NETWORK).address ?? "";
   const normalizedPsbt = normalizeBitcoin({
     kind: "bitcoin.psbt",
+    origin: "internal",
     network: MAINNET_BTC,
     account: ACCOUNT,
     psbt: wpkhPsbt,
@@ -213,6 +214,7 @@ function main(): void {
       run: () => {
         const n = normalizeBitcoin({
           kind: "bitcoin.psbt",
+          origin: "internal",
           network: MAINNET_BTC,
           account: ACCOUNT,
           psbt: wpkhPsbt,
