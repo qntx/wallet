@@ -48931,7 +48931,7 @@ zoo`.split("\n"));
 			}
 		};
 	}
-	// node_modules/.bun/@qntx+ur@4.0.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/ur-ChGW72hQ.mjs
+	// node_modules/.bun/@qntx+ur@4.1.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/ur-ChGW72hQ.mjs
 	init_sha2();
 	init_defineProperty();
 	init_objectSpread2();
@@ -53090,7 +53090,7 @@ zoo`.split("\n"));
 		if (value === void 0) throw CborError$1.wrongType();
 		return value;
 	};
-	// node_modules/.bun/@qntx+ur@4.0.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/typed-C8j8iVYT.mjs
+	// node_modules/.bun/@qntx+ur@4.1.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/typed-C8j8iVYT.mjs
 	init_defineProperty();
 	function mapCborDecode(run) {
 		try {
@@ -53187,7 +53187,7 @@ zoo`.split("\n"));
 			return codec.decode(extractTaggedContent(cbor));
 		});
 	}
-	// node_modules/.bun/@qntx+ur@4.0.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/registry-BGnkPqkV.mjs
+	// node_modules/.bun/@qntx+ur@4.1.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/registry-BGnkPqkV.mjs
 	init_objectSpread2();
 	function copyBuf(bytes) {
 		return new Uint8Array(bytes);
@@ -53678,7 +53678,7 @@ zoo`.split("\n"));
 	TAGS["crypto-account"], TAGS["account-descriptor"];
 	TAGS.sskr, TAGS["crypto-sskr"];
 	TAGS.envelope;
-	// node_modules/.bun/@qntx+ur@4.0.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/interop.mjs
+	// node_modules/.bun/@qntx+ur@4.1.0+ca6ba813fa93f2e6/node_modules/@qntx/ur/dist/interop.mjs
 	init_objectSpread2();
 	init_objectWithoutProperties();
 	var _excluded = ["isPrivate"];
@@ -53689,17 +53689,27 @@ zoo`.split("\n"));
 	var TAG_TRON_SIGN_REQUEST = 5101;
 	var TAG_TRON_SIGNATURE = 5102;
 	var TAG_CRYPTO_MULTI_ACCOUNTS = 1103;
+	var TAG_BTC_SIGN_REQUEST = 8101;
+	var TAG_BTC_SIGNATURE = 8102;
+	var TAG_QR_HARDWARE_CALL = 1201;
+	var TAG_KEY_DERIVATION_CALL = 1301;
+	var TAG_KEY_DERIVATION_SCHEMA = 1302;
 	var TAG_UUID = 37;
 	var TAG_ONEKEY_TRON_SIGN_REQUEST = 5201;
 	/**
 	* Interop (vendor-extension) tags — Keystone / OneKey / ERC-4527. `401`/`402` collide with the
-	* BCR-2020-010 `wsh`/`pk` script-expression tags; these types are never embedded tagged, so no
-	* global name registration happens here.
+	* BCR-2020-010 `wsh`/`pk` script-expression tags; `1301`/`1302` are embedded tagged inside
+	* `qr-hardware-call` but collide with no registry tags. None are globally registered here.
 	*/
 	var INTEROP_TAGS = {
+		"btc-sign-request": Tag.from(TAG_BTC_SIGN_REQUEST, "btc-sign-request"),
+		"btc-signature": Tag.from(TAG_BTC_SIGNATURE, "btc-signature"),
 		"crypto-multi-accounts": Tag.from(TAG_CRYPTO_MULTI_ACCOUNTS, "crypto-multi-accounts"),
 		"eth-sign-request": Tag.from(TAG_ETH_SIGN_REQUEST, "eth-sign-request"),
 		"eth-signature": Tag.from(TAG_ETH_SIGNATURE, "eth-signature"),
+		"key-derivation-call": Tag.from(TAG_KEY_DERIVATION_CALL, "key-derivation-call"),
+		"key-derivation-schema": Tag.from(TAG_KEY_DERIVATION_SCHEMA, "key-derivation-schema"),
+		"qr-hardware-call": Tag.from(TAG_QR_HARDWARE_CALL, "qr-hardware-call"),
 		"sol-sign-request": Tag.from(TAG_SOL_SIGN_REQUEST, "sol-sign-request"),
 		"sol-signature": Tag.from(TAG_SOL_SIGNATURE, "sol-signature"),
 		"tron-sign-request": Tag.from(TAG_TRON_SIGN_REQUEST, "tron-sign-request"),
@@ -53707,36 +53717,36 @@ zoo`.split("\n"));
 		uuid: Tag.from(TAG_UUID, "uuid")
 	};
 	Tag.from(TAG_ONEKEY_TRON_SIGN_REQUEST, "tron-sign-request");
-	var UUID_LEN$1 = 16;
+	var UUID_LEN = 16;
 	/** `#6.37(bstr .size 16)` for a 16-byte request id (out-of-range otherwise). */
-	function requestIdTagged$1(requestId) {
-		if (requestId.length !== UUID_LEN$1) throw CborError$1.outOfRange();
+	function requestIdTagged(requestId) {
+		if (requestId.length !== UUID_LEN) throw CborError$1.outOfRange();
 		return taggedValue(INTEROP_TAGS.uuid, cbor(copyBuf(requestId)));
 	}
 	/** Reads a `#6.37` tagged 16-byte request id (untagged ⇒ WrongType, foreign tag ⇒ WrongTag). */
-	function readRequestId$1(cbor) {
+	function readRequestId(cbor) {
 		validateTag(cbor, [INTEROP_TAGS.uuid]);
 		const bytes = copyBytes(extractTaggedContent(cbor));
-		if (bytes.length !== UUID_LEN$1) throw CborError$1.outOfRange();
+		if (bytes.length !== UUID_LEN) throw CborError$1.outOfRange();
 		return bytes;
 	}
 	/** A signing path is concrete: at least one component, every one an index step. */
-	function assertConcretePath$1(path) {
+	function assertConcretePath(path) {
 		if (path.components.length === 0 || path.components.some((component) => component.kind !== "index")) throw CborError$1.outOfRange();
 		return path;
 	}
 	/** `derivationPath` written `#6.304`; the path must be concrete. */
-	function derivationPathTagged$1(path) {
-		assertConcretePath$1(path);
+	function derivationPathTagged(path) {
+		assertConcretePath(path);
 		return taggedValue(cryptoKeypathCodec.tags[0], cryptoKeypathCodec.encode(path));
 	}
 	/** Reads `#6.304`/`#6.40304` and requires a concrete path. */
-	function readDerivationPath$1(cbor) {
+	function readDerivationPath(cbor) {
 		validateTag(cbor, [...cryptoKeypathCodec.tags]);
-		return assertConcretePath$1(cryptoKeypathCodec.decode(extractTaggedContent(cbor)));
+		return assertConcretePath(cryptoKeypathCodec.decode(extractTaggedContent(cbor)));
 	}
 	/** Non-empty byte string (`signData`/`address`), copied. */
-	function readNonEmptyBytes$1(cbor) {
+	function readNonEmptyBytes(cbor) {
 		const bytes = copyBytes(cbor);
 		if (bytes.length === 0) throw CborError$1.outOfRange();
 		return bytes;
@@ -53748,16 +53758,111 @@ zoo`.split("\n"));
 		return bytes;
 	}
 	/** Writes `key: text` unless `text` is undefined or `""` (which encode as absent). */
-	function setOptionalText$1(map, key, text) {
+	function setOptionalText(map, key, text) {
 		if (text !== void 0 && text !== "") map.set(key, assertText(text));
 	}
 	/** Reads `key` as text when present; `""` on the wire reads as absent. */
-	function optionalText$1(map, key) {
+	function optionalText(map, key) {
 		const value = map.get(key);
 		if (value === void 0) return;
 		const text = expectText(value);
 		return text === "" ? void 0 : text;
 	}
+	var SIGN_REQUEST_KEYS$3 = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3,
+		4,
+		5,
+		6
+	]);
+	var SIGNATURE_KEYS$3 = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3
+	]);
+	var SIGNATURE_LEN$2 = 65;
+	var PUBLIC_KEY_LEN = 33;
+	var DATA_TYPE_WIRE$1 = { message: 1 };
+	function decodeDataType$1(cbor) {
+		switch (expectUnsigned(cbor)) {
+			case 1: return "message";
+			default: throw CborError$1.outOfRange();
+		}
+	}
+	function dataTypeWire$1(dataType) {
+		const wire = DATA_TYPE_WIRE$1[dataType];
+		if (wire === void 0) throw CborError$1.wrongType();
+		return wire;
+	}
+	function encodeAddresses(addresses) {
+		if (addresses.length === 0) throw CborError$1.outOfRange();
+		return addresses.map((address) => {
+			const text = assertText(address);
+			if (text === "") throw CborError$1.outOfRange();
+			return text;
+		});
+	}
+	function decodeAddresses(cbor) {
+		const addresses = expectArray(cbor);
+		if (addresses.length === 0) throw CborError$1.outOfRange();
+		return addresses.map((item) => {
+			const text = expectText(item);
+			if (text === "") throw CborError$1.outOfRange();
+			return text;
+		});
+	}
+	var btcSignRequestCodec = {
+		tags: [INTEROP_TAGS["btc-sign-request"]],
+		encode(request) {
+			if (request.derivationPaths.length === 0) throw CborError$1.outOfRange();
+			const map = new CborMap();
+			map.set(1, requestIdTagged(request.requestId));
+			const signData = copyBuf(request.signData);
+			if (signData.length === 0) throw CborError$1.outOfRange();
+			map.set(2, cbor(signData));
+			map.set(3, dataTypeWire$1(request.dataType));
+			map.set(4, request.derivationPaths.map(derivationPathTagged));
+			if (request.addresses !== void 0) map.set(5, encodeAddresses(request.addresses));
+			setOptionalText(map, 6, request.origin);
+			return cbor(map);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, SIGN_REQUEST_KEYS$3);
+			const derivationPaths = expectArray(map.getOrThrow(4));
+			if (derivationPaths.length === 0) throw CborError$1.outOfRange();
+			const addresses = map.get(5);
+			const origin = optionalText(map, 6);
+			return Object.freeze(_objectSpread2(_objectSpread2({
+				requestId: readRequestId(map.getOrThrow(1)),
+				signData: readNonEmptyBytes(map.getOrThrow(2)),
+				dataType: decodeDataType$1(map.getOrThrow(3)),
+				derivationPaths: Object.freeze(derivationPaths.map(readDerivationPath))
+			}, addresses === void 0 ? {} : { addresses: Object.freeze(decodeAddresses(addresses)) }), origin === void 0 ? {} : { origin }));
+		}
+	};
+	var btcSignatureCodec = {
+		tags: [INTEROP_TAGS["btc-signature"]],
+		encode(signature) {
+			const map = new CborMap();
+			map.set(1, requestIdTagged(signature.requestId));
+			const bytes = copyBuf(signature.signature);
+			if (bytes.length !== SIGNATURE_LEN$2) throw CborError$1.outOfRange();
+			map.set(2, cbor(bytes));
+			const publicKey = copyBuf(signature.publicKey);
+			if (publicKey.length !== PUBLIC_KEY_LEN) throw CborError$1.outOfRange();
+			map.set(3, cbor(publicKey));
+			return cbor(map);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, SIGNATURE_KEYS$3);
+			return Object.freeze({
+				requestId: readRequestId(map.getOrThrow(1)),
+				signature: readBytesLen(map.getOrThrow(2), SIGNATURE_LEN$2),
+				publicKey: readBytesLen(map.getOrThrow(3), PUBLIC_KEY_LEN)
+			});
+		}
+	};
 	var SIGN_REQUEST_KEYS$2 = /* @__PURE__ */ new Set([
 		1,
 		2,
@@ -53813,15 +53918,15 @@ zoo`.split("\n"));
 		tags: [INTEROP_TAGS["eth-sign-request"]],
 		encode(request) {
 			const map = new CborMap();
-			if (request.requestId !== void 0) map.set(1, requestIdTagged$1(request.requestId));
+			if (request.requestId !== void 0) map.set(1, requestIdTagged(request.requestId));
 			const signData = copyBuf(request.signData);
 			if (signData.length === 0) throw CborError$1.outOfRange();
 			map.set(2, cbor(signData));
 			map.set(3, dataTypeWire(request.dataType));
 			if (request.chainId !== void 0) map.set(4, assertChainId(request.chainId));
-			map.set(5, derivationPathTagged$1(request.derivationPath));
+			map.set(5, derivationPathTagged(request.derivationPath));
 			if (request.address !== void 0) map.set(6, cbor(assertAddress(request.address)));
-			setOptionalText$1(map, 7, request.origin);
+			setOptionalText(map, 7, request.origin);
 			return cbor(map);
 		},
 		decode(value) {
@@ -53829,22 +53934,22 @@ zoo`.split("\n"));
 			const requestId = map.get(1);
 			const chainId = map.get(4);
 			const address = map.get(6);
-			const origin = optionalText$1(map, 7);
-			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, {
-				signData: readNonEmptyBytes$1(map.getOrThrow(2)),
+			const origin = optionalText(map, 7);
+			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
+				signData: readNonEmptyBytes(map.getOrThrow(2)),
 				dataType: decodeDataType(map.getOrThrow(3))
-			}, chainId === void 0 ? {} : { chainId: readChainId(chainId) }), {}, { derivationPath: readDerivationPath$1(map.getOrThrow(5)) }, address === void 0 ? {} : { address: readBytesLen(address, ADDRESS_LEN) }), origin === void 0 ? {} : { origin }));
+			}, chainId === void 0 ? {} : { chainId: readChainId(chainId) }), {}, { derivationPath: readDerivationPath(map.getOrThrow(5)) }, address === void 0 ? {} : { address: readBytesLen(address, ADDRESS_LEN) }), origin === void 0 ? {} : { origin }));
 		}
 	};
 	var ethSignatureCodec = {
 		tags: [INTEROP_TAGS["eth-signature"]],
 		encode(signature) {
 			const map = new CborMap();
-			if (signature.requestId !== void 0) map.set(1, requestIdTagged$1(signature.requestId));
+			if (signature.requestId !== void 0) map.set(1, requestIdTagged(signature.requestId));
 			const bytes = copyBuf(signature.signature);
 			if (bytes.length < SIGNATURE_MIN || bytes.length > SIGNATURE_MAX) throw CborError$1.outOfRange();
 			map.set(2, cbor(bytes));
-			setOptionalText$1(map, 3, signature.origin);
+			setOptionalText(map, 3, signature.origin);
 			return cbor(map);
 		},
 		decode(value) {
@@ -53852,8 +53957,8 @@ zoo`.split("\n"));
 			const requestId = map.get(1);
 			const signature = copyBytes(map.getOrThrow(2));
 			if (signature.length < SIGNATURE_MIN || signature.length > SIGNATURE_MAX) throw CborError$1.outOfRange();
-			const origin = optionalText$1(map, 3);
-			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, { signature }, origin === void 0 ? {} : { origin }));
+			const origin = optionalText(map, 3);
+			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, { signature }, origin === void 0 ? {} : { origin }));
 		}
 	};
 	var SIGN_REQUEST_KEYS$1 = /* @__PURE__ */ new Set([
@@ -53890,16 +53995,16 @@ zoo`.split("\n"));
 		tags: [INTEROP_TAGS["sol-sign-request"]],
 		encode(request) {
 			const map = new CborMap();
-			if (request.requestId !== void 0) map.set(1, requestIdTagged$1(request.requestId));
+			if (request.requestId !== void 0) map.set(1, requestIdTagged(request.requestId));
 			const signData = copyBuf(request.signData);
 			if (signData.length === 0) throw CborError$1.outOfRange();
 			map.set(2, cbor(signData));
-			map.set(3, derivationPathTagged$1(request.derivationPath));
+			map.set(3, derivationPathTagged(request.derivationPath));
 			if (request.address !== void 0) {
 				if (request.address.length === 0) throw CborError$1.outOfRange();
 				map.set(4, cbor(copyBuf(request.address)));
 			}
-			setOptionalText$1(map, 5, request.origin);
+			setOptionalText(map, 5, request.origin);
 			map.set(6, signTypeWire(request.signType));
 			return cbor(map);
 		},
@@ -53907,18 +54012,18 @@ zoo`.split("\n"));
 			const map = expectClosedIntMap(value, SIGN_REQUEST_KEYS$1);
 			const requestId = map.get(1);
 			const address = map.get(4);
-			const origin = optionalText$1(map, 5);
-			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, {
-				signData: readNonEmptyBytes$1(map.getOrThrow(2)),
-				derivationPath: readDerivationPath$1(map.getOrThrow(3))
-			}, address === void 0 ? {} : { address: readNonEmptyBytes$1(address) }), origin === void 0 ? {} : { origin }), {}, { signType: decodeSignType(map.getOrThrow(6)) }));
+			const origin = optionalText(map, 5);
+			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
+				signData: readNonEmptyBytes(map.getOrThrow(2)),
+				derivationPath: readDerivationPath(map.getOrThrow(3))
+			}, address === void 0 ? {} : { address: readNonEmptyBytes(address) }), origin === void 0 ? {} : { origin }), {}, { signType: decodeSignType(map.getOrThrow(6)) }));
 		}
 	};
 	var solSignatureCodec = {
 		tags: [INTEROP_TAGS["sol-signature"]],
 		encode(signature) {
 			const map = new CborMap();
-			if (signature.requestId !== void 0) map.set(1, requestIdTagged$1(signature.requestId));
+			if (signature.requestId !== void 0) map.set(1, requestIdTagged(signature.requestId));
 			const bytes = copyBuf(signature.signature);
 			if (bytes.length !== SIGNATURE_LEN$1) throw CborError$1.outOfRange();
 			map.set(2, cbor(bytes));
@@ -53927,7 +54032,7 @@ zoo`.split("\n"));
 		decode(value) {
 			const map = expectClosedIntMap(value, SIGNATURE_KEYS$1);
 			const requestId = map.get(1);
-			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, { signature: readBytesLen(map.getOrThrow(2), SIGNATURE_LEN$1) }));
+			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, { signature: readBytesLen(map.getOrThrow(2), SIGNATURE_LEN$1) }));
 		}
 	};
 	var SIGN_REQUEST_KEYS = /* @__PURE__ */ new Set([
@@ -53947,15 +54052,15 @@ zoo`.split("\n"));
 		let request;
 		if (discriminator.type === MajorType.Unsigned) {
 			const dataType = keystoneDataType(expectUnsigned(discriminator));
-			request = _objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, {
-				signData: readNonEmptyBytes$1(map.getOrThrow(2)),
+			request = _objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
+				signData: readNonEmptyBytes(map.getOrThrow(2)),
 				dataType,
-				derivationPath: readDerivationPath$1(map.getOrThrow(4))
+				derivationPath: readDerivationPath(map.getOrThrow(4))
 			}, optionalAddressOrigin(map, 5, 6));
-		} else if (discriminator.type === MajorType.Tagged) request = _objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, {
-			signData: readNonEmptyBytes$1(map.getOrThrow(2)),
+		} else if (discriminator.type === MajorType.Tagged) request = _objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
+			signData: readNonEmptyBytes(map.getOrThrow(2)),
 			dataType: oneKeyRequestType(map.getOrThrow(6)),
-			derivationPath: readDerivationPath$1(discriminator)
+			derivationPath: readDerivationPath(discriminator)
 		}, optionalAddressOrigin(map, 4, 5));
 		else throw CborError$1.wrongType();
 		return Object.freeze(request);
@@ -53977,8 +54082,8 @@ zoo`.split("\n"));
 	}
 	function optionalAddressOrigin(map, addressKey, originKey) {
 		const address = map.get(addressKey);
-		const origin = optionalText$1(map, originKey);
-		return _objectSpread2(_objectSpread2({}, address === void 0 ? {} : { address: readNonEmptyBytes$1(address) }), origin === void 0 ? {} : { origin });
+		const origin = optionalText(map, originKey);
+		return _objectSpread2(_objectSpread2({}, address === void 0 ? {} : { address: readNonEmptyBytes(address) }), origin === void 0 ? {} : { origin });
 	}
 	function keystoneDataTypeWire(dataType) {
 		switch (dataType) {
@@ -53988,7 +54093,7 @@ zoo`.split("\n"));
 		}
 	}
 	function sharedFields(map, request) {
-		if (request.requestId !== void 0) map.set(1, requestIdTagged$1(request.requestId));
+		if (request.requestId !== void 0) map.set(1, requestIdTagged(request.requestId));
 		const signData = copyBuf(request.signData);
 		if (signData.length === 0) throw CborError$1.outOfRange();
 		map.set(2, cbor(signData));
@@ -53998,7 +54103,7 @@ zoo`.split("\n"));
 			if (request.address.length === 0) throw CborError$1.outOfRange();
 			map.set(addressKey, cbor(copyBuf(request.address)));
 		}
-		setOptionalText$1(map, originKey, request.origin);
+		setOptionalText(map, originKey, request.origin);
 	}
 	/**
 	* Keystone's `tron-sign-request` writer (tag 5101): `{1 uuid?, 2 signData, 3 dataType, 4 path, 5
@@ -54014,7 +54119,7 @@ zoo`.split("\n"));
 			const map = new CborMap();
 			sharedFields(map, request);
 			map.set(3, keystoneDataTypeWire(request.dataType));
-			map.set(4, derivationPathTagged$1(request.derivationPath));
+			map.set(4, derivationPathTagged(request.derivationPath));
 			optionalTail(map, request, 5, 6);
 			return cbor(map);
 		},
@@ -54028,7 +54133,7 @@ zoo`.split("\n"));
 		tags: [INTEROP_TAGS["tron-signature"]],
 		encode(signature) {
 			const map = new CborMap();
-			if (signature.requestId !== void 0) map.set(1, requestIdTagged$1(signature.requestId));
+			if (signature.requestId !== void 0) map.set(1, requestIdTagged(signature.requestId));
 			const bytes = copyBuf(signature.signature);
 			if (bytes.length !== SIGNATURE_LEN) throw CborError$1.outOfRange();
 			map.set(2, cbor(bytes));
@@ -54037,7 +54142,7 @@ zoo`.split("\n"));
 		decode(value) {
 			const map = expectClosedIntMap(value, SIGNATURE_KEYS);
 			const requestId = map.get(1);
-			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId$1(requestId) }), {}, { signature: readBytesLen(map.getOrThrow(2), SIGNATURE_LEN) }));
+			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, { signature: readBytesLen(map.getOrThrow(2), SIGNATURE_LEN) }));
 		}
 	};
 	var ACCOUNT_KEYS = /* @__PURE__ */ new Set([
@@ -54114,33 +54219,135 @@ zoo`.split("\n"));
 			map.set(1, accounts.masterFingerprint);
 			const keys = accounts.keys.map(encodeKey);
 			map.set(2, keys);
-			setOptionalText$1(map, 3, accounts.device);
-			setOptionalText$1(map, 4, accounts.deviceId);
-			setOptionalText$1(map, 5, accounts.version);
+			setOptionalText(map, 3, accounts.device);
+			setOptionalText(map, 4, accounts.deviceId);
+			setOptionalText(map, 5, accounts.version);
 			return cbor(map);
 		},
 		decode(value) {
 			const map = expectClosedIntMap(value, ACCOUNT_KEYS);
 			const keys = expectArray(map.getOrThrow(2));
 			if (keys.length === 0) throw CborError$1.outOfRange();
-			const device = optionalText$1(map, 3);
-			const deviceId = optionalText$1(map, 4);
-			const version = optionalText$1(map, 5);
+			const device = optionalText(map, 3);
+			const deviceId = optionalText(map, 4);
+			const version = optionalText(map, 5);
 			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2({
 				masterFingerprint: expectUint(map.getOrThrow(1), 4294967295),
 				keys: keys.map(decodeKey)
 			}, device === void 0 ? {} : { device }), deviceId === void 0 ? {} : { deviceId }), version === void 0 ? {} : { version }));
 		}
 	};
+	var CALL_KEYS = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3,
+		4
+	]);
+	var PARAMS_KEYS = /* @__PURE__ */ new Set([1]);
+	var SCHEMA_KEYS = /* @__PURE__ */ new Set([
+		1,
+		2,
+		3,
+		4
+	]);
+	var CURVE_WIRE = {
+		secp256k1: 0,
+		ed25519: 1
+	};
+	var ALGORITHM_WIRE = {
+		slip10: 0,
+		bip32Ed25519: 1
+	};
+	function decodeCurve(cbor) {
+		switch (expectUnsigned(cbor)) {
+			case 0: return "secp256k1";
+			case 1: return "ed25519";
+			default: throw CborError$1.outOfRange();
+		}
+	}
+	function decodeAlgorithm(cbor) {
+		switch (expectUnsigned(cbor)) {
+			case 0: return "slip10";
+			case 1: return "bip32Ed25519";
+			default: throw CborError$1.outOfRange();
+		}
+	}
+	function curveWire(curve) {
+		const wire = CURVE_WIRE[curve];
+		if (wire === void 0) throw CborError$1.wrongType();
+		return wire;
+	}
+	function algorithmWire(algorithm) {
+		const wire = ALGORITHM_WIRE[algorithm];
+		if (wire === void 0) throw CborError$1.wrongType();
+		return wire;
+	}
+	function decodeVersion(cbor) {
+		switch (expectUnsigned(cbor)) {
+			case 0: return 0;
+			case 1: return 1;
+			default: throw CborError$1.outOfRange();
+		}
+	}
+	function encodeSchema(schema) {
+		const map = new CborMap();
+		map.set(1, derivationPathTagged(schema.keyPath));
+		if (schema.curve !== void 0) map.set(2, curveWire(schema.curve));
+		if (schema.algorithm !== void 0) map.set(3, algorithmWire(schema.algorithm));
+		setOptionalText(map, 4, schema.chainType);
+		return taggedValue(INTEROP_TAGS["key-derivation-schema"], cbor(map));
+	}
+	function decodeSchema(cbor) {
+		validateTag(cbor, [INTEROP_TAGS["key-derivation-schema"]]);
+		const map = expectClosedIntMap(extractTaggedContent(cbor), SCHEMA_KEYS);
+		const curve = map.get(2);
+		const algorithm = map.get(3);
+		const chainType = optionalText(map, 4);
+		return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2({ keyPath: readDerivationPath(map.getOrThrow(1)) }, curve === void 0 ? {} : { curve: decodeCurve(curve) }), algorithm === void 0 ? {} : { algorithm: decodeAlgorithm(algorithm) }), chainType === void 0 ? {} : { chainType }));
+	}
+	function encodeParams(params) {
+		if (params.schemas.length === 0) throw CborError$1.outOfRange();
+		const map = new CborMap();
+		map.set(1, params.schemas.map(encodeSchema));
+		return cbor(map);
+	}
+	function decodeParams(cbor) {
+		validateTag(cbor, [INTEROP_TAGS["key-derivation-call"]]);
+		const schemas = expectArray(expectClosedIntMap(extractTaggedContent(cbor), PARAMS_KEYS).getOrThrow(1));
+		if (schemas.length === 0) throw CborError$1.outOfRange();
+		return Object.freeze({
+			kind: "keyDerivation",
+			schemas: Object.freeze(schemas.map(decodeSchema))
+		});
+	}
+	var qrHardwareCallCodec = {
+		tags: [INTEROP_TAGS["qr-hardware-call"]],
+		encode(call) {
+			if (call.params.kind !== "keyDerivation") throw CborError$1.wrongType();
+			const map = new CborMap();
+			map.set(1, 0);
+			map.set(2, taggedValue(INTEROP_TAGS["key-derivation-call"], encodeParams(call.params)));
+			setOptionalText(map, 3, call.origin);
+			if (call.version !== void 0) {
+				if (call.version !== 0 && call.version !== 1) throw CborError$1.outOfRange();
+				map.set(4, call.version);
+			}
+			return cbor(map);
+		},
+		decode(value) {
+			const map = expectClosedIntMap(value, CALL_KEYS);
+			if (expectUnsigned(map.getOrThrow(1)) !== 0) throw CborError$1.outOfRange();
+			const origin = optionalText(map, 3);
+			const version = map.get(4);
+			return Object.freeze(_objectSpread2(_objectSpread2({ params: decodeParams(map.getOrThrow(2)) }, origin === void 0 ? {} : { origin }), version === void 0 ? {} : { version: decodeVersion(version) }));
+		}
+	};
 	// packages/wallet-kernel/src/modules/signers/keystone/ur.ts
 	/**
-	* The Keystone driver's UR codecs on `@qntx/ur`'s typed layer. The pairing sync, the signatures and
-	* `crypto-psbt` decode through the library's registry and interop codecs; the two wire formats it
-	* does not carry are the local `UrCodec`s here — `btc-sign-request`/`btc-signature` (tags
-	* 8101/8102, ur-registry 1.0.9 bitcoin/btc_sign_request.rs) and the `qr-hardware-call`
-	* key-derivation request (1201, `@keystonehq/bc-ur-registry` extended/QRHardwareCall). Like the
-	* library's interop codecs the local maps are closed, tagged items are validated, and every field
-	* length is exact.
+	* The Keystone driver's UR edge on `@qntx/ur`'s typed layer. Every wire format the driver speaks —
+	* the pairing sync, the sign requests and signatures, `crypto-psbt` and the `qr-hardware-call`
+	* key-derivation request — is a library registry or interop codec; this module only bounds and
+	* types the exchange and builds the request keypaths.
 	*
 	* `decodeUr` is the only entry device bytes reach: it re-asserts the payload bound the protocol
 	* already applies, then folds every decode failure — a dcbor `CborError`, a library `UrError`, the
@@ -54148,12 +54355,8 @@ zoo`.split("\n"));
 	* means the request the kernel built was malformed and closes the same way; no untyped error ever
 	* escapes this module.
 	*/
-	init_objectSpread2();
 	/** Device answers are QR payloads — the protocol already bounds them; the decode re-asserts. */
 	var MAX_BYTES = 262144;
-	var UUID_TAG = Tag.from(37, "uuid");
-	var UUID_LEN = 16;
-	var [KEYPATH_TAG] = cryptoKeypathCodec.tags;
 	var HARDENED$10 = 2147483648;
 	function integrity$5() {
 		throw new KernelError("integrity", "malformed device UR exchange");
@@ -54191,196 +54394,6 @@ zoo`.split("\n"));
 		})),
 		sourceFingerprint: fingerprintNumber(fingerprint)
 	});
-	var requestIdTagged = (requestId) => {
-		if (requestId.length !== UUID_LEN) throw CborError$1.outOfRange();
-		return taggedValue(UUID_TAG, cbor(new Uint8Array(requestId)));
-	};
-	var readRequestId = (value) => {
-		validateTag(value, [UUID_TAG]);
-		const bytes = expectBytes$1(extractTaggedContent(value));
-		if (bytes.length !== UUID_LEN) throw CborError$1.outOfRange();
-		return new Uint8Array(bytes);
-	};
-	/** A signing path is concrete: at least one component, every one an index step. */
-	var assertConcretePath = (path) => {
-		if (path.components.length === 0 || path.components.some((component) => component.kind !== "index")) throw CborError$1.outOfRange();
-		return path;
-	};
-	var derivationPathTagged = (path) => taggedValue(KEYPATH_TAG, cryptoKeypathCodec.encode(assertConcretePath(path)));
-	var readDerivationPath = (value) => {
-		validateTag(value, [...cryptoKeypathCodec.tags]);
-		return assertConcretePath(cryptoKeypathCodec.decode(extractTaggedContent(value)));
-	};
-	var readNonEmptyBytes = (value) => {
-		const bytes = new Uint8Array(expectBytes$1(value));
-		if (bytes.length === 0) throw CborError$1.outOfRange();
-		return bytes;
-	};
-	var optionalText = (map, key) => {
-		const value = map.get(key);
-		if (value === void 0) return;
-		const text = expectText(value);
-		return text === "" ? void 0 : text;
-	};
-	var setOptionalText = (map, key, text) => {
-		if (text !== void 0 && text !== "") map.set(key, text);
-	};
-	/** The closed unsigned-key map every registry structure is. */
-	var closedIntMap = (value, allowed) => {
-		const map = expectMap(value);
-		for (const [key] of map) {
-			const n = expectUnsigned(key);
-			if (typeof n !== "number" || !Number.isInteger(n) || !allowed.has(n)) throw CborError$1.wrongType();
-		}
-		return map;
-	};
-	var BTC_SIGN_REQUEST_KEYS = /* @__PURE__ */ new Set([
-		1,
-		2,
-		3,
-		4,
-		5,
-		6
-	]);
-	var BTC_SIGNATURE_KEYS = /* @__PURE__ */ new Set([
-		1,
-		2,
-		3
-	]);
-	var HARDWARE_CALL_KEYS = /* @__PURE__ */ new Set([
-		1,
-		2,
-		3,
-		4
-	]);
-	var KEY_DERIVATION_CALL_KEYS = /* @__PURE__ */ new Set([1]);
-	var KEY_DERIVATION_SCHEMA_KEYS = /* @__PURE__ */ new Set([
-		1,
-		2,
-		3,
-		4
-	]);
-	var BTC_MESSAGE_DATA_TYPE = 1;
-	var PUBLIC_KEY_LEN = 33;
-	var TAG_KEY_DERIVATION_CALL = Tag.from(1301, "key-derivation-call");
-	var TAG_KEY_DERIVATION_SCHEMA = Tag.from(1302, "key-derivation-schema");
-	/**
-	* Keystone's `btc-sign-request` (tag 8101): `{1 uuid?, 2 signData, 3 dataType, 4 [keypaths], 5
-	* addresses?, 6 origin?}`. The only data type the vendor enum defines is message (1) — the driver's
-	* bitcoin message signing — so both directions accept it alone.
-	*/
-	var btcSignRequestCodec = {
-		tags: [Tag.from(8101, "btc-sign-request")],
-		encode(request) {
-			if (request.derivationPaths.length === 0) throw CborError$1.outOfRange();
-			const signData = new Uint8Array(request.signData);
-			if (signData.length === 0) throw CborError$1.outOfRange();
-			const map = new CborMap();
-			if (request.requestId !== void 0) map.set(1, requestIdTagged(request.requestId));
-			map.set(2, cbor(signData));
-			map.set(3, BTC_MESSAGE_DATA_TYPE);
-			map.set(4, request.derivationPaths.map(derivationPathTagged));
-			if (request.addresses !== void 0 && request.addresses.length > 0) map.set(5, request.addresses.map((address) => {
-				if (address === "") throw CborError$1.outOfRange();
-				return address;
-			}));
-			setOptionalText(map, 6, request.origin);
-			return cbor(map);
-		},
-		decode(value) {
-			const map = closedIntMap(value, BTC_SIGN_REQUEST_KEYS);
-			const requestId = map.get(1);
-			if (expectUnsigned(map.getOrThrow(3)) !== BTC_MESSAGE_DATA_TYPE) throw CborError$1.outOfRange();
-			const addresses = map.get(5);
-			const origin = optionalText(map, 6);
-			return Object.freeze(_objectSpread2(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
-				signData: readNonEmptyBytes(map.getOrThrow(2)),
-				derivationPaths: expectArray(map.getOrThrow(4)).map(readDerivationPath)
-			}, addresses === void 0 ? {} : { addresses: expectArray(addresses).map((address) => {
-				const text = expectText(address);
-				if (text === "") throw CborError$1.outOfRange();
-				return text;
-			}) }), origin === void 0 ? {} : { origin }));
-		}
-	};
-	var btcSignatureCodec = {
-		tags: [Tag.from(8102, "btc-signature")],
-		encode(signature) {
-			const map = new CborMap();
-			if (signature.requestId !== void 0) map.set(1, requestIdTagged(signature.requestId));
-			const signatureBytes = new Uint8Array(signature.signature);
-			if (signatureBytes.length === 0) throw CborError$1.outOfRange();
-			map.set(2, cbor(signatureBytes));
-			const publicKey = new Uint8Array(signature.publicKey);
-			if (publicKey.length !== PUBLIC_KEY_LEN) throw CborError$1.outOfRange();
-			map.set(3, cbor(publicKey));
-			return cbor(map);
-		},
-		decode(value) {
-			const map = closedIntMap(value, BTC_SIGNATURE_KEYS);
-			const requestId = map.get(1);
-			return Object.freeze(_objectSpread2(_objectSpread2({}, requestId === void 0 ? {} : { requestId: readRequestId(requestId) }), {}, {
-				signature: readNonEmptyBytes(map.getOrThrow(2)),
-				publicKey: readNonEmptyBytes(map.getOrThrow(3))
-			}));
-		}
-	};
-	var CURVE_WIRE = {
-		secp256k1: 0,
-		ed25519: 1
-	};
-	var readCurve = (value) => {
-		switch (expectUnsigned(value)) {
-			case 0: return "secp256k1";
-			case 1: return "ed25519";
-			default: throw CborError$1.outOfRange();
-		}
-	};
-	var derivationSchema = (schema) => {
-		const map = new CborMap();
-		map.set(1, derivationPathTagged(schema.path));
-		map.set(2, CURVE_WIRE[schema.curve]);
-		map.set(3, 0);
-		return taggedValue(TAG_KEY_DERIVATION_SCHEMA, cbor(map));
-	};
-	var readDerivationSchema = (value) => {
-		validateTag(value, [TAG_KEY_DERIVATION_SCHEMA]);
-		const map = closedIntMap(extractTaggedContent(value), KEY_DERIVATION_SCHEMA_KEYS);
-		const chainType = map.get(4);
-		if (chainType !== void 0 && chainType.type !== MajorType.ByteString) throw CborError$1.wrongType();
-		if (expectUnsigned(map.getOrThrow(3)) !== 0) throw CborError$1.outOfRange();
-		return {
-			path: readDerivationPath(map.getOrThrow(1)),
-			curve: readCurve(map.getOrThrow(2))
-		};
-	};
-	/**
-	* The `qr-hardware-call` (tag 1201) the wallet sends for key derivation: `{1 callType, 2 #1301
-	* key-derivation-call {1 [schemas]}, 3 origin?, 4 version?}`. Only call-type 0 exists on the wire
-	* this wallet writes, and version stays absent — V0 is the default every client sends (the vendor
-	* encoder drops a falsy version), which is what firmware 3.2.2 parses.
-	*/
-	var qrHardwareCallCodec = {
-		tags: [Tag.from(1201, "qr-hardware-call")],
-		encode(call) {
-			if (call.schemas.length === 0) throw CborError$1.outOfRange();
-			const params = new CborMap();
-			params.set(1, call.schemas.map(derivationSchema));
-			const map = new CborMap();
-			map.set(1, 0);
-			map.set(2, taggedValue(TAG_KEY_DERIVATION_CALL, cbor(params)));
-			setOptionalText(map, 3, call.origin);
-			return cbor(map);
-		},
-		decode(value) {
-			const map = closedIntMap(value, HARDWARE_CALL_KEYS);
-			if (expectUnsigned(map.getOrThrow(1)) !== 0) throw CborError$1.outOfRange();
-			validateTag(map.getOrThrow(2), [TAG_KEY_DERIVATION_CALL]);
-			const params = closedIntMap(extractTaggedContent(map.getOrThrow(2)), KEY_DERIVATION_CALL_KEYS);
-			const origin = optionalText(map, 3);
-			return Object.freeze(_objectSpread2({ schemas: expectArray(params.getOrThrow(1)).map(readDerivationSchema) }, origin === void 0 ? {} : { origin }));
-		}
-	};
 	// packages/wallet-kernel/src/modules/signers/keystone/sync.ts
 	init_secp256k1();
 	init_objectSpread2();
@@ -54524,6 +54537,15 @@ zoo`.split("\n"));
 	function integrity$4() {
 		throw new KernelError("integrity", "malformed key-derivation answer");
 	}
+	/**
+	* One key-derivation schema with curve and slip10 written explicitly and no version on the call —
+	* the vendor JS dialect firmware 3.2.2 parses.
+	*/
+	var schema = (path, curve, fingerprint) => ({
+		keyPath: requestKeypath(path, fingerprint),
+		curve,
+		algorithm: "slip10"
+	});
 	/** `accounts` driver op: refuse underivable paths, then exchange and pin exactly what was asked. */
 	var derive = async (link, need, pin) => {
 		for (const path of [...need.secp256k1, ...need.ed25519]) if (!DERIVABLE_PREFIXES.some((prefix) => under(prefix, path))) throw new KernelError("unsupported", `keystone cannot derive ${pathToString(path)} over QR`);
@@ -54532,13 +54554,10 @@ zoo`.split("\n"));
 			show: {
 				type: "qr-hardware-call",
 				cbor: encodeUr({
-					schemas: [...need.secp256k1.map((path) => ({
-						path: requestKeypath(path, pin.fingerprint),
-						curve: "secp256k1"
-					})), ...need.ed25519.map((path) => ({
-						path: requestKeypath(path, pin.fingerprint),
-						curve: "ed25519"
-					}))],
+					params: {
+						kind: "keyDerivation",
+						schemas: [...need.secp256k1.map((path) => schema(path, "secp256k1", pin.fingerprint)), ...need.ed25519.map((path) => schema(path, "ed25519", pin.fingerprint))]
+					},
 					origin: ORIGIN$1
 				}, qrHardwareCallCodec)
 			},
@@ -54795,6 +54814,7 @@ zoo`.split("\n"));
 			value: {
 				requestId,
 				signData,
+				dataType: "message",
 				derivationPaths: [requestKeypath(task.path, context.pin.fingerprint)],
 				origin: ORIGIN
 			},
@@ -54802,7 +54822,6 @@ zoo`.split("\n"));
 		}, btcSignatureCodec);
 		checkRequestId(answer.requestId, requestId);
 		if (!equalBytes$10(answer.publicKey, task.publicKey)) wrongDevice$1();
-		if (answer.signature.length !== 65) integrity$3();
 		return answer.signature.subarray(1);
 	};
 	var sign$2 = async (link, context) => {

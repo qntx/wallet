@@ -57,8 +57,8 @@
     },
     {
       "name": "@qntx/ur",
-      "version": "4.0.0",
-      "integrity": "sha512-1257AiSHTS4dTMAB6GbIE17NoPZ9txjIewEqaVLYMeFw2efZnszPUrhN+hIMAT5f/vENm60jOcxag4m7sth8/g=="
+      "version": "4.1.0",
+      "integrity": "sha512-eOJJLek5tKn3Ts/8wo3yt6/VVwhAKjv7l5l8k7SGLSXLxz2OggXzm7RUURIlpSgyBbGAAQqf5ecCGt81iZGoGw=="
     },
     {
       "name": "@scure/base",
@@ -89,7 +89,7 @@
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "15819e12629c14a83a9bea8be15fb03cac6219b46502ec2a8fd64354c94ff4cc"
+      "sha256": "0b4356d9b40fe8f71d329dd3c01fb9ad94c89f9f71bd9ecf3affdc99d6ae78ef"
     }
   ]
 }

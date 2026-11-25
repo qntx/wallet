@@ -7,12 +7,13 @@
  * behind `decodeUr`; these cases run through the sync answer entry (`parseSync`) and the
  * signature/psbt codecs exactly as the sign exchange calls them.
  */
-import { CborMap, Tag, cbor, encodeCbor, taggedValue } from "@blockchaincommons/dcbor";
+import { CborMap, Tag, encodeCbor, taggedValue } from "@blockchaincommons/dcbor";
 import type { CborInput } from "@blockchaincommons/dcbor";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  btcSignatureCodec,
   cryptoMultiAccountsCodec,
   ethSignatureCodec,
   solSignatureCodec,
@@ -24,13 +25,7 @@ import type { DeviceResponse } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
 import { parseSync } from "../src/modules/signers/keystone/sync.ts";
-import {
-  btcSignatureCodec,
-  btcSignRequestCodec,
-  decodeUr,
-  encodeUr,
-  qrHardwareCallCodec,
-} from "../src/modules/signers/keystone/ur.ts";
+import { decodeUr } from "../src/modules/signers/keystone/ur.ts";
 
 const qrResponse = (cbor: Uint8Array, type = "crypto-multi-accounts"): DeviceResponse => ({
   kind: "qr",
@@ -153,10 +148,10 @@ describe("hostile signature and psbt answers are integrity", () => {
   });
 
   it("rejects well-formed CBOR under a foreign UR type", () => {
-    // A structurally valid btc-signature map read as an eth-signature: the 64-byte signature
-    // field fails the eth codec's 65..72 bound; as btc-signature it decodes.
+    // A structurally valid btc-signature map read as an eth-signature: eth's key 3 is the text
+    // origin, so the byte-string public key is the wrong type; as btc-signature it decodes.
     const signature = hex(
-      `a301d8255000112233445566778899aabbccddeeff025840${"aa".repeat(64)}03582102${"bb".repeat(
+      `a301d8255000112233445566778899aabbccddeeff025841${"aa".repeat(65)}03582102${"bb".repeat(
         32,
       )}`,
     );
@@ -179,132 +174,28 @@ describe("hostile signature and psbt answers are integrity", () => {
   });
 });
 
-describe("local codecs", () => {
+describe("btc-signature request ids", () => {
+  // The codec's wire cases are `@qntx/ur`'s vectors; these pin the request-id admission the sign
+  // exchange's wrong-device check relies on: a 16-byte uuid under tag 37, never absent.
   const REQUEST_ID = hex("00112233445566778899aabbccddeeff");
-  const SIGNATURE = new Uint8Array(65).fill(7);
-  const PUBLIC_KEY = new Uint8Array(33).fill(9);
-  const codeOf = (type: string, bytes: Uint8Array, codec: UrCodec<unknown>): string =>
-    code(() => decodeUr(type, bytes, codec));
-  const mapBytes = (entries: ReadonlyArray<readonly [number, CborInput]>): Uint8Array =>
-    encodeCbor(new CborMap(new Map<number, CborInput>(entries)));
-  const keypathTag = (path: {
-    components: ReadonlyArray<{ kind: "index"; index: number; hardened: boolean }>;
-    sourceFingerprint: number;
-  }): ReturnType<typeof taggedValue> => {
-    const map = new CborMap();
-    map.set(
-      1,
-      path.components.flatMap((component) => [component.index, component.hardened]),
-    );
-    map.set(2, path.sourceFingerprint);
-    return taggedValue(Tag.from(304, "crypto-keypath"), cbor(map));
-  };
-
-  it("btc-signature decodes a vendor-shaped map and re-encodes identically", () => {
-    const value = { requestId: REQUEST_ID, signature: SIGNATURE, publicKey: PUBLIC_KEY };
-    const bytes = encodeUr(value, btcSignatureCodec);
-    expect(decodeUr("btc-signature", bytes, btcSignatureCodec)).toStrictEqual(value);
-  });
-
-  it("btc-signature refuses any field-shape deviation", () => {
-    const idField: [number, CborInput] = [1, taggedValue(Tag.from(37), REQUEST_ID)];
-    const sigField: [number, CborInput] = [2, SIGNATURE];
-    const keyField: [number, CborInput] = [3, PUBLIC_KEY];
-    // Closed map: a foreign key or a missing field. The request id is
-    // optional on the wire — the kernel's request-id check refuses it instead.
-    expect(
-      codeOf(
-        "btc-signature",
-        mapBytes([idField, sigField, keyField, [4, new Uint8Array(0)]]),
-        btcSignatureCodec,
-      ),
-    ).toBe("integrity");
-    expect(codeOf("btc-signature", mapBytes([idField, keyField]), btcSignatureCodec)).toBe(
-      "integrity",
-    );
-    expect(codeOf("btc-signature", mapBytes([idField, sigField]), btcSignatureCodec)).toBe(
-      "integrity",
-    );
-    expect(codeOf("btc-signature", mapBytes([sigField, keyField]), btcSignatureCodec)).toBe(
-      "no-error",
-    );
-    // The request id must be 16 bytes under tag 37 — a foreign tag or a bare value is not one.
-    expect(
-      codeOf(
-        "btc-signature",
-        mapBytes([[1, taggedValue(Tag.from(37), new Uint8Array(15))], sigField, keyField]),
-        btcSignatureCodec,
-      ),
-    ).toBe("integrity");
-    expect(
-      codeOf(
-        "btc-signature",
-        mapBytes([[1, taggedValue(Tag.from(36), REQUEST_ID)], sigField, keyField]),
-        btcSignatureCodec,
-      ),
-    ).toBe("integrity");
-    expect(
-      codeOf("btc-signature", mapBytes([[1, REQUEST_ID], sigField, keyField]), btcSignatureCodec),
-    ).toBe("integrity");
-  });
-
-  it("btc-sign-request round-trips and refuses non-message data types", () => {
-    const path = {
-      components: [{ kind: "index" as const, index: 0, hardened: true }],
-      sourceFingerprint: 0xdeadbeef,
-    };
-    const value = {
-      requestId: REQUEST_ID,
-      signData: hex("aabb"),
-      derivationPaths: [path],
-      origin: "qntx",
-    };
-    const bytes = encodeUr(value, btcSignRequestCodec);
-    expect(decodeUr("btc-sign-request", bytes, btcSignRequestCodec)).toStrictEqual(value);
-    // dataType 2 is not a message request.
-    const tampered = mapBytes([
-      [1, taggedValue(Tag.from(37), REQUEST_ID)],
-      [2, hex("aabb")],
-      [3, 2],
-      [4, [keypathTag(path)]],
-      [6, "qntx"],
-    ]);
-    expect(codeOf("btc-sign-request", tampered, btcSignRequestCodec)).toBe("integrity");
-  });
-
-  it("qr-hardware-call round-trips and refuses foreign shapes", () => {
-    const path = {
-      components: [{ kind: "index" as const, index: 44, hardened: true }],
-      sourceFingerprint: 0xdeadbeef,
-    };
-    const value = { schemas: [{ path, curve: "secp256k1" as const }], origin: "qntx" };
-    const bytes = encodeUr(value, qrHardwareCallCodec);
-    expect(decodeUr("qr-hardware-call", bytes, qrHardwareCallCodec)).toStrictEqual(value);
-    // Call-type ≠ 0 is not a key-derivation call.
-    const call = new CborMap();
-    call.set(1, [
-      taggedValue(
-        Tag.from(1302, "key-derivation-schema"),
-        cbor(
-          new CborMap(
-            new Map<number, CborInput>([
-              [1, keypathTag(path)],
-              [2, 1],
-              [3, 0],
-            ]),
-          ),
-        ),
-      ),
-    ]);
-    const tampered = encodeCbor(
+  const answer = (id: CborInput | undefined): Uint8Array =>
+    encodeCbor(
       new CborMap(
         new Map<number, CborInput>([
-          [1, 9],
-          [2, taggedValue(Tag.from(1301, "key-derivation-call"), cbor(call))],
-          [3, "qntx"],
+          ...(id === undefined ? [] : [[1, id] as const]),
+          [2, new Uint8Array(65).fill(7)],
+          [3, new Uint8Array(33).fill(9)],
         ]),
       ),
     );
-    expect(codeOf("qr-hardware-call", tampered, qrHardwareCallCodec)).toBe("integrity");
+  const codeOf = (bytes: Uint8Array): string =>
+    code(() => decodeUr("btc-signature", bytes, btcSignatureCodec));
+
+  it("admits only a tagged 16-byte uuid", () => {
+    expect(codeOf(answer(taggedValue(Tag.from(37), REQUEST_ID)))).toBe("no-error");
+    expect(codeOf(answer(undefined))).toBe("integrity");
+    expect(codeOf(answer(taggedValue(Tag.from(37), new Uint8Array(15))))).toBe("integrity");
+    expect(codeOf(answer(taggedValue(Tag.from(36), REQUEST_ID)))).toBe("integrity");
+    expect(codeOf(answer(REQUEST_ID))).toBe("integrity");
   });
 });
