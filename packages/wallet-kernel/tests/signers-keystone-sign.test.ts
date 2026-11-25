@@ -941,13 +941,14 @@ describe("a hostile psbt answer is refused", () => {
     const { h, session, hwId } = await boot();
     const request = normalizeBitcoin({
       ...bip84Request(hwId),
-      psbt: psbt("btc.bip86", 0x83),
+      psbt: psbt("btc.bip86"),
       sign: [{ index: 0, template: "btc.bip86" }],
     });
     if (request.kind !== "bitcoin.psbt") {
       throw new Error("normalizeBitcoin changed the request kind");
     }
-    // The device answers an honestly signed PSBT — except the tapKeySig's sighash byte lies.
+    // The device answers an honestly signed PSBT — except it appends a sighash byte the plan
+    // never asked for: 65 bytes whose last byte is not the planned default sighash.
     const tamperedTapKeySig = (req: DeviceRequest): DeviceResponse => {
       const response = keystoneDevice(SEED, MFP).respond(req);
       if (response.kind !== "qr" || response.ur.type !== "crypto-psbt") {
@@ -956,10 +957,10 @@ describe("a hostile psbt answer is refused", () => {
       const signed = CryptoPSBT.fromCBOR(Buffer.from(response.ur.cbor)).getPSBT();
       const tx = Transaction.fromPSBT(new Uint8Array(signed));
       const tap = tx.getInput(0).tapKeySig;
-      if (tap === undefined || tap.length !== 65) {
-        throw new Error("no 65-byte tapKeySig to tamper");
+      if (tap === undefined || tap.length !== 64) {
+        throw new Error("no 64-byte tapKeySig to extend");
       }
-      tx.getInput(0).tapKeySig = new Uint8Array([...tap.subarray(0, 64), 0x02]);
+      tx.getInput(0).tapKeySig = new Uint8Array([...tap, 0x02]);
       return { kind: "qr", ur: { type: "crypto-psbt", cbor: tx.toPSBT(0) } };
     };
     expect(errCode(await signOnDevice(h, session, request, {}, tamperedTapKeySig))).toBe(
