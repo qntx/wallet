@@ -202,7 +202,7 @@ export const prepareDappPsbts = async (
       // Scan only templates the batch signs; every template binds its fixed 0/0 address.
       const scanned = signing.has(template)
         ? [
-            ...(await scanChain(es, xpub, template, network, net.params, 0)),
+            ...(await scanChain(es, xpub, template, network, net.params, 0, -1)),
             ...(await scanChain(
               es,
               xpub,

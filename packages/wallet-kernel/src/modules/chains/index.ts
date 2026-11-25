@@ -69,7 +69,7 @@ export const accountFor = async (
   template: ChainTemplate,
   network: string,
   groupIndex: number,
-  mark = 0,
+  mark: number,
 ): Promise<ChainAccount> => {
   if (template === "evm.bip44") {
     const pub = await material.secp256k1(leafPath("evm", groupIndex));
@@ -300,7 +300,7 @@ export const prepareFor = async (
   request: SignRequest,
   material: KeySource["material"],
   now: number,
-  storedMark: (purpose: number) => number = () => 0,
+  storedMark: (purpose: number) => number,
 ): Promise<Prepared> => {
   const { account } = request;
   if (

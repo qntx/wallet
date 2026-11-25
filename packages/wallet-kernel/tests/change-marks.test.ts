@@ -433,6 +433,27 @@ describe("change marks lifecycle", () => {
     await expect(accountMark(h, session, walletId)).resolves.toBe(50);
   });
 
+  it("an internal sweep's signed change input raises the mark — no own output needed", async () => {
+    const { h, session, walletId } = await setup();
+    // External origin: a sweep's /1/500 input proves nothing — the mark stays 0.
+    const external = await sign(
+      h,
+      session,
+      psbtRequest(walletId, "external", [{ template: "btc.bip84", change: 1, index: 500 }], []),
+    );
+    expect("err" in external).toBe(false);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
+    // Internal origin: the same sweep commits 500 even though nothing was hidden — the wallet
+    // really did spend that change index, so the bound must cover it next time.
+    const internal = await sign(
+      h,
+      session,
+      psbtRequest(walletId, "internal", [{ template: "btc.bip84", change: 1, index: 500 }], []),
+    );
+    expect("err" in internal).toBe(false);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(500);
+  });
+
   it("the mark is per group index, purpose and network", async () => {
     const { h, session, walletId } = await setup();
     const signed = await sign(
@@ -575,7 +596,12 @@ describe("change marks lifecycle", () => {
   };
   const sealer = { random: (n: number) => new Uint8Array(n).fill(3), now: () => 0 } as never;
 
-  const forge = async (h: Harness, walletId: string, header: string): Promise<void> => {
+  const forge = async (
+    h: Harness,
+    walletId: string,
+    header: string,
+    body?: Uint8Array,
+  ): Promise<void> => {
     const dek = await sessionDek(h);
     try {
       const image = await h.store.load();
@@ -585,7 +611,7 @@ describe("change marks lifecycle", () => {
         CHANGE_MARKS_KIND,
         walletId,
         header,
-        new Uint8Array([0x01]),
+        body ?? new Uint8Array([0x01]),
       );
       await h.store.commit(withManifest(sealer, image, [{ op: "put-record", record }], dek));
     } finally {
@@ -603,6 +629,21 @@ describe("change marks lifecycle", () => {
         walletId: "0000000000000000",
         marks: [{ groupIndex: 0, purpose: 84, network: BTC_NETWORK, index: 5 }],
       }),
+    );
+    const status = ok(await h.call("status", null, session)) as Record<string, ProtocolValue>;
+    expect(status["vault"]).toBe("corrupted");
+  });
+
+  it("a wrong marker byte in the sealed body latches the vault corrupted", async () => {
+    const { h, session, walletId } = await setup();
+    await forge(
+      h,
+      walletId,
+      encodeChangeMarksHeader({
+        walletId,
+        marks: [{ groupIndex: 0, purpose: 84, network: BTC_NETWORK, index: 5 }],
+      }),
+      new Uint8Array([0x02]),
     );
     const status = ok(await h.call("status", null, session)) as Record<string, ProtocolValue>;
     expect(status["vault"]).toBe("corrupted");

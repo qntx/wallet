@@ -234,6 +234,7 @@ const nextReceiveAddress = async (
     network,
     bitcoinNetwork(network).params,
     0,
+    -1,
   );
   const next = new BitcoinScanStore().nextUnused(
     { addresses: receive, utxos: [], scannedAt: ctx.options.now() },
@@ -294,7 +295,7 @@ const accountContext = async (
     changeMark: number;
   };
   const fp = Number.parseInt(fingerprint, 16);
-  const receive = await scanChain(es, xpub, template, network, net.params, 0);
+  const receive = await scanChain(es, xpub, template, network, net.params, 0, -1);
   const change = await scanChain(
     es,
     xpub,

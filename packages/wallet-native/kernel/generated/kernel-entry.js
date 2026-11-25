@@ -36410,6 +36410,13 @@ zoo`.split("\n"));
 		}
 	});
 	// packages/wallet-kernel/src/modules/chains/marks.ts
+	/**
+	* Sealed change marks: the highest change-chain index a wallet's own transactions have proven, per
+	* (groupIndex, purpose, network). The mark — not anything in a PSBT — bounds which own-key outputs
+	* a signing prompt may hide as change. One record per wallet, id = walletId, one marker byte as the
+	* sealed body like `vault/policy.ts`; the marks live in the public header so the scan reach is
+	* readable without opening the record.
+	*/
 	var CHANGE_MARKS_KIND = "change-marks";
 	var MARKER = 1;
 	var CAIP2 = /^[a-z0-9-]{3,64}:[0-9a-zA-Z-]{1,128}$/;
@@ -36529,7 +36536,7 @@ zoo`.split("\n"));
 					continue;
 				}
 				try {
-					if (record.plaintext.length !== 1 || record.plaintext[0] !== MARKER) throw new KernelError("integrity", "corrupt change-marks record");
+					if (record.plaintext.length !== 1 || record.plaintext[0] !== MARKER) throw new KernelError("integrity", "corrupt change-marks record", void 0, true);
 				} finally {
 					wipe$1(record.plaintext);
 				}
@@ -41974,9 +41981,11 @@ zoo`.split("\n"));
 		} catch (error) {
 			mapChainError(error);
 		}
+		const purposes = /* @__PURE__ */ new Set([...signed.map((tail) => tail.purpose), ...marks.keys()]);
 		const raises = /* @__PURE__ */ new Map();
-		for (const [purpose, mark] of marks) {
-			var _hidden$get2;
+		for (const purpose of purposes) {
+			var _marks$get2, _hidden$get2;
+			const mark = (_marks$get2 = marks.get(purpose)) !== null && _marks$get2 !== void 0 ? _marks$get2 : requestChangeMark(storedMark(purpose), purpose, signed, request.origin);
 			const target = Math.max(mark, (_hidden$get2 = hidden.get(purpose)) !== null && _hidden$get2 !== void 0 ? _hidden$get2 : -1);
 			if (target > storedMark(purpose)) raises.set(purpose, target);
 		}
@@ -42446,7 +42455,7 @@ zoo`.split("\n"));
 	init_objectSpread2();
 	/** An imported account's only path is `[]`; an HD account's is its group's leaf. */
 	var requestPath = (family, account) => account.kind === "imported" ? [] : leafPath(family, account.groupIndex);
-	var accountFor = async (material, template, network, groupIndex, mark = 0) => {
+	var accountFor = async (material, template, network, groupIndex, mark) => {
 		if (template === "evm.bip44") return {
 			template,
 			network,
@@ -42585,7 +42594,7 @@ zoo`.split("\n"));
 	* The family's prepare on this request — `path` applies to evm/tron/solana; bitcoin derives
 	* internally.
 	*/
-	var prepareFor = async (request, material, now, storedMark = () => 0) => {
+	var prepareFor = async (request, material, now, storedMark) => {
 		const { account } = request;
 		if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.fiat24-session" || request.kind === "evm.typed-data") return prepareEvm(request, requestPath("evm", account), material, now);
 		if (request.kind === "tron.transaction" || request.kind === "tron.message" || request.kind === "tron.typed-data") return prepareTron(request, requestPath("tron", account), material);

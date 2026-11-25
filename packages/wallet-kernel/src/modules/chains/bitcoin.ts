@@ -291,8 +291,13 @@ const prepareBitcoinPsbt = async (
   } catch (error) {
     mapChainError(error);
   }
+  // The raise covers every purpose the request touches: an internal sweep's signed change inputs
+  // raise the mark even when no own output of that purpose exists to classify.
+  const purposes = new Set<number>([...signed.map((tail) => tail.purpose), ...marks.keys()]);
   const raises = new Map<number, number>();
-  for (const [purpose, mark] of marks) {
+  for (const purpose of purposes) {
+    const mark =
+      marks.get(purpose) ?? requestChangeMark(storedMark(purpose), purpose, signed, request.origin);
     const target = Math.max(mark, hidden.get(purpose) ?? -1);
     if (target > storedMark(purpose)) {
       raises.set(purpose, target);

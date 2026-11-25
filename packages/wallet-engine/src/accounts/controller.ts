@@ -75,11 +75,11 @@ export type AccountTreeControllerOptions = {
   readonly sparkNetwork: SparkNetwork;
   readonly networks?: DiscoveryNetworks;
   readonly chains: {
-    readonly account: (params: ChainAccountsParams) => Promise<{
-      readonly address?: string;
-      readonly xpub?: string;
-      readonly changeMark?: number;
-    }>;
+    readonly account: (
+      params: ChainAccountsParams,
+    ) => Promise<
+      { readonly address: string } | { readonly xpub: string; readonly changeMark: number }
+    >;
   };
   readonly logger: EngineLogger;
   readonly now: () => number;
@@ -816,21 +816,13 @@ export class AccountTreeController extends Controller<AccountTreeState> {
           const net = bitcoinNetwork(network);
           const es = nets.esplora(network);
           const acct = await apis.account({ walletId, groupIndex, template, network });
-          const xpub = "xpub" in acct ? acct.xpub : undefined;
-          if (xpub === undefined) {
+          if (!("xpub" in acct)) {
             return false;
           }
+          const { xpub } = acct;
           const [receive, change] = await Promise.all([
-            scanChain(es, xpub, template, network, net.params, 0),
-            scanChain(
-              es,
-              xpub,
-              template,
-              network,
-              net.params,
-              1,
-              changeScanReach(acct.changeMark ?? 0),
-            ),
+            scanChain(es, xpub, template, network, net.params, 0, -1),
+            scanChain(es, xpub, template, network, net.params, 1, changeScanReach(acct.changeMark)),
           ]);
           return receive.some((a) => a.used) || change.some((a) => a.used);
         }),

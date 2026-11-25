@@ -1,4 +1,3 @@
-import { KernelError } from "../../errors.ts";
 /**
  * Sealed change marks: the highest change-chain index a wallet's own transactions have proven, per
  * (groupIndex, purpose, network). The mark — not anything in a PSBT — bounds which own-key outputs
@@ -6,6 +5,7 @@ import { KernelError } from "../../errors.ts";
  * sealed body like `vault/policy.ts`; the marks live in the public header so the scan reach is
  * readable without opening the record.
  */
+import { KernelError } from "../../errors.ts";
 import type { KernelPlatform } from "../../platform.ts";
 import type { Secret } from "../../secret/secret.ts";
 import { wipe } from "../../secret/secret.ts";
@@ -189,7 +189,7 @@ export const marksHooks = {
       }
       try {
         if (record.plaintext.length !== 1 || record.plaintext[0] !== MARKER) {
-          throw new KernelError("integrity", "corrupt change-marks record");
+          throw new KernelError("integrity", "corrupt change-marks record", undefined, true);
         }
       } finally {
         wipe(record.plaintext);

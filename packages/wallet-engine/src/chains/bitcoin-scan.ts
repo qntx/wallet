@@ -144,7 +144,7 @@ export const scanChain = async (
   network: string,
   params: typeof BTC_NETWORK,
   chain: BtcChain,
-  reach = -1,
+  reach: number,
 ): Promise<ReadonlyArray<ScanAddress>> => {
   const scanned = await scanChainWithHistory(es, xpub, template, network, params, chain, reach);
   return scanned.map(({ chain, index, address, used }) => ({ chain, index, address, used }));

@@ -15,6 +15,7 @@ import {
   bitcoinAddressFromXpub,
   bitcoinPubkeyFromXpub,
   bitcoinNetwork,
+  changeScanReach,
 } from "@qntx/wallet-chains/bitcoin";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
@@ -298,6 +299,7 @@ const regtestFlow = async () => {
           NETWORK,
           bitcoinNetwork(NETWORK).params,
           0,
+          -1,
         );
         return receive.some((a) => a.address === wpkhRecv && a.used);
       },
@@ -315,6 +317,7 @@ const regtestFlow = async () => {
       NETWORK,
       bitcoinNetwork(NETWORK).params,
       1,
+      changeScanReach(0),
     );
     const all = [...receive, ...change];
     const utxos = await scanUtxos(es, all, bitcoinNetwork(NETWORK).params);
@@ -403,6 +406,7 @@ const taprootFlow = async (): Promise<void> => {
           NETWORK,
           bitcoinNetwork(NETWORK).params,
           0,
+          -1,
         );
         return scanned.some((s) => s.address === recv && s.used);
       },
@@ -546,6 +550,7 @@ const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
           NETWORK,
           bitcoinNetwork(NETWORK).params,
           0,
+          -1,
         );
         return scanned.some((s) => s.address === recv && s.used);
       },
@@ -685,6 +690,7 @@ const legacyFlow = async (): Promise<void> => {
               NETWORK,
               bitcoinNetwork(NETWORK).params,
               0,
+              -1,
             );
             const s44 = await scanChain(
               es,
@@ -693,6 +699,7 @@ const legacyFlow = async (): Promise<void> => {
               NETWORK,
               bitcoinNetwork(NETWORK).params,
               0,
+              -1,
             );
             return (
               s49.some((a) => a.address === addr49 && a.used) &&
@@ -810,8 +817,24 @@ const legacyFlow = async (): Promise<void> => {
     }
     // Each send's change landed on its own template's change chain — bip84's is untouched.
     const [change49, change44] = await Promise.all([
-      scanChain(es, xpub49, "btc.bip49", NETWORK, bitcoinNetwork(NETWORK).params, 1),
-      scanChain(es, xpub44, "btc.bip44", NETWORK, bitcoinNetwork(NETWORK).params, 1),
+      scanChain(
+        es,
+        xpub49,
+        "btc.bip49",
+        NETWORK,
+        bitcoinNetwork(NETWORK).params,
+        1,
+        changeScanReach(0),
+      ),
+      scanChain(
+        es,
+        xpub44,
+        "btc.bip44",
+        NETWORK,
+        bitcoinNetwork(NETWORK).params,
+        1,
+        changeScanReach(0),
+      ),
     ]);
     expect(change49.some((a) => a.used)).toBe(true);
     expect(change44.some((a) => a.used)).toBe(true);

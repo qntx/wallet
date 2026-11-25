@@ -39,6 +39,7 @@ describe("gap-20 scanning", () => {
       "bip122:000000000019d6689c085ae165831e93",
       NETWORK,
       0,
+      -1,
     );
     expect(addrs).toHaveLength(40);
     expect(addrs[3]!.used).toBe(true);
@@ -53,6 +54,7 @@ describe("gap-20 scanning", () => {
       "bip122:000000000019d6689c085ae165831e93",
       NETWORK,
       0,
+      -1,
     );
     expect(addrs).toHaveLength(20);
     expect(addrs.every((a) => !a.used)).toBe(true);
@@ -69,6 +71,7 @@ describe("gap-20 scanning", () => {
       "bip122:000000000019d6689c085ae165831e93",
       NETWORK,
       0,
+      -1,
     );
     expect(addrs).toHaveLength(40);
     expect(addrs[19]!.used).toBe(true);
@@ -84,7 +87,15 @@ describe("gap-20 scanning", () => {
       post: async () => Promise.reject(new Error("unmocked")),
     };
     await expect(
-      scanChain(lying, xpub, "btc.bip84", "bip122:000000000019d6689c085ae165831e93", NETWORK, 0),
+      scanChain(
+        lying,
+        xpub,
+        "btc.bip84",
+        "bip122:000000000019d6689c085ae165831e93",
+        NETWORK,
+        0,
+        -1,
+      ),
     ).rejects.toThrow("bitcoin address scan exceeded 2000 addresses");
     expect(queried).toBe(2000);
     // Deriving 2000 addresses from the xpub dominates; under a loaded full run it exceeds 5 s.
