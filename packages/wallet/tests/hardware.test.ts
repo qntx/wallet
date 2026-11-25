@@ -260,7 +260,7 @@ describe("hardware(wallet)", () => {
       },
     }));
     kernel.handlers.set("wallet.accounts", () => ({
-      ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS },
+      ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS, confirmed: true },
     }));
     return kernel;
   };
@@ -351,7 +351,7 @@ describe("hardware(wallet)", () => {
       ok: doneStep({ kind: "sign", result: { kind: "evm.personal-message", signature } }),
     }));
     kernel.handlers.set("wallet.accounts", () => ({
-      ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS },
+      ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS, confirmed: true },
     }));
     await hardware(wallet).start(
       { kind: "sign", request: signRequest },

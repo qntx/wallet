@@ -40,6 +40,7 @@ const RESULT = {
   template: "evm.bip44" as const,
   network: "eip155:1",
   address: "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+  confirmed: true,
 };
 
 describe("chains(wallet)", () => {
@@ -80,7 +81,7 @@ describe("chains(wallet)", () => {
     const kernel = new FakeKernel(unlockedStatus());
     kernel.handlers.set("chain.sign", () => ({ ok: { kind: "evm.personal-message", signature } }));
     kernel.handlers.set("wallet.accounts", () => ({
-      ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS },
+      ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS, confirmed: true },
     }));
     const wallet = await connectKernel({
       verifyEvent,
@@ -197,7 +198,7 @@ describe("chains(wallet)", () => {
       ok: { kind: "evm.transaction", signedTransaction: raw },
     }));
     kernel.handlers.set("wallet.accounts", () => ({
-      ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS },
+      ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS, confirmed: true },
     }));
     const wallet = await connectKernel({
       verifyEvent,
@@ -349,6 +350,7 @@ describe("chains(wallet)", () => {
     fingerprint: "73c5da0a",
     path: "m/84'/0'/0'",
     changeMark: 0,
+    confirmed: true,
   };
 
   const btcConnect = async (
@@ -514,6 +516,7 @@ describe("chains(wallet)", () => {
             fingerprint: "73c5da0a",
             path: account!.path,
             changeMark: 0,
+            confirmed: true,
           },
         };
       });
@@ -649,6 +652,7 @@ describe("chains(wallet)", () => {
         fingerprint: "73c5da0a",
         path: "m/44'/0'/0'",
         changeMark: 0,
+        confirmed: true,
       },
     );
     const result = await chains(wallet).sign(
@@ -727,7 +731,7 @@ describe("chains(wallet)", () => {
       const kernel = new FakeKernel(unlockedStatus());
       kernel.handlers.set("chain.sign", () => ({ ok: result }));
       kernel.handlers.set("wallet.accounts", () => ({
-        ok: { template: "tron.bip44", network: "tron:728126428", address: TRON_ADDR },
+        ok: { template: "tron.bip44", network: "tron:728126428", address: TRON_ADDR, confirmed: true },
       }));
       kernel.handlers.set("keys.list", () => ({
         ok: [{ keyId: KEY_ID, family: "tron", address: TRON_ADDR, createdAt: 1 }],
@@ -971,6 +975,7 @@ describe("chains(wallet)", () => {
           template: "evm.bip44",
           network: "eip155:1",
           address: ADDRESS,
+          confirmed: true,
         });
         await expect(
           chains(wallet).sign({ request, verify: { kind: "password", password: "test password" } }),
@@ -986,6 +991,7 @@ describe("chains(wallet)", () => {
           template: "solana.bip44-change",
           network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
           address: base58.encode(ed25519.getPublicKey(privateKey)),
+          confirmed: true,
         },
       );
       await expect(
@@ -1070,17 +1076,17 @@ describe("chains(wallet)", () => {
       const { template, network } = request.params as { template: string; network: string };
       if (template === "evm.bip44") {
         return {
-          ok: { template, network, address: evmAddressFromPublicKey(pubOf(evmLeaf)) },
+          ok: { template, network, address: evmAddressFromPublicKey(pubOf(evmLeaf)), confirmed: true },
         };
       }
       if (template === "tron.bip44") {
         return {
-          ok: { template, network, address: tronAddressFromPublicKey(pubOf(tronLeaf)) },
+          ok: { template, network, address: tronAddressFromPublicKey(pubOf(tronLeaf)), confirmed: true },
         };
       }
       if (template === "solana.bip44-change") {
         return {
-          ok: { template, network, address: solanaAddressFromPublicKey(solanaPub) },
+          ok: { template, network, address: solanaAddressFromPublicKey(solanaPub), confirmed: true },
         };
       }
       return {
@@ -1091,6 +1097,7 @@ describe("chains(wallet)", () => {
           fingerprint: FINGERPRINT,
           path: "m/84'/0'/0'",
           changeMark: 0,
+          confirmed: true,
         },
       };
     };

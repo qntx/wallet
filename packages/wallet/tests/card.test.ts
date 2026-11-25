@@ -233,7 +233,7 @@ describe("card(wallet)", () => {
           },
         }),
         "wallet.accounts": () => ({
-          ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS },
+          ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS, confirmed: true },
         }),
       });
 
