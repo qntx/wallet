@@ -260,10 +260,10 @@ Summary, per platform — details in the sections below:
   mark lives in a `change-marks` vault record
   (`CHANGE_MARKS_KIND`/`commitChangeMarks`/`marksHooks` in
   `packages/wallet-kernel/src/modules/chains/marks.ts`), raised before
-  signing by the highest same-purpose change index among the signed
-  inputs — and only when the request carries `origin: "internal"`, so an
-  external request's claimed input paths never raise it
-  (`requestChangeMark` in
+  signing to the highest hidden change index — and, only for
+  `origin: "internal"` requests, to the highest same-purpose change index
+  among the signed inputs, so an external request's claimed input paths
+  never raise it (`requestChangeMark` in
   `packages/wallet-chains/src/bitcoin/own.ts`). An own-key output is
   hidden only on the change chain, under a purpose a signed input shares,
   at an index at most `BITCOIN_GAP_LIMIT` (20) past that mark and below

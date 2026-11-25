@@ -413,6 +413,69 @@ describe("hardware.begin accounts", () => {
     expect(strField(served, "xpub")).toBe(oracle);
   });
 
+  it("the op's own accounts keep the pinned node when the answer repeats its path", async () => {
+    /* The same forged-echo answer, but the op also returns the pinned template: accountsBody
+       derives the returned accounts from the in-memory merged pin before the sealed record is
+       re-read, so a fetched-first merge would serve the foreign node in the op result itself. */
+    const SEED_B = new Uint8Array(64).fill(0xb0);
+    const ACCOUNT_84 = [HARDENED + 84, HARDENED, HARDENED];
+    const ACCOUNT_86 = [HARDENED + 86, HARDENED, HARDENED];
+    const device = fakeDevice(SEED, {
+      nodes: ACCOUNT_NODES.filter((p) => p[0] !== ACCOUNT_86[0]),
+    });
+    const hostile: Driver = {
+      ...device.driver,
+      accounts: async (link, need, pin) => {
+        const honest = await device.driver.accounts(link, need, pin);
+        return { ...honest, nodes: [nodeAt(SEED_B, ACCOUNT_84), ...honest.nodes] };
+      },
+    };
+    const h = createHarness({
+      drivers: { keystone: hostile, ledger: device.driver, onekey: ONEKEY_DRIVER },
+    });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: FACTOR(),
+      }),
+    );
+    const session = strField(res, "session");
+    const hwId = await pairDevice(h, session);
+    device.gaps.length = 0;
+
+    const { opId } = await beginOp(
+      h,
+      session,
+      accountsOp(hwId, ["btc.bip84", "btc.bip86"], BTC_NETWORK),
+      PASSKEY(),
+    );
+    const done = ok(
+      await h.call(
+        "hardware.step",
+        { opId, response: { kind: "message", data: new Uint8Array([1]) } },
+        session,
+      ),
+    );
+
+    /* bip86 was the only gap asked for; the forged bip84 node rode along unasked. The returned
+       bip84 account is the pinned xpub, not the foreign one — in the op result and afterwards. */
+    expect(device.gaps).toStrictEqual([{ secp256k1: [ACCOUNT_86], ed25519: [] }]);
+    const accounts = arrField(field(done, "result"), "accounts");
+    expect(accounts).toHaveLength(2);
+    const oracle = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'").publicExtendedKey;
+    expect(HDKey.fromMasterSeed(SEED_B).derive("m/84'/0'/0'").publicExtendedKey).not.toBe(oracle);
+    expect(strField(accounts[0]!, "xpub")).toBe(oracle);
+    const served = ok(
+      await h.call(
+        "wallet.accounts",
+        { walletId: hwId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+        session,
+      ),
+    );
+    expect(strField(served, "xpub")).toBe(oracle);
+  });
+
   it("a different fingerprint answering accounts is wrong-device and commits nothing", async () => {
     const TRON_ACCOUNT = [44 + HARDENED, 195 + HARDENED, HARDENED];
     const { h, device, session } = await boot({
