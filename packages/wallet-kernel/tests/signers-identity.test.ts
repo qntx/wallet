@@ -131,6 +131,15 @@ const presencePrompts = (calls: ReadonlyArray<KeystoreCall>): KeystorePrompt[] =
       : [],
   );
 
+/** The prompt the last verifying `open` was shown. */
+const lastPrompt = (fake: ReturnType<typeof fakeKeystore>): KeystorePrompt => {
+  const last = presencePrompts(fake.calls).at(-1);
+  if (last === undefined) {
+    throw new Error("no verification prompt was recorded");
+  }
+  return last;
+};
+
 const lv = (text: string): string => {
   const data = utf8Hex(text);
   return `${(data.length / 2).toString(16).padStart(2, "0")}${data}`;
@@ -350,15 +359,12 @@ describe("hardware.begin — verification-gated fetches and unconfirmed merges",
       await h.call("chain.exportAccount", { ...exportBase, acknowledgeUnconfirmed: true }, session),
     );
     expect(arrField(exported, "keys")).toHaveLength(1);
-    const prompt = presencePrompts(fk.calls).at(-1);
-    if (prompt === undefined) {
-      throw new Error("no verification prompt was recorded");
-    }
-    expect(prompt.description).toContain(
+    const { description } = lastPrompt(fk);
+    expect(description).toContain(
       "⚠ Not confirmed on the device — check an address of this account on the device first: m/84'/0'/1'",
     );
     // The danger row precedes the node row.
-    const lines = prompt.description.split("\n");
+    const lines = description.split("\n");
     expect(lines[1]).toContain("Not confirmed on the device");
     expect(lines[2]).toContain("Bitcoin Native SegWit");
   });

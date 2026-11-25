@@ -156,7 +156,7 @@ describe("hardware-wallet body codec", () => {
     const bytes = encodeHardwareBody({ keys: bodyKeys, confirmed: confirmedPaths.toReversed() });
     const parsed = parseHardwareBody(bytes);
     expect(parsed.confirmed).toStrictEqual(
-      [...confirmedPaths].sort((a, b) => pathToString(a).localeCompare(pathToString(b))),
+      confirmedPaths.toSorted((a, b) => pathToString(a).localeCompare(pathToString(b))),
     );
     const decode = (value: unknown) =>
       code(() => parseHardwareBody(utf8ToBytes(JSON.stringify(value))));
