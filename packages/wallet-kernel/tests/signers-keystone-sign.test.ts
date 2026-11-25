@@ -470,7 +470,7 @@ const PAYEE_SCRIPT = OutScript.encode(
 );
 
 /** A one-input PSBT spending the wallet's `template` account-0 receive-0 key. */
-const psbt = (template: "btc.bip84" | "btc.bip86"): Uint8Array => {
+const psbt = (template: "btc.bip84" | "btc.bip86", sighashType?: number): Uint8Array => {
   const purpose = template === "btc.bip84" ? 84 : 86;
   const child = HDKey.fromMasterSeed(SEED).derive(`m/${purpose}'/0'/0'/0/0`);
   const pub = child.publicKey;
@@ -485,6 +485,7 @@ const psbt = (template: "btc.bip84" | "btc.bip86"): Uint8Array => {
     index: 0,
     sequence: 0xfffffffd,
     witnessUtxo: { script: spend.script, amount: 100_000n },
+    ...(sighashType === undefined ? {} : { sighashType }),
     ...(purpose === 86
       ? {
           tapInternalKey: pub.subarray(1),
@@ -932,6 +933,36 @@ describe("a hostile psbt answer is refused", () => {
     expect(errCode(await signOnDevice(h, session, request, unsigned))).toBe("integrity");
     // A real signature whose trailing sighash byte is not the planned one.
     expect(errCode(await signOnDevice(h, session, request, {}, (r) => tamperedPsbt(r)))).toBe(
+      "integrity",
+    );
+  });
+
+  it("rejects a 65-byte taproot signature whose sighash byte is not the planned one", async () => {
+    const { h, session, hwId } = await boot();
+    const request = normalizeBitcoin({
+      ...bip84Request(hwId),
+      psbt: psbt("btc.bip86", 0x83),
+      sign: [{ index: 0, template: "btc.bip86" }],
+    });
+    if (request.kind !== "bitcoin.psbt") {
+      throw new Error("normalizeBitcoin changed the request kind");
+    }
+    // The device answers an honestly signed PSBT — except the tapKeySig's sighash byte lies.
+    const tamperedTapKeySig = (req: DeviceRequest): DeviceResponse => {
+      const response = keystoneDevice(SEED, MFP).respond(req);
+      if (response.kind !== "qr" || response.ur.type !== "crypto-psbt") {
+        return response;
+      }
+      const signed = CryptoPSBT.fromCBOR(Buffer.from(response.ur.cbor)).getPSBT();
+      const tx = Transaction.fromPSBT(new Uint8Array(signed));
+      const tap = tx.getInput(0).tapKeySig;
+      if (tap === undefined || tap.length !== 65) {
+        throw new Error("no 65-byte tapKeySig to tamper");
+      }
+      tx.getInput(0).tapKeySig = new Uint8Array([...tap.subarray(0, 64), 0x02]);
+      return { kind: "qr", ur: { type: "crypto-psbt", cbor: tx.toPSBT(0) } };
+    };
+    expect(errCode(await signOnDevice(h, session, request, {}, tamperedTapKeySig))).toBe(
       "integrity",
     );
   });

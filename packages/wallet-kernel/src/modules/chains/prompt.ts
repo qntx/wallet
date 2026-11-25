@@ -1903,6 +1903,9 @@ export function boundPrompt(
      fit the signature is refused rather than shown without its warnings. */
   let keep = Math.min(rendered.detail.length - 1, bound.lines - rendered.lead.length - 1);
   for (;;) {
+    /* Defence in depth: `keep` counts down while detail lines give way to the closing line, so
+       keep = -1 would only be reached if even lead + closing overflowed — a bound the prompts
+       this renders never produce (the closing line always fits after the lead rows shrank). */
     if (keep < 0) {
       throw new KernelError("unsupported", "the prompt's warnings do not fit the dialog");
     }

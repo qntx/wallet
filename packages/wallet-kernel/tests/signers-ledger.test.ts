@@ -14,7 +14,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { KeyPath, TaskKey } from "@qntx/wallet-chains";
 import { bitcoinNetwork, planBitcoinPsbt, planBitcoinMessage } from "@qntx/wallet-chains/bitcoin";
-import { planEvm } from "@qntx/wallet-chains/evm";
+import { evmAddressFromPublicKey, planEvm } from "@qntx/wallet-chains/evm";
 import { planSolana, solanaAddressFromPublicKey } from "@qntx/wallet-chains/solana";
 import { planTron } from "@qntx/wallet-chains/tron";
 import type { ChainSignRequest, ChainTemplate } from "@qntx/wallet/protocol";
@@ -345,6 +345,33 @@ describe("ledger driver accounts", () => {
     const node = vectorCase("ethereum", "public-node"); // answers the account-0 node
     const answers = node.commands.map((c) => ({ response: c.response }));
     const fake = scriptedLedger("ethereum", answers);
+    await expect(
+      code(async () =>
+        LEDGER_DRIVER.accounts(
+          fake.link,
+          { secp256k1: [[H + 44, H + 60, H + 2]], ed25519: [] },
+          pinnedEth,
+        ),
+      ),
+    ).resolves.toBe("wrong-device");
+  });
+
+  it("refuses a pinned-node answer with the right chain code but a foreign public key", async () => {
+    const pinnedEth: HardwarePin = {
+      ...pin,
+      nodes: [...pin.nodes, nodeAt(SEED, [H + 44, H + 60, H])],
+    };
+    /* The re-probed node's chain code is public — a forger can replay it verbatim. The proof is
+       the whole node: a foreign public key under the honest chain code is still wrong-device. */
+    const foreign = HDKey.fromMasterSeed(new Uint8Array(64).fill(0xb0)).derive("m/44'/60'/0'");
+    const honest = HDKey.fromMasterSeed(SEED).derive("m/44'/60'/0'");
+    const uncompressed = secp256k1.Point.fromBytes(foreign.publicKey!).toBytes(false);
+    const response = ok(
+      `41${hex(uncompressed)}` +
+        `28${utf8Hex(evmAddressFromPublicKey(uncompressed).slice(2))}` +
+        `${hex(honest.chainCode!)}`,
+    );
+    const fake = scriptedLedger("ethereum", [{ response }]);
     await expect(
       code(async () =>
         LEDGER_DRIVER.accounts(

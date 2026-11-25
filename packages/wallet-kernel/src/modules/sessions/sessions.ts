@@ -410,6 +410,9 @@ export const openSession: (opened: Set<string>) => Handler<"sessions.open"> =
     ) {
       throw new KernelError("invalid-input", "the session limits do not fit the approval dialog");
     }
+    /* Defence in depth: create already fits the open variant at the worst-case spent — the longest
+       remaining budget the limits can render — and `meteredHeader` refuses a spent outside the
+       limits, so a record that passed create can never reach this refusal. */
     const prompt = approvalPrompt(
       ctx.platform,
       metering,

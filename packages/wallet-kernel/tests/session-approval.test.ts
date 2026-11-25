@@ -275,6 +275,53 @@ describe("approval ceremony", () => {
     expect(field(signature, "signature")).toBeInstanceOf(Uint8Array);
   });
 
+  it("create refuses limits whose reopen prompt overflows only at the worst-case spent", async () => {
+    const fk = fakeKeystore();
+    const input = fakeSecureInput({ approval: "correct" });
+    const h = createHarness({ keystore: fk.keystore, secureInput: input.secureInput, start: T0 });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: DEVICE,
+      }),
+    );
+    const session = strField(res, "session");
+    const walletId = strField(field(res, "wallet"), "walletId");
+    ok(await h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, session));
+
+    /* The create variant and the fresh-spent reopen variant fit iOS (388 chars); only the
+       worst-case remaining — the notional minus the smallest charge, 17 digits longer — pushes
+       the reopen rendering to 405. Create must look at the worst case, not the fresh one. */
+    const tight = {
+      notional: "999999999999999",
+      maxLeverage: 10,
+      assets: Array.from({ length: 10 }, (_, i) => ({ asset: i, size: "1000" })),
+    };
+    const before = fk.calls.length;
+    expect(
+      errCode(
+        await h.call(
+          "sessions.create",
+          createParams(walletId, { limits: tight, verify: HARDWARE }),
+          session,
+        ),
+      ),
+    ).toBe("invalid-input");
+    // Refused before the verification prompt.
+    expect(fk.calls.slice(before).filter(isPresenceCall)).toHaveLength(0);
+
+    // One fewer asset fits the worst case too — that session is created.
+    const loose = { ...tight, assets: tight.assets.slice(0, 9) };
+    ok(
+      await h.call(
+        "sessions.create",
+        createParams(walletId, { limits: loose, verify: HARDWARE }),
+        session,
+      ),
+    );
+  });
+
   it("after lock+unlock sign answers approval-required until sessions.open verifies", async () => {
     const fk = fakeKeystore();
     const input = fakeSecureInput({ approval: "correct" });
@@ -680,6 +727,34 @@ describe("metering", () => {
         await sign(h, session, address, {
           type: "order",
           orders: [order("1", "0.00000001", { a: 1 })],
+          grouping: "na",
+        }),
+      ),
+    ).toBe("limit-exceeded");
+  });
+
+  it("the asset cap is exact — size equal to the cap charges, one unit over refuses", async () => {
+    const { h, session, address } = await seeded({
+      ...LIMITS,
+      assets: [
+        { asset: 0, size: "0.00000001" },
+        { asset: 1, size: "0.00000001" },
+      ],
+    });
+    // The cap itself is a legal charge.
+    ok(
+      await sign(h, session, address, {
+        type: "order",
+        orders: [order("1", "0.00000001")],
+        grouping: "na",
+      }),
+    );
+    // One smallest unit past the untouched sibling's cap is not.
+    expect(
+      errCode(
+        await sign(h, session, address, {
+          type: "order",
+          orders: [order("1", "0.00000002", { a: 1 })],
           grouping: "na",
         }),
       ),

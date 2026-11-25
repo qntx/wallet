@@ -440,25 +440,26 @@ describe("hardware.begin — verification-gated fetches and unconfirmed merges",
   });
 });
 
-describe("a matched verify-address seals the serving entry confirmed", () => {
-  const bootFake = async () => {
-    const fk = fakeKeystore();
-    const device = fakeDevice(SEED);
-    const h = createHarness({
-      keystore: fk.keystore,
-      drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER },
-      idleMs: 60_000,
-    });
-    await h.settle();
-    const res = okValue(
-      await h.call("wallet.importMnemonic", {
-        mnemonic: utf8ToBytes(MNEMONIC),
-        factor: { kind: "device" },
-      }),
-    );
-    return { fk, device, h, session: strField(res, "session") };
-  };
+/** Keystore harness + the seed-backed fake device as every slot's driver. */
+const bootFake = async () => {
+  const fk = fakeKeystore();
+  const device = fakeDevice(SEED);
+  const h = createHarness({
+    keystore: fk.keystore,
+    drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER },
+    idleMs: 60_000,
+  });
+  await h.settle();
+  const res = okValue(
+    await h.call("wallet.importMnemonic", {
+      mnemonic: utf8ToBytes(MNEMONIC),
+      factor: { kind: "device" },
+    }),
+  );
+  return { fk, device, h, session: strField(res, "session") };
+};
 
+describe("a matched verify-address seals the serving entry confirmed", () => {
   it("confirms the entry every group shares, persisted across lock/unlock", async () => {
     const { device, h, session } = await bootFake();
 
@@ -522,6 +523,49 @@ describe("a matched verify-address seals the serving entry confirmed", () => {
     expect(
       boolField(await chainAccount(h, session2, hwId, 0, "btc.bip84", BTC_NETWORK), "confirmed"),
     ).toBe(false);
+  });
+});
+
+describe("hardware sign deadline", () => {
+  it("a fiat24-session sign whose deadline lapses during verification never reaches the device", async () => {
+    const { fk, device, h, session } = await bootFake();
+    const paired = await runOp(
+      h,
+      session,
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "keystone" }, verify: VERIFY },
+        session,
+      ),
+      [],
+    );
+    const hwId = strField(field(paired, "wallet"), "walletId");
+    okValue(await h.call("vault.setBlindSigning", { enabled: true, verify: VERIFY }, session));
+
+    /* The deadline is inside the window at prepare and lapses while the user is on the
+       verification prompt — the post-verify re-check refuses before the executor starts. */
+    const deadline = Math.floor(h.wallNow() / 1000) + 600;
+    fk.watchOpen(() => h.advanceWall(2_000_000));
+    const exchanges = device.requests.length;
+    const begin = await h.call(
+      "hardware.begin",
+      {
+        op: {
+          kind: "sign",
+          request: {
+            kind: "evm.fiat24-session",
+            network: EVM_NETWORK,
+            account: { kind: "hd", walletId: hwId, groupIndex: 0, template: "evm.bip44" },
+            tokenId: "123456",
+            deadline,
+          },
+        },
+        verify: VERIFY,
+      },
+      session,
+    );
+    expect(errCode(begin)).toBe("invalid-input");
+    expect(device.requests).toHaveLength(exchanges);
   });
 });
 

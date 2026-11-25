@@ -25,6 +25,7 @@ import { encodeBatchExecute, normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
+import type { Driver } from "../src/modules/signers/driver.ts";
 import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
 import { createOperationExecutor } from "../src/modules/signers/operation.ts";
 import { hardwareWalletId } from "../src/modules/signers/record.ts";
@@ -34,7 +35,7 @@ import { createHarness } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
 import { loadTranscript, replayExchange, transcriptSession } from "./onekey-emulator/index.ts";
 import { fakeSecureInput } from "./secure-input.ts";
-import { ACCOUNT_NODES, fakeDevice, masterFingerprint } from "./signers-fake.ts";
+import { ACCOUNT_NODES, fakeDevice, masterFingerprint, nodeAt } from "./signers-fake.ts";
 import type { FakeDevice, FakeDeviceOptions } from "./signers-fake.ts";
 
 const HARDENED = 0x80000000;
@@ -240,6 +241,30 @@ describe("hardware.begin pair", () => {
     );
   });
 
+  it.each([3, 5])("a %s-byte fingerprint from pair is integrity, not a wallet", async (n) => {
+    const { h, session } = await boot({ fingerprint: new Uint8Array(n).fill(1) });
+    const { opId } = await beginOp(h, session, PAIR_OP, PASSKEY());
+    expect(
+      errCode(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session)),
+    ).toBe("integrity");
+    const image = await h.store.load();
+    expect(image.records.filter((r) => r.kind === "hardware-wallet")).toHaveLength(0);
+  });
+
+  it.each([
+    ["a model with a control character", { model: "Keystone\u0007Pro" }],
+    ["a model over 64 bytes", { model: "K".repeat(65) }],
+    ["a non-ASCII firmware", { firmware: "3.2.2å" }],
+  ])("a pair answering %s is integrity, not a wallet", async (_name, opts) => {
+    const { h, session } = await boot(opts);
+    const { opId } = await beginOp(h, session, PAIR_OP, PASSKEY());
+    expect(
+      errCode(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session)),
+    ).toBe("integrity");
+    const image = await h.store.load();
+    expect(image.records.filter((r) => r.kind === "hardware-wallet")).toHaveLength(0);
+  });
+
   it("surfaces the driver's own KernelError from begin and step", async () => {
     const rejected = await boot({
       pairError: new KernelError("device-rejected", "the user refused pairing"),
@@ -328,6 +353,64 @@ describe("hardware.begin accounts", () => {
     );
     expect(strField(field(again, "step"), "kind")).toBe("done");
     expect(device.gaps).toHaveLength(1);
+  });
+
+  it("an accounts answer repeating a pinned path with a foreign key never shadows the pin", async () => {
+    /* A hostile transport answering a Keystone sync can echo a pinned path under a different
+       key. The merged pin keeps the pinned node — the fetched one is dropped, never served. */
+    const SEED_B = new Uint8Array(64).fill(0xb0);
+    const ACCOUNT_84 = [HARDENED + 84, HARDENED, HARDENED];
+    const device = fakeDevice(SEED);
+    const hostile: Driver = {
+      ...device.driver,
+      accounts: async (link, need, pin) => {
+        const honest = await device.driver.accounts(link, need, pin);
+        return { ...honest, nodes: [nodeAt(SEED_B, ACCOUNT_84), ...honest.nodes] };
+      },
+    };
+    const h = createHarness({
+      drivers: { keystone: hostile, ledger: device.driver, onekey: ONEKEY_DRIVER },
+    });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: FACTOR(),
+      }),
+    );
+    const session = strField(res, "session");
+    const hwId = await pairDevice(h, session);
+
+    const { opId } = await beginOp(
+      h,
+      session,
+      {
+        kind: "accounts",
+        walletId: hwId,
+        groupIndex: 1,
+        templates: ["btc.bip84"],
+        network: BTC_NETWORK,
+      },
+      PASSKEY(),
+    );
+    ok(
+      await h.call(
+        "hardware.step",
+        { opId, response: { kind: "message", data: new Uint8Array([1]) } },
+        session,
+      ),
+    );
+
+    const served = ok(
+      await h.call(
+        "wallet.accounts",
+        { walletId: hwId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+        session,
+      ),
+    );
+    const oracle = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'").publicExtendedKey;
+    expect(HDKey.fromMasterSeed(SEED_B).derive("m/84'/0'/0'").publicExtendedKey).not.toBe(oracle);
+    expect(strField(served, "xpub")).toBe(oracle);
   });
 
   it("a different fingerprint answering accounts is wrong-device and commits nothing", async () => {
