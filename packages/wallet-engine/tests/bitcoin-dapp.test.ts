@@ -94,6 +94,15 @@ const rig = () => {
   return { es, apis, calls };
 };
 
+const apisWithMark = (changeMark: number) => ({
+  account: async (params: { template: string }): Promise<ChainAccount> =>
+    Promise.resolve(
+      params.template.startsWith("btc.")
+        ? { ...accountFor(params.template as BitcoinTemplate), changeMark }
+        : { template: "evm.bip44", network: "eip155:1", address: "0x0" },
+    ),
+});
+
 const GROUP = { walletId: "w", groupIndex: 0 };
 const signEntry = (
   index: number,
@@ -234,14 +243,7 @@ describe("prepareDappPsbts", () => {
         ],
       );
       const { es } = rig();
-      const apis = (changeMark: number) => ({
-        account: async (params: { template: string }): Promise<ChainAccount> =>
-          Promise.resolve(
-            params.template.startsWith("btc.")
-              ? { ...accountFor(params.template as BitcoinTemplate), changeMark }
-              : { template: "evm.bip44", network: "eip155:1", address: "0x0" },
-          ),
-      });
+      const apis = apisWithMark;
       // Mark 0 reaches index 20 — /1/25 is beyond the wallet's scan, so it stays foreign:
       // neither hidden change nor a shown unusual own output.
       const [low] = await prepareDappPsbts(
