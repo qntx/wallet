@@ -212,7 +212,11 @@ const bootDevices = async () => {
     })),
   ]);
   const ledgerPair = ok(
-    await h.call("hardware.begin", { op: { kind: "pair", device: "ledger" } }, session),
+    await h.call(
+      "hardware.begin",
+      { op: { kind: "pair", device: "ledger" }, verify: HARDWARE },
+      session,
+    ),
   );
   const ledgerResult = await pumpDeviceOp(h, session, ledgerPair, pairLink.link.exchange);
   pairLink.done();
@@ -230,6 +234,7 @@ const bootDevices = async () => {
           templates: ["solana.bip44-change"],
           network: NETWORK,
         },
+        verify: HARDWARE,
       },
       session,
     ),
@@ -239,7 +244,11 @@ const bootDevices = async () => {
 
   const onekey = replayExchange(transcriptSession(loadTranscript("pro", "driver"), "driver-pair"));
   const onekeyPair = ok(
-    await h.call("hardware.begin", { op: { kind: "pair", device: "onekey" } }, session),
+    await h.call(
+      "hardware.begin",
+      { op: { kind: "pair", device: "onekey" }, verify: HARDWARE },
+      session,
+    ),
   );
   const onekeyResult = await pumpDeviceOp(h, session, onekeyPair, async (request) => ({
     kind: "message",

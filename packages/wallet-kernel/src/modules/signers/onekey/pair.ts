@@ -4,8 +4,10 @@
  * root_fingerprint and they must all agree on one master — and the SLIP-10 Solana leaf, then
  * cross-checks one derived leaf address per family against the pinned nodes locally. `accounts`
  * fetches the paths the caller still needs; every secp256k1 node must carry the pin's master
- * fingerprint, and an ed25519-only fetch re-probes a pinned secp256k1 node so a foreign device
- * cannot slip its keys into the pin (`wrong-device` on any mismatch).
+ * fingerprint, and an ed25519-only fetch re-probes a pinned secp256k1 node (`wrong-device` on any
+ * mismatch). Both checks replay public values, so a foreign device or the transport can still merge
+ * its own keys — they only stop an accidental second honest device; merged entries stay unconfirmed
+ * until an on-device verify-address matches.
  */
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { HDKey } from "@scure/bip32";

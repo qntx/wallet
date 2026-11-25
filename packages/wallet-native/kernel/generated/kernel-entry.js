@@ -1048,7 +1048,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-Dmn6lcRX.mjs
+	// packages/wallet/dist/protocol-BUUlVh1-.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1103,7 +1103,8 @@
 	var addressResult = (t, address = str(128, /^[0-9a-zA-Z-]{20,128}$/)) => obj({
 		template: literal(t),
 		network: caip2,
-		address
+		address,
+		confirmed: bool
 	});
 	var accountRef = union(obj({
 		kind: literal("hd"),
@@ -1253,6 +1254,7 @@
 		xpub: str(111, /^[a-zA-Z0-9]{111}$/),
 		fingerprint: str(8, /^[0-9a-f]{8}$/),
 		path: str(11, /^m\/[0-9'/]+$/),
+		confirmed: bool,
 		changeMark: int(0, 2147483647)
 	}));
 	var exportNode = union(obj({ kind: literal("evm.account") }), obj({
@@ -1300,7 +1302,8 @@
 				walletId,
 				groupIndex,
 				nodes: arr(exportNode, 4, 1),
-				verify: verifier
+				verify: verifier,
+				acknowledgeUnconfirmed: opt(literal(true))
 			}),
 			result: obj({
 				fingerprint,
@@ -4538,6 +4541,37 @@
 	function cardPrompt(locale, kind, cards) {
 		return CARD[locale][kind](cards.join(", "));
 	}
+	/** The display name of a hardware device kind — the user-facing word in device prompts. */
+	var HARDWARE_DEVICE_NAME = {
+		keystone: "Keystone",
+		ledger: "Ledger",
+		onekey: "OneKey"
+	};
+	var HARDWARE = {
+		"zh-Hans": {
+			"hardware-pair": (device) => ({
+				title: `配对 ${device}`,
+				description: `验证身份以配对这台 ${device}——其公开密钥将记录在此设备上`
+			}),
+			"hardware-accounts": (device, g) => ({
+				title: `获取 ${device} 密钥`,
+				description: `验证身份以从这台 ${device} 获取账户 ${g} 的公开密钥`
+			})
+		},
+		en: {
+			"hardware-pair": (device) => ({
+				title: `Pair ${device}`,
+				description: `Verify your identity to pair this ${device} — its public keys get pinned`
+			}),
+			"hardware-accounts": (device, g) => ({
+				title: `Fetch ${device} keys`,
+				description: `Verify your identity to fetch the public keys of account ${g} from this ${device}`
+			})
+		}
+	};
+	function hardwarePrompt(locale, kind, device, groupIndex = 0) {
+		return HARDWARE[locale][kind](HARDWARE_DEVICE_NAME[device], groupIndex);
+	}
 	/** A prompt thunk for a card operation — locale and the card list resolve only when it runs. */
 	var cardPromptFor = (keystore, kind, cards) => () => {
 		var _keystore$locale;
@@ -4547,6 +4581,7 @@
 		en: {
 			title: "Connect watch-only wallet",
 			share: (g) => `Share public keys of account ${g} — never a private key`,
+			unconfirmed: (path) => `\u26a0 Not confirmed on the device — check an address of this account on the device first: ${path}`,
 			evmAccount: (path) => `EVM: the addresses of every account of this wallet (${path})`,
 			leaf: (family, g, path) => `${family} address of account ${g} (${path})`,
 			btcAccount: (template, network, g, path) => `Bitcoin ${template} on ${network}: every address of account ${g} (${path})`,
@@ -4560,6 +4595,7 @@
 		"zh-Hans": {
 			title: "连接观察钱包",
 			share: (g) => `共享账户 ${g} 的公开密钥——绝不包含私钥`,
+			unconfirmed: (path) => `\u26a0 未在设备上确认——请先在设备上核对该账户的地址：${path}`,
 			evmAccount: (path) => `EVM：本钱包所有账户的地址（${path}）`,
 			leaf: (family, g, path) => `${family} 账户 ${g} 的地址（${path}）`,
 			btcAccount: (template, network, g, path) => `${network} ${template}：账户 ${g} 的全部地址（${path}）`,
@@ -36353,6 +36389,19 @@ zoo`.split("\n"));
 		for (const index of path.slice(ancestor.path.length)) node = node.deriveChild(index);
 		return node;
 	};
+	/**
+	* The pinned entry `path` resolves through — the deepest secp256k1 prefix with an all-non-hardened
+	* tail (the same ancestor {@link nodeAt} picks), the exact ed25519 entry. `undefined` when the pin
+	* cannot serve the path at all.
+	*/
+	var servingPath = (pin, curve, path) => {
+		if (curve === "ed25519") {
+			var _pin$keys$ed25519$fin;
+			return (_pin$keys$ed25519$fin = pin.keys.ed25519.find((k) => samePath(k.path, path))) === null || _pin$keys$ed25519$fin === void 0 ? void 0 : _pin$keys$ed25519$fin.path;
+		}
+		const [ancestor] = pin.keys.nodes.filter((node) => node.path.length <= path.length && samePath(node.path, path.slice(0, node.path.length)) && path.slice(node.path.length).every((index) => index < HARDENED$14)).sort((a, b) => b.path.length - a.path.length);
+		return ancestor === null || ancestor === void 0 ? void 0 : ancestor.path;
+	};
 	/** The BIP-32 master/parent fingerprint's first four bytes as the u32 device answers carry. */
 	var fingerprintNumber$2 = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0);
 	/** The inverse of `fingerprintNumber`: a u32 fingerprint as its four big-endian bytes. */
@@ -36398,6 +36447,11 @@ zoo`.split("\n"));
 				chainCode: node.chainCode,
 				publicKey: node.publicKey
 			}).publicExtendedKey;
+		},
+		confirmed: async (curve, path) => {
+			const serving = servingPath(pin, curve, path);
+			if (serving === void 0) throw deviceRequired();
+			return pin.confirmed === "all" || pin.confirmed.some((p) => samePath(p, serving));
 		},
 		fingerprint: async () => {
 			if (pin.master !== void 0) {
@@ -36867,6 +36921,7 @@ zoo`.split("\n"));
 	function cardPin(body) {
 		return {
 			master: hexToBytes$4(body.master),
+			confirmed: "all",
 			keys: {
 				nodes: parsePinnedNodes(body.nodes),
 				ed25519: parsePinnedEd25519(body.ed25519)
@@ -40695,7 +40750,8 @@ zoo`.split("\n"));
 					} finally {
 						master.wipePrivateData();
 					}
-				}
+				},
+				confirmed: async () => true
 			},
 			backend: (sign) => ({ sign: async (task) => sign(task, privateAt(task), task.scheme === "bip340" ? random(32) : /* @__PURE__ */ new Uint8Array()) }),
 			wipe: () => {
@@ -40730,7 +40786,8 @@ zoo`.split("\n"));
 				},
 				fingerprint: async () => {
 					throw new KernelError("integrity", "imported keys have no fingerprint");
-				}
+				},
+				confirmed: async () => true
 			},
 			backend: (sign) => ({ sign: async (task) => {
 				alive();
@@ -42124,6 +42181,8 @@ zoo`.split("\n"));
 			groupIndex + HARDENED$12
 		];
 	};
+	/** The curve a node's exported key lives on — Solana's all-hardened leaf is SLIP-10 ed25519. */
+	var nodeCurve = (node) => node.kind === "leaf" && node.template === "solana.bip44-change" ? "ed25519" : "secp256k1";
 	var fp8 = (value) => value.toString(16).padStart(8, "0");
 	var fpHex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 	/**
@@ -42163,7 +42222,7 @@ zoo`.split("\n"));
 	* is the shown scope: `evm.account` names the wallet-wide disclosure its fixed `m/44'/60'/0'` path
 	* understates.
 	*/
-	var exportPrompt = (locale, params) => {
+	var exportPrompt = (locale, params, unconfirmed) => {
 		const text = exportAccountText(locale);
 		const row = (node) => {
 			var _networkMeta$name, _networkMeta;
@@ -42175,7 +42234,11 @@ zoo`.split("\n"));
 		};
 		return {
 			title: text.title,
-			description: joinLines([text.share(params.groupIndex), ...params.nodes.map(row)])
+			description: joinLines([
+				text.share(params.groupIndex),
+				...unconfirmed.map(text.unconfirmed),
+				...params.nodes.map(row)
+			])
 		};
 	};
 	var exportAccount = () => async (ctx, params, session) => {
@@ -42192,7 +42255,16 @@ zoo`.split("\n"));
 			if (seen.has(nodeId(node))) throw new KernelError("invalid-input", "duplicate export node");
 			seen.add(nodeId(node));
 		}
-		const prompt = exportPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), params);
+		const unconfirmed = [];
+		if (record.kind !== "entropy") {
+			const material = ctx.externalMaterial(record);
+			for (const node of params.nodes) {
+				const path = nodePath(node, params.groupIndex);
+				if (!await material.confirmed(nodeCurve(node), path)) unconfirmed.push(pathString(path));
+			}
+		}
+		if (unconfirmed.length > 0 && params.acknowledgeUnconfirmed !== true) throw new KernelError("approval-required", "exporting keys never confirmed on the device needs acknowledgement");
+		const prompt = exportPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), params, unconfirmed);
 		const host = (_ctx$platform$keystor3 = ctx.platform.keystore) === null || _ctx$platform$keystor3 === void 0 ? void 0 : _ctx$platform$keystor3.platform;
 		if ((host === "ios" || host === "android") && !promptFits(prompt, PROMPT_BOUNDS[host])) throw new KernelError("invalid-input", "the export prompt does not fit the verification dialog");
 		await verifyFactor(ctx, params.verify, dek, () => prompt);
@@ -42456,21 +42528,33 @@ zoo`.split("\n"));
 	/** An imported account's only path is `[]`; an HD account's is its group's leaf. */
 	var requestPath = (family, account) => account.kind === "imported" ? [] : leafPath(family, account.groupIndex);
 	var accountFor = async (material, template, network, groupIndex, mark) => {
-		if (template === "evm.bip44") return {
-			template,
-			network,
-			address: evmAddressFromPublicKey(await material.secp256k1(leafPath("evm", groupIndex)))
-		};
-		if (template === "solana.bip44-change") return {
-			template,
-			network,
-			address: solanaAddressFromPublicKey(await material.ed25519(leafPath("solana", groupIndex)))
-		};
-		if (template === "tron.bip44") return {
-			template,
-			network,
-			address: tronAddressFromPublicKey(await material.secp256k1(leafPath("tron", groupIndex)))
-		};
+		if (template === "evm.bip44") {
+			const path = leafPath("evm", groupIndex);
+			return {
+				template,
+				network,
+				address: evmAddressFromPublicKey(await material.secp256k1(path)),
+				confirmed: await material.confirmed("secp256k1", path)
+			};
+		}
+		if (template === "solana.bip44-change") {
+			const path = leafPath("solana", groupIndex);
+			return {
+				template,
+				network,
+				address: solanaAddressFromPublicKey(await material.ed25519(path)),
+				confirmed: await material.confirmed("ed25519", path)
+			};
+		}
+		if (template === "tron.bip44") {
+			const path = leafPath("tron", groupIndex);
+			return {
+				template,
+				network,
+				address: tronAddressFromPublicKey(await material.secp256k1(path)),
+				confirmed: await material.confirmed("secp256k1", path)
+			};
+		}
 		const purpose = BTC_PURPOSE[template];
 		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
 		const net = bitcoinNetwork(network);
@@ -42486,8 +42570,22 @@ zoo`.split("\n"));
 			xpub: await material.extendedPublicKey(path, net.bip32),
 			fingerprint: fingerprint.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), ""),
 			path: pathString(path),
-			changeMark: mark
+			changeMark: mark,
+			confirmed: await material.confirmed("secp256k1", path)
 		};
+	};
+	/** The path `accountFor` derives for a template — leaf for the account chains, account for btc. */
+	var accountPath = (template, network, groupIndex) => {
+		if (template === "evm.bip44") return leafPath("evm", groupIndex);
+		if (template === "tron.bip44") return leafPath("tron", groupIndex);
+		if (template === "solana.bip44-change") return leafPath("solana", groupIndex);
+		const purpose = BTC_PURPOSE[template];
+		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
+		return [
+			purpose + HARDENED$12,
+			bitcoinNetwork(network).coinType + HARDENED$12,
+			groupIndex + HARDENED$12
+		];
 	};
 	var walletAccounts = async (ctx, params, session, cache) => {
 		var _cache$get, _cache$get2;
@@ -42499,7 +42597,13 @@ zoo`.split("\n"));
 		const mark = purpose === void 0 ? 0 : changeMark(ctx.image, params.walletId, params.groupIndex, purpose, params.network);
 		const key = `${String(params.groupIndex)}/${params.template}/${params.network}`;
 		const known = (_cache$get = cache.get(record)) === null || _cache$get === void 0 ? void 0 : _cache$get.get(key);
-		if (known !== void 0) return "xpub" in known ? _objectSpread2(_objectSpread2({}, known), {}, { changeMark: mark }) : known;
+		if (known !== void 0) {
+			const confirmed = record.kind === "entropy" ? true : await ctx.externalMaterial(record).confirmed(params.template === "solana.bip44-change" ? "ed25519" : "secp256k1", accountPath(params.template, params.network, params.groupIndex));
+			return "xpub" in known ? _objectSpread2(_objectSpread2({}, known), {}, {
+				changeMark: mark,
+				confirmed
+			}) : _objectSpread2(_objectSpread2({}, known), {}, { confirmed });
+		}
 		const account = record.kind === "entropy" ? await withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
 			const keys = seedKeys(seed, ctx.platform.random);
 			try {
@@ -55064,6 +55168,47 @@ zoo`.split("\n"));
 	* `sign.ts` builds and admits only the answer to that exchange; `accounts` runs the
 	* `qr-hardware-call` key-derivation exchange `derive.ts` pins.
 	*/
+	var H = 2147483648;
+	/**
+	* The address index Keystone's own menus accept — `GENERAL_ADDRESS_INDEX_MAX` and
+	* `ADDRESS_INDEX_MAX` are 999 999 999 and an input `>=` it is rejected, so the largest showable
+	* index is 999 999 998 (keystone3-firmware@7da0b941,
+	* src/ui/gui_widgets/multi/gui_standard_receive_widgets.c:27,306 and
+	* src/ui/gui_widgets/gui_utxo_receive_widgets.c:32).
+	*/
+	var KEYSTONE_INDEX_MAX = 999999998;
+	/**
+	* The paths the Keystone's own Receive menu can render — the only paths a `compare` check can
+	* prove against (keystone3-firmware@7da0b941):
+	* - `evm.bip44` "BIP44 Standard" `m/44'/60'/0'/0/X`
+	*   (src/ui/gui_widgets/multi/web3/gui_multi_path_coin_receive_widgets.c:158,1167)
+	* - `tron.bip44` `m/44'/195'/0'/0/X`
+	*   (src/ui/gui_widgets/multi/gui_standard_receive_widgets.c:971)
+	* - `solana.bip44-change` "Sub-account Path" `m/44'/501'/X'/0'`
+	*   (src/ui/gui_widgets/multi/web3/gui_multi_path_coin_receive_widgets.c:165,1190)
+	* - `btc.*` mainnet account 0, receive chain `m/{44,49,84,86}'/0'/0'/0/i`
+	*   (src/ui/gui_widgets/gui_utxo_receive_widgets.c:151-170,1735)
+	* Everything else — BTC testnet/signet (the Web3 firmware derives from coin type 0'), any
+	* non-zero account — gets `unsupported` before any exchange: the host would ask the user to
+	* compare against a screen the device cannot produce.
+	*/
+	var confirmable = (target) => {
+		const path = target.path;
+		if (target.template === "solana.bip44-change") {
+			const group = path[2];
+			return path.length === 4 && path[0] === 2147483692 && path[1] === 2147484149 && group !== void 0 && group >= H && group - H <= KEYSTONE_INDEX_MAX && path[3] === H;
+		}
+		const index = path.at(-1);
+		if (index === void 0 || index < 0 || index > KEYSTONE_INDEX_MAX) return false;
+		if (target.template === "evm.bip44") return path.length === 5 && path[0] === 2147483692 && path[1] === 2147483708 && path[2] === H && path[3] === 0;
+		if (target.template === "tron.bip44") return path.length === 5 && path[0] === 2147483692 && path[1] === 2147483843 && path[2] === H && path[3] === 0;
+		return path.length === 5 && path[0] !== void 0 && [
+			2147483692,
+			2147483697,
+			2147483732,
+			2147483734
+		].includes(path[0]) && path[1] === H && path[2] === H && path[3] === 0 && index < H;
+	};
 	var KEYSTONE_DRIVER = {
 		pair: async (link) => parseSync(await link.exchange({
 			kind: "qr",
@@ -55073,6 +55218,7 @@ zoo`.split("\n"));
 		sign: sign$2,
 		accounts: derive,
 		verifyAddress: async (link, target) => {
+			if (!confirmable(target)) throw new KernelError("unsupported", "the device cannot show this address — it is outside its Receive menu");
 			const response = await link.exchange({
 				kind: "compare",
 				address: target.address,
@@ -57293,7 +57439,8 @@ zoo`.split("\n"));
 		const net = bitcoinNetwork(request.network);
 		const xpub = await pinnedMaterial({
 			fingerprint: context.pin.fingerprint,
-			keys: context.pin
+			keys: context.pin,
+			confirmed: []
 		}).extendedPublicKey(account, net.bip32);
 		const policy = defaultPolicy(template, context.pin.fingerprint, account, xpub);
 		const psbt = stage.hiddenChange === void 0 ? stage.psbt : stripUnhiddenDerivations(stage.psbt, stage.hiddenChange, context.pin.fingerprint);
@@ -57368,7 +57515,8 @@ zoo`.split("\n"));
 		const net = bitcoinNetwork(target.network);
 		const xpub = await pinnedMaterial({
 			fingerprint: pin.fingerprint,
-			keys: pin
+			keys: pin,
+			confirmed: []
 		}).extendedPublicKey(account, net.bip32);
 		const policy = defaultPolicy(target.template, pin.fingerprint, account, xpub);
 		return call$4(async () => btcWalletAddress(exchange, policy, change, index, true));
@@ -61028,8 +61176,10 @@ zoo`.split("\n"));
 	* root_fingerprint and they must all agree on one master — and the SLIP-10 Solana leaf, then
 	* cross-checks one derived leaf address per family against the pinned nodes locally. `accounts`
 	* fetches the paths the caller still needs; every secp256k1 node must carry the pin's master
-	* fingerprint, and an ed25519-only fetch re-probes a pinned secp256k1 node so a foreign device
-	* cannot slip its keys into the pin (`wrong-device` on any mismatch).
+	* fingerprint, and an ed25519-only fetch re-probes a pinned secp256k1 node (`wrong-device` on any
+	* mismatch). Both checks replay public values, so a foreign device or the transport can still
+	* merge its own keys — they only stop an accidental second honest device; merged entries stay
+	* unconfirmed until an on-device verify-address matches.
 	*/
 	init_bip32();
 	var HARDENED$2 = 2147483648;
@@ -61494,11 +61644,6 @@ zoo`.split("\n"));
 		};
 	}
 	// packages/wallet-kernel/src/modules/signers/prompt.ts
-	var DEVICE_NAME = {
-		keystone: "Keystone",
-		ledger: "Ledger",
-		onekey: "OneKey"
-	};
 	var LINES = {
 		"zh-Hans": {
 			clear: "设备将完整显示请求内容，请在设备上核对",
@@ -61510,7 +61655,7 @@ zoo`.split("\n"));
 		}
 	};
 	function devicePromptLine(locale, display, device) {
-		return `${DEVICE_NAME[device]}: ${LINES[locale][display]}`;
+		return `${HARDWARE_DEVICE_NAME[device]}: ${LINES[locale][display]}`;
 	}
 	// packages/wallet-kernel/src/modules/signers/record.ts
 	init_sha2();
@@ -61592,9 +61737,10 @@ zoo`.split("\n"));
 	var bodyFailure = () => new KernelError("integrity", "invalid hardware wallet record");
 	/**
 	* Parses the sealed body through the shared pinned-material codec: every node is a real secp256k1
-	* point, every ed25519 entry a real point, every path well-formed, and the caps (512 nodes, 256
-	* ed25519) hold. Hardware pins additionally require all-hardened ed25519 paths — SLIP-10 has no
-	* public derivation, so a softer path could never be served. Anything less is `integrity`.
+	* point, every ed25519 entry a real point, every path well-formed, the caps (512 nodes, 256
+	* ed25519) hold, and `confirmed` is canonical — sorted, unique, naming only pinned entries.
+	* Hardware pins additionally require all-hardened ed25519 paths — SLIP-10 has no public
+	* derivation, so a softer path could never be served. Anything less is `integrity`.
 	*/
 	function parseHardwareBody(plaintext) {
 		let text;
@@ -61611,16 +61757,40 @@ zoo`.split("\n"));
 		}
 		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bodyFailure();
 		const body = value;
-		if (Object.keys(body).length !== 2) throw bodyFailure();
+		if (Object.keys(body).length !== 3) throw bodyFailure();
 		const keys = {
 			nodes: parsePinnedNodes(body["nodes"]),
 			ed25519: parsePinnedEd25519(body["ed25519"])
 		};
 		for (const key of keys.ed25519) if (key.path.some((i) => i < HARDENED$1)) throw bodyFailure();
-		return keys;
+		return {
+			keys,
+			confirmed: parseConfirmed(body["confirmed"], keys)
+		};
 	}
+	/**
+	* The `confirmed` list: `m/…` paths in canonical order — sorted as strings, unique, and every one
+	* naming an entry the body actually pins. Anything less is `integrity`: a confirmed entry that is
+	* not pinned would certify material the record does not carry.
+	*/
+	var parseConfirmed = (value, keys) => {
+		if (!Array.isArray(value)) throw bodyFailure();
+		const texts = [];
+		for (const entry of value) {
+			if (typeof entry !== "string") throw bodyFailure();
+			texts.push(entry);
+		}
+		const sorted = [...texts].sort();
+		if (sorted.some((text, i) => text !== texts[i] || i > 0 && text === sorted[i - 1])) throw bodyFailure();
+		const pinned = /* @__PURE__ */ new Set([...keys.nodes.map((node) => pathToString(node.path)), ...keys.ed25519.map((key) => pathToString(key.path))]);
+		return texts.map((text) => {
+			if (!pinned.has(text)) throw bodyFailure();
+			return pathFromString(text);
+		});
+	};
 	/** The body's canonical JSON — fixed key order, `m/…` paths, lowercase hex. */
-	function encodeHardwareBody(keys) {
+	function encodeHardwareBody(body) {
+		const keys = body.keys;
 		const nodes = {};
 		for (const node of keys.nodes) {
 			const entry = {
@@ -61632,9 +61802,11 @@ zoo`.split("\n"));
 		}
 		const ed = {};
 		for (const key of keys.ed25519) ed[pathToString(key.path)] = bytesToHex$5(key.publicKey);
+		const confirmed = body.confirmed.map(pathToString).sort();
 		return utf8ToBytes$1(JSON.stringify({
 			nodes,
-			ed25519: ed
+			ed25519: ed,
+			confirmed
 		}));
 	}
 	/** The pin a record seals: the claimed fingerprint plus the pinned keys. */
@@ -61665,11 +61837,17 @@ zoo`.split("\n"));
 	* Checks that pairing output parses under the record-body rules — the same strictness a stored
 	* record gets, so a device can never pin what a later claim would call corrupt.
 	*/
-	var authenticatedBody = (keys) => {
-		const body = encodeHardwareBody(keys);
-		parseHardwareBody(body);
-		return body;
+	var authenticatedBody = (body) => {
+		const encoded = encodeHardwareBody(body);
+		parseHardwareBody(encoded);
+		return encoded;
 	};
+	/** The record's public material — the pin's keys plus its confirmed-entry list. */
+	var materialOf = (pin, confirmed) => pinnedMaterial({
+		fingerprint: pin.fingerprint,
+		keys: pin,
+		confirmed
+	});
 	/**
 	* The live pin for a record: the authenticated body's keys under the claimed header fingerprint. An
 	* existing record with no claimed body means the vault lied about its records — `integrity`.
@@ -61678,9 +61856,15 @@ zoo`.split("\n"));
 		const header = parseHardwareHeader(record.header);
 		if (hardwareWalletId(header.device, header.fingerprint) !== record.id) throw integrity("hardware wallet record does not match its id");
 		if (!deviceSupported(header.device)) throw new KernelError("unsupported", `unknown hardware device ${header.device}`);
-		const keys = pins.get(record.id);
-		if (keys === void 0) throw integrity("hardware wallet record has no authenticated material");
-		return hardwarePin(header, keys);
+		const body = pins.get(record.id);
+		if (body === void 0) throw integrity("hardware wallet record has no authenticated material");
+		return hardwarePin(header, body.keys);
+	};
+	/** The live body (keys plus confirmations) behind a hardware record's pin. */
+	var pinBody = (pins, record) => {
+		const body = pins.get(record.id);
+		if (body === void 0) throw integrity("hardware wallet record has no authenticated material");
+		return body;
 	};
 	/** Whether the pinned material fails to serve `path` — only `device-required` counts as a gap. */
 	var deviceNeeded = async (serve) => {
@@ -61706,10 +61890,7 @@ zoo`.split("\n"));
 	* evm/tron/btc, the all-hardened leaf for solana. A path the pin already serves is not asked for.
 	*/
 	var neededPaths = async (pin, template, network, groupIndex) => {
-		const material = pinnedMaterial({
-			fingerprint: pin.fingerprint,
-			keys: pin
-		});
+		const material = materialOf(pin, []);
 		const need = {
 			secp256k1: [],
 			ed25519: []
@@ -61797,8 +61978,11 @@ zoo`.split("\n"));
 				if (result.model !== void 0) header.model = result.model;
 				if (result.firmware !== void 0) header.firmware = result.firmware;
 				const body = authenticatedBody({
-					nodes: result.nodes,
-					ed25519: result.ed25519
+					keys: {
+						nodes: result.nodes,
+						ed25519: result.ed25519
+					},
+					confirmed: []
 				});
 				const record = sealRecord(ctx.platform, ctx.session.current().dek, HARDWARE_WALLET_KIND, id, encodeHardwareHeader(header), body);
 				wipe$1(body);
@@ -61818,6 +62002,7 @@ zoo`.split("\n"));
 			for (const template of op.templates) checkNetwork(template, op.network);
 			return async (link) => {
 				let pin = pinAt(pins, record);
+				let body = pinBody(pins, record);
 				const secp256k1 = [];
 				const ed25519 = [];
 				for (const template of op.templates) {
@@ -61832,17 +62017,21 @@ zoo`.split("\n"));
 					}, pin);
 					if (!equalBytes$10(fetched.fingerprint, pin.fingerprint)) throw new KernelError("wrong-device", "the answering device is not the paired one");
 					pin = mergePin(pin, fetched);
-					const body = authenticatedBody(pin);
+					const sealed = authenticatedBody({
+						keys: pin,
+						confirmed: body.confirmed
+					});
 					await ctx.commit([{
 						op: "put-record",
-						record: sealRecord(ctx.platform, ctx.session.current().dek, HARDWARE_WALLET_KIND, record.id, record.header, body)
+						record: sealRecord(ctx.platform, ctx.session.current().dek, HARDWARE_WALLET_KIND, record.id, record.header, sealed)
 					}]);
-					wipe$1(body);
+					wipe$1(sealed);
+					body = {
+						keys: pin,
+						confirmed: body.confirmed
+					};
 				}
-				const material = pinnedMaterial({
-					fingerprint: pin.fingerprint,
-					keys: pin
-				});
+				const material = materialOf(pin, body.confirmed);
 				const accounts = [];
 				for (const template of op.templates) {
 					const purpose = BTC_PURPOSE[template];
@@ -61863,12 +62052,11 @@ zoo`.split("\n"));
 			if (BTC_PURPOSE[op.template] !== void 0 && op.index === void 0) throw new KernelError("invalid-input", "a bitcoin address check needs an index");
 			return async (link) => {
 				const pin = pinAt(pins, record);
-				const material = pinnedMaterial({
-					fingerprint: pin.fingerprint,
-					keys: pin
-				});
+				const body = pinBody(pins, record);
+				const material = materialOf(pin, body.confirmed);
 				let address;
 				let path;
+				let curve = "secp256k1";
 				if (op.template === "evm.bip44") {
 					path = leafPath("evm", op.groupIndex);
 					address = evmAddressFromPublicKey(await material.secp256k1(path));
@@ -61877,6 +62065,7 @@ zoo`.split("\n"));
 					address = tronAddressFromPublicKey(await material.secp256k1(path));
 				} else if (op.template === "solana.bip44-change") {
 					path = leafPath("solana", op.groupIndex);
+					curve = "ed25519";
 					address = solanaAddressFromPublicKey(await material.ed25519(path));
 				} else {
 					const purpose = BTC_PURPOSE[op.template];
@@ -61901,6 +62090,21 @@ zoo`.split("\n"));
 					network: op.network
 				}, pin);
 				if (!verdict.matched) throw new KernelError("wrong-device", "the device did not show this address");
+				const serving = servingPath({
+					keys: pin,
+					confirmed: body.confirmed
+				}, curve, path);
+				if (serving !== void 0 && !body.confirmed.some((p) => samePath(p, serving))) {
+					const sealed = authenticatedBody({
+						keys: body.keys,
+						confirmed: [...body.confirmed, serving]
+					});
+					await ctx.commit([{
+						op: "put-record",
+						record: sealRecord(ctx.platform, ctx.session.current().dek, HARDWARE_WALLET_KIND, record.id, record.header, sealed)
+					}]);
+					wipe$1(sealed);
+				}
 				return {
 					kind: "verify-address",
 					address,
@@ -61918,10 +62122,7 @@ zoo`.split("\n"));
 			const record = hardwareRecord(ctx, request.account.walletId);
 			const { driver, device, header } = driverFor(record);
 			const pin = pinAt(pins, record);
-			const prepared = await prepareApproval(ctx, request, pinnedMaterial({
-				fingerprint: pin.fingerprint,
-				keys: pin
-			}), dek);
+			const prepared = await prepareApproval(ctx, request, materialOf(pin, pinBody(pins, record).confirmed), dek);
 			const display = driver.display(request, prepared.plan, header);
 			if (display === "unsupported") throw new KernelError("unsupported", "the device cannot sign this request");
 			const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
@@ -61980,19 +62181,40 @@ zoo`.split("\n"));
 			},
 			handlers: {
 				"hardware.begin": async (ctx, params, session) => {
-					ctx.session.require(session);
+					var _ctx$platform$keystor3, _ctx$platform$keystor4;
+					const { dek } = ctx.session.require(session);
 					const { op, verify } = params;
 					if (op.kind === "sign") {
 						if (verify === void 0) throw new KernelError("invalid-input", "a sign operation needs a verification factor");
 						return beginSign(ctx, params, session);
 					}
-					if (verify !== void 0) throw new KernelError("invalid-input", "only a sign operation takes a verification factor");
 					const exec = executorOf(ctx.platform);
-					switch (op.kind) {
-						case "pair": return exec.begin(op.device, void 0, pairBody(ctx, op.device));
-						case "accounts": return exec.begin(driverFor(hardwareRecord(ctx, op.walletId)).device, void 0, accountsBody(ctx, op));
-						case "verify-address": return exec.begin(driverFor(hardwareRecord(ctx, op.walletId)).device, void 0, verifyAddressBody(ctx, op));
+					const locale = promptLocale((_ctx$platform$keystor3 = (_ctx$platform$keystor4 = ctx.platform.keystore) === null || _ctx$platform$keystor4 === void 0 ? void 0 : _ctx$platform$keystor4.locale) !== null && _ctx$platform$keystor3 !== void 0 ? _ctx$platform$keystor3 : "en");
+					if (op.kind === "pair") {
+						if (verify === void 0) throw new KernelError("invalid-input", "a pair operation needs a verification factor");
+						await verifyFactor(ctx, verify, dek, () => hardwarePrompt(locale, "hardware-pair", op.device));
+						ctx.session.require(session);
+						return exec.begin(op.device, void 0, pairBody(ctx, op.device));
 					}
+					if (op.kind === "accounts") {
+						const record = hardwareRecord(ctx, op.walletId);
+						const { device } = driverFor(record);
+						for (const template of op.templates) checkNetwork(template, op.network);
+						const pin = pinAt(pins, record);
+						let missing = false;
+						for (const template of op.templates) {
+							const need = await neededPaths(pin, template, op.network, op.groupIndex);
+							if (need.secp256k1.length > 0 || need.ed25519.length > 0) missing = true;
+						}
+						if (missing && verify === void 0) throw new KernelError("approval-required", "fetching keys the device has not pinned needs a verification");
+						if (verify !== void 0) {
+							await verifyFactor(ctx, verify, dek, () => hardwarePrompt(locale, "hardware-accounts", device, op.groupIndex));
+							ctx.session.require(session);
+						}
+						return exec.begin(device, void 0, accountsBody(ctx, op));
+					}
+					if (verify !== void 0) throw new KernelError("invalid-input", "a verify-address operation takes no verification factor");
+					return exec.begin(driverFor(hardwareRecord(ctx, op.walletId)).device, void 0, verifyAddressBody(ctx, op));
 				},
 				"hardware.step": async (ctx, params, session) => {
 					ctx.session.require(session);
@@ -62007,11 +62229,7 @@ zoo`.split("\n"));
 				}
 			},
 			material: (record) => {
-				const pin = pinAt(pins, record);
-				return pinnedMaterial({
-					fingerprint: pin.fingerprint,
-					keys: pin
-				});
+				return materialOf(pinAt(pins, record), pinBody(pins, record).confirmed);
 			}
 		};
 	}

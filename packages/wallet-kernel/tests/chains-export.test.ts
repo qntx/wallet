@@ -64,7 +64,13 @@ type Node = Record<string, unknown>;
 const exportAccount = async (
   h: Harness,
   session: string,
-  params: { walletId: string; groupIndex: number; nodes: ReadonlyArray<Node>; verify?: unknown },
+  params: {
+    walletId: string;
+    groupIndex: number;
+    nodes: ReadonlyArray<Node>;
+    verify?: unknown;
+    acknowledgeUnconfirmed?: true;
+  },
 ) =>
   h.call(
     "chain.exportAccount",
@@ -293,7 +299,12 @@ describe("chain.exportAccount", () => {
     // Empty and oversized lists never reach the handler: the params validator rejects them.
     for (const nodes of [[], [leaf, leaf, leaf, leaf, leaf]]) {
       // oxlint-disable-next-line no-await-in-loop -- cases run sequentially
-      const res = await exportAccount(h, session, { walletId, groupIndex: 0, nodes });
+      const res = await exportAccount(h, session, {
+        walletId,
+        groupIndex: 0,
+        nodes,
+        acknowledgeUnconfirmed: true,
+      });
       expect(errCode(res)).toBe("integrity");
     }
     const res = await exportAccount(h, session, {
@@ -359,7 +370,11 @@ describe("chain.exportAccount", () => {
   it("serves a hardware wallet's pinned material without a device exchange", async () => {
     const { h, session } = await setup(vectors.wallets[0]!.mnemonic);
     const begin = ok(
-      await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "keystone" }, verify: PASSKEY() },
+        session,
+      ),
     );
     const done = ok(
       await h.call(
@@ -380,7 +395,12 @@ describe("chain.exportAccount", () => {
       { kind: "leaf", template: "tron.bip44" },
       { kind: "leaf", template: "solana.bip44-change" },
     ];
-    const res = await exportAccount(h, session, { walletId, groupIndex: 0, nodes });
+    const res = await exportAccount(h, session, {
+      walletId,
+      groupIndex: 0,
+      nodes,
+      acknowledgeUnconfirmed: true,
+    });
     expect(strField(ok(res), "fingerprint")).toBe("73c5da0a");
     const keys = keysOf(res);
     const byPath = new Map(wallet.keys.map((k) => [k.path, k]));
@@ -391,6 +411,7 @@ describe("chain.exportAccount", () => {
       walletId,
       groupIndex: 0,
       nodes: [{ kind: "btc.account", template: "btc.bip84", network: MAINNET }],
+      acknowledgeUnconfirmed: true,
     });
     expectKey(keysOf(btc)[0]!, byPath.get("m/84'/0'/0'")!);
     // Anything the pin cannot serve surfaces as device-required — never a device exchange.
@@ -411,7 +432,11 @@ describe("chain.exportAccount", () => {
   it("serves repeated exports and account reads from an intact pin", async () => {
     const { h, session } = await setup(vectors.wallets[0]!.mnemonic);
     const begin = ok(
-      await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "keystone" }, verify: PASSKEY() },
+        session,
+      ),
     );
     const done = ok(
       await h.call(
@@ -430,11 +455,23 @@ describe("chain.exportAccount", () => {
       { kind: "leaf", template: "evm.bip44" },
       { kind: "leaf", template: "solana.bip44-change" },
     ];
-    const first = await exportAccount(h, session, { walletId, groupIndex: 0, nodes });
+    const first = await exportAccount(h, session, {
+      walletId,
+      groupIndex: 0,
+      nodes,
+      acknowledgeUnconfirmed: true,
+    });
     /* A real port detaches every exact-view buffer the reply carries — the pin must keep its
        own arrays or the next read sees zeroed keys. */
     detachTransferables(first);
-    const second = keysOf(await exportAccount(h, session, { walletId, groupIndex: 0, nodes }));
+    const second = keysOf(
+      await exportAccount(h, session, {
+        walletId,
+        groupIndex: 0,
+        nodes,
+        acknowledgeUnconfirmed: true,
+      }),
+    );
     const byPath = new Map(wallet.keys.map((k) => [k.path, k]));
     for (const key of second) {
       expectKey(key, byPath.get(key["path"] as string)!);

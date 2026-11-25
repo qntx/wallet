@@ -3,7 +3,9 @@
  * and pin exactly the public material the design names — the six BIP-32 account nodes and the two
  * SLIP-10 ed25519 leaves a Keystone 3 Pro publishes. Every other key (DOGE/XRP/LTC/BCH/ZEC/ADA
  * accounts, the ledger-legacy/live derivatives without chain code) parses structurally and is then
- * ignored: it may not influence the pin.
+ * ignored: it may not influence the pin. The master fingerprint the sync carries is a claim, not an
+ * identity proof — the QR payload is public, so any device or the transport itself can replay it;
+ * pinned entries stay unconfirmed until an on-device verify-address matches.
  */
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 

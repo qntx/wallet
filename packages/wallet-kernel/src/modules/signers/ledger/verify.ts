@@ -46,10 +46,11 @@ const bitcoin = async (
   }
   const account = [purpose, coin, group];
   const net = bitcoinNetwork(target.network);
-  const xpub = await pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin }).extendedPublicKey(
-    account,
-    net.bip32,
-  );
+  const xpub = await pinnedMaterial({
+    fingerprint: pin.fingerprint,
+    keys: pin,
+    confirmed: [],
+  }).extendedPublicKey(account, net.bip32);
   const policy = defaultPolicy(target.template, pin.fingerprint, account, xpub);
   return call(async () => btcWalletAddress(exchange, policy, change, index, true));
 };

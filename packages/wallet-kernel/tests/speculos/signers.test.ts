@@ -335,7 +335,7 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
         h,
         session,
         "bitcoin",
-        { op: { kind: "pair", device: "ledger" } },
+        { op: { kind: "pair", device: "ledger" }, verify: { kind: "hardware" } },
         screen("bitcoin"),
         undefined,
       ),

@@ -31,11 +31,11 @@ import { HARDWARE_DEVICES } from "@qntx/wallet/types";
 
 import type { Handler, KernelContext, VaultHooks } from "../../commands/context.ts";
 import type { PublicMaterial } from "../../derive/material.ts";
-import { pinnedMaterial, samePath } from "../../derive/pinned.ts";
-import type { PinnedKeys } from "../../derive/pinned.ts";
+import { pinnedMaterial, samePath, servingPath } from "../../derive/pinned.ts";
+import type { Pin, PinnedKeys } from "../../derive/pinned.ts";
 import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt, KernelPlatform } from "../../platform.ts";
-import { PROMPT_BOUNDS, codePoints, promptLocale } from "../../prompts.ts";
+import { PROMPT_BOUNDS, codePoints, hardwarePrompt, promptLocale } from "../../prompts.ts";
 import type { PromptBound } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import type { StoredRecord } from "../../vault/store.ts";
@@ -69,7 +69,7 @@ import {
   parseHardwareBody,
   parseHardwareHeader,
 } from "./record.ts";
-import type { HardwareHeader } from "./record.ts";
+import type { HardwareBody, HardwareHeader } from "./record.ts";
 
 const HARDENED = 0x80000000;
 const DEVICE_TEXT = /^[\u0020-\u007E]{1,64}$/;
@@ -87,17 +87,21 @@ const integrity = (message: string): KernelError => new KernelError("integrity",
  * Checks that pairing output parses under the record-body rules — the same strictness a stored
  * record gets, so a device can never pin what a later claim would call corrupt.
  */
-const authenticatedBody = (keys: PinnedKeys): Uint8Array => {
-  const body = encodeHardwareBody(keys);
-  parseHardwareBody(body);
-  return body;
+const authenticatedBody = (body: HardwareBody): Uint8Array => {
+  const encoded = encodeHardwareBody(body);
+  parseHardwareBody(encoded);
+  return encoded;
 };
+
+/** The record's public material — the pin's keys plus its confirmed-entry list. */
+const materialOf = (pin: HardwarePin, confirmed: Pin["confirmed"]): PublicMaterial =>
+  pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin, confirmed });
 
 /**
  * The live pin for a record: the authenticated body's keys under the claimed header fingerprint. An
  * existing record with no claimed body means the vault lied about its records — `integrity`.
  */
-const pinAt = (pins: ReadonlyMap<string, PinnedKeys>, record: StoredRecord): HardwarePin => {
+const pinAt = (pins: ReadonlyMap<string, HardwareBody>, record: StoredRecord): HardwarePin => {
   const header = parseHardwareHeader(record.header);
   if (hardwareWalletId(header.device, header.fingerprint) !== record.id) {
     throw integrity("hardware wallet record does not match its id");
@@ -106,11 +110,20 @@ const pinAt = (pins: ReadonlyMap<string, PinnedKeys>, record: StoredRecord): Har
   if (!deviceSupported(header.device)) {
     throw new KernelError("unsupported", `unknown hardware device ${header.device}`);
   }
-  const keys = pins.get(record.id);
-  if (keys === undefined) {
+  const body = pins.get(record.id);
+  if (body === undefined) {
     throw integrity("hardware wallet record has no authenticated material");
   }
-  return hardwarePin(header, keys);
+  return hardwarePin(header, body.keys);
+};
+
+/** The live body (keys plus confirmations) behind a hardware record's pin. */
+const pinBody = (pins: ReadonlyMap<string, HardwareBody>, record: StoredRecord): HardwareBody => {
+  const body = pins.get(record.id);
+  if (body === undefined) {
+    throw integrity("hardware wallet record has no authenticated material");
+  }
+  return body;
 };
 
 /** Whether the pinned material fails to serve `path` — only `device-required` counts as a gap. */
@@ -148,7 +161,7 @@ const neededPaths = async (
   network: string,
   groupIndex: number,
 ): Promise<{ secp256k1: KeyPath[]; ed25519: KeyPath[] }> => {
-  const material = pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin });
+  const material = materialOf(pin, []);
   const need: { secp256k1: KeyPath[]; ed25519: KeyPath[] } = { secp256k1: [], ed25519: [] };
   const purpose = BTC_PURPOSE[template];
   if (template === "evm.bip44") {
@@ -215,7 +228,7 @@ const devicePrompt = (
 export function createSignersModule(
   drivers: Readonly<Record<HardwareDevice, Driver>>,
 ): SignersModule {
-  const pins = new Map<string, PinnedKeys>();
+  const pins = new Map<string, HardwareBody>();
   let executor: OperationExecutor | undefined;
   const executorOf = (platform: KernelPlatform): OperationExecutor => {
     executor ??= createOperationExecutor(platform);
@@ -268,7 +281,12 @@ export function createSignersModule(
       if (result.firmware !== undefined) {
         header.firmware = result.firmware;
       }
-      const body = authenticatedBody({ nodes: result.nodes, ed25519: result.ed25519 });
+      /* Pairing's fetch is a device claim too — entries start unconfirmed and earn the flag
+         only when an on-device verify-address matches. */
+      const body = authenticatedBody({
+        keys: { nodes: result.nodes, ed25519: result.ed25519 },
+        confirmed: [],
+      });
       // The DEK is read live at commit time: it may have rotated since `begin` captured the op.
       const record = sealRecord(
         ctx.platform,
@@ -296,6 +314,7 @@ export function createSignersModule(
     }
     return async (link) => {
       let pin = pinAt(pins, record);
+      let body = pinBody(pins, record);
       const secp256k1: KeyPath[] = [];
       const ed25519: KeyPath[] = [];
       for (const template of op.templates) {
@@ -314,12 +333,17 @@ export function createSignersModule(
       }
       if (secp256k1.length > 0 || ed25519.length > 0) {
         const fetched = await driver.accounts(link, { secp256k1, ed25519 }, pin);
-        // A different device answering this wallet's request is a wrong-device, never a merge.
+        /* A mismatched claimed fingerprint is a wrong-device, never a merge. The match itself is
+           no identity proof — the fingerprint is public and replayable, so this only stops an
+           accidental second honest device; merged entries stay unconfirmed until an on-device
+           verify-address matches. */
         if (!equalBytes(fetched.fingerprint, pin.fingerprint)) {
           throw new KernelError("wrong-device", "the answering device is not the paired one");
         }
         pin = mergePin(pin, fetched);
-        const body = authenticatedBody(pin);
+        /* Merged entries arrive unconfirmed; the confirmations the record already sealed ride
+           along untouched — they name pinned paths the merge never replaces. */
+        const sealed = authenticatedBody({ keys: pin, confirmed: body.confirmed });
         await ctx.commit([
           {
             op: "put-record",
@@ -329,13 +353,14 @@ export function createSignersModule(
               HARDWARE_WALLET_KIND,
               record.id,
               record.header,
-              body,
+              sealed,
             ),
           },
         ]);
-        wipe(body);
+        wipe(sealed);
+        body = { keys: pin, confirmed: body.confirmed };
       }
-      const material = pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin });
+      const material = materialOf(pin, body.confirmed);
       const accounts: ChainAccount[] = [];
       for (const template of op.templates) {
         const purpose = BTC_PURPOSE[template];
@@ -366,9 +391,11 @@ export function createSignersModule(
     }
     return async (link) => {
       const pin = pinAt(pins, record);
-      const material = pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin });
+      const body = pinBody(pins, record);
+      const material = materialOf(pin, body.confirmed);
       let address: string;
       let path: KeyPath;
+      let curve: "secp256k1" | "ed25519" = "secp256k1";
       if (op.template === "evm.bip44") {
         path = leafPath("evm", op.groupIndex);
         address = evmAddressFromPublicKey(await material.secp256k1(path));
@@ -377,6 +404,7 @@ export function createSignersModule(
         address = tronAddressFromPublicKey(await material.secp256k1(path));
       } else if (op.template === "solana.bip44-change") {
         path = leafPath("solana", op.groupIndex);
+        curve = "ed25519";
         address = solanaAddressFromPublicKey(await material.ed25519(path));
       } else {
         const purpose = BTC_PURPOSE[op.template];
@@ -397,6 +425,31 @@ export function createSignersModule(
       // The user saying the device shows a different address is a wrong-device, by module rule.
       if (!verdict.matched) {
         throw new KernelError("wrong-device", "the device did not show this address");
+      }
+      /* The user approved the device showing this address — the pinned entry that serves it is
+         confirmed on the device. Seal the flag on the serving entry: every path it serves, in
+         every group, is the same proven material. A miss is impossible — the address derivation
+         above already resolved the path through the pin — but keep it defensive anyway. */
+      const serving = servingPath({ keys: pin, confirmed: body.confirmed }, curve, path);
+      if (serving !== undefined && !body.confirmed.some((p) => samePath(p, serving))) {
+        const sealed = authenticatedBody({
+          keys: body.keys,
+          confirmed: [...body.confirmed, serving],
+        });
+        await ctx.commit([
+          {
+            op: "put-record",
+            record: sealRecord(
+              ctx.platform,
+              ctx.session.current().dek,
+              HARDWARE_WALLET_KIND,
+              record.id,
+              record.header,
+              sealed,
+            ),
+          },
+        ]);
+        wipe(sealed);
       }
       return { kind: "verify-address", address, method: verdict.method };
     };
@@ -425,7 +478,7 @@ export function createSignersModule(
     const prepared = await prepareApproval(
       ctx,
       request,
-      pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin }),
+      materialOf(pin, pinBody(pins, record).confirmed),
       dek,
     );
     const display = driver.display(request, prepared.plan, header);
@@ -524,9 +577,8 @@ export function createSignersModule(
   };
 
   const handlers: { [M in keyof typeof HARDWARE_METHODS & MethodName]: Handler<M> } = {
-    // oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
     "hardware.begin": async (ctx, params, session) => {
-      ctx.session.require(session);
+      const { dek } = ctx.session.require(session);
       const { op, verify } = params;
       if (op.kind === "sign") {
         if (verify === undefined) {
@@ -534,26 +586,64 @@ export function createSignersModule(
         }
         return beginSign(ctx, params, session);
       }
-      if (verify !== undefined) {
-        throw new KernelError("invalid-input", "only a sign operation takes a verification factor");
-      }
+      /* Pairing pins a claimed device's keys and an accounts fetch merges keys for paths the pin
+         cannot serve — both change what the vault trusts, so both are verification-gated. The
+         fetch's gate is sharper: a fetch whose material is already pinned adds nothing and stays
+         free, a missing path needs a verify (its absence is approval-required, not invalid-input),
+         and a presented verify is always consumed — the user approved this fetch, not the pin's
+         current contents. Only verify-address takes no factor: it adds nothing. */
       const exec = executorOf(ctx.platform);
-      switch (op.kind) {
-        case "pair":
-          return exec.begin(op.device, undefined, pairBody(ctx, op.device));
-        case "accounts":
-          return exec.begin(
-            driverFor(hardwareRecord(ctx, op.walletId)).device,
-            undefined,
-            accountsBody(ctx, op),
-          );
-        case "verify-address":
-          return exec.begin(
-            driverFor(hardwareRecord(ctx, op.walletId)).device,
-            undefined,
-            verifyAddressBody(ctx, op),
-          );
+      const locale = promptLocale(ctx.platform.keystore?.locale ?? "en");
+      if (op.kind === "pair") {
+        if (verify === undefined) {
+          throw new KernelError("invalid-input", "a pair operation needs a verification factor");
+        }
+        await verifyFactor(ctx, verify, dek, () =>
+          hardwarePrompt(locale, "hardware-pair", op.device),
+        );
+        ctx.session.require(session);
+        return exec.begin(op.device, undefined, pairBody(ctx, op.device));
       }
+      if (op.kind === "accounts") {
+        const record = hardwareRecord(ctx, op.walletId);
+        const { device } = driverFor(record);
+        for (const template of op.templates) {
+          checkNetwork(template, op.network);
+        }
+        const pin = pinAt(pins, record);
+        let missing = false;
+        for (const template of op.templates) {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- each template's probe is independent
+          const need = await neededPaths(pin, template, op.network, op.groupIndex);
+          if (need.secp256k1.length > 0 || need.ed25519.length > 0) {
+            missing = true;
+          }
+        }
+        if (missing && verify === undefined) {
+          throw new KernelError(
+            "approval-required",
+            "fetching keys the device has not pinned needs a verification",
+          );
+        }
+        if (verify !== undefined) {
+          await verifyFactor(ctx, verify, dek, () =>
+            hardwarePrompt(locale, "hardware-accounts", device, op.groupIndex),
+          );
+          ctx.session.require(session);
+        }
+        return exec.begin(device, undefined, accountsBody(ctx, op));
+      }
+      if (verify !== undefined) {
+        throw new KernelError(
+          "invalid-input",
+          "a verify-address operation takes no verification factor",
+        );
+      }
+      return exec.begin(
+        driverFor(hardwareRecord(ctx, op.walletId)).device,
+        undefined,
+        verifyAddressBody(ctx, op),
+      );
     },
     "hardware.step": async (ctx, params, session) => {
       ctx.session.require(session);
@@ -577,7 +667,7 @@ export function createSignersModule(
     handlers,
     material: (record: StoredRecord) => {
       const pin = pinAt(pins, record);
-      return pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin });
+      return materialOf(pin, pinBody(pins, record).confirmed);
     },
   };
 }

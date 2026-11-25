@@ -58,6 +58,10 @@ const nodePath = (node: ChainExportNode, groupIndex: number): KeyPath => {
   return [purpose + HARDENED, coinType + HARDENED, groupIndex + HARDENED];
 };
 
+/** The curve a node's exported key lives on — Solana's all-hardened leaf is SLIP-10 ed25519. */
+const nodeCurve = (node: ChainExportNode): "secp256k1" | "ed25519" =>
+  node.kind === "leaf" && node.template === "solana.bip44-change" ? "ed25519" : "secp256k1";
+
 const fp8 = (value: number): string => value.toString(16).padStart(8, "0");
 
 const fpHex = (bytes: Uint8Array): string =>
@@ -118,7 +122,11 @@ const LEAF_FAMILY: Readonly<
  * is the shown scope: `evm.account` names the wallet-wide disclosure its fixed `m/44'/60'/0'` path
  * understates.
  */
-const exportPrompt = (locale: PromptLocale, params: Params): KeystorePrompt => {
+const exportPrompt = (
+  locale: PromptLocale,
+  params: Params,
+  unconfirmed: ReadonlyArray<string>,
+): KeystorePrompt => {
   const text = exportAccountText(locale);
   const row = (node: ChainExportNode): string => {
     const path = pathString(nodePath(node, params.groupIndex));
@@ -133,7 +141,12 @@ const exportPrompt = (locale: PromptLocale, params: Params): KeystorePrompt => {
   };
   return {
     title: text.title,
-    description: joinLines([text.share(params.groupIndex), ...params.nodes.map(row)]),
+    description: joinLines([
+      text.share(params.groupIndex),
+      // Unconfirmed-entry warnings lead the node rows — they are what the flag acknowledges.
+      ...unconfirmed.map(text.unconfirmed),
+      ...params.nodes.map(row),
+    ]),
   };
 };
 
@@ -156,7 +169,32 @@ export const exportAccount = (): Handler<"chain.exportAccount"> => async (ctx, p
     }
     seen.add(nodeId(node));
   }
-  const prompt = exportPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), params);
+  /* A node a foreign device merged into the pin exports as freely as a genuine one — the gate is
+     the per-entry confirmation flag: exporting an unconfirmed node needs the caller's explicit
+     acknowledgement, checked before any prompt or verification. Entropy wallets hold their own
+     seed — every path is confirmed by construction. */
+  const unconfirmed: string[] = [];
+  if (record.kind !== "entropy") {
+    const material = ctx.externalMaterial(record);
+    for (const node of params.nodes) {
+      const path = nodePath(node, params.groupIndex);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- each probe resolves synchronously
+      if (!(await material.confirmed(nodeCurve(node), path))) {
+        unconfirmed.push(pathString(path));
+      }
+    }
+  }
+  if (unconfirmed.length > 0 && params.acknowledgeUnconfirmed !== true) {
+    throw new KernelError(
+      "approval-required",
+      "exporting keys never confirmed on the device needs acknowledgement",
+    );
+  }
+  const prompt = exportPrompt(
+    promptLocale(ctx.platform.keystore?.locale ?? "en"),
+    params,
+    unconfirmed,
+  );
   const host = ctx.platform.keystore?.platform;
   /* The verification dialog is the only thing standing between the call and the disclosure:
        a prompt the dialog cannot show whole would hide rows of the share — refuse before any

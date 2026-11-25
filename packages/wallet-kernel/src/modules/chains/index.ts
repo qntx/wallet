@@ -72,16 +72,34 @@ export const accountFor = async (
   mark: number,
 ): Promise<ChainAccount> => {
   if (template === "evm.bip44") {
-    const pub = await material.secp256k1(leafPath("evm", groupIndex));
-    return { template, network, address: evmAddressFromPublicKey(pub) };
+    const path = leafPath("evm", groupIndex);
+    const pub = await material.secp256k1(path);
+    return {
+      template,
+      network,
+      address: evmAddressFromPublicKey(pub),
+      confirmed: await material.confirmed("secp256k1", path),
+    };
   }
   if (template === "solana.bip44-change") {
-    const pub = await material.ed25519(leafPath("solana", groupIndex));
-    return { template, network, address: solanaAddressFromPublicKey(pub) };
+    const path = leafPath("solana", groupIndex);
+    const pub = await material.ed25519(path);
+    return {
+      template,
+      network,
+      address: solanaAddressFromPublicKey(pub),
+      confirmed: await material.confirmed("ed25519", path),
+    };
   }
   if (template === "tron.bip44") {
-    const pub = await material.secp256k1(leafPath("tron", groupIndex));
-    return { template, network, address: tronAddressFromPublicKey(pub) };
+    const path = leafPath("tron", groupIndex);
+    const pub = await material.secp256k1(path);
+    return {
+      template,
+      network,
+      address: tronAddressFromPublicKey(pub),
+      confirmed: await material.confirmed("secp256k1", path),
+    };
   }
   const purpose = BTC_PURPOSE[template];
   if (purpose === undefined) {
@@ -98,6 +116,7 @@ export const accountFor = async (
     fingerprint: fingerprint.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), ""),
     path: pathString(path),
     changeMark: mark,
+    confirmed: await material.confirmed("secp256k1", path),
   };
 };
 
@@ -107,6 +126,24 @@ export const accountFor = async (
  * (any commit, a removed wallet, a rotated vault) starts empty; lock drops it all.
  */
 type AccountCache = WeakMap<StoredRecord, Map<string, ChainAccount>>;
+
+/** The path `accountFor` derives for a template — leaf for the account chains, account for btc. */
+const accountPath = (template: ChainTemplate, network: string, groupIndex: number): KeyPath => {
+  if (template === "evm.bip44") {
+    return leafPath("evm", groupIndex);
+  }
+  if (template === "tron.bip44") {
+    return leafPath("tron", groupIndex);
+  }
+  if (template === "solana.bip44-change") {
+    return leafPath("solana", groupIndex);
+  }
+  const purpose = BTC_PURPOSE[template];
+  if (purpose === undefined) {
+    throw new KernelError("invalid-input", `unknown template ${template}`);
+  }
+  return [purpose + HARDENED, bitcoinNetwork(network).coinType + HARDENED, groupIndex + HARDENED];
+};
 
 const walletAccounts = async (
   ctx: Parameters<Handler<"wallet.accounts">>[0],
@@ -128,8 +165,20 @@ const walletAccounts = async (
   const key = `${String(params.groupIndex)}/${params.template}/${params.network}`;
   const known = cache.get(record)?.get(key);
   if (known !== undefined) {
-    // The cache freezes the public account, never the mark — it is read fresh on every call.
-    return "xpub" in known ? { ...known, changeMark: mark } : known;
+    /* The cache freezes only the public account — the mark and the confirmation flag are read
+       fresh on every call. A commit that raises either would replace the record and miss the
+       cache anyway, but computing the flag from the live pin keeps the reasoning local to this
+       line instead of the commit path's. */
+    const confirmed =
+      record.kind === "entropy"
+        ? true
+        : await ctx
+            .externalMaterial(record)
+            .confirmed(
+              params.template === "solana.bip44-change" ? "ed25519" : "secp256k1",
+              accountPath(params.template, params.network, params.groupIndex),
+            );
+    return "xpub" in known ? { ...known, changeMark: mark, confirmed } : { ...known, confirmed };
   }
   const account =
     record.kind === "entropy"

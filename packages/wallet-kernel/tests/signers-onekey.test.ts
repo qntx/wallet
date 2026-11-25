@@ -130,7 +130,11 @@ const boot = async (
   const result = await runOp(
     h,
     session,
-    await h.call("hardware.begin", { op: { kind: "pair", device: "onekey" } }, session),
+    await h.call(
+      "hardware.begin",
+      { op: { kind: "pair", device: "onekey" }, verify: PASSKEY() },
+      session,
+    ),
     replayExchange(transcriptSession(transcript, "driver-pair")),
   );
   const hwId = strField(field(result, "wallet"), "walletId");

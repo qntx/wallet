@@ -12,4 +12,11 @@ export type PublicMaterial = {
   readonly extendedPublicKey: (path: KeyPath, versions: Versions) => Promise<string>;
   /** The 4-byte BIP-32 master fingerprint: hash160(master pubkey)[0..4]. HD only. */
   readonly fingerprint: () => Promise<Uint8Array>;
+  /**
+   * Whether the entry serving `path` was confirmed on the device itself — an on-device address
+   * check the user approved. Material the kernel holds a secret for is its own, hence confirmed;
+   * pinned material answers only for entries a `verify-address` matched. `device-required` when no
+   * pinned entry serves the path.
+   */
+  readonly confirmed: (curve: "secp256k1" | "ed25519", path: KeyPath) => Promise<boolean>;
 };

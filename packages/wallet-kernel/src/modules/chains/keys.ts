@@ -152,6 +152,8 @@ export const seedKeys = (seed: Uint8Array, random: (n: number) => Uint8Array): K
           master.wipePrivateData();
         }
       },
+      // The kernel holds this material's secret — every path is the wallet's own.
+      confirmed: async () => true,
     },
     backend: (sign) => ({
       sign: async (task) =>
@@ -206,6 +208,8 @@ export const importedKeys = (
       fingerprint: async () => {
         throw new KernelError("integrity", "imported keys have no fingerprint");
       },
+      // The kernel holds this key — it is its own material.
+      confirmed: async () => true,
     },
     backend: (sign) => ({
       sign: async (task) => {

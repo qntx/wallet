@@ -128,7 +128,11 @@ const boot = async (
   )["walletId"] as string;
   ok(await h.call("vault.setBlindSigning", { enabled: true, verify: PASSKEY() }, session));
   const begin = ok(
-    await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+    await h.call(
+      "hardware.begin",
+      { op: { kind: "pair", device: "keystone" }, verify: PASSKEY() },
+      session,
+    ),
   );
   const done = ok(
     await h.call(
@@ -735,7 +739,11 @@ describe("hardware sign refusals", () => {
       ),
     );
     const begin = ok(
-      await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "keystone" }, verify: { kind: "hardware" } },
+        session,
+      ),
     );
     ok(
       await h.call(
@@ -793,7 +801,11 @@ describe("hardware sign refusals", () => {
       ),
     );
     const begin = ok(
-      await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "keystone" }, verify: { kind: "hardware" } },
+        session,
+      ),
     );
     ok(
       await h.call(
@@ -855,7 +867,13 @@ describe("hardware sign refusals", () => {
           session,
         ),
       );
-      const begin = ok(await h.call("hardware.begin", { op: { kind: "pair", device } }, session));
+      const begin = ok(
+        await h.call(
+          "hardware.begin",
+          { op: { kind: "pair", device }, verify: { kind: "hardware" } },
+          session,
+        ),
+      );
       ok(
         await h.call(
           "hardware.step",

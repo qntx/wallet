@@ -221,6 +221,7 @@ const bitcoinPsbt = async (
   const xpub = await pinnedMaterial({
     fingerprint: context.pin.fingerprint,
     keys: context.pin,
+    confirmed: [],
   }).extendedPublicKey(account, net.bip32);
   const policy = defaultPolicy(template, context.pin.fingerprint, account, xpub);
   // app-bitcoin-new hides any output carrying the wallet's derivation on the change chain with no

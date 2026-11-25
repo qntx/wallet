@@ -250,7 +250,11 @@ const boot = async (): Promise<Boot> => {
   )["walletId"] as string;
   ok(await h.call("vault.setBlindSigning", { enabled: true, verify: PASSKEY() }, session));
   const begin = ok(
-    await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+    await h.call(
+      "hardware.begin",
+      { op: { kind: "pair", device: "keystone" }, verify: PASSKEY() },
+      session,
+    ),
   );
   const done = ok(
     await h.call(
@@ -709,7 +713,11 @@ describe("keystone signing byte-identical to local signing", () => {
       ),
     );
     const paired = ok(
-      await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "keystone" }, verify: { kind: "hardware" } },
+        session,
+      ),
     );
     const done = ok(
       await h.call(
@@ -975,7 +983,7 @@ describe("keystone accounts over qr-hardware-call", () => {
     mutant: DeviceMutant = {},
   ): Promise<KernelResponse> => {
     const device = keystoneDevice(SEED, MFP, mutant);
-    const begin = await h.call("hardware.begin", { op }, session);
+    const begin = await h.call("hardware.begin", { op, verify: PASSKEY() }, session);
     if ("err" in begin) {
       return begin;
     }

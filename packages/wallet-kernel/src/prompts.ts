@@ -4,6 +4,8 @@
  * platform's preferred locale, read natively — Simplified Chinese for `zh` locales that are not
  * Traditional-script or Traditional-region, English for everything else.
  */
+import type { HardwareDevice } from "@qntx/wallet/protocol";
+
 import type { KeystorePrompt } from "./platform.ts";
 
 export type PromptLocale = "zh-Hans" | "en";
@@ -195,6 +197,57 @@ export function cardPrompt(
   return CARD[locale][kind](cards.join(", "));
 }
 
+/** The display name of a hardware device kind — the user-facing word in device prompts. */
+export const HARDWARE_DEVICE_NAME: Readonly<Record<HardwareDevice, string>> = {
+  keystone: "Keystone",
+  ledger: "Ledger",
+  onekey: "OneKey",
+};
+
+/**
+ * Verification kinds for hardware-signer operations that change what the vault trusts: pairing pins
+ * a claimed device's keys; an accounts fetch merges keys for paths the pin does not serve.
+ * `hardware-accounts` names the account group the fetch serves.
+ */
+export type HardwarePromptKind = "hardware-pair" | "hardware-accounts";
+
+const HARDWARE: Readonly<
+  Record<
+    PromptLocale,
+    Readonly<Record<HardwarePromptKind, (device: string, groupIndex: number) => KeystorePrompt>>
+  >
+> = {
+  "zh-Hans": {
+    "hardware-pair": (device) => ({
+      title: `配对 ${device}`,
+      description: `验证身份以配对这台 ${device}——其公开密钥将记录在此设备上`,
+    }),
+    "hardware-accounts": (device, g) => ({
+      title: `获取 ${device} 密钥`,
+      description: `验证身份以从这台 ${device} 获取账户 ${g} 的公开密钥`,
+    }),
+  },
+  en: {
+    "hardware-pair": (device) => ({
+      title: `Pair ${device}`,
+      description: `Verify your identity to pair this ${device} — its public keys get pinned`,
+    }),
+    "hardware-accounts": (device, g) => ({
+      title: `Fetch ${device} keys`,
+      description: `Verify your identity to fetch the public keys of account ${g} from this ${device}`,
+    }),
+  },
+};
+
+export function hardwarePrompt(
+  locale: PromptLocale,
+  kind: HardwarePromptKind,
+  device: HardwareDevice,
+  groupIndex = 0,
+): KeystorePrompt {
+  return HARDWARE[locale][kind](HARDWARE_DEVICE_NAME[device], groupIndex);
+}
+
 /** A prompt thunk for a card operation — locale and the card list resolve only when it runs. */
 export const cardPromptFor =
   (
@@ -214,6 +267,8 @@ export const cardPromptFor =
 export type ExportAccountText = {
   readonly title: string;
   readonly share: (groupIndex: number) => string;
+  /** The danger row one unconfirmed device entry adds, ahead of every node row. */
+  readonly unconfirmed: (path: string) => string;
   readonly evmAccount: (path: string) => string;
   readonly leaf: (family: "EVM" | "TRON" | "Solana", groupIndex: number, path: string) => string;
   readonly btcAccount: (
@@ -231,6 +286,8 @@ const EXPORT_ACCOUNT: Readonly<Record<PromptLocale, ExportAccountText>> = {
   en: {
     title: "Connect watch-only wallet",
     share: (g) => `Share public keys of account ${g} — never a private key`,
+    unconfirmed: (path) =>
+      `\u26A0 Not confirmed on the device — check an address of this account on the device first: ${path}`,
     evmAccount: (path) => `EVM: the addresses of every account of this wallet (${path})`,
     leaf: (family, g, path) => `${family} address of account ${g} (${path})`,
     btcAccount: (template, network, g, path) =>
@@ -245,6 +302,7 @@ const EXPORT_ACCOUNT: Readonly<Record<PromptLocale, ExportAccountText>> = {
   "zh-Hans": {
     title: "连接观察钱包",
     share: (g) => `共享账户 ${g} 的公开密钥——绝不包含私钥`,
+    unconfirmed: (path) => `\u26A0 未在设备上确认——请先在设备上核对该账户的地址：${path}`,
     evmAccount: (path) => `EVM：本钱包所有账户的地址（${path}）`,
     leaf: (family, g, path) => `${family} 账户 ${g} 的地址（${path}）`,
     btcAccount: (template, network, g, path) =>
