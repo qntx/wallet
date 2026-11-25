@@ -46743,7 +46743,7 @@ zoo`.split("\n"));
 			case "sign": {
 				const { account } = op.request;
 				if (account.kind !== "hd") throw new KernelError("invalid-input", "only an hd account signs on a card");
-				if (cardRecord(account.walletId) === void 0) throw findWalletRecord(ctx.image, account.walletId) !== void 0 ? new KernelError("invalid-input", "the account's wallet is not a card wallet") : new KernelError("not-found", "no such card wallet");
+				if (cardRecord(account.walletId) === void 0) throw findWalletRecord(ctx.image, account.walletId) === void 0 ? new KernelError("not-found", "no such card wallet") : new KernelError("invalid-input", "the account's wallet is not a card wallet");
 				return;
 			}
 			case "erase": {
