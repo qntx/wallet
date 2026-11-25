@@ -40,6 +40,9 @@ export type ChainsApi = {
     readonly groupIndex: number;
     readonly nodes: ReadonlyArray<ChainExportNode>;
     readonly verify: VerifyFactor;
+    /* A node served by device material never confirmed on the device refuses with
+       `approval-required` unless the host acknowledged the danger-row warning. */
+    readonly acknowledgeUnconfirmed?: true;
   }) => Promise<ChainExportResult>;
 };
 
@@ -62,6 +65,9 @@ function createChainsApi(internals: WalletInternals): ChainsApi {
           groupIndex: params.groupIndex,
           nodes: params.nodes,
           verify: await internals.resolveVerifyFactor(params.verify, wire),
+          ...(params.acknowledgeUnconfirmed === undefined
+            ? {}
+            : { acknowledgeUnconfirmed: params.acknowledgeUnconfirmed }),
         }));
         await checkExportResult(internals, params, result);
         return result;
