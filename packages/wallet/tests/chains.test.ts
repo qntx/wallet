@@ -393,7 +393,7 @@ describe("chains(wallet)", () => {
   it("rejects a kernel psbt that signs a different transaction with integrity", async () => {
     const { wallet } = await btcConnect({
       kind: "bitcoin.psbt",
-            signedPsbt: signBitcoinPsbt(
+      signedPsbt: signBitcoinPsbt(
         btcPsbt(10000n),
         [{ index: 0, privateKey: BTC_CHILD.privateKey! }],
         () => new Uint8Array(32),
@@ -416,7 +416,7 @@ describe("chains(wallet)", () => {
   it("accepts a kernel psbt signed by the account's own child key", async () => {
     const { wallet } = await btcConnect({
       kind: "bitcoin.psbt",
-            signedPsbt: signBitcoinPsbt(
+      signedPsbt: signBitcoinPsbt(
         btcPsbt(),
         [{ index: 0, privateKey: BTC_CHILD.privateKey! }],
         () => new Uint8Array(32),
@@ -581,7 +581,7 @@ describe("chains(wallet)", () => {
     foreignTx.addOutput({ script: p2wpkh(foreignPub).script, amount: 90000n });
     const { wallet } = await btcConnect({
       kind: "bitcoin.psbt",
-            signedPsbt: signBitcoinPsbt(
+      signedPsbt: signBitcoinPsbt(
         foreignTx.toPSBT(0),
         [{ index: 0, privateKey: foreignNode.privateKey! }],
         () => new Uint8Array(32),

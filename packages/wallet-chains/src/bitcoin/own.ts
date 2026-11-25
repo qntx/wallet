@@ -3,8 +3,8 @@
  * discoverable only when the wallet's gap-limited scan can reach it — anything else is shown as a
  * send to the caller's own address at an unusual path, with a warning. The reach bound comes from
  * the kernel's sealed change mark, never from the PSBT: an untrusted request can name any input
- * path, so signed inputs may raise the mark only for requests the wallet itself built
- * (`origin: "internal"`).
+ * path, so signed inputs may raise the mark only for requests the wallet itself built (`origin:
+ * "internal"`).
  */
 
 /**
@@ -62,8 +62,8 @@ export const EMPTY_BITCOIN_OWN: BitcoinOwn = { change: new Set(), unusual: new M
 
 /**
  * An output is discoverable change only on the change chain (`/1/i`), under a purpose at least one
- * signed input shares, at an index inside what the gap-limited scan reaches: the sealed change
- * mark plus the gap limit, bounded by the scan limit.
+ * signed input shares, at an index inside what the gap-limited scan reaches: the sealed change mark
+ * plus the gap limit, bounded by the scan limit.
  */
 export const isDiscoverableChange = (
   output: BitcoinPathTail,
