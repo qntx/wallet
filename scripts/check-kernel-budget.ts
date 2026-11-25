@@ -49,11 +49,12 @@ const signersFiles = (dir: string): string[] =>
         : [],
   );
 const SIGNERS_FILES = signersFiles(resolve(ROOT, SIGNERS_MODULE)).toSorted();
-// measured 301705 B (rendered, all exports retained — ledger/protocol moved under the driver,
+// measured 293953 B (rendered, all exports retained — ledger/protocol moved under the driver,
 // owner decision 2026-11-24: accept the measured size; +3248 B when the onekey driver split into
-// per-operation files added module-boundary overhead, +798 B of prompt/dispatch drift since);
+// per-operation files added module-boundary overhead, +798 B of prompt/dispatch drift since,
+// −7752 B when the Keystone btc and qr-hardware-call codecs moved to @qntx/ur 4.1.0);
 // budget from measurement with ≥ 5 % headroom
-const SIGNERS_BUDGET = 317_000;
+const SIGNERS_BUDGET = 309_000;
 /** Breakdown lines printed every run: shared core files first, then one line per driver dir. */
 const SIGNERS_GROUPS = ["keystone", "ledger", "onekey"];
 

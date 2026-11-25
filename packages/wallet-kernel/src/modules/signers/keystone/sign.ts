@@ -16,6 +16,8 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 
 import {
+  btcSignRequestCodec,
+  btcSignatureCodec,
   ethSignRequestCodec,
   ethSignatureCodec,
   solSignRequestCodec,
@@ -41,13 +43,7 @@ import { KernelError } from "../../../errors.ts";
 import type { ChainPlan } from "../../chains/run.ts";
 import { expectDigest, personalDigest } from "../digest.ts";
 import type { DeviceIdentity, DeviceLink, SignContext } from "../driver.ts";
-import {
-  btcSignRequestCodec,
-  btcSignatureCodec,
-  decodeUr,
-  encodeUr,
-  requestKeypath,
-} from "./ur.ts";
+import { decodeUr, encodeUr, requestKeypath } from "./ur.ts";
 
 const ORIGIN = "qntx";
 
@@ -352,6 +348,7 @@ const bitcoinMessage = async (
       value: {
         requestId,
         signData,
+        dataType: "message",
         derivationPaths: [requestKeypath(task.path, context.pin.fingerprint)],
         origin: ORIGIN,
       },
@@ -363,10 +360,7 @@ const bitcoinMessage = async (
   if (!equalBytes(answer.publicKey, task.publicKey)) {
     wrongDevice();
   }
-  if (answer.signature.length !== 65) {
-    integrity();
-  }
-  // The compact signature is header‖r‖s — the header byte never leaves the device exchange.
+  // The codec admits exactly 65 bytes, header‖r‖s — the header byte never leaves the device exchange.
   return answer.signature.subarray(1);
 };
 

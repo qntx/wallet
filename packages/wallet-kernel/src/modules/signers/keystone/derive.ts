@@ -9,7 +9,8 @@
  */
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 
-import { cryptoMultiAccountsCodec } from "@qntx/ur/interop";
+import { cryptoMultiAccountsCodec, qrHardwareCallCodec } from "@qntx/ur/interop";
+import type { KeyDerivationCurve, KeyDerivationSchema } from "@qntx/ur/interop";
 import type { KeyPath } from "@qntx/wallet-chains";
 
 import type { PinnedEd25519, PinnedNode } from "../../../derive/pinned.ts";
@@ -17,7 +18,7 @@ import { fingerprintBytes, pathToString, samePath } from "../../../derive/pinned
 import { KernelError } from "../../../errors.ts";
 import type { DeviceLink, PairingResult } from "../driver.ts";
 import { pathOf } from "./sync.ts";
-import { decodeUr, encodeUr, qrHardwareCallCodec, requestKeypath } from "./ur.ts";
+import { decodeUr, encodeUr, requestKeypath } from "./ur.ts";
 
 const HARDENED = 0x80000000;
 const ORIGIN = "qntx";
@@ -65,6 +66,20 @@ function integrity(): never {
   throw new KernelError("integrity", "malformed key-derivation answer");
 }
 
+/**
+ * One key-derivation schema with curve and slip10 written explicitly and no version on the call —
+ * the vendor JS dialect firmware 3.2.2 parses.
+ */
+const schema = (
+  path: KeyPath,
+  curve: KeyDerivationCurve,
+  fingerprint: Uint8Array,
+): KeyDerivationSchema => ({
+  keyPath: requestKeypath(path, fingerprint),
+  curve,
+  algorithm: "slip10",
+});
+
 /** `accounts` driver op: refuse underivable paths, then exchange and pin exactly what was asked. */
 export const derive = async (
   link: DeviceLink,
@@ -82,16 +97,13 @@ export const derive = async (
       type: "qr-hardware-call",
       cbor: encodeUr(
         {
-          schemas: [
-            ...need.secp256k1.map((path) => ({
-              path: requestKeypath(path, pin.fingerprint),
-              curve: "secp256k1" as const,
-            })),
-            ...need.ed25519.map((path) => ({
-              path: requestKeypath(path, pin.fingerprint),
-              curve: "ed25519" as const,
-            })),
-          ],
+          params: {
+            kind: "keyDerivation",
+            schemas: [
+              ...need.secp256k1.map((path) => schema(path, "secp256k1", pin.fingerprint)),
+              ...need.ed25519.map((path) => schema(path, "ed25519", pin.fingerprint)),
+            ],
+          },
           origin: ORIGIN,
         },
         qrHardwareCallCodec,

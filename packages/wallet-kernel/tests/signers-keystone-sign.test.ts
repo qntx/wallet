@@ -33,8 +33,11 @@ import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  btcSignRequestCodec,
+  btcSignatureCodec,
   ethSignRequestCodec,
   ethSignatureCodec,
+  qrHardwareCallCodec,
   solSignRequestCodec,
   solSignatureCodec,
   tronSignRequestCodec,
@@ -54,14 +57,7 @@ import type { DeviceRequest, DeviceResponse, ProtocolValue } from "@qntx/wallet/
 
 import { KernelError } from "../src/errors.ts";
 import { derive } from "../src/modules/signers/keystone/derive.ts";
-import {
-  btcSignRequestCodec,
-  btcSignatureCodec,
-  decodeUr,
-  encodeUr,
-  qrHardwareCallCodec,
-  requestKeypath,
-} from "../src/modules/signers/keystone/ur.ts";
+import { decodeUr, encodeUr, requestKeypath } from "../src/modules/signers/keystone/ur.ts";
 import { devicePromptLine } from "../src/modules/signers/prompt.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
@@ -414,6 +410,7 @@ describe("keystone sign requests encode like the vendor SDK's", () => {
           {
             requestId,
             signData: data,
+            dataType: "message",
             derivationPaths: [keypath(c.path ?? "")],
             origin: signVectors.origin,
           },
@@ -425,10 +422,13 @@ describe("keystone sign requests encode like the vendor SDK's", () => {
         const [secp, ed] = c.paths ?? [];
         return encodeUr(
           {
-            schemas: [
-              { path: keypath(secp ?? ""), curve: "secp256k1" },
-              { path: keypath(ed ?? ""), curve: "ed25519" },
-            ],
+            params: {
+              kind: "keyDerivation",
+              schemas: [
+                { keyPath: keypath(secp ?? ""), curve: "secp256k1", algorithm: "slip10" },
+                { keyPath: keypath(ed ?? ""), curve: "ed25519", algorithm: "slip10" },
+              ],
+            },
             origin: signVectors.origin,
           },
           qrHardwareCallCodec,

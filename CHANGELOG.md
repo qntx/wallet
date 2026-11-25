@@ -1142,7 +1142,7 @@ Gateway (operators):
   `chains().sign`. `HidPort`/`BlePort` are the host transport contracts the shipped
   `ledgerHidExchange`/`ledgerBleExchange`/`oneKeyHidExchange`/`oneKeyBleExchange` run over.
   `qrParts`/`qrReader` are the UR plumbing for air-gapped transports:
-  cyclic uppercase fountain parts and a strict incremental decoder over `@qntx/ur` 4.0.0 (optional
+  cyclic uppercase fountain parts and a strict incremental decoder over `@qntx/ur` 4.1.0 (optional
   peer).
 - **Keystone 3 Pro over QR** (`modules/signers/keystone/`): pairing from the sync
   `crypto-multi-accounts`, per-group account keys via `qr-hardware-call` key derivation (firmware
@@ -1444,8 +1444,11 @@ Gateway (operators):
   an upgrade never discards persisted user data from the first production release on. Fenced
   TypeScript blocks in README.md, MIGRATION.md and every package/app README compile under
   `bun run typecheck`.
-- `@qntx/ur` is pinned at 4.0.0 across the workspace; the kernel's Keystone driver encodes and
-  decodes through it — the hand-written CBOR and firmware-3.2.2 registry copies are gone.
+- `@qntx/ur` is pinned at 4.1.0 across the workspace; the kernel's Keystone driver encodes and
+  decodes every UR it exchanges through it — `btc-sign-request`, `btc-signature` and
+  `qr-hardware-call` included — and the hand-written CBOR, firmware-3.2.2 registry copies and
+  local codecs are gone. A `btc-signature` without its request id is now malformed (`integrity`)
+  rather than `wrong-device`.
 - `@qntx/wallet-engine`: `BitcoinPsbtInput.sign[].template` accepts all four account templates —
   a QR counterpart may name `btc.bip44`/`btc.bip49` where a dApp only uses `btc.bip84`/`btc.bip86`.
   Hosts switching on the template need the new members. (MIGRATION §33)
