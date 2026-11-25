@@ -348,6 +348,7 @@ describe("chains(wallet)", () => {
     xpub: BTC_XPUB,
     fingerprint: "73c5da0a",
     path: "m/84'/0'/0'",
+    changeMark: 0,
   };
 
   const btcConnect = async (
@@ -647,6 +648,7 @@ describe("chains(wallet)", () => {
         xpub: BTC_XPUB44,
         fingerprint: "73c5da0a",
         path: "m/44'/0'/0'",
+        changeMark: 0,
       },
     );
     const result = await chains(wallet).sign(
@@ -1088,6 +1090,7 @@ describe("chains(wallet)", () => {
           xpub: btcNode.publicExtendedKey,
           fingerprint: FINGERPRINT,
           path: "m/84'/0'/0'",
+          changeMark: 0,
         },
       };
     };
