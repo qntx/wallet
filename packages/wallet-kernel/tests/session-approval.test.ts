@@ -844,6 +844,31 @@ describe("approval prompt bounds", () => {
     }
   });
 
+  it("asset ids render as #id, split perp/spot at id 10000", () => {
+    const session = {
+      scope: "Mainnet",
+      name: "bot-1",
+      validUntil: T0 + DAY,
+      limits: {
+        ...LIMITS,
+        /* The first spot id is exactly 10000 — it must land on the spot line, never perp. */
+        assets: [
+          { asset: 0, size: "10" },
+          { asset: 159, size: "1000000" },
+          { asset: 10_000, size: "5" },
+          { asset: 10_107, size: "100000" },
+        ],
+      },
+      spent: { notional: "0", size: ["0", "0", "0", "0"] },
+    };
+    const en = hyperliquidApproval(session, false, "en").description;
+    expect(en).toContain("Max size, buys and sells — perp: #0 ≤ 10, #159 ≤ 1000000");
+    expect(en).toContain("Max size, buys and sells — spot: #10000 ≤ 5, #10107 ≤ 100000");
+    const zh = hyperliquidApproval(session, false, "zh-Hans").description;
+    expect(zh).toContain("最大数量，买与卖——永续：#0 ≤ 10, #159 ≤ 1000000");
+    expect(zh).toContain("最大数量，买与卖——现货：#10000 ≤ 5, #10107 ≤ 100000");
+  });
+
   it("the prompt text is pinned", () => {
     const session = {
       scope: "Mainnet",
@@ -857,8 +882,8 @@ describe("approval prompt bounds", () => {
         `Valid until 2026-06-02\n` +
         `Buy budget: 1000 (sum of price × size of buys, quote currency)\n` +
         `Max leverage: 10x\n` +
-        `Max size, buys and sells — perp: 0 ≤ 1000, 1 ≤ 1000\n` +
-        `Max size, buys and sells — spot: 10107 ≤ 100000\n` +
+        `Max size, buys and sells — perp: #0 ≤ 1000, #1 ≤ 1000\n` +
+        `Max size, buys and sells — spot: #10107 ≤ 100000\n` +
         `Sells may fill at any price the exchange accepts`,
     );
     expect(hyperliquidApproval(session, true, "en").description).toBe(
@@ -866,8 +891,8 @@ describe("approval prompt bounds", () => {
         `Valid until 2026-06-02\n` +
         `Buy budget: 1000 (sum of price × size of buys, quote currency)\n` +
         `Max leverage: 10x\n` +
-        `Max size, buys and sells — perp: 0 ≤ 1000, 1 ≤ 1000\n` +
-        `Max size, buys and sells — spot: 10107 ≤ 100000\n` +
+        `Max size, buys and sells — perp: #0 ≤ 1000, #1 ≤ 1000\n` +
+        `Max size, buys and sells — spot: #10107 ≤ 100000\n` +
         `Sells may fill at any price the exchange accepts\n` +
         `Remaining buy budget: 749.5`,
     );
@@ -876,8 +901,8 @@ describe("approval prompt bounds", () => {
         `有效期至 2026-06-02\n` +
         `买入预算：1000（买单价格 × 数量之和，按各市场报价币计）\n` +
         `最大杠杆：10x\n` +
-        `最大数量，买与卖——永续：0 ≤ 1000, 1 ≤ 1000\n` +
-        `最大数量，买与卖——现货：10107 ≤ 100000\n` +
+        `最大数量，买与卖——永续：#0 ≤ 1000, #1 ≤ 1000\n` +
+        `最大数量，买与卖——现货：#10107 ≤ 100000\n` +
         `卖单可按交易所接受的任意价格成交`,
     );
     expect(hyperliquidApproval(session, true, "zh-Hans").description).toBe(
@@ -885,8 +910,8 @@ describe("approval prompt bounds", () => {
         `有效期至 2026-06-02\n` +
         `买入预算：1000（买单价格 × 数量之和，按各市场报价币计）\n` +
         `最大杠杆：10x\n` +
-        `最大数量，买与卖——永续：0 ≤ 1000, 1 ≤ 1000\n` +
-        `最大数量，买与卖——现货：10107 ≤ 100000\n` +
+        `最大数量，买与卖——永续：#0 ≤ 1000, #1 ≤ 1000\n` +
+        `最大数量，买与卖——现货：#10107 ≤ 100000\n` +
         `卖单可按交易所接受的任意价格成交\n` +
         `剩余买入预算：749.5`,
     );

@@ -48551,7 +48551,7 @@ zoo`.split("\n"));
 		let perps = "";
 		let spots = "";
 		for (const entry of limits.assets) {
-			const item = `${entry.asset} ≤ ${entry.size}`;
+			const item = `#${entry.asset} ≤ ${entry.size}`;
 			if (entry.asset < SPOT_ASSET_BASE) perps += perps === "" ? item : `, ${item}`;
 			else spots += spots === "" ? item : `, ${item}`;
 		}
