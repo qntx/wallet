@@ -395,7 +395,12 @@ describe("AssetsController bitcoin group", () => {
     // History's scan of the same bip84 xpub must see the used change address.
     const scanned = await scanSource(
       es,
-      { kind: "xpub", template: "btc.bip84", xpub: ACCOUNTS["btc.bip84"].publicExtendedKey, changeMark: 0 },
+      {
+        kind: "xpub",
+        template: "btc.bip84",
+        xpub: ACCOUNTS["btc.bip84"].publicExtendedKey,
+        changeMark: 0,
+      },
       BTC_NET,
       NETWORK,
     );

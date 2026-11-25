@@ -3,6 +3,7 @@ import { NETWORK, p2pkh, p2wpkh } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
 import { changeScanReach } from "@qntx/wallet-chains/bitcoin";
+
 import { scripthash, scanChain, scanSourceWithHistory } from "../src/chains/bitcoin-scan.ts";
 import { esplora as esploraClient, EsploraError } from "../src/chains/bitcoin.ts";
 import type { Esplora, EsploraDeps, EsploraFetch, EsploraResponse } from "../src/chains/bitcoin.ts";
@@ -91,7 +92,7 @@ describe("gap-20 scanning", () => {
 });
 
 describe("change-mark reach scanning", () => {
-  const reachScan = (txs: Record<string, unknown[]>, reach: number) =>
+  const reachScan = async (txs: Record<string, unknown[]>, reach: number) =>
     scanChain(
       esplora(txs),
       xpub,
@@ -105,7 +106,8 @@ describe("change-mark reach scanning", () => {
   it("mark 0 walks the change chain to index 20 even with nothing used", async () => {
     const addrs = await reachScan({}, changeScanReach(0));
     expect(addrs).toHaveLength(21);
-    expect(addrs.every((a) => a.chain === 1 && !a.used)).toBe(true);
+    expect(addrs.every((a) => a.chain === 1)).toBe(true);
+    expect(addrs.every((a) => !a.used)).toBe(true);
     expect(addrs[20]!.index).toBe(20);
   });
 
@@ -128,7 +130,7 @@ describe("change-mark reach scanning", () => {
   });
 
   it("the reach is capped at the scan limit — a huge mark walks to index 1999 only", async () => {
-    const addrs = await reachScan({}, changeScanReach(5_000));
+    const addrs = await reachScan({}, changeScanReach(5000));
     expect(addrs).toHaveLength(2000);
     expect(addrs[1999]!.index).toBe(1999);
   }, 30_000);

@@ -84,8 +84,8 @@ const windowTxs = async (
 /**
  * Gap-limited chain scan covering at least `[0, reach]`: windows of `BITCOIN_GAP_LIMIT` stop after
  * the first all-unused window — unless the sealed mark's reach is not yet covered, in which case
- * tail windows (the last one truncated at `reach`) keep walking; a used address in the tail
- * resumes the gap rule from there. The `BITCOIN_SCAN_LIMIT` bound caps the total work.
+ * tail windows (the last one truncated at `reach`) keep walking; a used address in the tail resumes
+ * the gap rule from there. The `BITCOIN_SCAN_LIMIT` bound caps the total work.
  */
 const scanChainWithHistory = async (
   es: Esplora,
@@ -98,7 +98,7 @@ const scanChainWithHistory = async (
 ): Promise<ReadonlyArray<ScannedAddress>> => {
   const scanned: ScannedAddress[] = [];
   let tail = false;
-  for (let start = 0; ; ) {
+  for (let start = 0; ;) {
     const end = tail ? Math.min(start + BITCOIN_GAP_LIMIT, reach + 1) : start + BITCOIN_GAP_LIMIT;
     if (end <= start) {
       return scanned;
@@ -333,7 +333,8 @@ export const BITCOIN_TEMPLATES = ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bi
 
 /**
  * What a Bitcoin balance is read from: one account template's xpub, or one watched address.
- * `changeMark` is the sealed mark the change chain must reach past — a watch-only xpub has none (0).
+ * `changeMark` is the sealed mark the change chain must reach past — a watch-only xpub has none
+ * (0).
  */
 export type BitcoinSource =
   | {
