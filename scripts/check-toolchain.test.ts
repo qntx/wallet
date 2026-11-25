@@ -57,6 +57,38 @@ describe("checkWorkflow", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("bun-version-file: package.json");
   });
+
+  it("checks a step whose uses: sits on its own line under - name:", () => {
+    const named = (withBlock: string): string =>
+      `      - name: Setup Bun\n        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6\n${withBlock}`;
+    expect(
+      checkWorkflow(
+        ".github/workflows/ci.yml",
+        named("        with:\n          bun-version-file: package.json\n"),
+      ),
+    ).toStrictEqual([]);
+    const errors = checkWorkflow(".github/workflows/ci.yml", named(""));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("bun-version-file: package.json");
+  });
+
+  it("fails a reference that is not a uses: line", () => {
+    const errors = checkWorkflow(
+      ".github/workflows/ci.yml",
+      `      - run: bun install # needs oven-sh/setup-bun@\n`,
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("uses:");
+  });
+
+  it("fails a uses: line that resolves to no step", () => {
+    const errors = checkWorkflow(
+      ".github/workflows/ci.yml",
+      `uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6\n`,
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("cannot resolve the step");
+  });
 });
 
 describe("checkManifest", () => {

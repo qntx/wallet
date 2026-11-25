@@ -28,22 +28,50 @@ const asRecord = (value: unknown): JsonObject => (isRecord(value) ? value : {});
 const indentOf = (line: string): number => line.length - line.trimStart().length;
 
 /**
- * Every `- uses: oven-sh/setup-bun@…` step must carry `bun-version-file: package.json` in its
- * `with:` block and must not set `bun-version`. The workflows are plain YAML, so a step's `with:`
- * block is read by indentation: `with:` aligns with `uses:` under the dash, its entries sit one
- * level deeper, and the step ends at the next line no deeper than the dash.
+ * Every step that references `oven-sh/setup-bun@…` must carry `bun-version-file: package.json` in
+ * its `with:` block and must not set `bun-version`. The reference may sit on the step's dash line
+ * (`- uses: …`) or on its own line under another key (`- name: Setup Bun` then `uses: …`), so the
+ * step's extent is resolved from its dash line — the reference line itself when it carries the
+ * dash, else the nearest preceding `- ` line no deeper than the `uses:` key — and a reference that
+ * does not resolve to a step is itself a finding. The step's `with:` block is then read by
+ * indentation: `with:` aligns with `uses:`, its entries sit one level deeper, and the step ends at
+ * the next line no deeper than the dash.
  */
 export function checkWorkflow(path: string, source: string): string[] {
   const errors: string[] = [];
   const lines = source.split("\n");
+  const dashLine = /^(\s*)-\s+/;
   for (const [index, line] of lines.entries()) {
-    const match = /^(\s*)-\s+uses:\s+/.exec(line);
-    const indent = match?.[1];
-    if (indent === undefined || !line.includes(BUN_ACTION)) {
+    if (!line.includes(BUN_ACTION)) {
       continue;
     }
-    const dash = indent.length;
     const at = `${path}:${index + 1}`;
+    const usesColumn = line.indexOf("uses:");
+    if (usesColumn === -1 || !/^uses:\s*oven-sh\/setup-bun@/.test(line.slice(usesColumn))) {
+      errors.push(`${at}: a setup-bun reference must be a step's uses: line`);
+      continue;
+    }
+    const own = dashLine.exec(line);
+    let dash: number | undefined;
+    if (own === null) {
+      for (let j = index - 1; j >= 0; j--) {
+        const l = lines[j];
+        if (l === undefined || l.trim() === "") {
+          continue;
+        }
+        const above = dashLine.exec(l);
+        if (above !== null && (above[1] ?? "").length <= usesColumn) {
+          dash = (above[1] ?? "").length;
+          break;
+        }
+      }
+    } else {
+      dash = (own[1] ?? "").length;
+    }
+    if (dash === undefined) {
+      errors.push(`${at}: cannot resolve the step holding this setup-bun reference`);
+      continue;
+    }
     let end = lines.length;
     for (let j = index + 1; j < lines.length; j++) {
       const l = lines[j];
@@ -53,12 +81,11 @@ export function checkWorkflow(path: string, source: string): string[] {
       }
     }
     const step = lines.slice(index + 1, end);
-    const usesIndent = dash + 2;
-    const withIndex = step.findIndex((l) => indentOf(l) === usesIndent && l.trim() === "with:");
+    const withIndex = step.findIndex((l) => indentOf(l) === usesColumn && l.trim() === "with:");
     const entries = new Map<string, string>();
     if (withIndex !== -1) {
       for (const l of step.slice(withIndex + 1)) {
-        if (l.trim() !== "" && indentOf(l) <= usesIndent) {
+        if (l.trim() !== "" && indentOf(l) <= usesColumn) {
           break;
         }
         const entry = /^\s*([A-Za-z0-9_-]+):\s*(.*?)\s*$/.exec(l);
@@ -134,11 +161,19 @@ const manifestPaths = (dir: string): string[] =>
 
 if (import.meta.main) {
   const errors: string[] = [];
-  for (const file of readdirSync(join(ROOT, ".github/workflows")).toSorted()) {
-    if (!file.endsWith(".yml") && !file.endsWith(".yaml")) {
-      continue;
-    }
-    const path = `.github/workflows/${file}`;
+  const workflowFiles = (dir: string): string[] =>
+    existsSync(join(ROOT, dir))
+      ? readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((entry) => {
+          if (entry.isDirectory()) {
+            return workflowFiles(`${dir}/${entry.name}`);
+          }
+          const yml = entry.name.endsWith(".yml") || entry.name.endsWith(".yaml");
+          return yml && (dir.endsWith("workflows") || dir.includes("/actions/"))
+            ? [`${dir}/${entry.name}`]
+            : [];
+        })
+      : [];
+  for (const path of workflowFiles(".github").toSorted()) {
     errors.push(...checkWorkflow(path, readFileSync(join(ROOT, path), "utf8")));
   }
   const paths = ["package.json", ...manifestPaths("packages"), ...manifestPaths("apps")];
