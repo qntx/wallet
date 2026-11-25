@@ -120,6 +120,7 @@ const request = (
   inputCount: number,
 ): Extract<SignRequest, { kind: "bitcoin.psbt" }> => ({
   kind: "bitcoin.psbt",
+  origin: "internal",
   network: NET,
   account: ACCOUNT,
   psbt,

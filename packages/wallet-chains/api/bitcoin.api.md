@@ -129,6 +129,9 @@ export const BITCOIN_GAP_LIMIT = 20;
 // @public (undocumented)
 export const BITCOIN_NETWORKS: Readonly<Record<string, BitcoinNetwork>>;
 
+// @public
+export const BITCOIN_SCAN_LIMIT = 2000;
+
 // @public (undocumented)
 export type BitcoinAccountTemplate = BitcoinTemplate;
 
@@ -188,6 +191,9 @@ export type BitcoinPsbtPlan = {
 export function bitcoinPubkeyFromXpub(xpub: string, template: BitcoinAccountTemplate, network: string, change: 0 | 1, index: number): Uint8Array;
 
 // @public
+export type BitcoinRequestOrigin = "internal" | "external";
+
+// @public
 type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
@@ -195,6 +201,9 @@ type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-varia
 
 // @public (undocumented)
 type ChainFamily = "evm" | "solana" | "bitcoin" | "tron";
+
+// @public
+export const changeScanReach: (mark: number) => number;
 
 // @public
 export const decodeBitcoinPsbt: (request: Extract<SignRequest, {
@@ -434,7 +443,7 @@ type IntentWarning = {
 type IntentWarningKind = "platform-fee" | "stake-lockup" | "sighash-single-anyonecanpay" | "permit2-witness" | "delegation-replaced" | "token-2022-transfer-fee" | "token-2022-extension" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-issuer-rate" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-swap-quote" | "fiat24-account-link" | "fiat24-account-move" | "fiat24-account-burn" | "unusual-own-output";
 
 // @public
-export const isDiscoverableChange: (output: BitcoinPathTail, signed: ReadonlyArray<BitcoinPathTail>) => boolean;
+export const isDiscoverableChange: (output: BitcoinPathTail, signed: ReadonlyArray<BitcoinPathTail>, mark: number) => boolean;
 
 // @public
 type KeyPath = ReadonlyArray<number>;
@@ -554,6 +563,9 @@ type ProgramAuthority = {
 };
 
 // @public
+export const requestChangeMark: (stored: number, purpose: number, signed: ReadonlyArray<BitcoinPathTail>, origin: BitcoinRequestOrigin) => number;
+
+// @public
 type SafeTransaction = {
     readonly safe: string;
     readonly nonce: string;
@@ -624,6 +636,7 @@ type SignRequest = {
         readonly walletId: string;
         readonly groupIndex: number;
     };
+    readonly origin: "internal" | "external";
     readonly psbt: Uint8Array;
     readonly sign: ReadonlyArray<{
         readonly index: number;
