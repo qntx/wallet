@@ -2448,9 +2448,7 @@ describe("card sign (fake card)", () => {
       ],
     });
     tx.addOutput({
-      script: p2wpkh(
-        HDKey.fromMasterSeed(seed2).derive("m/84'/0'/0'/0/0").publicKey!,
-      ).script,
+      script: p2wpkh(HDKey.fromMasterSeed(seed2).derive("m/84'/0'/0'/0/0").publicKey!).script,
       amount: 90000n,
     });
     tx.addOutput({ script: p2wpkh(outPub).script, amount: 1000n });
@@ -2766,7 +2764,7 @@ describe("card sign (fake card)", () => {
         ),
         "changeMark",
       );
-    expect(await mark()).toBe(0);
+    await expect(mark()).resolves.toBe(0);
     // An internal psbt hiding its own change output at /1/20 — the mark-0 bound exactly.
     const request = psbtReq(walletId, bip84ChangePsbt(20), ["btc.bip84"]);
     const first = ok(
@@ -2778,8 +2776,8 @@ describe("card sign (fake card)", () => {
     ) as { opId: string; step: Step };
     // `begin` already committed: the card wallet's sealed mark is raised before the first tap —
     // a failed commit would have aborted the request with no op at all.
-    expect(await mark()).toBe(20);
-    let step = first.step;
+    await expect(mark()).resolves.toBe(20);
+    let { step } = first;
     for (let guard = 0; step.kind !== "done"; guard += 1) {
       if (guard > 60) {
         throw new Error(`operation did not finish: ${JSON.stringify(step)}`);
@@ -2800,7 +2798,7 @@ describe("card sign (fake card)", () => {
       verifyPasskey(),
     );
     expect(field(far, "kind")).toBe("sign");
-    expect(await mark()).toBe(20);
+    await expect(mark()).resolves.toBe(20);
     // An external request's signed far change input never raises the bound either.
     const external = await drive(
       r,
@@ -2814,7 +2812,7 @@ describe("card sign (fake card)", () => {
       verifyPasskey(),
     );
     expect(field(external, "kind")).toBe("sign");
-    expect(await mark()).toBe(20);
+    await expect(mark()).resolves.toBe(20);
   });
 
   it("a small per-tap budget spreads tasks over taps and a lost tag resends only pending work", async () => {

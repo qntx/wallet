@@ -190,6 +190,35 @@ const signOnDevice = async (
   return { id: 0, ok: field(field(step, "result"), "result") };
 };
 
+/** Drives an open hardware op through its exchanges to the done step; throws on a step error. */
+const stepToDone = async (
+  h: Harness,
+  session: string,
+  opId: string,
+  first: ProtocolValue,
+): Promise<ProtocolValue> => {
+  let step = first;
+  for (let guard = 0; strField(step, "kind") === "exchange" && guard < 16; guard++) {
+    const deviceRequest = field(step, "request");
+    const response =
+      strField(deviceRequest, "kind") === "qr"
+        ? { kind: "qr", ur: { type: "fake-sign", cbor: new Uint8Array([9]) } }
+        : strField(deviceRequest, "kind") === "compare"
+          ? { kind: "compare", matched: true }
+          : { kind: "message", data: new Uint8Array([0xaa]) };
+    // oxlint-disable-next-line no-await-in-loop -- the coroutine advances one turn per step
+    const next = await h.call("hardware.step", { opId, response }, session);
+    if ("err" in next) {
+      throw new Error(`hardware.step failed: ${String(errCode(next))}`);
+    }
+    step = next.ok;
+  }
+  if (strField(step, "kind") !== "done") {
+    throw new Error("sign did not finish");
+  }
+  return step;
+};
+
 const SIGHASH_WARNING =
   "Signed inputs bind only their same-index outputs; the rest of the transaction can change";
 const UNUSUAL_WARNING =
@@ -588,7 +617,7 @@ describe("hardware sign byte-identical to local signing", () => {
         ),
         "changeMark",
       );
-    expect(await mark()).toBe(0);
+    await expect(mark()).resolves.toBe(0);
     // An internal psbt hiding its own change output at /1/20 — the mark-0 bound exactly.
     const request = normalizeBitcoin({
       kind: "bitcoin.psbt",
@@ -599,30 +628,14 @@ describe("hardware sign byte-identical to local signing", () => {
       sign: [{ index: 0, template: "btc.bip84" }],
     });
     const begin = ok(
-      await h.call(
-        "hardware.begin",
-        { op: { kind: "sign", request }, verify: PASSKEY() },
-        session,
-      ),
+      await h.call("hardware.begin", { op: { kind: "sign", request }, verify: PASSKEY() }, session),
     );
     // `begin` already committed: the hardware wallet's sealed mark is raised before the first
     // device exchange — a failed commit would have aborted the request with no op at all.
-    expect(await mark()).toBe(20);
+    await expect(mark()).resolves.toBe(20);
     // Drive the device to done so no op leaks into the next test.
-    const opId = strField(begin, "opId");
-    let step = field(begin, "step");
-    for (let guard = 0; strField(step, "kind") === "exchange" && guard < 16; guard++) {
-      const deviceRequest = field(step, "request");
-      const response =
-        strField(deviceRequest, "kind") === "qr"
-          ? { kind: "qr", ur: { type: "fake-sign", cbor: new Uint8Array([9]) } }
-          : strField(deviceRequest, "kind") === "compare"
-            ? { kind: "compare", matched: true }
-            : { kind: "message", data: new Uint8Array([0xaa]) };
-      // oxlint-disable-next-line no-await-in-loop -- the coroutine advances one turn per step
-      step = ok(await h.call("hardware.step", { opId, response }, session));
-    }
-    expect(strField(step, "kind")).toBe("done");
+    const done = await stepToDone(h, session, strField(begin, "opId"), field(begin, "step"));
+    expect(strField(done, "kind")).toBe("done");
     // A far own output at /1/5000 is shown, not hidden — it raises nothing.
     const far = ok(
       await signOnDevice(
@@ -639,7 +652,7 @@ describe("hardware sign byte-identical to local signing", () => {
       ),
     );
     expect(bytesField(far, "signedPsbt")).toBeInstanceOf(Uint8Array);
-    expect(await mark()).toBe(20);
+    await expect(mark()).resolves.toBe(20);
     // An external request's signed far change input never raises the bound either.
     const external = await signOnDevice(
       h,
@@ -654,7 +667,7 @@ describe("hardware sign byte-identical to local signing", () => {
       }),
     );
     expect("err" in external).toBe(false);
-    expect(await mark()).toBe(20);
+    await expect(mark()).resolves.toBe(20);
   });
 });
 

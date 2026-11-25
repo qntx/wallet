@@ -267,11 +267,8 @@ const prepareBitcoinPsbt = async (
     inputs.push({ index: input.index, key: input.key });
     signed.push(input.tail);
   }
-  const { own, marks, hidden } = await bitcoinOwn(
-    b,
-    tx,
-    signed,
-    (purpose) => requestChangeMark(storedMark(purpose), purpose, signed, request.origin),
+  const { own, marks, hidden } = await bitcoinOwn(b, tx, signed, (purpose) =>
+    requestChangeMark(storedMark(purpose), purpose, signed, request.origin),
   );
   let normalized;
   try {

@@ -2,11 +2,11 @@
  * The chains module: `wallet.accounts` — the public account for a template at the wallet's group
  * index, derived from the wallet's entropy record once per session and then served from a cache of
  * public data only. The one record kind it owns is `change-marks` (./marks.ts) — the sealed
- * hidden-change bound; seed and every node are wiped in `finally` on every path.
- * `chain.sign` runs `validate → plan → backend → assemble`: a prepare function (./evm.ts,
- * ./bitcoin.ts, ./solana.ts, ./tron.ts) builds the serialisable plan through `PublicMaterial`
- * (./keys.ts), the prompt is verified, then `signPlan` (./run.ts) signs it against a fresh key
- * source — the plan itself is reused, never recomputed.
+ * hidden-change bound; seed and every node are wiped in `finally` on every path. `chain.sign` runs
+ * `validate → plan → backend → assemble`: a prepare function (./evm.ts, ./bitcoin.ts, ./solana.ts,
+ * ./tron.ts) builds the serialisable plan through `PublicMaterial` (./keys.ts), the prompt is
+ * verified, then `signPlan` (./run.ts) signs it against a fresh key source — the plan itself is
+ * reused, never recomputed.
  */
 
 import { isBlindIntent } from "@qntx/wallet-chains";

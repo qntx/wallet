@@ -252,7 +252,9 @@ export function createSignersModule(
         throw integrity("the device returned a malformed model or firmware string");
       }
       const id = hardwareWalletId(device, result.fingerprint);
-      if (ctx.image.records.some((record) => record.kind === HARDWARE_WALLET_KIND && record.id === id)) {
+      if (
+        ctx.image.records.some((record) => record.kind === HARDWARE_WALLET_KIND && record.id === id)
+      ) {
         throw new KernelError("already-exists", "this device is already paired");
       }
       const header: { -readonly [K in keyof HardwareHeader]: HardwareHeader[K] } = {

@@ -1,14 +1,14 @@
+import { KernelError } from "../../errors.ts";
 /**
  * Sealed change marks: the highest change-chain index a wallet's own transactions have proven, per
  * (groupIndex, purpose, network). The mark — not anything in a PSBT — bounds which own-key outputs
- * a signing prompt may hide as change. One record per wallet, id = walletId, one marker byte as
- * the sealed body like `vault/policy.ts`; the marks live in the public header so the scan reach is
+ * a signing prompt may hide as change. One record per wallet, id = walletId, one marker byte as the
+ * sealed body like `vault/policy.ts`; the marks live in the public header so the scan reach is
  * readable without opening the record.
  */
 import type { KernelPlatform } from "../../platform.ts";
 import type { Secret } from "../../secret/secret.ts";
 import { wipe } from "../../secret/secret.ts";
-import { KernelError } from "../../errors.ts";
 import {
   asGroupIndex,
   asWalletId,
@@ -60,7 +60,7 @@ export function parseChangeMarksHeader(text: string): ChangeMarksHeader {
     if (!PURPOSES.has(purpose)) {
       throw headerFailure();
     }
-    const network = mark["network"];
+    const { network } = mark;
     if (typeof network !== "string" || !CAIP2.test(network)) {
       throw headerFailure();
     }
@@ -72,7 +72,9 @@ export function parseChangeMarksHeader(text: string): ChangeMarksHeader {
     };
   });
   for (let i = 1; i < marks.length; i++) {
-    if (before(marks[i - 1] as ChangeMark, marks[i] as ChangeMark) >= 0) {
+    const prev = marks[i - 1];
+    const cur = marks[i];
+    if (prev === undefined || cur === undefined || before(prev, cur) >= 0) {
       throw headerFailure();
     }
   }
@@ -92,9 +94,7 @@ export function encodeChangeMarksHeader(header: ChangeMarksHeader): string {
 }
 
 const marksRecord = (image: VaultImage, walletId: string): StoredRecord | undefined =>
-  image.records.find(
-    (record) => record.kind === CHANGE_MARKS_KIND && record.id === walletId,
-  );
+  image.records.find((record) => record.kind === CHANGE_MARKS_KIND && record.id === walletId);
 
 /**
  * The sealed mark for (walletId, groupIndex, purpose, network) — read from the image's public
@@ -115,9 +115,7 @@ export const changeMark = (
   return (
     marks.find(
       (mark) =>
-        mark.groupIndex === groupIndex &&
-        mark.purpose === purpose &&
-        mark.network === network,
+        mark.groupIndex === groupIndex && mark.purpose === purpose && mark.network === network,
     )?.index ?? 0
   );
 };
@@ -141,9 +139,10 @@ export const commitChangeMarks = async (
   raises: ReadonlyArray<{ readonly purpose: number; readonly index: number }>,
 ): Promise<void> => {
   const record = marksRecord(ctx.image, walletId);
-  const stored =
-    record === undefined ? [] : parseChangeMarksHeader(record.header).marks;
-  const next = new Map<string, ChangeMark>(stored.map((mark) => [`${mark.groupIndex}/${mark.purpose}/${mark.network}`, mark]));
+  const stored = record === undefined ? [] : parseChangeMarksHeader(record.header).marks;
+  const next = new Map<string, ChangeMark>(
+    stored.map((mark) => [`${mark.groupIndex}/${mark.purpose}/${mark.network}`, mark]),
+  );
   let grew = false;
   for (const raise of raises) {
     const key = `${groupIndex}/${raise.purpose}/${network}`;

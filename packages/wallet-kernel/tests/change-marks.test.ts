@@ -1,24 +1,22 @@
+import { utf8ToBytes } from "@noble/hashes/utils.js";
 /**
  * The sealed change-marks record and its lifecycle: the header codec round-trips the committed
  * vector byte-exactly and rejects every break of an invariant; `claimUnlocked` latches a wrong
- * marker byte as corrupt; `parseHeader` binds the record to its wallet id; and `chain.sign`
- * commits the mark raise after verification and before any signature exists — a failed commit
- * answers without one, an aborted signing still leaves the mark raised (it only widens the
- * wallet's own change scan), and `wallet.delete` removes the record.
+ * marker byte as corrupt; `parseHeader` binds the record to its wallet id; and `chain.sign` commits
+ * the mark raise after verification and before any signature exists — a failed commit answers
+ * without one, an aborted signing still leaves the mark raised (it only widens the wallet's own
+ * change scan), and `wallet.delete` removes the record.
  */
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
-import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { SignRequest } from "@qntx/wallet-chains";
 import { bitcoinNetwork, normalizeBitcoin } from "@qntx/wallet-chains/bitcoin";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
-import { passkeyKek, unwrapDek } from "../src/vault/factors.ts";
-import { withManifest } from "../src/vault/manifest.ts";
 import {
   CHANGE_MARKS_KIND,
   encodeChangeMarksHeader,
@@ -26,10 +24,12 @@ import {
   parseChangeMarksHeader,
 } from "../src/modules/chains/marks.ts";
 import type { ChangeMarksHeader } from "../src/modules/chains/marks.ts";
-import { sealRecord } from "../src/vault/vault.ts";
 import type { Secret } from "../src/secret/secret.ts";
 import { wipe } from "../src/secret/secret.ts";
-import type { StoredRecord } from "../src/vault/store.ts";
+import { passkeyKek, unwrapDek } from "../src/vault/factors.ts";
+import { withManifest } from "../src/vault/manifest.ts";
+import type { RecordStore, StoredRecord, StoreOp } from "../src/vault/store.ts";
+import { sealRecord } from "../src/vault/vault.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { kernelError, loadVectors } from "./helpers.ts";
@@ -152,9 +152,7 @@ const ownPsbt = (
         sequence: 0xfffffffd,
         witnessUtxo: { script, amount: 100_000n },
         tapInternalKey: pub.slice(1),
-        tapBip32Derivation: [
-          [pub.slice(1), { hashes: [], der: { fingerprint: MASTER_FP, path } }],
-        ],
+        tapBip32Derivation: [[pub.slice(1), { hashes: [], der: { fingerprint: MASTER_FP, path } }]],
       });
     } else {
       const entry: Record<string, unknown> = {
@@ -223,11 +221,8 @@ const setup = async (opts?: Parameters<typeof createHarness>[0]) => {
   return { h, session, walletId: strField(field(res, "wallet"), "walletId") };
 };
 
-const sign = async (
-  h: Harness,
-  session: string,
-  request: SignRequest,
-): Promise<KernelResponse> => h.call("chain.sign", { request, verify: PASSKEY() }, session);
+const sign = async (h: Harness, session: string, request: SignRequest): Promise<KernelResponse> =>
+  h.call("chain.sign", { request, verify: PASSKEY() }, session);
 
 const accountMark = async (
   h: Harness,
@@ -251,10 +246,60 @@ const accountMark = async (
     "changeMark",
   );
 
-const marksRecord = async (h: Harness, walletId: string): Promise<StoredRecord | undefined> =>
-  (await h.store.load()).records.find(
+const marksRecord = async (h: Harness, walletId: string): Promise<StoredRecord | undefined> => {
+  const image = await h.store.load();
+  return image.records.find(
     (record) => record.kind === CHANGE_MARKS_KIND && record.id === walletId,
   );
+};
+
+const isMarksPut = (op: StoreOp): op is Extract<StoreOp, { op: "put-record" }> =>
+  op.op === "put-record" && op.record.kind === CHANGE_MARKS_KIND;
+
+/** A store view that fails a change-marks commit while `armed()` — the abort test's fault. */
+const failMarksCommit =
+  (armed: () => boolean) =>
+  (store: RecordStore): RecordStore => ({
+    load: async () => store.load(),
+    commit: async (ops) => {
+      if (armed() && ops.some(isMarksPut)) {
+        throw new Error("store down");
+      }
+      return store.commit(ops);
+    },
+    watch: (listener) => store.watch(listener),
+  });
+
+/** A store view that parks inside a change-marks commit until `held` resolves. */
+const holdMarksCommit =
+  (gate: (() => void) | undefined, held: Promise<void>) =>
+  (store: RecordStore): RecordStore => ({
+    load: async () => store.load(),
+    commit: async (ops) => {
+      if (ops.some(isMarksPut)) {
+        gate?.();
+        await held;
+      }
+      return store.commit(ops);
+    },
+    watch: (listener) => store.watch(listener),
+  });
+
+/** A store view that records every change-marks header it commits. */
+const recordMarksCommit =
+  (commits: string[]) =>
+  (store: RecordStore): RecordStore => ({
+    load: async () => store.load(),
+    commit: async (ops) => {
+      for (const op of ops) {
+        if (isMarksPut(op)) {
+          commits.push(op.record.header);
+        }
+      }
+      return store.commit(ops);
+    },
+    watch: (listener) => store.watch(listener),
+  });
 
 /* vectors/vault/change-marks.json (scripts/vectors/change-marks.ts): the canonical header parses
  * and re-encodes byte for byte, and every rejection case fails its invariant. */
@@ -295,9 +340,7 @@ describe("change-marks record hooks", () => {
     const plaintext = new Uint8Array([0x02]);
     expect(
       kernelError(() =>
-        marksHooks.claimUnlocked([
-          { kind: CHANGE_MARKS_KIND, id: "w", header: "{}", plaintext },
-        ]),
+        marksHooks.claimUnlocked([{ kind: CHANGE_MARKS_KIND, id: "w", header: "{}", plaintext }]),
       ),
     ).toBe("integrity");
     expect([...plaintext]).toStrictEqual([0]);
@@ -331,27 +374,33 @@ describe("change-marks record hooks", () => {
 describe("change marks lifecycle", () => {
   it("a fresh wallet reports mark 0; an internal sign commits the hidden index", async () => {
     const { h, session, walletId } = await setup();
-    expect(await accountMark(h, session, walletId)).toBe(0);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
     // Hides the change output at /1/20 — exactly the mark-0 bound — then stores 20.
     const first = await sign(
       h,
       session,
-      psbtRequest(walletId, "internal", [{ template: "btc.bip84" }], [
-        { purpose: 84, change: 1, index: 20 },
-      ]),
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
     );
     expect("err" in first).toBe(false);
-    expect(await accountMark(h, session, walletId)).toBe(20);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(20);
     // With the mark at 20 an output at /1/40 is hidden too — and the mark follows to 40.
     const second = await sign(
       h,
       session,
-      psbtRequest(walletId, "internal", [{ template: "btc.bip84", index: 1 }], [
-        { purpose: 84, change: 1, index: 40 },
-      ]),
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84", index: 1 }],
+        [{ purpose: 84, change: 1, index: 40 }],
+      ),
     );
     expect("err" in second).toBe(false);
-    expect(await accountMark(h, session, walletId)).toBe(40);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(40);
   });
 
   it("an internal change input raises the mark; an external input never does", async () => {
@@ -368,7 +417,7 @@ describe("change marks lifecycle", () => {
       ),
     );
     expect("err" in external).toBe(false);
-    expect(await accountMark(h, session, walletId)).toBe(0);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
     // Internal origin: the same input raises the bound past 30, /1/50 is hidden, mark lands at 50.
     const internal = await sign(
       h,
@@ -381,7 +430,7 @@ describe("change marks lifecycle", () => {
       ),
     );
     expect("err" in internal).toBe(false);
-    expect(await accountMark(h, session, walletId)).toBe(50);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(50);
   });
 
   it("the mark is per group index, purpose and network", async () => {
@@ -389,15 +438,18 @@ describe("change marks lifecycle", () => {
     const signed = await sign(
       h,
       session,
-      psbtRequest(walletId, "internal", [{ template: "btc.bip84" }], [
-        { purpose: 84, change: 1, index: 20 },
-      ]),
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
     );
     expect("err" in signed).toBe(false);
-    expect(await accountMark(h, session, walletId)).toBe(20);
-    expect(await accountMark(h, session, walletId, { groupIndex: 1 })).toBe(0);
-    expect(await accountMark(h, session, walletId, { template: "btc.bip44" })).toBe(0);
-    expect(await accountMark(h, session, walletId, { network: TESTNET })).toBe(0);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(20);
+    await expect(accountMark(h, session, walletId, { groupIndex: 1 })).resolves.toBe(0);
+    await expect(accountMark(h, session, walletId, { template: "btc.bip44" })).resolves.toBe(0);
+    await expect(accountMark(h, session, walletId, { network: TESTNET })).resolves.toBe(0);
   });
 
   it("the mark survives a lock — it is sealed in the vault, not the session", async () => {
@@ -405,56 +457,51 @@ describe("change marks lifecycle", () => {
     const signed = await sign(
       h,
       session,
-      psbtRequest(walletId, "internal", [{ template: "btc.bip84" }], [
-        { purpose: 84, change: 1, index: 20 },
-      ]),
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
     );
     expect("err" in signed).toBe(false);
     h.advance(15 * 60_000 + 1);
     const unlocked = ok(await h.call("vault.unlock", { factor: PASSKEY() }));
     const next = strField(unlocked, "session");
-    expect(await accountMark(h, next, walletId)).toBe(20);
+    await expect(accountMark(h, next, walletId)).resolves.toBe(20);
   });
 
   it("a failed mark commit aborts the request before any signature exists", async () => {
     let fail = true;
     const { h, session, walletId } = await setup({
-      wrapStore: (store) => ({
-        load: () => store.load(),
-        commit: async (ops) => {
-          if (
-            fail &&
-            ops.some(
-              (op) => op.op === "put-record" && op.record.kind === CHANGE_MARKS_KIND,
-            )
-          ) {
-            throw new Error("store down");
-          }
-          return store.commit(ops);
-        },
-        watch: (listener) => store.watch(listener),
-      }),
+      wrapStore: failMarksCommit(() => fail),
     });
     const refused = await sign(
       h,
       session,
-      psbtRequest(walletId, "internal", [{ template: "btc.bip84" }], [
-        { purpose: 84, change: 1, index: 20 },
-      ]),
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
     );
     expect(errCode(refused)).toBe("unavailable");
-    expect(await accountMark(h, session, walletId)).toBe(0);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
     // The store heals — the same request then commits the mark and signs.
     fail = false;
     const retried = await sign(
       h,
       session,
-      psbtRequest(walletId, "internal", [{ template: "btc.bip84" }], [
-        { purpose: 84, change: 1, index: 20 },
-      ]),
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
     );
     expect("err" in retried).toBe(false);
-    expect(await accountMark(h, session, walletId)).toBe(20);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(20);
   });
 
   it("a signing aborted after the commit leaves the mark raised", async () => {
@@ -473,24 +520,17 @@ describe("change marks lifecycle", () => {
     });
     const { h, session, walletId } = await setup({
       maxSessionMs: 60_000,
-      wrapStore: (store) => ({
-        load: () => store.load(),
-        commit: async (ops) => {
-          if (ops.some((op) => op.op === "put-record" && op.record.kind === CHANGE_MARKS_KIND)) {
-            gate?.();
-            await held;
-          }
-          return store.commit(ops);
-        },
-        watch: (listener) => store.watch(listener),
-      }),
+      wrapStore: holdMarksCommit(gate, held),
     });
     const pending = sign(
       h,
       session,
-      psbtRequest(walletId, "internal", [{ template: "btc.bip84" }], [
-        { purpose: 84, change: 1, index: 20 },
-      ]),
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
     );
     await entered;
     h.advance(60_001);
@@ -499,7 +539,7 @@ describe("change marks lifecycle", () => {
     expect("err" in response).toBe(true);
     const unlocked = ok(await h.call("vault.unlock", { factor: PASSKEY() }));
     const next = strField(unlocked, "session");
-    expect(await accountMark(h, next, walletId)).toBe(20);
+    await expect(accountMark(h, next, walletId)).resolves.toBe(20);
   });
 
   it("wallet.delete removes the marks record", async () => {
@@ -507,14 +547,17 @@ describe("change marks lifecycle", () => {
     const signed = await sign(
       h,
       session,
-      psbtRequest(walletId, "internal", [{ template: "btc.bip84" }], [
-        { purpose: 84, change: 1, index: 20 },
-      ]),
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
     );
     expect("err" in signed).toBe(false);
-    expect(await marksRecord(h, walletId)).toBeDefined();
+    await expect(marksRecord(h, walletId)).resolves.toBeDefined();
     ok(await h.call("wallet.delete", { walletId, verify: PASSKEY() }, session));
-    expect(await marksRecord(h, walletId)).toBeUndefined();
+    await expect(marksRecord(h, walletId)).resolves.toBeUndefined();
   });
 
   const sessionDek = async (h: Harness): Promise<Secret> => {
@@ -544,9 +587,7 @@ describe("change marks lifecycle", () => {
         header,
         new Uint8Array([0x01]),
       );
-      await h.store.commit(
-        withManifest(sealer, image, [{ op: "put-record", record }], dek),
-      );
+      await h.store.commit(withManifest(sealer, image, [{ op: "put-record", record }], dek));
     } finally {
       dek.wipe();
     }
@@ -587,25 +628,17 @@ describe("change marks lifecycle", () => {
   it("mark lookups are monotone — a lower raise writes nothing", async () => {
     const commits: string[] = [];
     const { h, session, walletId } = await setup({
-      wrapStore: (store) => ({
-        load: () => store.load(),
-        commit: async (ops) => {
-          for (const op of ops) {
-            if (op.op === "put-record" && op.record.kind === CHANGE_MARKS_KIND) {
-              commits.push(op.record.header);
-            }
-          }
-          return store.commit(ops);
-        },
-        watch: (listener) => store.watch(listener),
-      }),
+      wrapStore: recordMarksCommit(commits),
     });
     const first = await sign(
       h,
       session,
-      psbtRequest(walletId, "internal", [{ template: "btc.bip84" }], [
-        { purpose: 84, change: 1, index: 20 },
-      ]),
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
     );
     expect("err" in first).toBe(false);
     expect(commits).toHaveLength(1);
@@ -616,12 +649,15 @@ describe("change marks lifecycle", () => {
       psbtRequest(
         walletId,
         "internal",
-        [{ template: "btc.bip84", index: 1 }, { template: "btc.bip84", change: 1, index: 5 }],
+        [
+          { template: "btc.bip84", index: 1 },
+          { template: "btc.bip84", change: 1, index: 5 },
+        ],
         [{ purpose: 84, change: 1, index: 10 }],
       ),
     );
     expect("err" in lower).toBe(false);
     expect(commits).toHaveLength(1);
-    expect(await accountMark(h, session, walletId)).toBe(20);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(20);
   });
 });
