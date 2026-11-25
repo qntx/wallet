@@ -2,7 +2,8 @@
 
 ## Prerequisites
 
-- **Bun 1.4.4** — package scripts, tests, and tooling.
+- **Bun** — package scripts, tests, and tooling. The version is pinned once in the root
+  `packageManager` field of `package.json`; CI reads it from there (`bun-version-file`).
 - **Node >= 20.19** — the Node test host for the kernel.
 - **Playwright Chromium** — `bunx playwright install chromium`; needed by the
   `@qntx/wallet-worker` web tests and its coverage gate.

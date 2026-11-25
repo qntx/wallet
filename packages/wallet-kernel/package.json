@@ -56,13 +56,6 @@
     "viem": "2.57.12",
     "vite-plus": "1.4.0"
   },
-  "devEngines": {
-    "packageManager": {
-      "name": "bun",
-      "version": "1.4.4",
-      "onFail": "ignore"
-    }
-  },
   "engines": {
     "node": ">=20.19.0"
   }

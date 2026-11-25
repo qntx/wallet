@@ -81,13 +81,6 @@
   "peerDependencies": {
     "@qntx/wallet": "0.13.0"
   },
-  "devEngines": {
-    "packageManager": {
-      "name": "bun",
-      "version": "1.4.4",
-      "onFail": "ignore"
-    }
-  },
   "engines": {
     "node": ">=20.19.0"
   }
