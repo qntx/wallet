@@ -1976,8 +1976,8 @@ describe("chain.sign", () => {
       const { prompt, result } = await prepare(
         [{ template: "btc.bip84" }, { template: "btc.bip84", change: 1, index: 2_147_483_600 }],
         [
-          { purpose: 84, change: 1, index: 1_999 },
-          { purpose: 84, change: 1, index: 2_000 },
+          { purpose: 84, change: 1, index: 1999 },
+          { purpose: 84, change: 1, index: 2000 },
         ],
       );
       expect(prompt.outflows.filter((o) => o.ownPath !== undefined)).toHaveLength(1);

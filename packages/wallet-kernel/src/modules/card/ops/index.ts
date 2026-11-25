@@ -52,9 +52,9 @@ export const checkOperation = (ctx: KernelContext, op: CardOperation): void => {
       if (cardRecord(account.walletId) === undefined) {
         // A walletId may name a vault record and a card wallet at once — only a missing card
         // record with no other wallet of that id is `not-found`; a non-card wallet is input.
-        throw findWalletRecord(ctx.image, account.walletId) !== undefined
-          ? new KernelError("invalid-input", "the account's wallet is not a card wallet")
-          : new KernelError("not-found", "no such card wallet");
+        throw findWalletRecord(ctx.image, account.walletId) === undefined
+          ? new KernelError("not-found", "no such card wallet")
+          : new KernelError("invalid-input", "the account's wallet is not a card wallet");
       }
       return;
     }
