@@ -4581,7 +4581,7 @@
 		en: {
 			title: "Connect watch-only wallet",
 			share: (g) => `Share public keys of account ${g} — never a private key`,
-			unconfirmed: (path) => `\u26a0 Not confirmed on the device — check an address of this account on the device first: ${path}`,
+			unconfirmed: (path) => `\u26A0 Not confirmed on the device — check an address of this account on the device first: ${path}`,
 			evmAccount: (path) => `EVM: the addresses of every account of this wallet (${path})`,
 			leaf: (family, g, path) => `${family} address of account ${g} (${path})`,
 			btcAccount: (template, network, g, path) => `Bitcoin ${template} on ${network}: every address of account ${g} (${path})`,
@@ -4595,7 +4595,7 @@
 		"zh-Hans": {
 			title: "连接观察钱包",
 			share: (g) => `共享账户 ${g} 的公开密钥——绝不包含私钥`,
-			unconfirmed: (path) => `\u26a0 未在设备上确认——请先在设备上核对该账户的地址：${path}`,
+			unconfirmed: (path) => `\u26A0 未在设备上确认——请先在设备上核对该账户的地址：${path}`,
 			evmAccount: (path) => `EVM：本钱包所有账户的地址（${path}）`,
 			leaf: (family, g, path) => `${family} 账户 ${g} 的地址（${path}）`,
 			btcAccount: (template, network, g, path) => `${network} ${template}：账户 ${g} 的全部地址（${path}）`,
@@ -55178,24 +55178,24 @@ zoo`.split("\n"));
 	*/
 	var KEYSTONE_INDEX_MAX = 999999998;
 	/**
-	* The paths the Keystone's own Receive menu can render — the only paths a `compare` check can
-	* prove against (keystone3-firmware@7da0b941):
+	* The paths the Keystone's own Receive menu can render — the only paths a `compare` check can prove
+	* against (keystone3-firmware@7da0b941):
+	*
 	* - `evm.bip44` "BIP44 Standard" `m/44'/60'/0'/0/X`
 	*   (src/ui/gui_widgets/multi/web3/gui_multi_path_coin_receive_widgets.c:158,1167)
-	* - `tron.bip44` `m/44'/195'/0'/0/X`
-	*   (src/ui/gui_widgets/multi/gui_standard_receive_widgets.c:971)
+	* - `tron.bip44` `m/44'/195'/0'/0/X` (src/ui/gui_widgets/multi/gui_standard_receive_widgets.c:971)
 	* - `solana.bip44-change` "Sub-account Path" `m/44'/501'/X'/0'`
 	*   (src/ui/gui_widgets/multi/web3/gui_multi_path_coin_receive_widgets.c:165,1190)
 	* - `btc.*` mainnet account 0, receive chain `m/{44,49,84,86}'/0'/0'/0/i`
-	*   (src/ui/gui_widgets/gui_utxo_receive_widgets.c:151-170,1735)
-	* Everything else — BTC testnet/signet (the Web3 firmware derives from coin type 0'), any
-	* non-zero account — gets `unsupported` before any exchange: the host would ask the user to
-	* compare against a screen the device cannot produce.
+	*   (src/ui/gui_widgets/gui_utxo_receive_widgets.c:151-170,1735) Everything else — BTC
+	*   testnet/signet (the Web3 firmware derives from coin type 0'), any non-zero account — gets
+	*   `unsupported` before any exchange: the host would ask the user to compare against a screen the
+	*   device cannot produce.
 	*/
 	var confirmable = (target) => {
-		const path = target.path;
+		const { path } = target;
 		if (target.template === "solana.bip44-change") {
-			const group = path[2];
+			const group = path.at(2);
 			return path.length === 4 && path[0] === 2147483692 && path[1] === 2147484149 && group !== void 0 && group >= H && group - H <= KEYSTONE_INDEX_MAX && path[3] === H;
 		}
 		const index = path.at(-1);
@@ -57201,10 +57201,11 @@ zoo`.split("\n"));
 	* solana; any other type or a mix is `unsupported`.
 	*
 	* For a family the pin already carries, the driver first re-fetches one pinned path of that family
-	* in the same session and compares it byte-for-byte — the device-identity proof the fingerprint
-	* check gives for bitcoin (`wrong-device` on mismatch). The first fetch of a family stays
-	* trust-on-first-use: there is nothing pinned to prove against, so a foreign device could merge its
-	* material — the same trust pairing extends, and on-device verify-address is the mitigation.
+	* in the same session and compares it byte-for-byte (`wrong-device` on a mismatch) — like the
+	* fingerprint check, this replays a public value and only stops an accidental second honest
+	* device: a foreign device or the transport can replay it and merge its own keys. Every fetch of a
+	* not-yet-pinned path — pairing, a new group, purpose or family — is trust-on-first-use; merged
+	* entries stay unconfirmed until an on-device verify-address matches.
 	*/
 	init_bip32();
 	var HARDENED$5 = 2147483648;
@@ -61177,9 +61178,9 @@ zoo`.split("\n"));
 	* cross-checks one derived leaf address per family against the pinned nodes locally. `accounts`
 	* fetches the paths the caller still needs; every secp256k1 node must carry the pin's master
 	* fingerprint, and an ed25519-only fetch re-probes a pinned secp256k1 node (`wrong-device` on any
-	* mismatch). Both checks replay public values, so a foreign device or the transport can still
-	* merge its own keys — they only stop an accidental second honest device; merged entries stay
-	* unconfirmed until an on-device verify-address matches.
+	* mismatch). Both checks replay public values, so a foreign device or the transport can still merge
+	* its own keys — they only stop an accidental second honest device; merged entries stay unconfirmed
+	* until an on-device verify-address matches.
 	*/
 	init_bip32();
 	var HARDENED$2 = 2147483648;
@@ -61739,8 +61740,8 @@ zoo`.split("\n"));
 	* Parses the sealed body through the shared pinned-material codec: every node is a real secp256k1
 	* point, every ed25519 entry a real point, every path well-formed, the caps (512 nodes, 256
 	* ed25519) hold, and `confirmed` is canonical — sorted, unique, naming only pinned entries.
-	* Hardware pins additionally require all-hardened ed25519 paths — SLIP-10 has no public
-	* derivation, so a softer path could never be served. Anything less is `integrity`.
+	* Hardware pins additionally require all-hardened ed25519 paths — SLIP-10 has no public derivation,
+	* so a softer path could never be served. Anything less is `integrity`.
 	*/
 	function parseHardwareBody(plaintext) {
 		let text;
@@ -61790,7 +61791,7 @@ zoo`.split("\n"));
 	};
 	/** The body's canonical JSON — fixed key order, `m/…` paths, lowercase hex. */
 	function encodeHardwareBody(body) {
-		const keys = body.keys;
+		const { keys } = body;
 		const nodes = {};
 		for (const node of keys.nodes) {
 			const entry = {

@@ -182,8 +182,9 @@ export const accounts: Driver["accounts"] = async (link, need, pin) => {
       // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
       ed25519.push({ path: [...path], publicKey: await solanaPublicKey(exchange, path, false) });
     }
-    // An ed25519-only fetch carries no fingerprint: probe a pinned secp node so a foreign device
-    // cannot slip its keys into the pin.
+    // An ed25519-only fetch carries no fingerprint: probe a pinned secp node — the replayed value
+    // only stops an accidental second honest device; merged entries stay unconfirmed until an
+    // on-device verify-address matches.
     if (need.secp256k1.length === 0 && need.ed25519.length > 0) {
       const [first] = pin.nodes;
       if (first === undefined) {

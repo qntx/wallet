@@ -7,10 +7,11 @@
  * solana; any other type or a mix is `unsupported`.
  *
  * For a family the pin already carries, the driver first re-fetches one pinned path of that family
- * in the same session and compares it byte-for-byte — the device-identity proof the fingerprint
- * check gives for bitcoin (`wrong-device` on mismatch). The first fetch of a family stays
- * trust-on-first-use: there is nothing pinned to prove against, so a foreign device could merge its
- * material — the same trust pairing extends, and on-device verify-address is the mitigation.
+ * in the same session and compares it byte-for-byte (`wrong-device` on a mismatch) — like the
+ * fingerprint check, this replays a public value and only stops an accidental second honest
+ * device: a foreign device or the transport can replay it and merge its own keys. Every fetch of a
+ * not-yet-pinned path — pairing, a new group, purpose or family — is trust-on-first-use; merged
+ * entries stay unconfirmed until an on-device verify-address matches.
  */
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { HDKey } from "@scure/bip32";
