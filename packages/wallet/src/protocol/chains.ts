@@ -238,10 +238,7 @@ export type ChainSignResult =
       readonly signature: Uint8Array;
     };
 
-export type ChainSignParams = {
-  readonly request: ChainSignRequest;
-  readonly verify: VerifyFactor;
-};
+export type ChainSignParams = { readonly request: ChainSignRequest; readonly verify: VerifyFactor };
 
 const accountRef: Validator<AccountRef> = union(
   obj({ kind: literal("hd"), walletId, groupIndex, template }),
@@ -487,10 +484,7 @@ export const CHAINS_METHODS: {
   "chain.sign": {
     session: true,
     presence: true,
-    params: obj({
-      request: signRequest,
-      verify: verifier,
-    }),
+    params: obj({ request: signRequest, verify: verifier }),
     result: signResult,
   },
   "chain.exportAccount": {

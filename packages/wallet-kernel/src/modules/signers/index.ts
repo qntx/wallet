@@ -193,9 +193,10 @@ const neededPaths = async (
   return need;
 };
 
-/* Dedupe leaves every pinned path unique and serving resolves by deepest prefix — node order
-   never escapes the record, so appending fetched keys is a convention, not a rule. */
-/** Merges freshly fetched pinned keys into the pin, deduplicating by path. */
+/**
+ * Merges freshly fetched pinned keys into the pin, deduplicating by path. Node order is a
+ * convention, not a rule: paths stay unique and serving resolves by deepest prefix.
+ */
 const mergePin = (pin: HardwarePin, fetched: PinnedKeys): HardwarePin => ({
   fingerprint: pin.fingerprint,
   nodes: [
