@@ -31,7 +31,7 @@ export { registrationPaths } from "./shared.ts";
 export { prepareSign } from "./sign.ts";
 export type { SignPrepared } from "./sign.ts";
 
-/** Preconditions that end `card.begin` before any step: wallets exist, gates, unsupported ops. */
+/** Preconditions that end `card.begin` before any step: wallets exist and the op is legal. */
 export const checkOperation = (ctx: KernelContext, op: CardOperation): void => {
   const cardRecord = (walletId: string) =>
     ctx.image.records.find((r) => r.kind === CARD_WALLET_KIND && r.id === walletId);
@@ -143,9 +143,9 @@ export const checkOperation = (ctx: KernelContext, op: CardOperation): void => {
   }
 };
 
-/** Whether the op takes a `verify`, forbids one, or is not in this layer. */
+/** Whether the op takes a `verify` or forbids one. */
 // oxlint-disable-next-line typescript/consistent-return -- exhaustive switch, no fall-off
-export const verifyGate = (op: CardOperation): "required" | "forbidden" | "unsupported" => {
+export const verifyGate = (op: CardOperation): "required" | "forbidden" => {
   switch (op.kind) {
     case "status":
     case "add":

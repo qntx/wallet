@@ -168,9 +168,6 @@ export function createCardModule(platform: KernelPlatform): CardModule {
         throw new KernelError("unsupported", "this host has no card reader");
       }
       const gate = verifyGate(params.op);
-      if (gate === "unsupported") {
-        throw new KernelError("unsupported", "card operations arrive in a later build");
-      }
       checkOperation(ctx, params.op);
       if (gate === "forbidden" && params.verify !== undefined) {
         throw new KernelError("invalid-input", "this card operation takes no verify");
