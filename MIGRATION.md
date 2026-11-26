@@ -2917,12 +2917,12 @@ changes:
    only after showing that state; never silently.
 6. **Bitcoin sends to unconfirmed keys need an acknowledgement.** An output whose key an
    unconfirmed entry serves is shown as an ordinary send with a danger row (§34) — never as your
-   own address, never hidden as change. `chain.sign`, `ChainsApi.sign` and the `hardware.begin`
-   `sign` operation gain `acknowledgeUnconfirmed?: true`; without it such a request fails
-   `approval-required` before any prompt (`signUnconfirmed` in the snippet). The engine passes it
-   itself once `approve` received the `bitcoin-unconfirmed-output` danger finding in
-   `acknowledged`; that includes the change of a send from an account whose node was never
-   confirmed — run `verify-address` once to stop it.
+   own address, never hidden as change. The `hardware.begin` `sign` operation gains
+   `acknowledgeUnconfirmed?: true`; without it such a request fails `approval-required` before
+   any prompt (`signUnconfirmed` in the snippet). The engine's signing path passes it once
+   `approve` received the `bitcoin-unconfirmed-output` danger finding in `acknowledged`; that
+   includes the change of a send from an account whose node was never confirmed — run
+   `verify-address` once to stop it.
 7. **`nextReceiveAddress` returns `{ address, confirmed }`** — destructure `address` where you
    used the string, and surface `confirmed` next to it (`receive` in the snippet).
 8. **Keystone confirmation is allow-listed** to what its Receive menu can show — EVM and TRON
@@ -2953,8 +2953,8 @@ import type {
   TransactionController,
 } from "@qntx/wallet-engine";
 import type { QrExportParams } from "@qntx/wallet-engine/qr";
-import type { ChainAccount, ChainSignRequest, ChainsApi } from "@qntx/wallet/chains";
-import type { HardwareApi } from "@qntx/wallet/hardware";
+import type { ChainAccount, ChainSignRequest } from "@qntx/wallet/chains";
+import type { DeviceIo, HardwareApi, HardwareResult } from "@qntx/wallet/hardware";
 
 /**
  * Signer confirmation and the sealed change mark (section 35): `bitcoin.psbt` requests carry a
@@ -3017,11 +3017,13 @@ export async function receive(
 
 /** A send to a key the device never confirmed: show the danger row first, then acknowledge it. */
 export async function signUnconfirmed(
-  api: ChainsApi,
+  api: HardwareApi,
+  io: DeviceIo,
   request: ChainSignRequest,
   verify: VerifyFactor,
-): Promise<void> {
-  await api.sign({ request, verify, acknowledgeUnconfirmed: true });
+): Promise<HardwareResult> {
+  const op = api.start({ kind: "sign", request, acknowledgeUnconfirmed: true }, { io, verify });
+  return op.result;
 }
 
 /** A host-wired history account: the xpub variant reports the sealed mark and confirmation. */

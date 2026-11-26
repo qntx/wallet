@@ -92,7 +92,7 @@ export class SignersController extends Controller<SignersState> {
       if (info?.custody === "hardware") {
         return this.deviceSign(info, params.request, params.verify, params.acknowledgeUnconfirmed);
       }
-      return chains(this.options.wallet).sign(params);
+      return chains(this.options.wallet).sign({ request: params.request, verify: params.verify });
     },
   };
 

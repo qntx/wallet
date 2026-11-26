@@ -241,11 +241,6 @@ export type ChainSignResult =
 export type ChainSignParams = {
   readonly request: ChainSignRequest;
   readonly verify: VerifyFactor;
-  /**
-   * Acknowledge sending to a key a device never confirmed on-screen — the prompt shows a danger row
-   * for the output. Absent, such a send refuses with `approval-required`.
-   */
-  readonly acknowledgeUnconfirmed?: true;
 };
 
 const accountRef: Validator<AccountRef> = union(
@@ -495,7 +490,6 @@ export const CHAINS_METHODS: {
     params: obj({
       request: signRequest,
       verify: verifier,
-      acknowledgeUnconfirmed: opt(literal(true)),
     }),
     result: signResult,
   },

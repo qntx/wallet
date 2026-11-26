@@ -7,7 +7,7 @@ import type { Wallet } from "@qntx/wallet";
 import { ChainError } from "@qntx/wallet-chains";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import type { decodeEvm } from "@qntx/wallet-chains/evm";
-import type { chains } from "@qntx/wallet/chains";
+import type { chains, ChainsApi } from "@qntx/wallet/chains";
 
 import type { EvmFeeTier } from "../chains/evm.ts";
 import type { SolanaFeeTier } from "../chains/solana.ts";
@@ -24,7 +24,14 @@ import type { EngineStore } from "../store/port.ts";
 import type { AcrossBridgeQuote } from "../swaps/bridge.ts";
 import type { JupiterSwapQuote, ZeroExSwapQuote } from "../swaps/index.ts";
 
-export type ChainApis = ReturnType<typeof chains>;
+/* The engine's sign widens the wallet API with the hardware acknowledgement: routes pass it once
+   the `bitcoin-unconfirmed-output` danger finding was acknowledged at approve. Software wallets
+   and the card path ignore it — their material is always confirmed. */
+export type ChainApis = Omit<ReturnType<typeof chains>, "sign"> & {
+  readonly sign: (
+    params: Parameters<ChainsApi["sign"]>[0] & { readonly acknowledgeUnconfirmed?: true },
+  ) => ReturnType<ChainsApi["sign"]>;
+};
 export type SignParams = Parameters<ChainApis["sign"]>[0];
 export type SignResult = Awaited<ReturnType<ChainApis["sign"]>>;
 export type AccountRef = Exclude<SignParams["request"], { kind: "bitcoin.psbt" }>["account"];

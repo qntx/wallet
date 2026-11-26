@@ -395,7 +395,7 @@ export const prepareDappPsbts = async (
            "your own address"; the kernel prompt shows it as a send with the danger warning and
            demands the same acknowledgement export-account does. The derivation bound above
            stays: the kernel needs it to raise that warning. */
-        if (!derives.get(found.template)?.confirmed) {
+        if (derives.get(found.template)?.confirmed !== true) {
           unconfirmed.add(hex.encode(output.script));
         } else if (isDiscoverableChange(found.tail, signedTails, markOf(found.tail.purpose))) {
           change.add(hex.encode(output.script));

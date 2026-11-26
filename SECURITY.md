@@ -245,7 +245,7 @@ Summary, per platform — details in the sections below:
   worded as an own-address send and never raises the change mark: the
   prompt shows it as an ordinary send with a danger row
   (`bitcoinOwn` in `packages/wallet-kernel/src/modules/chains/bitcoin.ts`),
-  and `chain.sign` / `hardware.begin` `sign` refuse `approval-required`
+  and the `hardware.begin` `sign` operation refuses `approval-required`
   before any prompt unless the caller passes `acknowledgeUnconfirmed`
   (`prepareApproval` in `packages/wallet-kernel/src/modules/chains/index.ts`).
   The engine's dApp, QR and own-send previews apply the same rule and
@@ -477,8 +477,8 @@ and publish. The response to a compromised release is in
   (`confirmed` per account), `TransactionsController.nextReceiveAddress`
   (`{ address, confirmed }`), `chain.exportAccount` and `QrExportParams`
   (`acknowledgeUnconfirmed`), Bitcoin signing (the danger row, the
-  `bitcoin-unconfirmed-output` finding and `acknowledgeUnconfirmed` on
-  `chain.sign`/`hardware.begin`) and Bitcoin history. It is **not** carried
+  `bitcoin-unconfirmed-output` finding and `acknowledgeUnconfirmed` on the
+  `hardware.begin` `sign` operation) and Bitcoin history. It is **not** carried
   by the engine's account tree, asset balances or the accounts a host
   grants to a dApp or WalletConnect session — the host picks those. Show
   an "unconfirmed — verify on the device" state wherever the host presents

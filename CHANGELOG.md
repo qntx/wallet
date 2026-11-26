@@ -1176,9 +1176,9 @@ Gateway (operators):
   engine's `QrExportParams` / `SignStartParams`) refuse unconfirmed material with
   `approval-required` unless `acknowledgeUnconfirmed: true` is passed, which adds one danger row
   per unconfirmed node to the approval prompt. A Bitcoin output on an unconfirmed entry is never
-  your own address: the prompt shows it as an ordinary send with a danger row, and `chain.sign`,
-  `ChainsApi.sign` and the `hardware.begin` `sign` operation refuse it with `approval-required`
-  unless `acknowledgeUnconfirmed: true` is passed — the engine passes it once the
+  your own address: the prompt shows it as an ordinary send with a danger row, and the
+  `hardware.begin` `sign` operation refuses it with `approval-required` unless
+  `acknowledgeUnconfirmed: true` is passed — the engine's signing path passes it once the
   `bitcoin-unconfirmed-output` danger finding was acknowledged at `approve`. Bitcoin history reads
   a transfer to an unconfirmed account as a send, never `self`; a host-wired
   `HistoryControllerOptions.chains.account` answers the xpub variant with `changeMark` and

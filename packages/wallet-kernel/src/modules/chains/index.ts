@@ -488,8 +488,9 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   // The key source opens twice: `prepare` checks ownership, normalizes, decodes and plans — the
   // secret and every node are wiped before the (possibly long) system verification prompt; the
   // sign pass re-opens it and executes the prepared plan unchanged.
+  // hd entropy and imported material are always confirmed — the gate only fails safe here.
   const prepared = await openKeys(async (keys) =>
-    prepareApproval(ctx, request, keys.material, dek, params.acknowledgeUnconfirmed === true),
+    prepareApproval(ctx, request, keys.material, dek, false),
   );
   await verifyFactor(
     ctx,
