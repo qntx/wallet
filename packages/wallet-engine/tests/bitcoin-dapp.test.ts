@@ -6,12 +6,13 @@ import { describe, expect, it } from "vite-plus/test";
 import type { BitcoinTemplate } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
-import type { ChainAccount, ChainsApi } from "@qntx/wallet/chains";
+import type { ChainAccount } from "@qntx/wallet/chains";
 
 import { prepareDappPsbts, signDappPsbts } from "../src/chains/bitcoin-dapp.ts";
 import type { Esplora } from "../src/chains/bitcoin.ts";
 import { assessWarnings } from "../src/requests/risk.ts";
 import type { BitcoinPsbtInput } from "../src/requests/types.ts";
+import type { ChainApis } from "../src/transactions/route.ts";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -273,6 +274,54 @@ describe("prepareDappPsbts", () => {
     },
   );
 
+  it(
+    "a signed change input never raises the dApp preview's own mark",
+    { timeout: 20_000 },
+    async () => {
+      const { es } = rig();
+      /* The PSBT spends own change /1/25 (inside mark-10's reach) and binds a derivation
+         claiming an output to the wallet's own /1/45 — a real own address the preview must
+         show, not hide: under the external origin the signed input proves nothing about the
+         wallet's own scan reach. */
+      const deep = nodeOf("btc.bip84", 1, 45);
+      const change45 = p2wpkh(deep.publicKey!, NETWORK).script;
+      const tx = Transaction.fromPSBT(
+        dappPsbt(
+          [{ script: scriptOf("btc.bip84", 1, 25), amount: 100_000n }],
+          [
+            { script: PAYEE_SCRIPT, amount: 90_000n },
+            { script: change45, amount: 9000n },
+          ],
+        ),
+      );
+      tx.updateOutput(1, {
+        bip32Derivation: [
+          [
+            deep.publicKey!,
+            {
+              fingerprint: master.fingerprint,
+              path: [0x80000054, 0x80000000, 0x80000000, 1, 45],
+            },
+          ],
+        ],
+      });
+      const [prepared] = await prepareDappPsbts(
+        apisWithMark(10),
+        es,
+        GROUP,
+        MAINNET,
+        [{ psbt: tx.toPSBT(0), sign: [signEntry(0, "btc.bip84")] }],
+        new Set<string>(),
+      );
+      const hex45 = Buffer.from(change45).toString("hex");
+      // Mark 10 bounds discoverable change at index 30 — /1/45 stays a shown own-path outflow.
+      expect(prepared!.own.change.has(hex45)).toBe(false);
+      expect(prepared!.own.unusual.get(hex45)).toBe("m/84'/0'/0'/1/45");
+      // The request the kernel signs carries the external origin — a dApp spends, never marks.
+      expect(prepared!.request.origin).toBe("external");
+    },
+  );
+
   it("rejects a witnessUtxo that lies about the chain prevout", { timeout: 20_000 }, async () => {
     const { es, apis } = rig();
     const psbt = dappPsbt(
@@ -348,7 +397,7 @@ describe("prepareDappPsbts", () => {
   );
 });
 
-const signPsbt: ChainsApi["sign"] = async ({ request }) => {
+const signPsbt: ChainApis["sign"] = async ({ request }) => {
   if (request.kind !== "bitcoin.psbt") {
     throw new Error("unexpected kind");
   }
@@ -380,7 +429,7 @@ describe("signDappPsbts", () => {
       new Set<string>(),
     );
     const posted: string[] = [];
-    const signing: Pick<ChainsApi, "sign"> = { sign: signPsbt };
+    const signing: Pick<ChainApis, "sign"> = { sign: signPsbt };
     await expect(
       signDappPsbts(
         signing,
@@ -457,8 +506,8 @@ describe("an unconfirmed template's outputs are never own", () => {
         { code: "bitcoin-unconfirmed-output", level: "danger" },
       ]);
 
-      const seen: Array<Parameters<ChainsApi["sign"]>[0]> = [];
-      const signing: Pick<ChainsApi, "sign"> = {
+      const seen: Array<Parameters<ChainApis["sign"]>[0]> = [];
+      const signing: Pick<ChainApis, "sign"> = {
         sign: async (params) => {
           seen.push(params);
           return signPsbt(params);
@@ -497,8 +546,8 @@ describe("an unconfirmed template's outputs are never own", () => {
         new Set<string>(),
       );
       expect(prepared!.own.unconfirmed.size).toBe(0);
-      const seen: Array<Parameters<ChainsApi["sign"]>[0]> = [];
-      const signing: Pick<ChainsApi, "sign"> = {
+      const seen: Array<Parameters<ChainApis["sign"]>[0]> = [];
+      const signing: Pick<ChainApis, "sign"> = {
         sign: async (params) => {
           seen.push(params);
           return signPsbt(params);

@@ -572,6 +572,8 @@ export function startKernel(
       // session itself; anything else the runtime can call at will — session.touch, a signing
       // session — must not hold the vault open. The session may have locked inside the handler
       // (timeout, invalidation): touch() is a no-op then.
+      /* `idle.activity` is always one of the two values, and `idle` absent arms no deadline —
+         a looser first clause could only differ where touch() has nothing to re-arm. */
       if (
         ctx.session.unlocked &&
         (platform.policy.idle?.activity === "request" ||

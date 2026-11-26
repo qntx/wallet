@@ -165,10 +165,8 @@ const walletAccounts = async (
   const key = `${String(params.groupIndex)}/${params.template}/${params.network}`;
   const known = cache.get(record)?.get(key);
   if (known !== undefined) {
-    /* The cache freezes only the public account — the mark and the confirmation flag are read
-       fresh on every call. A commit that raises either would replace the record and miss the
-       cache anyway, but computing the flag from the live pin keeps the reasoning local to this
-       line instead of the commit path's. */
+    /* A commit that could raise the mark or flip the flag reloads the image with re-cloned
+       records and misses the cache — a `known` hit means nothing changed since the freeze. */
     const confirmed =
       record.kind === "entropy"
         ? true

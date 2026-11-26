@@ -166,6 +166,25 @@ describe("change-mark reach scanning", () => {
     expect(change).toHaveLength(40);
     expect(change.find((a) => a.index === 5)?.used).toBe(true);
   });
+
+  it("scanSourceWithHistory reaches past the source's own change mark", async () => {
+    /* A mark of 100 means the wallet may have hidden change up to index 120 — dropping the
+       reach to the default 20 would scan past none of it. */
+    const txs: Record<string, unknown[]> = {};
+    const change118 = p2wpkh(ACCOUNT.deriveChild(1).deriveChild(118).publicKey!, NETWORK).address;
+    txs[hashOf(change118)] = [{ txid: "x" }];
+    const scanned = await scanSourceWithHistory(
+      esplora(txs),
+      { kind: "xpub", template: "btc.bip84", xpub, changeMark: 100 },
+      "bip122:000000000019d6689c085ae165831e93",
+      NETWORK,
+    );
+    const change = scanned.filter((a) => a.chain === 1);
+    // Reach 120 covers index 118 in the tail; the hit re-arms gap-20 and the window ends at 140.
+    expect(change).toHaveLength(140);
+    expect(change.find((a) => a.index === 118)?.used).toBe(true);
+    expect(change[139]?.index).toBe(139);
+  });
 });
 
 const realTimerDeps: EsploraDeps = {

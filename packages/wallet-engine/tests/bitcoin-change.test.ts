@@ -127,6 +127,25 @@ describe("a send whose first unused change index lies past the scan's reach", ()
     expect(intent?.outflows.every((o) => o.ownPath === undefined)).toBe(true);
     expect(intent?.warnings.every((w) => w.kind !== "unusual-own-output")).toBe(true);
   });
+
+  it("reaches an own change coin past the bare gap window when the mark proves it", async () => {
+    /* Mark 100: the wallet's own change may sit anywhere under index 120 — a spend must scan
+       to that reach, not to the default gap window a mark-0 account would need. */
+    const w = world({ changeMark: 100 });
+    const deep = w.fundChange(118, 7, 50_000);
+    const booted = await w.boot();
+    const tx = await w.send(booted, 10_000n, "req-1");
+    expect(tx.state).not.toBe("failed");
+    // The signed PSBT spends the deep change coin — and carries its change-1 derivation.
+    const psbt = Transaction.fromPSBT(psbtOf(w.signedCalls));
+    const inputTxid = Array.from({ length: psbt.inputsLength }, (_, i) =>
+      Buffer.from(psbt.getInput(i).txid as Uint8Array).toString("hex"),
+    );
+    expect(inputTxid).toContain(deep.txid);
+    const tail = changeTailOf(psbt);
+    expect(tail.change).toBe(1);
+    expect(tail.index).toBeLessThanOrEqual(138);
+  });
 });
 
 describe("a send whose serving entry was never confirmed on the device", () => {

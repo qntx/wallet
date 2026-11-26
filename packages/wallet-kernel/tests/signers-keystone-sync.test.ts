@@ -478,6 +478,24 @@ describe("the keystone driver", () => {
       ),
     ).rejects.toThrow(KernelError);
   });
+
+  /* The device shows a solana sub-account path only for groups 0–49 — group 50 is outside its
+     Receive menu, so the host refuses before the compare exchange. */
+  it("verifyAddress shows a solana leaf up to group 49 only", async () => {
+    const pin = { fingerprint: MFP, nodes: [], ed25519: [] };
+    const target = (group: number) => ({
+      path: [44 + HARDENED, 501 + HARDENED, group + HARDENED, HARDENED],
+      address: "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV",
+      template: "solana.bip44-change" as const,
+      network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    });
+    const { link } = stubLink({ kind: "compare", matched: true });
+    await expect(KEYSTONE_DRIVER.verifyAddress(link, target(49), pin)).resolves.toStrictEqual({
+      method: "compare",
+      matched: true,
+    });
+    await expect(KEYSTONE_DRIVER.verifyAddress(link, target(50), pin)).rejects.toThrow(KernelError);
+  });
 });
 
 describe("pairing a kernel end to end", () => {

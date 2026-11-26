@@ -31,6 +31,7 @@ import type { Harness, KernelResponse } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
 import type { KeystoreCall } from "./keystore.ts";
 import { fakeDevice, masterFingerprint } from "./signers-fake.ts";
+import type { FakeDeviceOptions } from "./signers-fake.ts";
 import {
   hex,
   ok as okHex,
@@ -48,6 +49,7 @@ const MFP = masterFingerprint(SEED);
 const MFP_NUMBER = new DataView(MFP.buffer, MFP.byteOffset, MFP.byteLength).getUint32(0);
 const BTC_NETWORK = "bip122:000000000019d6689c085ae165831e93";
 const EVM_NETWORK = "eip155:1";
+const SOLANA_NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
@@ -322,6 +324,40 @@ describe("hardware.begin — verification-gated fetches and unconfirmed merges",
     expect(presencePrompts(fk.calls)).toHaveLength(promptsBeforePresented + 1);
   });
 
+  it("a solana-only gap needs the factor too — ed25519 needs are approval-gated", async () => {
+    /* The device pins no ed25519 keys: a solana-only accounts op must hit the same approval
+       gate a secp256k1 gap does — without a factor nothing begins and no exchange is staged. */
+    const { fk, device, h, session } = await bootFake({ ed25519: [] });
+    const paired = await runOp(
+      h,
+      session,
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "keystone" }, verify: VERIFY },
+        session,
+      ),
+      [],
+    );
+    const hwId = strField(field(paired, "wallet"), "walletId");
+    device.requests.length = 0;
+    const solanaOp = {
+      kind: "accounts" as const,
+      walletId: hwId,
+      groupIndex: 0,
+      templates: ["solana.bip44-change"],
+      network: SOLANA_NETWORK,
+    };
+    expect(errCode(await h.call("hardware.begin", { op: solanaOp }, session))).toBe(
+      "approval-required",
+    );
+    expect(device.requests).toHaveLength(0);
+    // With the factor the op begins and asks the device for exactly the ed25519 leaf.
+    const promptsBefore = presencePrompts(fk.calls).length;
+    await h.call("hardware.begin", { op: solanaOp, verify: VERIFY }, session);
+    expect(presencePrompts(fk.calls)).toHaveLength(promptsBefore + 1);
+    expect(device.gaps).toContainEqual({ secp256k1: [], ed25519: [[H + 44, H + 501, H, H]] });
+  });
+
   it("exporting an unconfirmed node needs the acknowledgement and shows a danger row", async () => {
     const { fk, h, session } = await ledgerHarness();
     const paired = await runOp(
@@ -445,9 +481,9 @@ describe("hardware.begin — verification-gated fetches and unconfirmed merges",
 });
 
 /** Keystore harness + the seed-backed fake device as every slot's driver. */
-const bootFake = async () => {
+const bootFake = async (opts?: FakeDeviceOptions) => {
   const fk = fakeKeystore();
-  const device = fakeDevice(SEED);
+  const device = fakeDevice(SEED, opts);
   const h = createHarness({
     keystore: fk.keystore,
     drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER },
@@ -527,6 +563,57 @@ describe("a matched verify-address seals the serving entry confirmed", () => {
     expect(
       boolField(await chainAccount(h, session2, hwId, 0, "btc.bip84", BTC_NETWORK), "confirmed"),
     ).toBe(false);
+  });
+
+  it("confirms the ed25519 serving entry of a solana leaf", async () => {
+    const { device, h, session } = await bootFake();
+    const paired = await runOp(
+      h,
+      session,
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "keystone" }, verify: VERIFY },
+        session,
+      ),
+      [],
+    );
+    const hwId = strField(field(paired, "wallet"), "walletId");
+    expect(
+      boolField(
+        await chainAccount(h, session, hwId, 0, "solana.bip44-change", SOLANA_NETWORK),
+        "confirmed",
+      ),
+    ).toBe(false);
+
+    const verified = await runOp(
+      h,
+      session,
+      await h.call(
+        "hardware.begin",
+        {
+          op: {
+            kind: "verify-address",
+            walletId: hwId,
+            groupIndex: 0,
+            template: "solana.bip44-change",
+            network: SOLANA_NETWORK,
+          },
+        },
+        session,
+      ),
+      ["matched"],
+    );
+    expect(strField(verified, "method")).toBe("compare");
+    expect(device.targets.at(-1)?.path).toBe("m/44'/501'/0'/0'");
+    /* The serving entry is the pinned ed25519 leaf itself — sealing it confirms the account.
+       A secp256k1 serving lookup finds no ancestor under an all-hardened path and would leave
+       the flag unset. */
+    expect(
+      boolField(
+        await chainAccount(h, session, hwId, 0, "solana.bip44-change", SOLANA_NETWORK),
+        "confirmed",
+      ),
+    ).toBe(true);
   });
 });
 

@@ -85,6 +85,8 @@ const esploraStub = {
 };
 
 const signedCalls: SignParams[] = [];
+/** What the account mock reports as `confirmed` — a device entry never confirmed reports false. */
+let accountConfirmed = true;
 let route = createBitcoinRoute();
 let independentMode:
   | { kind: "not-needed" }
@@ -129,7 +131,7 @@ const ctx = (transitions: TrackedTransaction[] = []): RouteContext => ({
           fingerprint: "00000000",
           path: "m/84'/0'/0'",
           changeMark: 0,
-          confirmed: true,
+          confirmed: accountConfirmed,
         }),
       sign: async (p: SignParams) => {
         signedCalls.push(p);
@@ -193,6 +195,7 @@ const send = async (c: RouteContext, amount = 10_000n): Promise<TrackedTransacti
 describe("bitcoin rbf", () => {
   beforeEach(() => {
     independentMode = { kind: "not-needed" };
+    accountConfirmed = true;
     route = createBitcoinRoute();
   });
 
@@ -259,6 +262,29 @@ describe("bitcoin rbf", () => {
     expect(payees.length).toBeGreaterThan(0);
     const before = btcOf(original);
     expect(btcOf(bumped).fee).toBeGreaterThanOrEqual(before.fee + before.vsize);
+  });
+
+  it("a speed-up and a CPFP from an unconfirmed entry acknowledge the danger on sign", async () => {
+    /* The replacement's own change sits on a serving entry the device never confirmed — the
+       intent decodes it as a plain send with the danger warning and the sign call carries the
+       acknowledgement the kernel demands. */
+    accountConfirmed = false;
+    const c = ctx();
+    const original = await send(c);
+    const bumped = await routeReplace(route, c, original, "speed-up", {
+      kind: "password",
+      password: "pw",
+    });
+    expect(signedCalls.at(-1)?.acknowledgeUnconfirmed).toBe(true);
+    expect(bumped.intent?.warnings.some((w) => w.kind === "unconfirmed-signer-output")).toBe(true);
+    expect(bumped.intent?.outflows.every((o) => o.ownPath === undefined)).toBe(true);
+
+    const child = await routeCpfp(route, c, original, 10, {
+      kind: "password",
+      password: "pw",
+    });
+    expect(signedCalls.at(-1)?.acknowledgeUnconfirmed).toBe(true);
+    expect(child.intent?.warnings.some((w) => w.kind === "unconfirmed-signer-output")).toBe(true);
   });
 
   it("bumpChild builds a CPFP child spending our own outputs", async () => {

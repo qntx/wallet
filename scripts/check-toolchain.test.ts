@@ -212,6 +212,23 @@ describe("checkWorkflow tool bins", () => {
     expect(errors[0]).toContain("undeclared-pkg");
   });
 
+  it("checks a --package=-named package as a declaration too", () => {
+    expect(
+      checkWorkflow(
+        ".github/workflows/ci.yml",
+        stepsJob(`      - run: npx --package=vite-plus vp test\n`),
+        index,
+      ),
+    ).toStrictEqual([]);
+    const errors = checkWorkflow(
+      ".github/workflows/ci.yml",
+      stepsJob(`      - run: npx --package=undeclared-pkg run-it\n`),
+      index,
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("undeclared-pkg");
+  });
+
   it("checks composite action runs.steps", () => {
     const errors = checkWorkflow(
       ".github/actions/setup/action.yml",

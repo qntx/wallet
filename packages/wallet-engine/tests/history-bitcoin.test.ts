@@ -18,6 +18,8 @@ import type { Esplora } from "../src/chains/bitcoin.ts";
 import { esploraPathAllowed } from "../src/gateway/contract/esplora.ts";
 import { bitcoinEntry, bitcoinHistoryScan } from "../src/history/bitcoin.ts";
 import type { EsploraTx } from "../src/history/bitcoin.ts";
+import { localEntry } from "../src/history/local.ts";
+import type { TrackedTransaction } from "../src/transactions/route.ts";
 
 const fixture = JSON.parse(
   readFileSync(resolve(import.meta.dirname, "fixtures/history/esplora.json"), "utf8"),
@@ -115,7 +117,7 @@ const addressOf = (template: BitcoinAccountTemplate, chain: 0 | 1, index: number
 
 const accountFor =
   (confirmed: (template: BitcoinAccountTemplate) => boolean): ChainsApi["account"] =>
-  (params) => {
+  async (params) => {
     const t = params.template;
     if (t === "btc.bip44" || t === "btc.bip49" || t === "btc.bip84" || t === "btc.bip86") {
       return Promise.resolve({
@@ -261,7 +263,7 @@ describe("an unconfirmed template's addresses form their own party", () => {
       [{ address: OWN84, value: 60_000 }],
       [
         { address: FOREIGN44, value: 50_000 },
-        { address: CHANGE84, value: 9_500 },
+        { address: CHANGE84, value: 9500 },
       ],
     );
     const { entries, parties } = await scanWith(
@@ -315,5 +317,61 @@ describe("esplora contract", () => {
     expect(esploraPathAllowed("GET", `/scripthash/${h}/txs`)).toBe(true);
     expect(esploraPathAllowed("GET", `/scripthash/${h}/txs/chain/xyz`)).toBe(false);
     expect(esploraPathAllowed("GET", `/scripthash/${h}/txs/chain/${h}/extra`)).toBe(false);
+  });
+});
+
+/* The tracked-send mirror of the party split: counterparties are read only inside the party the
+   send's inputs sit in — an address another party owns is never dropped as "self". */
+describe("localEntry parties", () => {
+  const OWN84 = addressOf("btc.bip84", 0, 0);
+  const FOREIGN44 = addressOf("btc.bip44", 1, 0);
+  const EXTERNAL = "bc1qexternal000000000000000000000000000";
+  const own = { bitcoin: [new Set([OWN84]), new Set([FOREIGN44])] };
+
+  const send = (inputs: string[], to: string): TrackedTransaction => ({
+    id: "tx-1",
+    family: "bitcoin",
+    network: BTC_NET,
+    account: GROUP.walletId,
+    hash: "aa".repeat(32),
+    state: "submitted",
+    intent: {
+      family: "bitcoin",
+      network: BTC_NET,
+      summary: "transfer",
+      outflows: [{ to, amount: { asset: "sats", amount: "50000" }, verified: true }],
+      approvals: [],
+      fee: undefined,
+      warnings: [],
+      verifiability: "full",
+    },
+    nonce: 0,
+    btc: {
+      inputs: inputs.map((address, i) => ({
+        txid: `${"bb".repeat(31)}0${i}`,
+        vout: 0,
+        value: 60000,
+        address,
+      })),
+      outputs: [{ address: to, value: 50000, own: false }],
+      vsize: 140,
+      fee: 500,
+      feeRate: 1,
+      template: "btc.bip84",
+      groupIndex: 0,
+      tier: "normal",
+    },
+    submittedAt: 1700000100,
+    error: undefined,
+  });
+
+  it("a send to another party's address lists it as the counterparty", () => {
+    const entry = localEntry(send([OWN84], FOREIGN44), GROUP, own);
+    expect(entry?.counterparties).toStrictEqual([FOREIGN44]);
+  });
+
+  it("a send spending across parties still belongs and keeps the external counterparty", () => {
+    const entry = localEntry(send([OWN84, FOREIGN44], EXTERNAL), GROUP, own);
+    expect(entry?.counterparties).toStrictEqual([EXTERNAL]);
   });
 });

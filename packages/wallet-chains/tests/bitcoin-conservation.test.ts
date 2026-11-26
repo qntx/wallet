@@ -146,7 +146,11 @@ describe("decodeBitcoinPsbt conservation", () => {
           // dedicated invalid-request test below.
           fc.pre(outSum <= inSum);
           const psbt = psbtOf(inputs, outputs);
-          const own = { change: new Set([hex(ownScript)]), unusual: new Map() };
+          const own = {
+            change: new Set([hex(ownScript)]),
+            unconfirmed: new Set<string>(),
+            unusual: new Map(),
+          };
           const intent = decodeBitcoinPsbt(request(psbt, inputs.length), own);
           // Every non-change output is an outflow except a zero-value unspendable one, which moves
           // nothing; a burn is exactly an unspendable output with value.
@@ -183,6 +187,7 @@ describe("decodeBitcoinPsbt conservation", () => {
       );
       return decodeBitcoinPsbt(request(psbt, 1), {
         change: new Set([hex(ownScript)]),
+        unconfirmed: new Set<string>(),
         unusual: new Map(),
       });
     };

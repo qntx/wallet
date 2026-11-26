@@ -161,6 +161,8 @@ const neededPaths = async (
   network: string,
   groupIndex: number,
 ): Promise<{ secp256k1: KeyPath[]; ed25519: KeyPath[] }> => {
+  /* The probe below serves keys only — `confirmed` feeds the confirmed() query this material
+     never gets, so the empty list is an inert argument, not a claim. */
   const material = materialOf(pin, []);
   const need: { secp256k1: KeyPath[]; ed25519: KeyPath[] } = { secp256k1: [], ed25519: [] };
   const purpose = BTC_PURPOSE[template];
@@ -191,6 +193,8 @@ const neededPaths = async (
   return need;
 };
 
+/* Dedupe leaves every pinned path unique and serving resolves by deepest prefix — node order
+   never escapes the record, so appending fetched keys is a convention, not a rule. */
 /** Merges freshly fetched pinned keys into the pin, deduplicating by path. */
 const mergePin = (pin: HardwarePin, fetched: PinnedKeys): HardwarePin => ({
   fingerprint: pin.fingerprint,

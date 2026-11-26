@@ -19,6 +19,7 @@ import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import {
   CHANGE_MARKS_KIND,
+  commitChangeMarks,
   encodeChangeMarksHeader,
   marksHooks,
   parseChangeMarksHeader,
@@ -89,8 +90,8 @@ const MASTER_FP = 0x73c5da0a;
 const HARDENED = 0x80000000;
 
 const seed = mnemonicToSeedSync(vectors.mnemonic);
-const childOf = (purpose: number, change: number, index: number): HDKey =>
-  HDKey.fromMasterSeed(seed).derive(`m/${purpose}'/0'/0'/${change}/${index}`);
+const childOf = (purpose: number, change: number, index: number, coin = 0): HDKey =>
+  HDKey.fromMasterSeed(seed).derive(`m/${purpose}'/${coin}'/0'/${change}/${index}`);
 const scriptFor = (purpose: number, pub: Uint8Array): Uint8Array =>
   purpose === 86
     ? p2tr(pub.slice(1)).script
@@ -132,15 +133,16 @@ const ownPsbt = (
     readonly change: number;
     readonly index: number;
   }>,
+  coin = 0,
 ): Uint8Array => {
   const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
   for (const [i, spec] of inputs.entries()) {
     const purpose = PURPOSE_T[spec.template] ?? 84;
     const change = spec.change ?? 0;
     const index = spec.index ?? 0;
-    const pub = childOf(purpose, change, index).publicKey!;
+    const pub = childOf(purpose, change, index, coin).publicKey!;
     const script = scriptFor(purpose, pub);
-    const path = [purpose + HARDENED, HARDENED, HARDENED, change, index];
+    const path = [purpose + HARDENED, coin + HARDENED, HARDENED, change, index];
     const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
     prev.addInput({
       txid: hex((i + 16).toString(16).padStart(4, "0").repeat(16)),
@@ -177,8 +179,8 @@ const ownPsbt = (
   }
   tx.addOutput({ script: PAYEE_SCRIPT, amount: 90_000n });
   for (const spec of outputs) {
-    const pub = childOf(spec.purpose, spec.change, spec.index).publicKey!;
-    const path = [spec.purpose + HARDENED, HARDENED, HARDENED, spec.change, spec.index];
+    const pub = childOf(spec.purpose, spec.change, spec.index, coin).publicKey!;
+    const path = [spec.purpose + HARDENED, coin + HARDENED, HARDENED, spec.change, spec.index];
     tx.addOutput({ script: scriptFor(spec.purpose, pub), amount: 1000n });
     tx.updateOutput(
       tx.outputsLength - 1,
@@ -200,13 +202,14 @@ const psbtRequest = (
   inputs: Parameters<typeof ownPsbt>[0],
   outputs: Parameters<typeof ownPsbt>[1],
   groupIndex = 0,
+  network: string = BTC_NETWORK,
 ): SignRequest =>
   normalizeBitcoin({
     kind: "bitcoin.psbt",
     origin,
-    network: BTC_NETWORK,
+    network,
     account: { kind: "hd", walletId, groupIndex },
-    psbt: ownPsbt(inputs, outputs),
+    psbt: ownPsbt(inputs, outputs, network === TESTNET ? 1 : 0),
     sign: inputs.map((input, index) => ({ index, template: input.template })),
   });
 
@@ -333,6 +336,19 @@ describe("change-marks record vectors", () => {
       expect(kernelError(() => parseChangeMarksHeader(entry.text))).toBe("integrity");
     },
   );
+
+  it("rejects two marks keyed by the same group, purpose and network", () => {
+    /* A duplicate key is not strict order — the canonical-order check must read it as a break,
+       not let a first-write win under whichever entry sort placed earlier. */
+    const header = encodeChangeMarksHeader({
+      walletId: vector.walletId,
+      marks: [
+        { groupIndex: 0, purpose: 84, network: BTC_NETWORK, index: 5 },
+        { groupIndex: 0, purpose: 84, network: BTC_NETWORK, index: 9 },
+      ],
+    });
+    expect(kernelError(() => parseChangeMarksHeader(header))).toBe("integrity");
+  });
 });
 
 describe("change-marks record hooks", () => {
@@ -482,7 +498,7 @@ describe("change marks lifecycle", () => {
     const session = strField(res, "session");
     const walletId = strField(field(res, "wallet"), "walletId");
     await expect(accountMark(h, session, walletId)).resolves.toBe(0);
-    const signExternal = (outputs: Parameters<typeof ownPsbt>[1]) =>
+    const signExternal = async (outputs: Parameters<typeof ownPsbt>[1]) =>
       h.call(
         "chain.sign",
         {
@@ -756,5 +772,210 @@ describe("change marks lifecycle", () => {
     expect("err" in lower).toBe(false);
     expect(commits).toHaveLength(1);
     await expect(accountMark(h, session, walletId)).resolves.toBe(20);
+  });
+
+  it("a commit handed a stale raise below the stored mark writes nothing", async () => {
+    /* Two signs prepared against the same stored mark can resolve their raises out of order —
+       a late, lower raise must not overwrite the higher mark or rewrite the record at all. */
+    const { h, session, walletId } = await setup();
+    const first = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
+    );
+    expect("err" in first).toBe(false);
+    const dek = await sessionDek(h);
+    const image = await h.store.load();
+    let commits = 0;
+    try {
+      await commitChangeMarks(
+        {
+          platform: sealer,
+          image,
+          commit: async (ops) => {
+            commits += 1;
+            await h.store.commit(withManifest(sealer, image, ops, dek));
+          },
+        },
+        dek,
+        walletId,
+        0,
+        BTC_NETWORK,
+        [{ purpose: 84, index: 5 }],
+      );
+    } finally {
+      dek.wipe();
+    }
+    expect(commits).toBe(0);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(20);
+  });
+
+  it("a raise of exactly the stored index plus one still commits", async () => {
+    const { h, session, walletId } = await setup();
+    const first = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
+    );
+    expect("err" in first).toBe(false);
+    // Spending the very next change index raises the mark by exactly one — an off-by-one in the
+    // raise check would leave it at 20 and hide /1/21 change from the wallet's own scan reach.
+    const next = await sign(
+      h,
+      session,
+      psbtRequest(walletId, "internal", [{ template: "btc.bip84", change: 1, index: 21 }], []),
+    );
+    expect("err" in next).toBe(false);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(21);
+  });
+
+  it("two signed change inputs of one purpose raise the mark to the deeper index", async () => {
+    const { h, session, walletId } = await setup();
+    const signed = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [
+          { template: "btc.bip84", change: 1, index: 3 },
+          { template: "btc.bip84", change: 1, index: 7 },
+        ],
+        [],
+      ),
+    );
+    expect("err" in signed).toBe(false);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(7);
+  });
+
+  it("two hidden change outputs of one purpose raise the mark to the deeper index", async () => {
+    const { h, session, walletId } = await setup();
+    /* The hidden raise takes the max over the purpose's own change outputs in output order —
+       keeping the first instead would strand /1/15 outside the scan reach. */
+    const signed = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [
+          { purpose: 84, change: 1, index: 5 },
+          { purpose: 84, change: 1, index: 15 },
+        ],
+      ),
+    );
+    expect("err" in signed).toBe(false);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(15);
+  });
+
+  it("wallet.accounts re-reads the mark after a commit warms nothing stale", async () => {
+    /* The accounts answer spreads a cached account record and overlays the live mark and
+       confirmation flag from the image — returning the cached object unchanged would serve a
+       stale changeMark (or none) once a sign commit raised it behind the cache's back. */
+    const { h, session, walletId } = await setup();
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
+    const signed = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
+    );
+    expect("err" in signed).toBe(false);
+    const account = ok(
+      await h.call(
+        "wallet.accounts",
+        { walletId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+        session,
+      ),
+    );
+    expect(numField(account, "changeMark")).toBe(20);
+    await expect(accountMark(h, session, walletId, { network: TESTNET })).resolves.toBe(0);
+  });
+
+  it("marks never cross wallets — a second wallet's record is its own", async () => {
+    const { h, session, walletId } = await setup();
+    const signed = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
+    );
+    expect("err" in signed).toBe(false);
+    const other = ok(
+      await h.call(
+        "wallet.importMnemonic",
+        {
+          mnemonic: utf8ToBytes(
+            "legal winner thank year wave sausage worth useful legal winner thank yellow",
+          ),
+        },
+        session,
+      ),
+    );
+    const otherId = strField(field(other, "wallet"), "walletId");
+    expect(otherId).not.toBe(walletId);
+    /* Wallet B has no marks record: its mark is 0 — a lookup that ignores the record id would
+       hand B the 20 that wallet A proved. */
+    await expect(accountMark(h, session, otherId)).resolves.toBe(0);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(20);
+    await expect(marksRecord(h, otherId)).resolves.toBeUndefined();
+    const image = await h.store.load();
+    const records = image.records.filter((record) => record.kind === CHANGE_MARKS_KIND);
+    expect(records).toHaveLength(1);
+    expect(records[0]?.id).toBe(walletId);
+  });
+
+  it("a testnet request reads the stored mark under its own network", async () => {
+    const { h, session, walletId } = await setup();
+    const first = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84", change: 1, index: 20 }],
+        [],
+        0,
+        TESTNET,
+      ),
+    );
+    expect("err" in first).toBe(false);
+    await expect(accountMark(h, session, walletId, { network: TESTNET })).resolves.toBe(20);
+    /* Testnet mark 20 puts /1/25 inside the scan reach — a lookup under the wrong network would
+       read 0, show the output as an unusual own address and raise nothing. */
+    const next = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 25 }],
+        0,
+        TESTNET,
+      ),
+    );
+    expect("err" in next).toBe(false);
+    await expect(accountMark(h, session, walletId, { network: TESTNET })).resolves.toBe(25);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
   });
 });

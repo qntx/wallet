@@ -123,7 +123,7 @@ describe("stripComments", () => {
     expect(stripped).not.toContain("note");
     expect(stripped).not.toContain("'z'");
     expect(stripped).toContain('"https://x"');
-    expect(stripped).toContain("`a" + "$" + "{b}c`");
+    expect(stripped).toContain(`\`a\${b}c\``);
     expect(stripped.split("\n")).toHaveLength(4);
   });
 

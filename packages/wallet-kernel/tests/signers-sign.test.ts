@@ -703,6 +703,46 @@ describe("hardware sign byte-identical to local signing", () => {
     expect("err" in external).toBe(false);
     await expect(mark()).resolves.toBe(20);
   });
+
+  it("an output a never-confirmed entry serves needs the acknowledgement", async () => {
+    const { h, session, hwId } = await boot();
+    /* Fresh pairing — account 0 is pinned but never verified on the device, so an own-key output
+       it serves decodes as a plain send with the danger warning, and both sign paths gate on
+       acknowledgeUnconfirmed. */
+    const request = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      origin: "internal",
+      network: BTC_NETWORK,
+      account: { kind: "hd", walletId: hwId, groupIndex: 0 },
+      psbt: psbtWithChange(3),
+      sign: [{ index: 0, template: "btc.bip84" }],
+    });
+    /* External custody never opens a key source for chain.sign — it is refused device-required
+       before the approval gate; the gate itself lives on hardware.begin. */
+    expect(errCode(await h.call("chain.sign", { request, verify: PASSKEY() }, session))).toBe(
+      "device-required",
+    );
+    expect(
+      errCode(
+        await h.call(
+          "hardware.begin",
+          { op: { kind: "sign", request }, verify: PASSKEY() },
+          session,
+        ),
+      ),
+    ).toBe("approval-required");
+    const begin = ok(
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "sign", request, acknowledgeUnconfirmed: true }, verify: PASSKEY() },
+        session,
+      ),
+    );
+    const done = await stepToDone(h, session, strField(begin, "opId"), field(begin, "step"));
+    expect(bytesField(field(field(done, "result"), "result"), "signedPsbt")).toBeInstanceOf(
+      Uint8Array,
+    );
+  });
 });
 
 const HOSTILE: FakeDeviceOptions[] = [
