@@ -29,7 +29,6 @@ wallet.
 | Engine data: address book, account-group names, custom tokens, custom RPC endpoints, watch accounts, dApp connections, sign log, tracked transactions | engine IndexedDB / engine store, keyed by the vault's data key                                | Rebuilt empty (the format changed and the new vault has a new data key). Address-book entries and wallet/group names come back through `metaSync` when the host configures it; everything else is gone. |
 | Transactions in flight at upgrade time                                                                                                                | tracked transactions                                                                          | They still land on chain and appear in `engine.history`, but they can no longer be sped up, cancelled or bumped with CPFP.                                                                              |
 | Spark                                                                                                                                                 | balance held by the Spark operators; exit-chain records and payment notes in the engine store | The balance comes back with the wallet; the locally stored exit-chain records and payment notes do not.                                                                                                 |
-| Session keys (e.g. the Hyperliquid agent)                                                                                                             | vault (`session-key` records, never backed up)                                                | Lost with the vault — enable the app again.                                                                                                                                                             |
 | Blind-signing permission, app lock                                                                                                                    | engine account groups / —                                                                     | Off on the new vault.                                                                                                                                                                                   |
 
 ## 1. Vault format and data reset
@@ -2135,7 +2134,7 @@ warnings, for every origin, so an exhaustive `switch` over `RiskFinding["code"]`
 check in `checks`): an `approve` must echo those back exactly, while warning-level findings never
 require acknowledgement.
 
-## 30. Card wallets (experimental)
+## 30. Card wallets
 
 Compiled snippets: [`tests/migration/card-wallet.ts`](tests/migration/card-wallet.ts),
 [`tests/migration/secure-input.ts`](tests/migration/secure-input.ts). Changes affect every
@@ -2165,15 +2164,17 @@ The vault gains a `card-wallet` record kind; existing vault wallets are unchange
    `{ kind: "wallet", walletId }`, which moves a vault wallet onto the cards and deletes its sealed
    seed in the same commit), `transfer` (finish a pending member), `reseal` (a new code for a
    member that forgot it, from another member), `sign` and `forget-access`. `change-access`,
-   `erase`, `create`, `transfer`, `reseal` and `sign` require a `verify` factor. `remember: true`
+   `erase`, `create`, `transfer`, `reseal`, `sign` and `forget-access` require a `verify` factor;
+   `status`, `add`, `accounts` and `health` refuse one (`invalid-input`). `remember: true`
    (save the access code's hash in the vault) needs the app lock and a `hardware` factor, else
    `unsupported`.
 4. **Capabilities a card wallet lacks.** Nostr, Spark, session keys (`sessions.create`) and
    `wallets.exportMnemonic` answer `unsupported` for a card wallet. Hide them for
    `custody: "card"`.
 5. **Platforms.** Only `@qntx/wallet-native` has a card platform. Web and Node answer every
-   `card.*` call `unsupported`. Production builds pin no card certificate anchor yet, so every
-   card is `card-not-genuine` until a release ships the production anchor.
+   `card.*` call `unsupported`. **0.14.0 pins no production card certificate anchor**, so every
+   card — genuine or not — answers `card-not-genuine` until a later release ships the production
+   anchor. Ship the card UI behind a flag, or not at all, until then.
 6. **New error codes** (§14): `card-not-genuine` (the certificate does not chain to a pinned
    anchor, or the card never finished personalisation — never offer to continue), `card-id-mismatch` (another card than the step asked for;
    nothing was sent), `wrong-device` (a card of another wallet), `card-erased`, `card-locked`,
@@ -2392,9 +2393,8 @@ engine drives the same signers for its own signing paths.
    wires its transports once at `createWalletEngine`: `deviceIo: (device) => DeviceIo` resolves
    the paired device kind to the same `DeviceIo` a `hardware(wallet)` call takes
    (`withDeviceIo` — a Keystone's QR channel is the host's own `DeviceIo`, Ledger and OneKey reuse
-   the shipped `ledgerIo` / `oneKeyIo` over `HidPort` / `BlePort`). The interim
-   `EngineOptions.devices` / `DeviceTransport` per-signature callback is gone — `deviceIo` is the
-   only transport seam, and without it every hardware operation answers `unsupported` and nothing
+   the shipped `ledgerIo` / `oneKeyIo` over `HidPort` / `BlePort`). `deviceIo` is the only
+   transport seam: without it every hardware operation answers `unsupported` and nothing
    publishes an activity. Card wallets need no entry: the kernel talks to the reader itself.
 2. **`engine.signers` — one activity at a time.** `getState` / `store.subscribe` reports
    `SignersState.active`, a single `SignerActivity` (`walletId`, `custody`, `operation`
@@ -2802,19 +2802,18 @@ export function inspectDisplays(payload: QrPayload): QrInspection["displays"] {
 
 ## 34. Own-key Bitcoin outputs and prompt safety
 
-An own-key PSBT output is hidden as change only when the wallet can discover it: this group's key
-on the change chain at `i ≤ mark + BITCOIN_GAP_LIMIT` (20 — the BIP-44 address gap limit), with a
-script type at least one signed input shares, where `mark` is the sealed change mark of §35 — since
-that section the bound is the mark, not the per-PSBT `max(0, highest proven …)` value this text
-originally described. Every other own-key output is _shown_: `decodeBitcoinPsbt(request, own)` now
-takes a `BitcoinOwn` (`{ change, unusual }` — script hex sets/maps, `EMPTY_BITCOIN_OWN` when there
-is none) and reports such an output as a verified outflow whose `AssetFlow.ownPath` carries the
-`m/…` path text, plus an `unusual-own-output` `IntentWarning` (message = path) that the engine
-surfaces as the `bitcoin-unusual-output` warning finding. The engine's own change selection obeys
-the same rule: change goes on the spending template's own change chain — sends from `btc.bip44` /
-`btc.bip49` no longer migrate change to native segwit — at `min(first unused index, bound)`, where
-`bound = mark + BITCOIN_GAP_LIMIT` with the same sealed mark; an index past the bound reuses index
-`bound` rather than hiding funds.
+An own-key PSBT output is hidden as change only when the wallet can discover it: this group's key on
+the change chain at `i ≤ mark + BITCOIN_GAP_LIMIT` (20 — the BIP-44 address gap limit), with a
+script type at least one signed input shares, where `mark` is the kernel-sealed change mark of §35.
+Every other own-key output is _shown_: `decodeBitcoinPsbt(request, own)` takes a `BitcoinOwn`
+(`{ change, unusual }` — script hex sets/maps, `EMPTY_BITCOIN_OWN` when there is none) and reports
+such an output as a verified outflow whose `AssetFlow.ownPath` carries the `m/…` path text, plus an
+`unusual-own-output` `IntentWarning` (message = path) that the engine surfaces as the
+`bitcoin-unusual-output` warning finding. The engine's own change selection obeys the same rule:
+change goes on the spending template's own change chain — sends from `btc.bip44` / `btc.bip49` no
+longer migrate change to native segwit — at `min(first unused index, bound)`, where
+`bound = mark + BITCOIN_GAP_LIMIT` with the same sealed mark; an index past the bound reuses index `bound` rather
+than hiding funds.
 
 Two cross-cutting hardenings land with it. Kernel prompts render every warning/danger row first
 and detail rows after: a bounded prompt drops only detail rows (with a "N more lines" tail), and
@@ -2835,7 +2834,7 @@ presence-marked methods still count. The 24 h `maxSessionMs` is unchanged.
 ```ts
 import type { AssetFlow, IntentWarning } from "@qntx/wallet-chains";
 /**
- * Own-key Bitcoin outputs (section 33): `decodeBitcoinPsbt` takes a `BitcoinOwn` — the script hexes
+ * Own-key Bitcoin outputs (section 34): `decodeBitcoinPsbt` takes a `BitcoinOwn` — the script hexes
  * of the group's own outputs split into discoverable `change` and `unusual` — and reports an
  * unusual own output as a verified outflow with `AssetFlow.ownPath` plus an `unusual-own-output`
  * `IntentWarning`, which the engine surfaces as `bitcoin-unusual-output`. `BITCOIN_GAP_LIMIT` (20)
@@ -2902,23 +2901,17 @@ changes:
    only after showing that state; never silently.
 6. **`nextReceiveAddress` returns `{ address, confirmed }`** — destructure `address` where you
    used the string, and surface `confirmed` next to it (`receive` in the snippet).
-7. **Hardware record bodies changed format** (`{ nodes, ed25519 }` → `{ nodes, ed25519,
-   confirmed }`). Following the earlier unreleased record-body precedent there is no format
-   bump: hardware wallets paired by an earlier unreleased build must be re-paired after
-   `vault.reset`.
-8. **Keystone confirmation is allow-listed** to what its Receive menu can show — EVM, TRON and
+7. **Keystone confirmation is allow-listed** to what its Receive menu can show — EVM, TRON and
    Solana bip44-style accounts, and BTC mainnet account-0 receive addresses. `verify-address`
    for BTC testnet/signet or BTC group > 0 answers `unsupported` before any exchange: those
    entries can never be confirmed on a Keystone.
-9. **Native idle lock is verification-armed.** On keystore hosts (React Native, Node with a
+8. **Native idle lock is verification-armed.** On keystore hosts (React Native, Node with a
    keystore) only a successful factor verification re-arms the 15-minute deadline —
    `session.touch` and other presence-marked methods no longer do. On the Web they still count.
    The absolute caps are unchanged (24 h native, 12 h Web/Node).
-10. **Hyperliquid approvals name markets by `#id`.** The kernel keeps no trusted id→name map;
-    the approval prompt shows the numeric asset id. Show the id next to the market name your UI
-    renders — the id is what the user can check.
-11. **Bun is pinned via `packageManager`** (`bun@1.4.4`) — CI and local runs use the pinned
-    toolchain; mismatched Bun versions are refused.
+9. **Hyperliquid approvals name markets by `#id`.** The kernel keeps no trusted id→name map;
+   the approval prompt shows the numeric asset id. Show the id next to the market name your UI
+   renders — the id is what the user can check.
 
 [`tests/migration/signer-confirmation.ts`](tests/migration/signer-confirmation.ts):
 
