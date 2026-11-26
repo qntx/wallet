@@ -350,6 +350,7 @@ export type HardwareOperation = {
 } | {
     readonly kind: "sign";
     readonly request: ChainSignRequest;
+    readonly acknowledgeUnconfirmed?: true;
 } | {
     readonly kind: "verify-address";
     readonly walletId: string;
