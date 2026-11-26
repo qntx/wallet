@@ -61,6 +61,8 @@ jobs:
             exit 1
           fi
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
       - name: Require the tag to be every published package's version
         run: bun scripts/check-version.ts --release-tag "$GITHUB_REF_NAME"
 
@@ -80,6 +82,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - run: bunx vp run "@qntx/${{ matrix.package }}#build"
       - name: Check the package contents (publint, attw, dist deps)

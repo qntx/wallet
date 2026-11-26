@@ -4,10 +4,11 @@ import { Address, OutScript, Transaction } from "@scure/btc-signer";
 
 import { ChainError } from "@qntx/wallet-chains";
 import {
-  BITCOIN_GAP_LIMIT,
+  changeScanReach,
   decodeBitcoinPsbt,
   bitcoinNetwork,
   bitcoinPubkeyFromXpub,
+  requestChangeMark,
 } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinAccountTemplate, BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
 
@@ -73,6 +74,8 @@ type SpendContext = {
   readonly groupIndex: number;
   readonly network: string;
   readonly fp: number;
+  /** The sealed change mark the account reported — the bound the kernel will recompute. */
+  readonly mark: number;
   /** The template's own change chain scan — the change index is picked after selection. */
   readonly changeChain: ReadonlyArray<ScanAddress>;
   /** The scan's account outputs — confirmed, or the wallet's own unconfirmed change. */
@@ -218,7 +221,7 @@ const nextReceiveAddress = async (
   walletId: string,
   groupIndex: number,
   network: string,
-): Promise<string> => {
+): Promise<{ address: string; confirmed: boolean }> => {
   const apis = ctx.options.chains;
   const account = await apis.account({ walletId, groupIndex, template: "btc.bip84", network });
   if (!("xpub" in account) || account.xpub === undefined) {
@@ -231,6 +234,7 @@ const nextReceiveAddress = async (
     network,
     bitcoinNetwork(network).params,
     0,
+    -1,
   );
   const next = new BitcoinScanStore().nextUnused(
     { addresses: receive, utxos: [], scannedAt: ctx.options.now() },
@@ -239,7 +243,7 @@ const nextReceiveAddress = async (
   if (next === undefined) {
     throw new Error("no unused receive address");
   }
-  return next.address;
+  return { address: next.address, confirmed: account.confirmed };
 };
 
 /**
@@ -284,14 +288,23 @@ const accountContext = async (
   if (!("xpub" in btcAccount) || btcAccount.xpub === undefined) {
     throw new Error("bitcoin account carries no xpub");
   }
-  const { xpub, fingerprint, path } = btcAccount as {
+  const { xpub, fingerprint, path, changeMark } = btcAccount as {
     xpub: string;
     fingerprint: string;
     path: string;
+    changeMark: number;
   };
   const fp = Number.parseInt(fingerprint, 16);
-  const receive = await scanChain(es, xpub, template, network, net.params, 0);
-  const change = await scanChain(es, xpub, template, network, net.params, 1);
+  const receive = await scanChain(es, xpub, template, network, net.params, 0, -1);
+  const change = await scanChain(
+    es,
+    xpub,
+    template,
+    network,
+    net.params,
+    1,
+    changeScanReach(changeMark),
+  );
   const addresses: ScanAddress[] = [...receive, ...change];
   const scannedUtxos: ReadonlyArray<ScanUtxo> = await scanUtxos(es, addresses, net.params);
   // A height-0 output pays through an unconfirmed transaction its sender can still revoke or
@@ -318,6 +331,7 @@ const accountContext = async (
     groupIndex: account.groupIndex,
     network,
     fp,
+    mark: changeMark,
     changeChain: change,
     candidates: utxos,
     spendable: selectableUtxos(utxos, net.params, frozen),
@@ -350,22 +364,18 @@ const pathTail = (path: ReadonlyArray<number>): BitcoinPathTail | undefined => {
 /**
  * The change address of a build, chosen after the inputs are known: `c` the first unused index on
  * the template's own change chain — or, when `c` already lies past the bound the kernel's
- * discoverability rule allows (the highest proven change index among the selected inputs plus the
- * gap limit), the bound itself: a deliberate address reuse that keeps the change inside the window
- * the wallet scans. `tails` come from the build's own inputs — all one template's, so all one
- * purpose.
+ * discoverability rule allows (the sealed mark raised by the selected inputs' change indices, plus
+ * the gap limit), the bound itself: a deliberate address reuse that keeps the change inside the
+ * window the wallet scans. `tails` come from the build's own inputs — all one template's, so all
+ * one purpose.
  */
 export const changeAddressOf = (
   changeChain: ReadonlyArray<ScanAddress>,
   tails: ReadonlyArray<BitcoinPathTail>,
+  stored: number,
 ): ScanAddress => {
-  let highest = -1;
-  for (const t of tails) {
-    if (t.change === 1 && t.index > highest) {
-      highest = t.index;
-    }
-  }
-  const bound = Math.max(0, highest) + BITCOIN_GAP_LIMIT;
+  const purpose = tails.find((t) => t.change === 1)?.purpose ?? tails[0]?.purpose ?? 0;
+  const bound = changeScanReach(requestChangeMark(stored, purpose, tails, "internal"));
   const firstUnused = changeChain.find((a) => !a.used);
   const index = firstUnused !== undefined && firstUnused.index <= bound ? firstUnused.index : bound;
   const found = changeChain.find((a) => a.index === index);
@@ -724,7 +734,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         const tail = pathTail(built.pathOf(u));
         return tail === undefined ? [] : [tail];
       });
-    const chosen = changeAddressOf(built.changeChain, tails);
+    const chosen = changeAddressOf(built.changeChain, tails, built.mark);
     const { psbt: unsigned, inputs: selected } =
       chosen.index === firstUnused.index
         ? probe
@@ -778,6 +788,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         walletId: account.walletId,
         groupIndex: account.groupIndex,
       },
+      origin: "internal" as const,
       psbt,
       sign: Array.from({ length: txP.inputsLength }, (_, i) => ({ index: i, template })),
     };
@@ -916,6 +927,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       kind: "bitcoin.psbt" as const,
       network: old.network,
       account: { kind: "hd" as const, walletId: account.walletId, groupIndex: account.groupIndex },
+      origin: "internal" as const,
       psbt,
       sign: Array.from({ length: txP.inputsLength }, (_, i) => ({
         index: i,
@@ -1072,6 +1084,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
           const tail = pathTail(built.pathOf(i));
           return tail === undefined ? [] : [tail];
         }),
+        built.mark,
       ).address;
     const inTotal = btc.inputs.reduce((a, i) => a + i.value, 0);
     const dust = 546;
@@ -1300,6 +1313,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         const tail = pathTail(built.pathOf(o));
         return tail === undefined ? [] : [tail];
       }),
+      built.mark,
     ).address;
     const net = bitcoinNetwork(old.network);
     const inTotal = bumpable.reduce((a, o) => a + o.value, 0);
@@ -1465,13 +1479,13 @@ export type BitcoinRoute = {
     requestId: string,
     sparkDeposit?: SparkDepositTag,
   ) => Promise<PreparedRequest>;
-  /** The group's next unused `btc.bip84` receive address. */
+  /** The group's next unused `btc.bip84` receive address and its device confirmation. */
   readonly nextReceiveAddress: (
     ctx: RouteContext,
     walletId: string,
     groupIndex: number,
     network: string,
-  ) => Promise<string>;
+  ) => Promise<{ address: string; confirmed: boolean }>;
   readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxPoll | undefined>;
   /**
    * A reorg returned the transaction to the pool: its inputs are locked under it again so a new

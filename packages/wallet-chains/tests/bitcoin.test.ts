@@ -404,6 +404,7 @@ const req = (
   sign: ReadonlyArray<{ index: number; template: string }> = [{ index: 0, template: "btc.bip84" }],
 ) => ({
   kind: "bitcoin.psbt",
+  origin: "internal",
   network: MAINNET,
   account: ACCOUNT,
   psbt,

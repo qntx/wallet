@@ -204,6 +204,7 @@ const bitcoinProbe = (
   kind: "bitcoin.psbt",
   network,
   account: { kind: "hd", walletId: "", groupIndex: 0 },
+  origin: "external",
   psbt: request.psbt,
   sign: [],
 });

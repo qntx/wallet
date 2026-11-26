@@ -5,12 +5,7 @@
 import type { DeviceDisplay, HardwareDevice } from "@qntx/wallet/protocol";
 
 import type { PromptLocale } from "../../prompts.ts";
-
-const DEVICE_NAME: Readonly<Record<HardwareDevice, string>> = {
-  keystone: "Keystone",
-  ledger: "Ledger",
-  onekey: "OneKey",
-};
+import { HARDWARE_DEVICE_NAME } from "../../prompts.ts";
 
 const LINES: Readonly<Record<PromptLocale, Readonly<Record<DeviceDisplay, string>>>> = {
   "zh-Hans": {
@@ -28,5 +23,5 @@ export function devicePromptLine(
   display: DeviceDisplay,
   device: HardwareDevice,
 ): string {
-  return `${DEVICE_NAME[device]}: ${LINES[locale][display]}`;
+  return `${HARDWARE_DEVICE_NAME[device]}: ${LINES[locale][display]}`;
 }

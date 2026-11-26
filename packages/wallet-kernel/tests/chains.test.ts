@@ -1045,6 +1045,7 @@ describe("chain.sign", () => {
     const bip84 = btcVector("btc.bip84");
     const txReq = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip84" }),
@@ -1078,6 +1079,7 @@ describe("chain.sign", () => {
     const { h, session, walletId } = await setup();
     const wrong = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip49", wrongScript: true }),
@@ -1086,6 +1088,7 @@ describe("chain.sign", () => {
     expect("err" in (await callSign(h, session, wrong))).toBe(true);
     const right = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip49" }),
@@ -1104,6 +1107,7 @@ describe("chain.sign", () => {
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential kernel calls
       const res = await callSign(h, session, {
         kind: "bitcoin.psbt",
+        origin: "internal",
         network: BTC_NETWORK,
         account: grp(walletId),
         psbt,
@@ -1117,6 +1121,7 @@ describe("chain.sign", () => {
     const { h, session, walletId } = await setup();
     const res = await callSign(h, session, {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip84", sighash: SigHash.NONE }),
@@ -1129,6 +1134,7 @@ describe("chain.sign", () => {
     const { h, session, walletId } = await setup();
     const res = await callSign(h, session, {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip86", tapMerkleRoot: true }),
@@ -1186,6 +1192,7 @@ describe("chain.sign", () => {
     const { h, session, walletId } = await setup();
     const badPrev = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip44", wrongScript: true }),
@@ -1194,6 +1201,7 @@ describe("chain.sign", () => {
     expect("err" in (await callSign(h, session, badPrev))).toBe(true);
     const right = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip44" }),
@@ -1250,6 +1258,7 @@ describe("chain.sign", () => {
     const { h, session, walletId } = await setup();
     const changeReq = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip84", changeOutput: true }),
@@ -1268,6 +1277,7 @@ describe("chain.sign", () => {
     ).toBe(true);
     const externalReq = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip84", extraInput: true }),
@@ -1318,6 +1328,7 @@ describe("chain.sign", () => {
     tx.addOutput({ script: PAYEE_SCRIPT, amount: 140000n });
     const req = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: tx.toPSBT(0),
@@ -1344,6 +1355,7 @@ describe("chain.sign", () => {
     // E-06: the fee shown came from an unattested witnessUtxo — now the request cannot normalize.
     const witnessOnly = await callSign(h, session, {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: mk(undefined),
@@ -1356,6 +1368,7 @@ describe("chain.sign", () => {
     prev.addOutput({ script, amount: 100000n });
     const lying = await callSign(h, session, {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: lieWitness(mk(prev.toBytes(true, false)), 99999n),
@@ -1383,6 +1396,7 @@ describe("chain.sign", () => {
     tx.addOutput({ script: PAYEE_SCRIPT, amount: 1_000_000n });
     const req = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: tx.toPSBT(0),
@@ -1435,6 +1449,7 @@ describe("chain.sign", () => {
     tx.addOutput({ script: PAYEE_SCRIPT, amount: 90000n });
     const wrong = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: tx.toPSBT(0),
@@ -1456,6 +1471,7 @@ describe("chain.sign", () => {
     });
     const right = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: tx.toPSBT(0),
@@ -1488,6 +1504,7 @@ describe("chain.sign", () => {
     tx.addOutput({ script: PAYEE_SCRIPT, amount: 90000n });
     const req = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: tx.toPSBT(0),
@@ -1500,6 +1517,7 @@ describe("chain.sign", () => {
     const { h, session, walletId } = await setup();
     const foreignFp = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip84", fingerprint: 0xdeadbeef }),
@@ -1508,6 +1526,7 @@ describe("chain.sign", () => {
     expect("err" in (await callSign(h, session, foreignFp))).toBe(true);
     const wrongPub = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip84", wrongPub: true }),
@@ -1516,6 +1535,7 @@ describe("chain.sign", () => {
     expect("err" in (await callSign(h, session, wrongPub))).toBe(true);
     const wrongScript = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip86", wrongScript: true }),
@@ -1527,6 +1547,7 @@ describe("chain.sign", () => {
       session,
       normalizeBitcoin({
         kind: "bitcoin.psbt",
+        origin: "internal",
         network: BTC_NETWORK,
         account: grp(walletId),
         psbt: btcPsbt({ template: "btc.bip84" }),
@@ -1578,7 +1599,7 @@ describe("chain.sign", () => {
     ) => {
       const keys = seedKeys(seed, rng);
       try {
-        const prepared = await prepareBitcoin(request, hd, keys.material);
+        const prepared = await prepareBitcoin(request, hd, keys.material, () => 0);
         return await signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan)));
       } finally {
         keys.wipe();
@@ -1599,6 +1620,7 @@ describe("chain.sign", () => {
          claim, so assert its exact message on a raw (un-normalized) request. */
       const request = {
         kind: "bitcoin.psbt",
+        origin: "internal",
         network: TESTNET,
         account,
         psbt: btcPsbt({ template: "btc.bip84" }),
@@ -1612,6 +1634,7 @@ describe("chain.sign", () => {
     it("refuses a coin-1' derivation claim under mainnet the same way", async () => {
       const request = {
         kind: "bitcoin.psbt",
+        origin: "internal",
         network: BTC_NETWORK,
         account,
         psbt: btcPsbt({ template: "btc.bip84", coin: 1 }),
@@ -1627,6 +1650,7 @@ describe("chain.sign", () => {
          key's — the prevout binding, not the path guard, is what refuses. */
       const request = {
         kind: "bitcoin.psbt",
+        origin: "internal",
         network: TESTNET,
         account,
         psbt: btcPsbt({ template: "btc.bip84", coin: 1, crossScript: true }),
@@ -1656,6 +1680,7 @@ describe("chain.sign", () => {
       /* One sorted sign entry — already in normalized form for `deepEqual(normalized, request)`. */
       const request = {
         kind: "bitcoin.psbt",
+        origin: "internal",
         network: TESTNET,
         account,
         psbt: btcPsbt({ template: "btc.bip84", coin: 1 }),
@@ -1773,19 +1798,29 @@ describe("chain.sign", () => {
     const prepare = async (
       inputs: Parameters<typeof ownPsbt>[0],
       outputs: Parameters<typeof ownPsbt>[1],
+      opts?: {
+        readonly origin?: "internal" | "external";
+        readonly storedMark?: (purpose: number) => number;
+      },
     ) => {
       const keys = seedKeys(seed, rng);
       try {
         const request = asPsbt(
           normalizeBitcoin({
             kind: "bitcoin.psbt",
+            origin: opts?.origin ?? "internal",
             network: BTC_NETWORK,
             account,
             psbt: ownPsbt(inputs, outputs),
             sign: inputs.map((i, index) => ({ index, template: i.template })),
           }),
         );
-        const prepared = await prepareBitcoin(request, account, keys.material);
+        const prepared = await prepareBitcoin(
+          request,
+          account,
+          keys.material,
+          opts?.storedMark ?? (() => 0),
+        );
         const result = await signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan)));
         return { prompt: prepared.prompt, result };
       } finally {
@@ -1878,13 +1913,99 @@ describe("chain.sign", () => {
       expect("signedPsbt" in result).toBe(true);
     });
 
-    it("a signed far change input raises the hidden-change bound", async () => {
+    it("an internal request's signed far change input raises the hidden-change bound", async () => {
       const { prompt, result } = await prepare(
         [{ template: "btc.bip84" }, { template: "btc.bip84", change: 1, index: 30 }],
         [{ purpose: 84, change: 1, index: 50 }],
       );
       expect(prompt.outflows.filter((o) => o.ownPath !== undefined)).toHaveLength(0);
       expect(prompt.warnings?.filter((w) => w.kind === "unusual-own-output")).toHaveLength(0);
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("an external request's signed far change input never raises the bound", async () => {
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }, { template: "btc.bip84", change: 1, index: 30 }],
+        [{ purpose: 84, change: 1, index: 50 }],
+        { origin: "external" },
+      );
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe("m/84'/0'/0'/1/50");
+      expect(prompt.warnings).toContainEqual({
+        kind: "unusual-own-output",
+        message: "m/84'/0'/0'/1/50",
+      });
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("a dusted /1/1000000 input under an external request cannot hide /1/1000020", async () => {
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }, { template: "btc.bip84", change: 1, index: 1_000_000 }],
+        [{ purpose: 84, change: 1, index: 1_000_020 }],
+        { origin: "external" },
+      );
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe("m/84'/0'/0'/1/1000020");
+      expect(flow?.to).toBe(addrOf(84, 1, 1_000_020));
+      expect(prompt.warnings).toContainEqual({
+        kind: "unusual-own-output",
+        message: "m/84'/0'/0'/1/1000020",
+      });
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("a dusted /1/2147483600 input under an external request cannot hide /1/2147483620", async () => {
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }, { template: "btc.bip84", change: 1, index: 2_147_483_600 }],
+        [{ purpose: 84, change: 1, index: 2_147_483_620 }],
+        { origin: "external" },
+      );
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe("m/84'/0'/0'/1/2147483620");
+      expect(flow?.to).toBe(addrOf(84, 1, 2_147_483_620));
+      expect(prompt.warnings).toContainEqual({
+        kind: "unusual-own-output",
+        message: "m/84'/0'/0'/1/2147483620",
+      });
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("an internal request's own far input cannot hide an output past the scan limit", async () => {
+      // Even a legitimate raise — an internal request really does spend /1/2147483600 — can
+      // never hide an output at or past index 2000: the wallet provably cannot scan there.
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }, { template: "btc.bip84", change: 1, index: 2_147_483_600 }],
+        [
+          { purpose: 84, change: 1, index: 1999 },
+          { purpose: 84, change: 1, index: 2000 },
+        ],
+      );
+      expect(prompt.outflows.filter((o) => o.ownPath !== undefined)).toHaveLength(1);
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe("m/84'/0'/0'/1/2000");
+      expect(prompt.warnings).toContainEqual({
+        kind: "unusual-own-output",
+        message: "m/84'/0'/0'/1/2000",
+      });
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("the sealed mark widens the hidden bound — a stored 20 hides /1/40, not /1/41", async () => {
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }],
+        [
+          { purpose: 84, change: 1, index: 40 },
+          { purpose: 84, change: 1, index: 41 },
+        ],
+        { storedMark: () => 20 },
+      );
+      expect(prompt.outflows.filter((o) => o.ownPath !== undefined)).toHaveLength(1);
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe("m/84'/0'/0'/1/41");
+      expect(prompt.warnings).toContainEqual({
+        kind: "unusual-own-output",
+        message: "m/84'/0'/0'/1/41",
+      });
       expect("signedPsbt" in result).toBe(true);
     });
 

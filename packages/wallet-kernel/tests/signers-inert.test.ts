@@ -151,7 +151,7 @@ const realBody = (): Uint8Array => {
     nodes: [nodeAt(SEED, [44 + 0x80000000, 60 + 0x80000000, 0x80000000])],
     ed25519: [],
   };
-  return encodeHardwareBody(keys);
+  return encodeHardwareBody({ keys, confirmed: [] });
 };
 
 const walletEntry = (status: ProtocolValue, walletId: string): ProtocolValue => {

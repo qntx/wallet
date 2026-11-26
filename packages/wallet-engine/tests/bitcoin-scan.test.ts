@@ -1,8 +1,10 @@
 import { HDKey } from "@scure/bip32";
-import { NETWORK, p2wpkh } from "@scure/btc-signer";
+import { NETWORK, p2pkh, p2wpkh } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
-import { scripthash, scanChain } from "../src/chains/bitcoin-scan.ts";
+import { changeScanReach } from "@qntx/wallet-chains/bitcoin";
+
+import { scripthash, scanChain, scanSourceWithHistory } from "../src/chains/bitcoin-scan.ts";
 import { esplora as esploraClient, EsploraError } from "../src/chains/bitcoin.ts";
 import type { Esplora, EsploraDeps, EsploraFetch, EsploraResponse } from "../src/chains/bitcoin.ts";
 import { esploraDeps } from "./send-helpers.ts";
@@ -37,6 +39,7 @@ describe("gap-20 scanning", () => {
       "bip122:000000000019d6689c085ae165831e93",
       NETWORK,
       0,
+      -1,
     );
     expect(addrs).toHaveLength(40);
     expect(addrs[3]!.used).toBe(true);
@@ -51,6 +54,7 @@ describe("gap-20 scanning", () => {
       "bip122:000000000019d6689c085ae165831e93",
       NETWORK,
       0,
+      -1,
     );
     expect(addrs).toHaveLength(20);
     expect(addrs.every((a) => !a.used)).toBe(true);
@@ -67,6 +71,7 @@ describe("gap-20 scanning", () => {
       "bip122:000000000019d6689c085ae165831e93",
       NETWORK,
       0,
+      -1,
     );
     expect(addrs).toHaveLength(40);
     expect(addrs[19]!.used).toBe(true);
@@ -82,11 +87,85 @@ describe("gap-20 scanning", () => {
       post: async () => Promise.reject(new Error("unmocked")),
     };
     await expect(
-      scanChain(lying, xpub, "btc.bip84", "bip122:000000000019d6689c085ae165831e93", NETWORK, 0),
+      scanChain(
+        lying,
+        xpub,
+        "btc.bip84",
+        "bip122:000000000019d6689c085ae165831e93",
+        NETWORK,
+        0,
+        -1,
+      ),
     ).rejects.toThrow("bitcoin address scan exceeded 2000 addresses");
     expect(queried).toBe(2000);
     // Deriving 2000 addresses from the xpub dominates; under a loaded full run it exceeds 5 s.
   }, 30_000);
+});
+
+describe("change-mark reach scanning", () => {
+  const reachScan = async (txs: Record<string, unknown[]>, reach: number) =>
+    scanChain(
+      esplora(txs),
+      xpub,
+      "btc.bip84",
+      "bip122:000000000019d6689c085ae165831e93",
+      NETWORK,
+      1,
+      reach,
+    );
+
+  it("mark 0 walks the change chain to index 20 even with nothing used", async () => {
+    const addrs = await reachScan({}, changeScanReach(0));
+    expect(addrs).toHaveLength(21);
+    expect(addrs.every((a) => a.chain === 1)).toBe(true);
+    expect(addrs.every((a) => !a.used)).toBe(true);
+    expect(addrs[20]!.index).toBe(20);
+  });
+
+  it("mark 100 walks the change chain to index 120 in tail windows", async () => {
+    const addrs = await reachScan({}, changeScanReach(100));
+    expect(addrs).toHaveLength(121);
+    expect(addrs[120]!.index).toBe(120);
+  });
+
+  it("a used address in the tail resumes the gap rule from there", async () => {
+    const txs: Record<string, unknown[]> = {};
+    const used105 = p2wpkh(ACCOUNT.deriveChild(1).deriveChild(105).publicKey!, NETWORK).address;
+    txs[hashOf(used105)] = [{ txid: "x" }];
+    // Reach 120 covers index 105 in the tail — the found history then re-arms gap-20, so the
+    // scan continues one full window past the reach: 120 tail rows + window [120, 140).
+    const addrs = await reachScan(txs, changeScanReach(100));
+    expect(addrs).toHaveLength(140);
+    expect(addrs[105]!.used).toBe(true);
+    expect(addrs[139]!.index).toBe(139);
+  });
+
+  it("the reach is capped at the scan limit — a huge mark walks to index 1999 only", async () => {
+    const addrs = await reachScan({}, changeScanReach(5000));
+    expect(addrs).toHaveLength(2000);
+    expect(addrs[1999]!.index).toBe(1999);
+  }, 30_000);
+
+  it("scanSourceWithHistory walks a bip44 change chain under an unused receive chain", async () => {
+    const ACCOUNT44 = XPUB.derive("m/44'/0'/0'");
+    const xpub44 = ACCOUNT44.publicExtendedKey;
+    const txs: Record<string, unknown[]> = {};
+    // A receipt only on the bip44 change chain — the wallet's own hidden change.
+    const change5 = p2pkh(ACCOUNT44.deriveChild(1).deriveChild(5).publicKey!, NETWORK).address;
+    txs[hashOf(change5)] = [{ txid: "x" }];
+    const scanned = await scanSourceWithHistory(
+      esplora(txs),
+      { kind: "xpub", template: "btc.bip44", xpub: xpub44, changeMark: 0 },
+      "bip122:000000000019d6689c085ae165831e93",
+      NETWORK,
+    );
+    const change = scanned.filter((a) => a.chain === 1);
+    // The receive chain is fully unused (20 rows); the change chain is still walked — index 5
+    // is found used, which re-arms gap-20 and the scan ends after one all-unused window.
+    expect(scanned.filter((a) => a.chain === 0)).toHaveLength(20);
+    expect(change).toHaveLength(40);
+    expect(change.find((a) => a.index === 5)?.used).toBe(true);
+  });
 });
 
 const realTimerDeps: EsploraDeps = {

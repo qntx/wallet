@@ -564,12 +564,20 @@ export function startKernel(
         params,
         typeof sessionField === "string" ? sessionField : undefined,
       );
-      // Only a successful request refreshes activity — errors never touch. Presence-marked
-      // methods always count; under the "request" policy every ok does. The session may have
-      // locked inside the handler (timeout, invalidation): touch() is a no-op then.
+      // Only a successful request refreshes activity — errors never touch. Under the "request"
+      // policy every ok does. Under "presence", a presence-marked method counts only on a host
+      // without a keystore (Web, Node — the runtime already runs the WebAuthn ceremony there, so
+      // session.touch is the honest presence signal). On a keystore host the only presence the
+      // runtime cannot forge is a successful factor verification, and verifyFactor touches the
+      // session itself; anything else the runtime can call at will — session.touch, a signing
+      // session — must not hold the vault open. The session may have locked inside the handler
+      // (timeout, invalidation): touch() is a no-op then.
       if (
         ctx.session.unlocked &&
-        (METHODS[method].presence || platform.policy.idle?.activity === "request")
+        (platform.policy.idle?.activity === "request" ||
+          (platform.policy.idle?.activity === "presence" &&
+            platform.keystore === undefined &&
+            METHODS[method].presence))
       ) {
         ctx.session.touch();
       }

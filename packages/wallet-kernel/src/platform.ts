@@ -59,10 +59,13 @@ export type KernelPolicy = {
   /** Upper bound for ncryptsec imports; enforced by the nostr module. */
   readonly maxScryptLogN: number;
   /**
-   * Idle lock. "presence" counts only user-presence-bearing methods, so background traffic or a
-   * signing session cannot hold the vault open (Web, native); "request" counts every successful
-   * request (node — there is no human to observe). Absent: the session ends only at
-   * `maxSessionMs`.
+   * Idle lock. "presence" counts user presence only: on a host with a platform `keystore` that is a
+   * successful factor verification (verifyFactor re-arms the deadline itself — a system prompt is
+   * the one presence signal the runtime cannot forge); on a host without one it is a successful
+   * presence-marked method (Web, Node — the runtime runs the WebAuthn ceremony there anyway).
+   * Either way background traffic or a signing session cannot hold the vault open. "request" counts
+   * every successful request (node — there is no human to observe). Absent: the session ends only
+   * at `maxSessionMs`.
    */
   readonly idle?:
     | {

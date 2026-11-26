@@ -606,14 +606,7 @@ export async function enableBackup(
   let bek: Uint8Array | undefined;
   try {
     const { dek } = ctx.session.require(requestSession);
-    await verifyFactor(
-      ctx.platform,
-      ctx.image,
-      params.verify,
-      dek,
-      ctx.commit,
-      corePromptFor(ctx.platform.keystore, "backup"),
-    );
+    await verifyFactor(ctx, params.verify, dek, corePromptFor(ctx.platform.keystore, "backup"));
     bek = ctx.platform.random(32);
     if (bek.length !== 32) {
       throw new KernelError("integrity", "random source returned a wrong-length BEK");
@@ -692,11 +685,9 @@ export async function disableBackup(
 ): Promise<NullValue> {
   const { dek } = ctx.session.require(requestSession);
   await verifyFactor(
-    ctx.platform,
-    ctx.image,
+    ctx,
     params.verify,
     dek,
-    ctx.commit,
     corePromptFor(ctx.platform.keystore, "disable-backup"),
   );
   const record = ctx.image.records.find(

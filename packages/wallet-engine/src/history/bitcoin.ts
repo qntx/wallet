@@ -148,7 +148,9 @@ export type BitcoinHistoryDeps = {
     readonly groupIndex: number;
     readonly template: BitcoinAccountTemplate;
     readonly network: string;
-  }) => Promise<{ readonly address?: string; readonly xpub?: string }>;
+  }) => Promise<
+    { readonly address: string } | { readonly xpub: string; readonly changeMark: number }
+  >;
   readonly trusted: boolean;
 };
 
@@ -173,10 +175,10 @@ export const bitcoinHistoryScan = async (
   const sources = await Promise.all(
     BITCOIN_TEMPLATES.map(async (template: BitcoinAccountTemplate): Promise<BitcoinSource> => {
       const account = await options.account({ ...group, template, network });
-      if (account.xpub === undefined) {
+      if (!("xpub" in account)) {
         throw new TypeError(`bitcoin account ${template} on ${network} has no xpub`);
       }
-      return { kind: "xpub", template, xpub: account.xpub };
+      return { kind: "xpub", template, xpub: account.xpub, changeMark: account.changeMark };
     }),
   );
   const scanned = await Promise.all(

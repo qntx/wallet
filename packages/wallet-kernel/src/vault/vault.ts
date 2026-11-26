@@ -381,6 +381,17 @@ function credentialIdOf(stored: StoredFactor): string | undefined {
 }
 
 /**
+ * The slice of the kernel context a factor verification needs. Structural so `KernelContext`
+ * satisfies it — vault.ts stays below the command layer.
+ */
+export type VerifyContext = {
+  readonly platform: KernelPlatform;
+  readonly image: VaultImage;
+  readonly commit: (ops: ReadonlyArray<StoreOp>) => Promise<void>;
+  readonly session: { readonly touch: () => void };
+};
+
+/**
  * Re-verifies a factor against the live session DEK: unwrap with the factor KEK and constant-time
  * compare. A public-key miss — `wrong-password`/`wrong-passkey` — tries the next candidate; every
  * other failure (including corruption-marked integrity) propagates immediately. When no candidate
@@ -389,16 +400,18 @@ function credentialIdOf(stored: StoredFactor): string | undefined {
  * `integrity` (the keystore opened a KEK for another DEK). `prompt` renders the system verification
  * text and runs only for hardware. Password re-verification shares `unlock`'s rate limiting: the
  * same armed-backoff rejection, the same atomic `failedAttempts` increment on a miss and the same
- * clearing write on a success — all against the vault anchor, not the store.
+ * clearing write on a success — all against the vault anchor, not the store. A success is the one
+ * event that re-arms the idle deadline on a keystore host — the verification proved presence the
+ * runtime cannot forge — so it touches the session itself; every other caller-side touch stays a
+ * presence-marked-method decision of the request loop.
  */
 export async function verifyFactor(
-  platform: KernelPlatform,
-  image: VaultImage,
+  ctx: VerifyContext,
   factor: Factor,
   dek: Secret,
-  commit: (ops: ReadonlyArray<StoreOp>) => Promise<void>,
   prompt: () => KeystorePrompt,
 ): Promise<void> {
+  const { platform, image, commit } = ctx;
   // Checked before anything else: a device factor proves no presence, so it can never verify —
   // the protocol's `verifier` validator rejects it on the wire, and this is the kernel's own gate.
   if (factor.kind === "device") {
@@ -458,6 +471,7 @@ export async function verifyFactor(
         opened.wipe();
       }
       if (verified) {
+        ctx.session.touch();
         break;
       }
       // A clean unwrap whose DEK differs is another vault's factor: try the next candidate.

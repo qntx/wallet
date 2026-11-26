@@ -188,6 +188,7 @@ const psbt84Context = (): SignContext => {
   return {
     request: {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: { kind: "hd", walletId: "w", groupIndex: 0 },
       psbt: bytes,
@@ -227,6 +228,7 @@ const psbt86Context = (): SignContext => {
   return {
     request: {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: { kind: "hd", walletId: "w", groupIndex: 0 },
       psbt: bytes,

@@ -347,6 +347,8 @@ export function isCardWallet(image: VaultImage, walletId: string): boolean {
 export function cardPin(body: CardWalletBody): Pin {
   return {
     master: hexToBytes(body.master),
+    // A genuine card's keys are its own — the verified tap already proved custody.
+    confirmed: "all",
     keys: {
       nodes: parsePinnedNodes(body.nodes),
       ed25519: parsePinnedEd25519(body.ed25519),

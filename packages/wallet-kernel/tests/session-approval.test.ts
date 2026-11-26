@@ -13,6 +13,7 @@ import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { encodeSessionHeader, SESSION_KIND } from "../src/modules/sessions/record.ts";
 import type { SessionHeader } from "../src/modules/sessions/record.ts";
+import { meterHyperliquid } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/meter.ts";
 import { hyperliquidL1Spent } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/params.ts";
 import { hyperliquidApproval } from "../src/modules/sessions/schemes/hyperliquid-l1-agent/prompt.ts";
 import { openSession, signSession } from "../src/modules/sessions/sessions.ts";
@@ -122,7 +123,7 @@ const order = (p: string, s: string, extra?: Record<string, unknown>) => ({
   p,
   s,
   r: false,
-  t: { limit: { tif: "Gtc" } },
+  t: { limit: { tif: "Gtc" as const } },
   ...extra,
 });
 
@@ -273,6 +274,53 @@ describe("approval ceremony", () => {
       }),
     );
     expect(field(signature, "signature")).toBeInstanceOf(Uint8Array);
+  });
+
+  it("create refuses limits whose reopen prompt overflows only at the worst-case spent", async () => {
+    const fk = fakeKeystore();
+    const input = fakeSecureInput({ approval: "correct" });
+    const h = createHarness({ keystore: fk.keystore, secureInput: input.secureInput, start: T0 });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: DEVICE,
+      }),
+    );
+    const session = strField(res, "session");
+    const walletId = strField(field(res, "wallet"), "walletId");
+    ok(await h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, session));
+
+    /* The create variant and the fresh-spent reopen variant fit iOS (388 chars); only the
+       worst-case remaining — the notional minus the smallest charge, 17 digits longer — pushes
+       the reopen rendering to 405. Create must look at the worst case, not the fresh one. */
+    const tight = {
+      notional: "999999999999999",
+      maxLeverage: 10,
+      assets: Array.from({ length: 10 }, (_, i) => ({ asset: i, size: "1000" })),
+    };
+    const before = fk.calls.length;
+    expect(
+      errCode(
+        await h.call(
+          "sessions.create",
+          createParams(walletId, { limits: tight, verify: HARDWARE }),
+          session,
+        ),
+      ),
+    ).toBe("invalid-input");
+    // Refused before the verification prompt.
+    expect(fk.calls.slice(before).filter(isPresenceCall)).toHaveLength(0);
+
+    // One fewer asset fits the worst case too — that session is created.
+    const loose = { ...tight, assets: tight.assets.slice(0, 9) };
+    ok(
+      await h.call(
+        "sessions.create",
+        createParams(walletId, { limits: loose, verify: HARDWARE }),
+        session,
+      ),
+    );
   });
 
   it("after lock+unlock sign answers approval-required until sessions.open verifies", async () => {
@@ -686,6 +734,57 @@ describe("metering", () => {
     ).toBe("limit-exceeded");
   });
 
+  it("the asset cap refuses at cap plus one 1e-16 unit", () => {
+    /* Order sizes admit eight decimals, but the record's `canonical` spent grammar keeps
+       sixteen: a charged total can sit exactly one unit over the cap, and only the strict `>`
+       comparison refuses it. */
+    const limits = { notional: "1000", maxLeverage: 10, assets: [{ asset: 0, size: "1" }] };
+    const spent = { notional: "0", size: ["0.9999999900000001"] };
+    expect(() =>
+      meterHyperliquid(
+        {
+          action: {
+            type: "order",
+            orders: [order("1", "0.00000001", { b: false })],
+            grouping: "na",
+          },
+          nonce: 0,
+          expiresAfter: T0,
+        },
+        limits,
+        spent,
+      ),
+    ).toThrow("the asset's size budget is exhausted");
+  });
+
+  it("the asset cap is exact — size equal to the cap charges, one unit over refuses", async () => {
+    const { h, session, address } = await seeded({
+      ...LIMITS,
+      assets: [
+        { asset: 0, size: "0.00000001" },
+        { asset: 1, size: "0.00000001" },
+      ],
+    });
+    // The cap itself is a legal charge.
+    ok(
+      await sign(h, session, address, {
+        type: "order",
+        orders: [order("1", "0.00000001")],
+        grouping: "na",
+      }),
+    );
+    // One smallest unit past the untouched sibling's cap is not.
+    expect(
+      errCode(
+        await sign(h, session, address, {
+          type: "order",
+          orders: [order("1", "0.00000002", { a: 1 })],
+          grouping: "na",
+        }),
+      ),
+    ).toBe("limit-exceeded");
+  });
+
   it("spent survives a relaunch over the same store", async () => {
     const { h, session, address } = await seeded({ ...LIMITS, notional: "10" });
     ok(
@@ -844,6 +943,31 @@ describe("approval prompt bounds", () => {
     }
   });
 
+  it("asset ids render as #id, split perp/spot at id 10000", () => {
+    const session = {
+      scope: "Mainnet",
+      name: "bot-1",
+      validUntil: T0 + DAY,
+      limits: {
+        ...LIMITS,
+        /* The first spot id is exactly 10000 — it must land on the spot line, never perp. */
+        assets: [
+          { asset: 0, size: "10" },
+          { asset: 159, size: "1000000" },
+          { asset: 10_000, size: "5" },
+          { asset: 10_107, size: "100000" },
+        ],
+      },
+      spent: { notional: "0", size: ["0", "0", "0", "0"] },
+    };
+    const en = hyperliquidApproval(session, false, "en").description;
+    expect(en).toContain("Max size, buys and sells — perp: #0 ≤ 10, #159 ≤ 1000000");
+    expect(en).toContain("Max size, buys and sells — spot: #10000 ≤ 5, #10107 ≤ 100000");
+    const zh = hyperliquidApproval(session, false, "zh-Hans").description;
+    expect(zh).toContain("最大数量，买与卖——永续：#0 ≤ 10, #159 ≤ 1000000");
+    expect(zh).toContain("最大数量，买与卖——现货：#10000 ≤ 5, #10107 ≤ 100000");
+  });
+
   it("the prompt text is pinned", () => {
     const session = {
       scope: "Mainnet",
@@ -857,8 +981,8 @@ describe("approval prompt bounds", () => {
         `Valid until 2026-06-02\n` +
         `Buy budget: 1000 (sum of price × size of buys, quote currency)\n` +
         `Max leverage: 10x\n` +
-        `Max size, buys and sells — perp: 0 ≤ 1000, 1 ≤ 1000\n` +
-        `Max size, buys and sells — spot: 10107 ≤ 100000\n` +
+        `Max size, buys and sells — perp: #0 ≤ 1000, #1 ≤ 1000\n` +
+        `Max size, buys and sells — spot: #10107 ≤ 100000\n` +
         `Sells may fill at any price the exchange accepts`,
     );
     expect(hyperliquidApproval(session, true, "en").description).toBe(
@@ -866,8 +990,8 @@ describe("approval prompt bounds", () => {
         `Valid until 2026-06-02\n` +
         `Buy budget: 1000 (sum of price × size of buys, quote currency)\n` +
         `Max leverage: 10x\n` +
-        `Max size, buys and sells — perp: 0 ≤ 1000, 1 ≤ 1000\n` +
-        `Max size, buys and sells — spot: 10107 ≤ 100000\n` +
+        `Max size, buys and sells — perp: #0 ≤ 1000, #1 ≤ 1000\n` +
+        `Max size, buys and sells — spot: #10107 ≤ 100000\n` +
         `Sells may fill at any price the exchange accepts\n` +
         `Remaining buy budget: 749.5`,
     );
@@ -876,8 +1000,8 @@ describe("approval prompt bounds", () => {
         `有效期至 2026-06-02\n` +
         `买入预算：1000（买单价格 × 数量之和，按各市场报价币计）\n` +
         `最大杠杆：10x\n` +
-        `最大数量，买与卖——永续：0 ≤ 1000, 1 ≤ 1000\n` +
-        `最大数量，买与卖——现货：10107 ≤ 100000\n` +
+        `最大数量，买与卖——永续：#0 ≤ 1000, #1 ≤ 1000\n` +
+        `最大数量，买与卖——现货：#10107 ≤ 100000\n` +
         `卖单可按交易所接受的任意价格成交`,
     );
     expect(hyperliquidApproval(session, true, "zh-Hans").description).toBe(
@@ -885,8 +1009,8 @@ describe("approval prompt bounds", () => {
         `有效期至 2026-06-02\n` +
         `买入预算：1000（买单价格 × 数量之和，按各市场报价币计）\n` +
         `最大杠杆：10x\n` +
-        `最大数量，买与卖——永续：0 ≤ 1000, 1 ≤ 1000\n` +
-        `最大数量，买与卖——现货：10107 ≤ 100000\n` +
+        `最大数量，买与卖——永续：#0 ≤ 1000, #1 ≤ 1000\n` +
+        `最大数量，买与卖——现货：#10107 ≤ 100000\n` +
         `卖单可按交易所接受的任意价格成交\n` +
         `剩余买入预算：749.5`,
     );

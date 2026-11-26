@@ -33,7 +33,7 @@ import { pushAad, PUSH_ID_DOMAIN, pushEventInput } from "../src/gateway/contract
 import type { PushEventKind } from "../src/gateway/contract/push-message.ts";
 import type { PushKeyStore } from "../src/notifications/controller.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
-import { until } from "./apps-helpers.ts";
+import { until, VERIFY } from "./apps-helpers.ts";
 import { cardRig } from "./card-rig.ts";
 import { pairKeystone } from "./keystone-io.ts";
 
@@ -282,7 +282,7 @@ describe("createWalletEngine notifications forge", () => {
     ]);
     const result = await hardware(wallet).start(
       { kind: "pair", device: "ledger" },
-      { io: fake.link },
+      { io: fake.link, verify: VERIFY },
     ).result;
     fake.done();
     if (result.kind !== "pair" || result.wallet.custody !== "hardware") {

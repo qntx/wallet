@@ -152,8 +152,8 @@ describe("pinnedMaterial on a card pin", () => {
       await Promise.all(
         TEMPLATES.flatMap(([template, network]) =>
           [0, 1, 2].map(async (group) => {
-            await expect(accountFor(material, template, network, group)).resolves.toStrictEqual(
-              await accountFor(keys.material, template, network, group),
+            await expect(accountFor(material, template, network, group, 0)).resolves.toStrictEqual(
+              await accountFor(keys.material, template, network, group, 0),
             );
           }),
         ),
@@ -208,11 +208,11 @@ describe("pinnedMaterial on a card pin", () => {
       const material = cardMaterial(cardBody(seed));
       // The master resolves; a group the tap never cached does not.
       await expect(material.secp256k1([])).resolves.toHaveLength(33);
-      await expect(accountFor(material, "btc.bip84", BTC_MAINNET, 3)).rejects.toSatisfy(
+      await expect(accountFor(material, "btc.bip84", BTC_MAINNET, 3, 0)).rejects.toSatisfy(
         isDeviceRequired,
       );
       // Every bitcoin testnet coin type is 1', below an uncached hardened step.
-      await expect(accountFor(material, "btc.bip84", BTC_TESTNET, 0)).rejects.toSatisfy(
+      await expect(accountFor(material, "btc.bip84", BTC_TESTNET, 0, 0)).rejects.toSatisfy(
         isDeviceRequired,
       );
       // m/44'/60'/0' is cached but the next index is hardened.
@@ -270,6 +270,7 @@ describe("pinnedMaterial on a card pin", () => {
       tx.addOutput({ script: spend.script, amount: 90_000n });
       const request = {
         kind: "bitcoin.psbt" as const,
+        origin: "internal" as const,
         network: BTC_MAINNET,
         account: {
           kind: "hd" as const,
@@ -281,7 +282,7 @@ describe("pinnedMaterial on a card pin", () => {
         sign: [{ index: 0, template: "btc.bip84" as const }],
       };
       // m/84'/0'/3' was never cached: the ownership probe must not be swallowed as "not ours".
-      await expect(prepareBitcoin(request, request.account, material)).rejects.toSatisfy(
+      await expect(prepareBitcoin(request, request.account, material, () => 0)).rejects.toSatisfy(
         isDeviceRequired,
       );
     } finally {

@@ -78,20 +78,25 @@ export type ChainAccount = {
     readonly template: "evm.bip44";
     readonly network: string;
     readonly address: string;
+    readonly confirmed: boolean;
 } | {
     readonly template: "solana.bip44-change";
     readonly network: string;
     readonly address: string;
+    readonly confirmed: boolean;
 } | {
     readonly template: "tron.bip44";
     readonly network: string;
     readonly address: string;
+    readonly confirmed: boolean;
 } | {
     readonly template: "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
     readonly network: string;
     readonly xpub: string;
     readonly fingerprint: string;
     readonly path: string;
+    readonly changeMark: number;
+    readonly confirmed: boolean;
 };
 
 // @public (undocumented)
@@ -130,6 +135,7 @@ export type ChainExportParams = {
     readonly groupIndex: number;
     readonly nodes: ReadonlyArray<ChainExportNode>;
     readonly verify: VerifyFactor_2;
+    readonly acknowledgeUnconfirmed?: true;
 };
 
 // @public (undocumented)
@@ -153,6 +159,7 @@ export type ChainsApi = {
         readonly groupIndex: number;
         readonly nodes: ReadonlyArray<ChainExportNode>;
         readonly verify: VerifyFactor;
+        readonly acknowledgeUnconfirmed?: true;
     }) => Promise<ChainExportResult>;
 };
 
@@ -201,6 +208,7 @@ export type ChainSignRequest = {
         readonly walletId: string;
         readonly groupIndex: number;
     };
+    readonly origin: "internal" | "external";
     readonly psbt: Uint8Array;
     readonly sign: ReadonlyArray<{
         readonly index: number;

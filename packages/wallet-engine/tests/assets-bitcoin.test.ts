@@ -66,6 +66,8 @@ const chains = (calls?: AccountParams[]): Pick<ChainsApi, "account"> => ({
         xpub: ACCOUNTS[t].publicExtendedKey,
         fingerprint: "deadbeef",
         path: "m",
+        changeMark: 0,
+        confirmed: true,
       });
     }
     return Promise.reject(new Error(`unexpected template ${t}`));
@@ -345,7 +347,12 @@ describe("AssetsController bitcoin group", () => {
   it("rejects when the kernel answers a bitcoin template with no xpub", async () => {
     const noXpub: Pick<ChainsApi, "account"> = {
       account: async () =>
-        Promise.resolve({ template: "evm.bip44", network: "eip155:1", address: "0x0" }),
+        Promise.resolve({
+          template: "evm.bip44",
+          network: "eip155:1",
+          address: "0x0",
+          confirmed: true,
+        }),
     };
     const assets = make(esplora({}, []), undefined, undefined, noXpub);
     await assets.init();
@@ -394,7 +401,12 @@ describe("AssetsController bitcoin group", () => {
     // History's scan of the same bip84 xpub must see the used change address.
     const scanned = await scanSource(
       es,
-      { kind: "xpub", template: "btc.bip84", xpub: ACCOUNTS["btc.bip84"].publicExtendedKey },
+      {
+        kind: "xpub",
+        template: "btc.bip84",
+        xpub: ACCOUNTS["btc.bip84"].publicExtendedKey,
+        changeMark: 0,
+      },
       BTC_NET,
       NETWORK,
     );
@@ -436,17 +448,17 @@ describe("AssetsController bitcoin group discovery cache", () => {
     );
     await assets.init();
     await assets.refreshBitcoinGroup(GROUP, BTC_NET);
-    // bip44/bip49/bip86 stop at 20 receive rows each (BIP-44 early exit); bip84 always walks
-    // its change chain — the wallet's change destination — so 3×20 + 40.
-    expect(counts).toStrictEqual({ txs: 100, utxo: 0 });
+    // Each template stops at 20 receive rows (BIP-44 early exit) and walks its change chain
+    // to the sealed mark's reach (mark 0 → indices 0..20 = 21 rows): 4 × (20 + 21) = 164.
+    expect(counts).toStrictEqual({ txs: 164, utxo: 0 });
     // Warm: the three verified-unused templates are skipped; btc.bip84 (the default receive
-    // template and the group's change chain) is always re-scanned — 40 history reads.
+    // template and the group's change chain) is always re-scanned — 41 history reads.
     await assets.refreshBitcoinGroup(GROUP, BTC_NET);
-    expect(counts).toStrictEqual({ txs: 140, utxo: 0 });
+    expect(counts).toStrictEqual({ txs: 205, utxo: 0 });
     // After the discovery interval the entry expires and all four are verified again.
     now += 10 * 60_000;
     await assets.refreshBitcoinGroup(GROUP, BTC_NET);
-    expect(counts).toStrictEqual({ txs: 240, utxo: 0 });
+    expect(counts).toStrictEqual({ txs: 369, utxo: 0 });
   });
 
   it("a deposit on the default receive address shows on a warm refresh; skipped sources are zero", async () => {
@@ -477,10 +489,10 @@ describe("AssetsController bitcoin group discovery cache", () => {
     const assets = make(countEsplora(funded, counts));
     await assets.init();
     await assets.refreshBitcoinGroup(GROUP, BTC_NET);
-    expect(counts.txs).toBe(100);
+    expect(counts.txs).toBe(164);
     assets.lock();
     await assets.refreshBitcoinGroup(GROUP, BTC_NET);
-    expect(counts).toStrictEqual({ txs: 200, utxo: 0 });
+    expect(counts).toStrictEqual({ txs: 328, utxo: 0 });
   });
 });
 

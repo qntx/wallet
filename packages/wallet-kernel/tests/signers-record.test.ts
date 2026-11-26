@@ -8,6 +8,8 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { KeyPath } from "@qntx/wallet-chains";
+
 import type { PinnedKeys } from "../src/derive/pinned.ts";
 import { pathFromString, pathToString } from "../src/derive/pinned.ts";
 import { KernelError } from "../src/errors.ts";
@@ -114,18 +116,82 @@ describe("hardware-wallet header codec", () => {
 
 describe("hardware-wallet body codec", () => {
   it("round-trips nodes, parents and ed25519 entries", () => {
-    expect(parseHardwareBody(encodeHardwareBody(bodyKeys))).toStrictEqual(bodyKeys);
-    expect(parseHardwareBody(encodeHardwareBody({ nodes: [], ed25519: [] }))).toStrictEqual({
-      nodes: [],
-      ed25519: [],
+    expect(parseHardwareBody(encodeHardwareBody({ keys: bodyKeys, confirmed: [] }))).toStrictEqual({
+      keys: bodyKeys,
+      confirmed: [],
     });
+    expect(
+      parseHardwareBody(encodeHardwareBody({ keys: { nodes: [], ed25519: [] }, confirmed: [] })),
+    ).toStrictEqual({ keys: { nodes: [], ed25519: [] }, confirmed: [] });
   });
 
-  const body = (value: unknown): Uint8Array => utf8ToBytes(JSON.stringify(value));
+  /* Every literal below describes nodes/ed25519 content — the helper seals the canonical
+     `confirmed: []` itself so the cases exercise what they name, not the key-count rule. */
+  const body = (value: unknown): Uint8Array => {
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      !Array.isArray(value) &&
+      Object.hasOwn(value, "ed25519") &&
+      !Object.hasOwn(value, "confirmed")
+    ) {
+      return utf8ToBytes(JSON.stringify({ ...(value as Record<string, unknown>), confirmed: [] }));
+    }
+    return utf8ToBytes(JSON.stringify(value));
+  };
   const nodeEntry = (extra?: Record<string, unknown>) => ({
     key: bytesToHex(POINT),
     chainCode: bytesToHex(CHAIN),
     ...extra,
+  });
+
+  it("round-trips a canonical confirmed list and rejects non-canonical ones", () => {
+    const confirmedPaths: KeyPath[] = [
+      [44 + HARDENED, 60 + HARDENED, HARDENED],
+      [44 + HARDENED, 501 + HARDENED, HARDENED, HARDENED],
+      [84 + HARDENED, HARDENED, HARDENED],
+    ];
+    /* The encoder sorts into canonical order and the parser round-trips it; confirmed entries
+       may name any pinned path — node or ed25519. */
+    const bytes = encodeHardwareBody({ keys: bodyKeys, confirmed: confirmedPaths.toReversed() });
+    const parsed = parseHardwareBody(bytes);
+    expect(parsed.confirmed).toStrictEqual(
+      confirmedPaths.toSorted((a, b) => pathToString(a).localeCompare(pathToString(b))),
+    );
+    const decode = (value: unknown) =>
+      code(() => parseHardwareBody(utf8ToBytes(JSON.stringify(value))));
+    const shape = (list: unknown) => ({ nodes: {}, ed25519: {}, confirmed: list });
+    // Unsorted, duplicate and unknown-path entries all fail integrity.
+    expect(decode(shape(["m/84'/0'/0'", "m/44'/60'/0'"]))).toBe("integrity");
+    expect(decode(shape(["m/84'/0'/0'", "m/84'/0'/0'"]))).toBe("integrity");
+    expect(decode(shape(["m/44'/60'/0'", "m/44'/60'/5'"]))).toBe("integrity");
+    expect(decode(shape(["m/44'/60'/0'"]))).toBe("integrity");
+    expect(decode(shape("m/84'/0'/0'"))).toBe("integrity");
+    expect(decode(shape([42]))).toBe("integrity");
+    /* The same list pinned by the body still fails when it is not canonical — the order check
+       must fire on its own, not hide behind the unknown-path rule. */
+    const keyed = (list: unknown) => ({
+      nodes: {
+        "m/44'/60'/0'": nodeEntry({ parent: bytesToHex(FINGERPRINT) }),
+        "m/84'/0'/0'": nodeEntry(),
+      },
+      ed25519: {},
+      confirmed: list,
+    });
+    expect(decode(keyed(["m/84'/0'/0'", "m/44'/60'/0'"]))).toBe("integrity");
+    expect(decode(keyed(["m/84'/0'/0'", "m/84'/0'/0'"]))).toBe("integrity");
+    // Entries that do name pinned paths parse.
+    expect(
+      parseHardwareBody(
+        utf8ToBytes(
+          JSON.stringify({
+            nodes: {},
+            ed25519: { "m/44'/501'/0'/0'": bytesToHex(ED_POINT) },
+            confirmed: ["m/44'/501'/0'/0'"],
+          }),
+        ),
+      ).confirmed,
+    ).toStrictEqual([[44 + HARDENED, 501 + HARDENED, HARDENED, HARDENED]]);
   });
 
   it("rejects missing or extra top-level keys and non-JSON input", () => {

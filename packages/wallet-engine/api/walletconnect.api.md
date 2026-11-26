@@ -142,8 +142,10 @@ type AccountTreeControllerOptions = {
     readonly networks?: DiscoveryNetworks;
     readonly chains: {
         readonly account: (params: ChainAccountsParams) => Promise<{
-            readonly address?: string;
-            readonly xpub?: string;
+            readonly address: string;
+        } | {
+            readonly xpub: string;
+            readonly changeMark: number;
         }>;
     };
     readonly logger: EngineLogger;
@@ -1264,8 +1266,10 @@ type HistoryControllerOptions = {
             readonly template: ChainTemplate;
             readonly network: string;
         }) => Promise<{
-            readonly address?: string;
-            readonly xpub?: string;
+            readonly address: string;
+        } | {
+            readonly xpub: string;
+            readonly changeMark: number;
         }>;
     };
     readonly spark: Pick<SparkController, "history" | "store">;
@@ -2444,6 +2448,7 @@ class SignersController extends Controller<SignersState> {
         readonly walletId: string;
         readonly groupIndex: number;
         readonly family: SignerFamily;
+        readonly verify?: VerifyFactor;
     }): Promise<ReadonlyArray<ChainAccount>>;
     // (undocumented)
     init(): Promise<void>;
@@ -3022,7 +3027,10 @@ class TransactionController extends Controller<TransactionControllerState> {
     // (undocumented)
     lock(): void;
     markDepositClaimed(id: string): Promise<void>;
-    nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
+    nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<{
+        address: string;
+        confirmed: boolean;
+    }>;
     prepareDapp(account: AccountRef, request: SignRequest, options?: {
         readonly nonce?: number;
     }): Promise<PreparedRequest | PreparedMessage>;

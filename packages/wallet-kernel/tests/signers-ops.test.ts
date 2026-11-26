@@ -25,6 +25,7 @@ import { encodeBatchExecute, normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
+import type { Driver } from "../src/modules/signers/driver.ts";
 import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
 import { createOperationExecutor } from "../src/modules/signers/operation.ts";
 import { hardwareWalletId } from "../src/modules/signers/record.ts";
@@ -34,7 +35,7 @@ import { createHarness } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
 import { loadTranscript, replayExchange, transcriptSession } from "./onekey-emulator/index.ts";
 import { fakeSecureInput } from "./secure-input.ts";
-import { ACCOUNT_NODES, fakeDevice, masterFingerprint } from "./signers-fake.ts";
+import { ACCOUNT_NODES, fakeDevice, masterFingerprint, nodeAt } from "./signers-fake.ts";
 import type { FakeDevice, FakeDeviceOptions } from "./signers-fake.ts";
 
 const HARDENED = 0x80000000;
@@ -138,8 +139,12 @@ const boot = async (
 };
 
 /** Runs pair through begin/step and returns the hardware wallet id. */
-const pairDevice = async (h: Harness, session: string): Promise<string> => {
-  const begin = ok(await h.call("hardware.begin", { op: PAIR_OP }, session));
+const pairDevice = async (
+  h: Harness,
+  session: string,
+  verify: unknown = PASSKEY(),
+): Promise<string> => {
+  const begin = ok(await h.call("hardware.begin", { op: PAIR_OP, verify }, session));
   const done = ok(
     await h.call(
       "hardware.step",
@@ -157,7 +162,11 @@ const pairOneKey = async (h: Harness, session: string): Promise<string> => {
   const transcript = loadTranscript("pro", "driver");
   const device = replayExchange(transcriptSession(transcript, "driver-pair"));
   const begin = ok(
-    await h.call("hardware.begin", { op: { kind: "pair", device: "onekey" } }, session),
+    await h.call(
+      "hardware.begin",
+      { op: { kind: "pair", device: "onekey" }, verify: PASSKEY() },
+      session,
+    ),
   );
   const opId = strField(begin, "opId");
   let step = field(begin, "step");
@@ -183,8 +192,11 @@ const beginOp = async (
   h: Harness,
   session: string,
   op: unknown,
+  verify?: unknown,
 ): Promise<{ opId: string; request: ProtocolValue }> => {
-  const res = ok(await h.call("hardware.begin", { op }, session));
+  const res = ok(
+    await h.call("hardware.begin", verify === undefined ? { op } : { op, verify }, session),
+  );
   const step = field(res, "step");
   if (strField(step, "kind") !== "exchange") {
     throw new Error(`expected an exchange step, got ${JSON.stringify(step)}`);
@@ -220,7 +232,7 @@ describe("hardware.begin pair", () => {
   it("re-pairing the same device answers already-exists", async () => {
     const { h, session } = await boot();
     await pairDevice(h, session);
-    const { opId } = await beginOp(h, session, PAIR_OP);
+    const { opId } = await beginOp(h, session, PAIR_OP, PASSKEY());
     const res = await h.call("hardware.step", { opId, response: QR_RESPONSE }, session);
     expect(errCode(res)).toBe("already-exists");
     // The failed op is discarded — its id no longer resolves.
@@ -229,12 +241,42 @@ describe("hardware.begin pair", () => {
     );
   });
 
+  it.each([3, 5])("a %s-byte fingerprint from pair is integrity, not a wallet", async (n) => {
+    const { h, session } = await boot({ fingerprint: new Uint8Array(n).fill(1) });
+    const { opId } = await beginOp(h, session, PAIR_OP, PASSKEY());
+    expect(errCode(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session))).toBe(
+      "integrity",
+    );
+    const image = await h.store.load();
+    expect(image.records.filter((r) => r.kind === "hardware-wallet")).toHaveLength(0);
+  });
+
+  it.each([
+    ["a model with a control character", { model: "Keystone\u0007Pro" }],
+    ["a model over 64 bytes", { model: "K".repeat(65) }],
+    ["a non-ASCII firmware", { firmware: "3.2.2å" }],
+  ])("a pair answering %s is integrity, not a wallet", async (_name, opts) => {
+    const { h, session } = await boot(opts);
+    const { opId } = await beginOp(h, session, PAIR_OP, PASSKEY());
+    expect(errCode(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session))).toBe(
+      "integrity",
+    );
+    const image = await h.store.load();
+    expect(image.records.filter((r) => r.kind === "hardware-wallet")).toHaveLength(0);
+  });
+
   it("surfaces the driver's own KernelError from begin and step", async () => {
     const rejected = await boot({
       pairError: new KernelError("device-rejected", "the user refused pairing"),
     });
     expect(
-      errCode(await rejected.h.call("hardware.begin", { op: PAIR_OP }, rejected.session)),
+      errCode(
+        await rejected.h.call(
+          "hardware.begin",
+          { op: PAIR_OP, verify: PASSKEY() },
+          rejected.session,
+        ),
+      ),
     ).toBe("device-rejected");
 
     const { h, device, session } = await boot({
@@ -243,13 +285,18 @@ describe("hardware.begin pair", () => {
     });
     const walletId = await pairDevice(h, session);
     device.gaps.length = 0;
-    const { opId } = await beginOp(h, session, {
-      kind: "accounts",
-      walletId,
-      groupIndex: 0,
-      templates: ["solana.bip44-change"],
-      network: SOLANA_NETWORK,
-    });
+    const { opId } = await beginOp(
+      h,
+      session,
+      {
+        kind: "accounts",
+        walletId,
+        groupIndex: 0,
+        templates: ["solana.bip44-change"],
+        network: SOLANA_NETWORK,
+      },
+      PASSKEY(),
+    );
     expect(
       errCode(
         await h.call(
@@ -279,7 +326,12 @@ describe("hardware.begin accounts", () => {
     const walletId = await pairDevice(h, session);
     device.gaps.length = 0;
 
-    const { opId } = await beginOp(h, session, accountsOp(walletId, ["tron.bip44"], TRON_NETWORK));
+    const { opId } = await beginOp(
+      h,
+      session,
+      accountsOp(walletId, ["tron.bip44"], TRON_NETWORK),
+      PASSKEY(),
+    );
     const done = ok(
       await h.call(
         "hardware.step",
@@ -303,6 +355,127 @@ describe("hardware.begin accounts", () => {
     expect(device.gaps).toHaveLength(1);
   });
 
+  it("an accounts answer repeating a pinned path with a foreign key never shadows the pin", async () => {
+    /* A hostile transport answering a Keystone sync can echo a pinned path under a different
+       key. The merged pin keeps the pinned node — the fetched one is dropped, never served. */
+    const SEED_B = new Uint8Array(64).fill(0xb0);
+    const ACCOUNT_84 = [HARDENED + 84, HARDENED, HARDENED];
+    const device = fakeDevice(SEED);
+    const hostile: Driver = {
+      ...device.driver,
+      accounts: async (link, need, pin) => {
+        const honest = await device.driver.accounts(link, need, pin);
+        return { ...honest, nodes: [nodeAt(SEED_B, ACCOUNT_84), ...honest.nodes] };
+      },
+    };
+    const h = createHarness({
+      drivers: { keystone: hostile, ledger: device.driver, onekey: ONEKEY_DRIVER },
+    });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: FACTOR(),
+      }),
+    );
+    const session = strField(res, "session");
+    const hwId = await pairDevice(h, session);
+
+    const { opId } = await beginOp(
+      h,
+      session,
+      {
+        kind: "accounts",
+        walletId: hwId,
+        groupIndex: 1,
+        templates: ["btc.bip84"],
+        network: BTC_NETWORK,
+      },
+      PASSKEY(),
+    );
+    ok(
+      await h.call(
+        "hardware.step",
+        { opId, response: { kind: "message", data: new Uint8Array([1]) } },
+        session,
+      ),
+    );
+
+    const served = ok(
+      await h.call(
+        "wallet.accounts",
+        { walletId: hwId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+        session,
+      ),
+    );
+    const oracle = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'").publicExtendedKey;
+    expect(HDKey.fromMasterSeed(SEED_B).derive("m/84'/0'/0'").publicExtendedKey).not.toBe(oracle);
+    expect(strField(served, "xpub")).toBe(oracle);
+  });
+
+  it("the op's own accounts keep the pinned node when the answer repeats its path", async () => {
+    /* The same forged-echo answer, but the op also returns the pinned template: accountsBody
+       derives the returned accounts from the in-memory merged pin before the sealed record is
+       re-read, so a fetched-first merge would serve the foreign node in the op result itself. */
+    const SEED_B = new Uint8Array(64).fill(0xb0);
+    const ACCOUNT_84 = [HARDENED + 84, HARDENED, HARDENED];
+    const ACCOUNT_86 = [HARDENED + 86, HARDENED, HARDENED];
+    const device = fakeDevice(SEED, {
+      nodes: ACCOUNT_NODES.filter((p) => p[0] !== ACCOUNT_86[0]),
+    });
+    const hostile: Driver = {
+      ...device.driver,
+      accounts: async (link, need, pin) => {
+        const honest = await device.driver.accounts(link, need, pin);
+        return { ...honest, nodes: [nodeAt(SEED_B, ACCOUNT_84), ...honest.nodes] };
+      },
+    };
+    const h = createHarness({
+      drivers: { keystone: hostile, ledger: device.driver, onekey: ONEKEY_DRIVER },
+    });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: FACTOR(),
+      }),
+    );
+    const session = strField(res, "session");
+    const hwId = await pairDevice(h, session);
+    device.gaps.length = 0;
+
+    const { opId } = await beginOp(
+      h,
+      session,
+      accountsOp(hwId, ["btc.bip84", "btc.bip86"], BTC_NETWORK),
+      PASSKEY(),
+    );
+    const done = ok(
+      await h.call(
+        "hardware.step",
+        { opId, response: { kind: "message", data: new Uint8Array([1]) } },
+        session,
+      ),
+    );
+
+    /* bip86 was the only gap asked for; the forged bip84 node rode along unasked. The returned
+       bip84 account is the pinned xpub, not the foreign one — in the op result and afterwards. */
+    expect(device.gaps).toStrictEqual([{ secp256k1: [ACCOUNT_86], ed25519: [] }]);
+    const accounts = arrField(field(done, "result"), "accounts");
+    expect(accounts).toHaveLength(2);
+    const oracle = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'").publicExtendedKey;
+    expect(HDKey.fromMasterSeed(SEED_B).derive("m/84'/0'/0'").publicExtendedKey).not.toBe(oracle);
+    expect(strField(accounts[0]!, "xpub")).toBe(oracle);
+    const served = ok(
+      await h.call(
+        "wallet.accounts",
+        { walletId: hwId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+        session,
+      ),
+    );
+    expect(strField(served, "xpub")).toBe(oracle);
+  });
+
   it("a different fingerprint answering accounts is wrong-device and commits nothing", async () => {
     const TRON_ACCOUNT = [44 + HARDENED, 195 + HARDENED, HARDENED];
     const { h, device, session } = await boot({
@@ -312,7 +485,12 @@ describe("hardware.begin accounts", () => {
     const walletId = await pairDevice(h, session);
     device.gaps.length = 0;
 
-    const { opId } = await beginOp(h, session, accountsOp(walletId, ["tron.bip44"], TRON_NETWORK));
+    const { opId } = await beginOp(
+      h,
+      session,
+      accountsOp(walletId, ["tron.bip44"], TRON_NETWORK),
+      PASSKEY(),
+    );
     const res = await h.call(
       "hardware.step",
       { opId, response: { kind: "message", data: new Uint8Array([1]) } },
@@ -320,7 +498,12 @@ describe("hardware.begin accounts", () => {
     );
     expect(errCode(res)).toBe("wrong-device");
     // Nothing was merged: the same op asks the device for the same gap again.
-    const retry = await beginOp(h, session, accountsOp(walletId, ["tron.bip44"], TRON_NETWORK));
+    const retry = await beginOp(
+      h,
+      session,
+      accountsOp(walletId, ["tron.bip44"], TRON_NETWORK),
+      PASSKEY(),
+    );
     expect(device.gaps).toStrictEqual([
       { secp256k1: [TRON_ACCOUNT], ed25519: [] },
       { secp256k1: [TRON_ACCOUNT], ed25519: [] },
@@ -515,7 +698,7 @@ describe("hardware.begin verify-address", () => {
 describe("operation lifecycle", () => {
   it("cancel rejects the pending exchange and forgets the op", async () => {
     const { h, device, session } = await boot();
-    const { opId } = await beginOp(h, session, PAIR_OP);
+    const { opId } = await beginOp(h, session, PAIR_OP, PASSKEY());
     const rejection = rejectionOf(device.exchanges[0]!);
     ok(await h.call("hardware.cancel", { opId }, session));
     await expect(rejection).resolves.toBe("cancelled");
@@ -527,7 +710,7 @@ describe("operation lifecycle", () => {
 
   it("an idle lock aborts the operation; the next step is not-found", async () => {
     const { h, device, session } = await boot(undefined, { idleMs: 60_000 });
-    const { opId } = await beginOp(h, session, PAIR_OP);
+    const { opId } = await beginOp(h, session, PAIR_OP, PASSKEY());
     const rejection = rejectionOf(device.exchanges[0]!);
     h.advance(60_001);
     expect(field(ok(await h.call("status")), "vault")).toBe("locked");
@@ -542,13 +725,18 @@ describe("operation lifecycle", () => {
   it("vault.reset aborts a parked exchange and the fresh vault has no hardware wallets", async () => {
     const { h, device, session } = await boot();
     const walletId = await pairDevice(h, session);
-    const { opId } = await beginOp(h, session, {
-      kind: "accounts",
-      walletId,
-      groupIndex: 1, // group-1 solana is unpinned — the op asks the device
-      templates: ["solana.bip44-change"],
-      network: SOLANA_NETWORK,
-    });
+    const { opId } = await beginOp(
+      h,
+      session,
+      {
+        kind: "accounts",
+        walletId,
+        groupIndex: 1, // group-1 solana is unpinned — the op asks the device
+        templates: ["solana.bip44-change"],
+        network: SOLANA_NETWORK,
+      },
+      PASSKEY(),
+    );
     const rejection = rejectionOf(device.exchanges.at(-1)!);
     ok(await h.call("vault.reset", null, session));
     // The parked exchange rejects and the session died with the vault — the op resolves nothing.
@@ -570,9 +758,9 @@ describe("operation lifecycle", () => {
 
   it("a second begin discards the first operation", async () => {
     const { h, device, session } = await boot();
-    const first = await beginOp(h, session, PAIR_OP);
+    const first = await beginOp(h, session, PAIR_OP, PASSKEY());
     const rejection = rejectionOf(device.exchanges[0]!);
-    const second = await beginOp(h, session, PAIR_OP);
+    const second = await beginOp(h, session, PAIR_OP, PASSKEY());
     await expect(rejection).resolves.toBe("cancelled");
     expect(
       errCode(await h.call("hardware.step", { opId: first.opId, response: QR_RESPONSE }, session)),
@@ -585,13 +773,13 @@ describe("operation lifecycle", () => {
 
   it("the 300 s no-progress timer discards the operation", async () => {
     const { h, device, session } = await boot();
-    const { opId } = await beginOp(h, session, PAIR_OP);
+    const { opId } = await beginOp(h, session, PAIR_OP, PASSKEY());
     h.advance(299_999);
     // Still alive just before the deadline — the step re-arms the timer.
     const next = ok(await h.call("hardware.step", { opId, response: QR_RESPONSE }, session));
     expect(strField(field(next, "result"), "kind")).toBe("pair");
 
-    const second = await beginOp(h, session, PAIR_OP);
+    const second = await beginOp(h, session, PAIR_OP, PASSKEY());
     const rejection = rejectionOf(device.exchanges[1]!);
     h.advance(300_001);
     await expect(rejection).resolves.toBe("cancelled");
@@ -614,7 +802,7 @@ describe("operation lifecycle", () => {
 
   it("a response of the wrong kind is invalid-input and discards the op", async () => {
     const { h, device, session } = await boot();
-    const { opId } = await beginOp(h, session, PAIR_OP);
+    const { opId } = await beginOp(h, session, PAIR_OP, PASSKEY());
     const rejection = rejectionOf(device.exchanges[0]!);
     expect(
       errCode(
@@ -734,7 +922,7 @@ describe("hardware wallet refusals", () => {
       }),
     );
     const session = strField(res, "session");
-    const hwId = await pairDevice(h, session);
+    const hwId = await pairDevice(h, session, { kind: "hardware" });
     /* The batch renders only as a self-call to the account's own address. */
     const ownPub = HDKey.fromMasterSeed(SEED).derive("m/44'/60'/0'/0/0").publicKey!;
     const own = publicKeyToAddress(
@@ -789,7 +977,7 @@ describe("hardware wallet refusals", () => {
       }),
     );
     const session = strField(res, "session");
-    const hwId = await pairDevice(h, session);
+    const hwId = await pairDevice(h, session, { kind: "hardware" });
     const request = normalizeEvm({
       kind: "evm.personal-message",
       network: EVM_NETWORK,
@@ -856,7 +1044,7 @@ describe("hardware wallet refusals", () => {
         }),
       );
       const psession = strField(pres, "session");
-      const phwId = await pairDevice(ph, psession);
+      const phwId = await pairDevice(ph, psession, { kind: "hardware" });
       const pcreate = async () =>
         ph.call(
           "sessions.create",
@@ -912,14 +1100,24 @@ describe("hardware wallet refusals", () => {
     expect(errCode(res)).toBe("device-required");
   });
 
-  it("a sign op needs a factor and a non-sign op refuses one", async () => {
+  it("sign and pair need a factor and verify-address refuses one", async () => {
     const { h, session } = await boot();
     const hwId = await pairDevice(h, session);
+    expect(errCode(await h.call("hardware.begin", { op: PAIR_OP }, session))).toBe("invalid-input");
     expect(
       errCode(
         await h.call(
           "hardware.begin",
-          { op: { kind: "pair", device: "keystone" }, verify: PASSKEY() },
+          {
+            op: {
+              kind: "verify-address",
+              walletId: hwId,
+              groupIndex: 0,
+              template: "evm.bip44",
+              network: EVM_NETWORK,
+            },
+            verify: PASSKEY(),
+          },
           session,
         ),
       ),

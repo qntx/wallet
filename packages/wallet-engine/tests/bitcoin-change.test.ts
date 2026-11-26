@@ -13,6 +13,7 @@ import {
   BITCOIN_GAP_LIMIT,
   bitcoinAddressFromXpub,
   isDiscoverableChange,
+  requestChangeMark,
 } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
 
@@ -65,9 +66,13 @@ describe("changeAddressOf", () => {
           { minLength: 1, maxLength: 10 },
         ),
         (used, tails) => {
-          const chosen = changeAddressOf(chainOf(used), tails);
+          const chosen = changeAddressOf(chainOf(used), tails, 0);
           expect(
-            isDiscoverableChange({ purpose: PURPOSE, change: 1, index: chosen.index }, tails),
+            isDiscoverableChange(
+              { purpose: PURPOSE, change: 1, index: chosen.index },
+              tails,
+              requestChangeMark(0, PURPOSE, tails, "internal"),
+            ),
           ).toBe(true);
         },
       ),
@@ -78,20 +83,23 @@ describe("changeAddressOf", () => {
   it("takes the first unused index inside the bound and the bound past it", () => {
     const allUnused = chainOf(Array.from({ length: 60 }, () => false));
     const noChangeInput: BitcoinPathTail[] = [{ purpose: PURPOSE, change: 0, index: 0 }];
-    expect(changeAddressOf(allUnused, noChangeInput).index).toBe(0);
+    expect(changeAddressOf(allUnused, noChangeInput, 0).index).toBe(0);
     const spentTo25 = chainOf(Array.from({ length: 60 }, (_, i) => i < BITCOIN_GAP_LIMIT + 5));
     // 0..24 used: the first unused index 25 lies past the bound 20, so the build reuses 20.
-    expect(changeAddressOf(spentTo25, noChangeInput).index).toBe(BITCOIN_GAP_LIMIT);
+    expect(changeAddressOf(spentTo25, noChangeInput, 0).index).toBe(BITCOIN_GAP_LIMIT);
     // A proven change input at index 30 raises the bound to 50 — 25 is free and inside it.
     const changeInput: BitcoinPathTail[] = [{ purpose: PURPOSE, change: 1, index: 30 }];
-    expect(changeAddressOf(spentTo25, changeInput).index).toBe(BITCOIN_GAP_LIMIT + 5);
+    expect(changeAddressOf(spentTo25, changeInput, 0).index).toBe(BITCOIN_GAP_LIMIT + 5);
     const spentTo55 = chainOf(Array.from({ length: 80 }, (_, i) => i < BITCOIN_GAP_LIMIT + 35));
     // Now 25 is used too: first unused 55 > bound 50 — reuse lands at 50.
-    expect(changeAddressOf(spentTo55, changeInput).index).toBe(50);
+    expect(changeAddressOf(spentTo55, changeInput, 0).index).toBe(50);
+    // The exact boundary: 0..20 used leaves the first unused index at bound + 1 — still reuse.
+    const spentTo21 = chainOf(Array.from({ length: 60 }, (_, i) => i <= BITCOIN_GAP_LIMIT));
+    expect(changeAddressOf(spentTo21, noChangeInput, 0).index).toBe(BITCOIN_GAP_LIMIT);
     // A receive-chain input's index never raises the bound: index 30 stays receive-only, so the
     // bound is the bare gap limit and 25 remains past it — reuse at 20, not the free 25.
     const receiveInput: BitcoinPathTail[] = [{ purpose: PURPOSE, change: 0, index: 30 }];
-    expect(changeAddressOf(spentTo25, receiveInput).index).toBe(BITCOIN_GAP_LIMIT);
+    expect(changeAddressOf(spentTo25, receiveInput, 0).index).toBe(BITCOIN_GAP_LIMIT);
   });
 });
 
@@ -113,7 +121,7 @@ describe("a send whose first unused change index lies past the scan's reach", ()
     expect(tail.index).toBe(BITCOIN_GAP_LIMIT);
     // The kernel's own classification hides the same output: the tail is discoverable against
     // the signed inputs' tails — receive-chain only, so the bound is the bare gap limit.
-    expect(isDiscoverableChange(tail, [{ purpose: PURPOSE, change: 0, index: 0 }])).toBe(true);
+    expect(isDiscoverableChange(tail, [{ purpose: PURPOSE, change: 0, index: 0 }], 0)).toBe(true);
     // The tracked intent hides it too: no own-path row and no unusual-own-output warning.
     const { intent } = tx;
     expect(intent?.outflows.every((o) => o.ownPath === undefined)).toBe(true);

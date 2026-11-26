@@ -250,7 +250,11 @@ const boot = async (): Promise<Boot> => {
   )["walletId"] as string;
   ok(await h.call("vault.setBlindSigning", { enabled: true, verify: PASSKEY() }, session));
   const begin = ok(
-    await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+    await h.call(
+      "hardware.begin",
+      { op: { kind: "pair", device: "keystone" }, verify: PASSKEY() },
+      session,
+    ),
   );
   const done = ok(
     await h.call(
@@ -466,7 +470,7 @@ const PAYEE_SCRIPT = OutScript.encode(
 );
 
 /** A one-input PSBT spending the wallet's `template` account-0 receive-0 key. */
-const psbt = (template: "btc.bip84" | "btc.bip86"): Uint8Array => {
+const psbt = (template: "btc.bip84" | "btc.bip86", sighashType?: number): Uint8Array => {
   const purpose = template === "btc.bip84" ? 84 : 86;
   const child = HDKey.fromMasterSeed(SEED).derive(`m/${purpose}'/0'/0'/0/0`);
   const pub = child.publicKey;
@@ -481,6 +485,7 @@ const psbt = (template: "btc.bip84" | "btc.bip86"): Uint8Array => {
     index: 0,
     sequence: 0xfffffffd,
     witnessUtxo: { script: spend.script, amount: 100_000n },
+    ...(sighashType === undefined ? {} : { sighashType }),
     ...(purpose === 86
       ? {
           tapInternalKey: pub.subarray(1),
@@ -504,6 +509,7 @@ const psbt = (template: "btc.bip84" | "btc.bip86"): Uint8Array => {
 
 const bip84Request = (walletId: string) => ({
   kind: "bitcoin.psbt",
+  origin: "internal",
   network: BTC_NETWORK,
   account: { kind: "hd", walletId, groupIndex: 0 },
   psbt: psbt("btc.bip84"),
@@ -708,7 +714,11 @@ describe("keystone signing byte-identical to local signing", () => {
       ),
     );
     const paired = ok(
-      await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "keystone" }, verify: { kind: "hardware" } },
+        session,
+      ),
     );
     const done = ok(
       await h.call(
@@ -927,6 +937,44 @@ describe("a hostile psbt answer is refused", () => {
     );
   });
 
+  it("rejects a 65-byte taproot signature whose sighash byte is not the planned one", async () => {
+    const { h, session, hwId } = await boot();
+    const request = normalizeBitcoin({
+      ...bip84Request(hwId),
+      psbt: psbt("btc.bip86", 0x83),
+      sign: [{ index: 0, template: "btc.bip86" }],
+    });
+    if (request.kind !== "bitcoin.psbt") {
+      throw new Error("normalizeBitcoin changed the request kind");
+    }
+    // The device answers an honestly signed 65-byte tapKeySig — except its sighash byte is not
+    // the SIGHASH_SINGLE|ANYONECANPAY the plan asked for.
+    const tamperedTapKeySig = (req: DeviceRequest): DeviceResponse => {
+      const response = keystoneDevice(SEED, MFP).respond(req);
+      if (response.kind !== "qr" || response.ur.type !== "crypto-psbt") {
+        return response;
+      }
+      const signed = CryptoPSBT.fromCBOR(Buffer.from(response.ur.cbor)).getPSBT();
+      const tx = Transaction.fromPSBT(new Uint8Array(signed));
+      const tap = tx.getInput(0).tapKeySig;
+      if (tap === undefined || tap.length !== 65 || tap[64] !== 0x83) {
+        throw new Error("no 65-byte 0x83 tapKeySig to tamper");
+      }
+      // getInput returns a deep clone — write the tampered signature back through updateInput.
+      tx.updateInput(0, { tapKeySig: new Uint8Array([...tap.subarray(0, 64), 0x02]) }, true);
+      return {
+        kind: "qr",
+        ur: {
+          type: "crypto-psbt",
+          cbor: new Uint8Array(new CryptoPSBT(Buffer.from(tx.toPSBT(0))).toCBOR()),
+        },
+      };
+    };
+    expect(errCode(await signOnDevice(h, session, request, {}, tamperedTapKeySig))).toBe(
+      "integrity",
+    );
+  });
+
   it("rejects a btc-signature carrying another public key", async () => {
     const { h, session, hwId } = await boot();
     const request = normalizeBitcoin({
@@ -974,7 +1022,7 @@ describe("keystone accounts over qr-hardware-call", () => {
     mutant: DeviceMutant = {},
   ): Promise<KernelResponse> => {
     const device = keystoneDevice(SEED, MFP, mutant);
-    const begin = await h.call("hardware.begin", { op }, session);
+    const begin = await h.call("hardware.begin", { op, verify: PASSKEY() }, session);
     if ("err" in begin) {
       return begin;
     }

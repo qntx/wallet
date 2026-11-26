@@ -25,11 +25,9 @@ export async function exportMnemonic(
 ): Promise<{ mnemonic: Uint8Array; passphrase?: Uint8Array }> {
   const { dek } = ctx.session.require(requestSession);
   await verifyFactor(
-    ctx.platform,
-    ctx.image,
+    ctx,
     params.verify,
     dek,
-    ctx.commit,
     corePromptFor(ctx.platform.keystore, "export-mnemonic"),
   );
   const record = findSeedWallet(ctx.image, params.walletId);

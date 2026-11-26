@@ -149,6 +149,7 @@ function main(): void {
   });
   const req = normalizeBitcoin({
     kind: "bitcoin.psbt",
+    origin: "internal",
     network: "bip122:000000000019d6689c085ae165831e93",
     account: { kind: "hd", walletId: "w", groupIndex: 0 },
     psbt: tx.toPSBT(0),

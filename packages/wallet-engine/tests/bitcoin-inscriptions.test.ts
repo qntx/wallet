@@ -201,6 +201,8 @@ const rig = (template: Template) => {
             xpub: hd.publicExtendedKey,
             fingerprint: "00000000",
             path: template === "btc.bip86" ? "m/86'/0'/0'" : "m/84'/0'/0'",
+            changeMark: 0,
+            confirmed: true,
           }),
         sign: async (p: SignParams) => {
           signedCalls.push(p);

@@ -10,8 +10,15 @@ export { BITCOIN_NETWORKS, bitcoinNetwork } from "./networks.ts";
 export type { BitcoinAccountTemplate } from "./account.ts";
 export { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "./account.ts";
 export { decodeBitcoinPsbt, verifiabilityBitcoin } from "./decode.ts";
-export { BITCOIN_GAP_LIMIT, EMPTY_BITCOIN_OWN, isDiscoverableChange } from "./own.ts";
-export type { BitcoinOwn, BitcoinPathTail } from "./own.ts";
+export {
+  BITCOIN_GAP_LIMIT,
+  BITCOIN_SCAN_LIMIT,
+  changeScanReach,
+  EMPTY_BITCOIN_OWN,
+  isDiscoverableChange,
+  requestChangeMark,
+} from "./own.ts";
+export type { BitcoinOwn, BitcoinPathTail, BitcoinRequestOrigin } from "./own.ts";
 export {
   samePsbtContent,
   verifyBitcoinMessage,
@@ -89,6 +96,10 @@ export const normalizeBitcoin = (request: unknown): SignRequest => {
     ) {
       throw new ChainError("invalid-request", "request.account must be a wallet group");
     }
+    const { origin } = request;
+    if (origin !== "internal" && origin !== "external") {
+      throw new ChainError("invalid-request", "request.origin must be internal or external");
+    }
     if (!(psbt instanceof Uint8Array)) {
       throw new ChainError("invalid-request", "psbt must be bytes");
     }
@@ -97,6 +108,7 @@ export const normalizeBitcoin = (request: unknown): SignRequest => {
       kind: "bitcoin.psbt",
       network,
       account: { kind: "hd", walletId, groupIndex },
+      origin,
       psbt: normalized.psbt,
       sign: normalized.sign,
     };

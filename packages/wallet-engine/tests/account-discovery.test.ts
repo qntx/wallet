@@ -95,6 +95,8 @@ const rig = (over: Partial<Rig> = {}): Rig => {
               ? "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb"
               : "bc1qabc",
         xpub: HD.publicExtendedKey,
+        changeMark: 0,
+        confirmed: true,
       });
     },
   };
@@ -293,7 +295,10 @@ describe("discovery and the per-group sync stamp", () => {
         setStore: () => {},
       } as unknown as SparkController,
       sparkNetwork: "regtest",
-      chains: { account: async () => Promise.resolve({}) },
+      chains: {
+        account: async () =>
+          Promise.resolve({ address: "0x0000000000000000000000000000000000000000" }),
+      },
       logger: LOGGER,
       now: () => clock.t,
     });

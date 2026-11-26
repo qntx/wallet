@@ -650,6 +650,7 @@ type SignRequest = {
         readonly walletId: string;
         readonly groupIndex: number;
     };
+    readonly origin: "internal" | "external";
     readonly psbt: Uint8Array;
     readonly sign: ReadonlyArray<{
         readonly index: number;

@@ -63,6 +63,11 @@ export type Pin = {
    */
   readonly fingerprint?: Uint8Array;
   readonly keys: PinnedKeys;
+  /**
+   * The pinned entries that passed an on-device check — `"all"` for a card (a genuine card's keys
+   * are its own; the tap already proved custody), the confirmed path list for a hardware wallet.
+   */
+  readonly confirmed: "all" | ReadonlyArray<KeyPath>;
 };
 
 const failure = (): KernelError => new KernelError("integrity", "invalid pinned material");
@@ -206,6 +211,30 @@ const nodeAt = (pin: Pin, path: KeyPath): HDKey | undefined => {
   return node;
 };
 
+/**
+ * The pinned entry `path` resolves through — the deepest secp256k1 prefix with an all-non-hardened
+ * tail (the same ancestor {@link nodeAt} picks), the exact ed25519 entry. `undefined` when the pin
+ * cannot serve the path at all.
+ */
+export const servingPath = (
+  pin: Pin,
+  curve: "secp256k1" | "ed25519",
+  path: KeyPath,
+): KeyPath | undefined => {
+  if (curve === "ed25519") {
+    return pin.keys.ed25519.find((k) => samePath(k.path, path))?.path;
+  }
+  const [ancestor] = pin.keys.nodes
+    .filter(
+      (node) =>
+        node.path.length <= path.length &&
+        samePath(node.path, path.slice(0, node.path.length)) &&
+        path.slice(node.path.length).every((index) => index < HARDENED),
+    )
+    .sort((a, b) => b.path.length - a.path.length);
+  return ancestor?.path;
+};
+
 /** The BIP-32 master/parent fingerprint's first four bytes as the u32 device answers carry. */
 export const fingerprintNumber = (bytes: Uint8Array): number =>
   new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0);
@@ -267,6 +296,13 @@ export const pinnedMaterial = (pin: Pin): PublicMaterial => ({
       chainCode: node.chainCode,
       publicKey: node.publicKey,
     }).publicExtendedKey;
+  },
+  confirmed: async (curve, path) => {
+    const serving = servingPath(pin, curve, path);
+    if (serving === undefined) {
+      throw deviceRequired();
+    }
+    return pin.confirmed === "all" || pin.confirmed.some((p) => samePath(p, serving));
   },
   fingerprint: async () => {
     if (pin.master !== undefined) {

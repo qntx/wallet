@@ -199,7 +199,12 @@ describe("the signers controller", () => {
         await Promise.resolve();
       },
     });
-    const accounts = await signers.fetchAccounts({ walletId: hwId, groupIndex: 0, family: "evm" });
+    const accounts = await signers.fetchAccounts({
+      walletId: hwId,
+      groupIndex: 0,
+      family: "evm",
+      verify: VERIFY,
+    });
     expect(accounts.length).toBeGreaterThan(0);
     expect(rechecked).toStrictEqual([`${hwId}:0:evm`]);
     expect(signers.getState().active).toBeNull();

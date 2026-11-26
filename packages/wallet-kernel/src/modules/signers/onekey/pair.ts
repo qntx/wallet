@@ -4,8 +4,10 @@
  * root_fingerprint and they must all agree on one master — and the SLIP-10 Solana leaf, then
  * cross-checks one derived leaf address per family against the pinned nodes locally. `accounts`
  * fetches the paths the caller still needs; every secp256k1 node must carry the pin's master
- * fingerprint, and an ed25519-only fetch re-probes a pinned secp256k1 node so a foreign device
- * cannot slip its keys into the pin (`wrong-device` on any mismatch).
+ * fingerprint, and an ed25519-only fetch re-probes a pinned secp256k1 node (`wrong-device` on any
+ * mismatch). Both checks replay public values, so a foreign device or the transport can still merge
+ * its own keys — they only stop an accidental second honest device; merged entries stay unconfirmed
+ * until an on-device verify-address matches.
  */
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { HDKey } from "@scure/bip32";
@@ -180,8 +182,9 @@ export const accounts: Driver["accounts"] = async (link, need, pin) => {
       // oxlint-disable-next-line eslint/no-await-in-loop -- the device serializes exchanges
       ed25519.push({ path: [...path], publicKey: await solanaPublicKey(exchange, path, false) });
     }
-    // An ed25519-only fetch carries no fingerprint: probe a pinned secp node so a foreign device
-    // cannot slip its keys into the pin.
+    // An ed25519-only fetch carries no fingerprint: probe a pinned secp node — the replayed value
+    // only stops an accidental second honest device; merged entries stay unconfirmed until an
+    // on-device verify-address matches.
     if (need.secp256k1.length === 0 && need.ed25519.length > 0) {
       const [first] = pin.nodes;
       if (first === undefined) {

@@ -130,13 +130,6 @@
       "optional": true
     }
   },
-  "devEngines": {
-    "packageManager": {
-      "name": "bun",
-      "version": "1.4.4",
-      "onFail": "ignore"
-    }
-  },
   "engines": {
     "node": ">=20.19.0"
   }

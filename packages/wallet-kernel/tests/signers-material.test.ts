@@ -11,10 +11,12 @@ import { hash160 } from "@scure/btc-signer/utils.js";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { KeyPath } from "@qntx/wallet-chains";
 import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 
 import { pinnedMaterial } from "../src/derive/pinned.ts";
 import { KernelError } from "../src/errors.ts";
+import { seedKeys } from "../src/modules/chains/keys.ts";
 import type { HardwarePin } from "../src/modules/signers/driver.ts";
 import { edAt, masterFingerprint, nodeAt, SOLANA_LEAF } from "./signers-fake.ts";
 
@@ -32,7 +34,7 @@ const pin: HardwarePin = {
   ed25519: [edAt(SEED, SOLANA_LEAF)],
 };
 
-const material = pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin });
+const material = pinnedMaterial({ fingerprint: pin.fingerprint, keys: pin, confirmed: [] });
 
 const MASTER = HDKey.fromMasterSeed(SEED).publicKey;
 if (MASTER === null) {
@@ -111,6 +113,7 @@ describe("pinnedMaterial", () => {
     const { parent, ...withoutParent } = nodeAt(SEED, BTC84_ACCOUNT);
     void parent;
     const noParent = pinnedMaterial({
+      confirmed: [],
       fingerprint: pin.fingerprint,
       keys: { nodes: [withoutParent], ed25519: pin.ed25519 },
     });
@@ -130,7 +133,7 @@ describe("pinnedMaterial", () => {
       ),
       ed25519: [],
     };
-    const cardPin = pinnedMaterial({ master: MASTER, keys });
+    const cardPin = pinnedMaterial({ master: MASTER, keys, confirmed: "all" });
     await expect(cardPin.secp256k1([])).resolves.toStrictEqual(MASTER);
     // No parent pinned: the xpub's parent fp is hash160 of the cached m/84'/0' public key.
     const net = bitcoinNetwork("bip122:000000000019d6689c085ae165831e93");
@@ -145,6 +148,7 @@ describe("pinnedMaterial", () => {
   it("serializes the explicitly pinned parent fingerprint, never a derived one", async () => {
     const alien = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
     const pinned = pinnedMaterial({
+      confirmed: [],
       fingerprint: pin.fingerprint,
       keys: {
         nodes: [{ ...nodeAt(SEED, BTC84_ACCOUNT), parent: alien }],
@@ -158,7 +162,7 @@ describe("pinnedMaterial", () => {
   });
 
   it("a pin carrying neither master nor fingerprint is integrity, its keys device-required", async () => {
-    const empty = pinnedMaterial({ keys: { nodes: [], ed25519: [] } });
+    const empty = pinnedMaterial({ keys: { nodes: [], ed25519: [] }, confirmed: [] });
     await expect(code(async () => empty.secp256k1([]))).resolves.toBe("device-required");
     await expect(code(async () => empty.ed25519(SOLANA_LEAF))).resolves.toBe("device-required");
     await expect(code(async () => empty.fingerprint())).resolves.toBe("integrity");
@@ -166,13 +170,87 @@ describe("pinnedMaterial", () => {
 
   it("a fingerprint claim that contradicts the pinned master is integrity", async () => {
     const bad = pinnedMaterial({
+      confirmed: [],
       master: MASTER,
       fingerprint: new Uint8Array([0, 0, 0, 0]),
       keys: pin,
     });
     await expect(code(async () => bad.fingerprint())).resolves.toBe("integrity");
     // A matching claim passes — the master still wins the answer.
-    const fine = pinnedMaterial({ master: MASTER, fingerprint: pin.fingerprint, keys: pin });
+    const fine = pinnedMaterial({
+      master: MASTER,
+      fingerprint: pin.fingerprint,
+      keys: pin,
+      confirmed: "all",
+    });
     await expect(fine.fingerprint()).resolves.toStrictEqual(hash160(MASTER).subarray(0, 4));
+  });
+});
+
+describe("pinnedMaterial.confirmed", () => {
+  const evmLeaf = (group: number): KeyPath => [44 + HARDENED, 60 + HARDENED, HARDENED, 0, group];
+
+  it("reports the serving entry's flag — a leaf under a confirmed account node confirms", async () => {
+    const unconfirmed = pinnedMaterial({
+      fingerprint: pin.fingerprint,
+      keys: pin,
+      confirmed: [],
+    });
+    await expect(unconfirmed.confirmed("secp256k1", evmLeaf(0))).resolves.toBe(false);
+    /* The serving entry of a group-7 leaf is the same m/44'/60'/0' node — confirming it
+       confirms every leaf it serves, whichever group. */
+    const confirmed = pinnedMaterial({
+      fingerprint: pin.fingerprint,
+      keys: pin,
+      confirmed: [EVM_ACCOUNT],
+    });
+    await expect(confirmed.confirmed("secp256k1", evmLeaf(0))).resolves.toBe(true);
+    await expect(confirmed.confirmed("secp256k1", evmLeaf(7))).resolves.toBe(true);
+    // A different entry's confirmation does not leak onto this one.
+    const other = pinnedMaterial({
+      fingerprint: pin.fingerprint,
+      keys: pin,
+      confirmed: [[84 + HARDENED, HARDENED, HARDENED]],
+    });
+    await expect(other.confirmed("secp256k1", evmLeaf(0))).resolves.toBe(false);
+  });
+
+  it("no serving entry is device-required, and card material confirms everything", async () => {
+    const unconfirmed = pinnedMaterial({
+      fingerprint: pin.fingerprint,
+      keys: pin,
+      confirmed: [],
+    });
+    await expect(code(async () => unconfirmed.confirmed("secp256k1", [HARDENED]))).resolves.toBe(
+      "device-required",
+    );
+    await expect(
+      code(async () =>
+        unconfirmed.confirmed("ed25519", [44 + HARDENED, 501 + HARDENED, HARDENED, 1 + HARDENED]),
+      ),
+    ).resolves.toBe("device-required");
+    const confirmedEd = pinnedMaterial({
+      fingerprint: pin.fingerprint,
+      keys: pin,
+      confirmed: [SOLANA_LEAF],
+    });
+    await expect(confirmedEd.confirmed("ed25519", SOLANA_LEAF)).resolves.toBe(true);
+    const card = pinnedMaterial({
+      master: MASTER,
+      keys: pin,
+      confirmed: "all",
+    });
+    await expect(card.confirmed("secp256k1", evmLeaf(0))).resolves.toBe(true);
+    await expect(card.confirmed("ed25519", SOLANA_LEAF)).resolves.toBe(true);
+  });
+
+  it("seed material confirms every path — the kernel holds the secret", async () => {
+    const keys = seedKeys(SEED, (n) => new Uint8Array(n).fill(1));
+    try {
+      await expect(keys.material.confirmed("secp256k1", evmLeaf(0))).resolves.toBe(true);
+      await expect(keys.material.confirmed("ed25519", SOLANA_LEAF)).resolves.toBe(true);
+    } finally {
+      keys.wipe();
+    }
   });
 });

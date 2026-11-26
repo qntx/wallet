@@ -67,7 +67,9 @@ export type HistoryControllerOptions = {
       readonly groupIndex: number;
       readonly template: ChainTemplate;
       readonly network: string;
-    }) => Promise<{ readonly address?: string; readonly xpub?: string }>;
+    }) => Promise<
+      { readonly address: string } | { readonly xpub: string; readonly changeMark: number }
+    >;
   };
   readonly spark: Pick<SparkController, "history" | "store">;
   readonly sparkNetwork: SparkNetwork;
@@ -399,13 +401,13 @@ export class HistoryController extends Controller<HistoryState> {
             network: tronNetwork,
           }),
     ]);
-    if (evmAccount?.address !== undefined) {
+    if (evmAccount !== undefined && "address" in evmAccount) {
       own.evm = evmAccount.address;
     }
-    if (solanaAccount?.address !== undefined) {
+    if (solanaAccount !== undefined && "address" in solanaAccount) {
       own.solana = solanaAccount.address;
     }
-    if (tronAccount?.address !== undefined) {
+    if (tronAccount !== undefined && "address" in tronAccount) {
       own.tron = tronAccount.address;
     }
   }

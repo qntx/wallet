@@ -66,6 +66,7 @@ const apis = (sign: Sign): ReturnType<typeof chains> => {
       template: "evm.bip44",
       network: "eip155:1",
       address: ADDR,
+      confirmed: true,
     });
   const exportAccount: ReturnType<typeof chains>["exportAccount"] = async () =>
     Promise.reject(new Error("not implemented"));

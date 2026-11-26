@@ -121,11 +121,9 @@ export async function exportKey(
 ): Promise<Uint8Array> {
   const { dek } = ctx.session.require(requestSession);
   await verifyFactor(
-    ctx.platform,
-    ctx.image,
+    ctx,
     params.verify,
     dek,
-    ctx.commit,
     corePromptFor(ctx.platform.keystore, "export-private-key"),
   );
   const record = findRecord(ctx.image, NOSTR_KEY_KIND, params.publicKey);

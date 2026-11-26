@@ -400,6 +400,7 @@ const bip84Psbt = (inputs: number): Uint8Array => {
 const psbtReq = (walletId: string, templates: string[]) =>
   normalizeBitcoin({
     kind: "bitcoin.psbt",
+    origin: "internal",
     network: BTC_NETWORK,
     account: { kind: "hd", walletId, groupIndex: 0 },
     psbt: bip84Psbt(templates.length),

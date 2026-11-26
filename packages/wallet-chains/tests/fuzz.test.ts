@@ -106,6 +106,7 @@ const solanaRequest = (message: Uint8Array): SignRequest => ({
 
 const psbtRequest = (psbt: Uint8Array): Extract<SignRequest, { kind: "bitcoin.psbt" }> => ({
   kind: "bitcoin.psbt",
+  origin: "internal",
   network: BTC_NET,
   account: BTC_ACCOUNT,
   psbt,

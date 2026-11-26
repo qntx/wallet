@@ -406,9 +406,12 @@ const recordEngineSessions = async (): Promise<void> => {
 
   const e2e = await harness.e2eWorld({ deviceIo: () => io });
   const { w, fund } = e2e;
+  const verify = { kind: "password" as const, password: "correct horse battery staple" };
   try {
-    const result = await hardware(w.wallet).start({ kind: "pair", device: "onekey" }, { io })
-      .result;
+    const result = await hardware(w.wallet).start(
+      { kind: "pair", device: "onekey" },
+      { io, verify },
+    ).result;
     if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
       throw new Error("pair did not return a hardware wallet");
     }
@@ -509,12 +512,13 @@ const recordEngineSessions = async (): Promise<void> => {
   });
   const w2 = e2e2.w;
   try {
-    const result2 = await hardware(w2.wallet).start({ kind: "pair", device: "onekey" }, { io })
-      .result;
+    const result2 = await hardware(w2.wallet).start(
+      { kind: "pair", device: "onekey" },
+      { io, verify },
+    ).result;
     if (result2.kind !== "pair" || result2.wallet.custody !== "hardware") {
       throw new Error("pair did not return a hardware wallet");
     }
-    const verify = { kind: "password" as const, password: "correct horse battery staple" };
     const account = await harness.matrixAccount(w2, result2.wallet.walletId);
     for (const family of ["evm", "bitcoin", "solana", "tron"] as const) {
       session = { name: `engine-dapp-${family}`, exchanges: [] as Step[] };

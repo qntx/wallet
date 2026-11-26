@@ -496,7 +496,18 @@ describe("pairing a kernel end to end", () => {
     );
     const session = strField(res, "session");
     const begin = ok(
-      await h.call("hardware.begin", { op: { kind: "pair", device: "keystone" } }, session),
+      await h.call(
+        "hardware.begin",
+        {
+          op: { kind: "pair", device: "keystone" },
+          verify: {
+            kind: "passkey",
+            credentialId: utf8ToBytes("credential-1"),
+            prf: new Uint8Array(32).fill(0x50),
+          },
+        },
+        session,
+      ),
     );
     expect(field(field(begin, "step"), "request")).toStrictEqual({
       kind: "qr",

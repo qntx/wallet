@@ -42,6 +42,8 @@ jobs:
           -p 127.0.0.1:54936:54936/udp
           onekey-emu-${{ matrix.model }}
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
       - run: bun install --frozen-lockfile
       # The client and driver resolve @qntx/wallet and @qntx/wallet-chains through their exports → dist.
       - run: bunx vp run @qntx/wallet#build

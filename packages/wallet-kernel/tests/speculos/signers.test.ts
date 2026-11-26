@@ -335,7 +335,7 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
         h,
         session,
         "bitcoin",
-        { op: { kind: "pair", device: "ledger" } },
+        { op: { kind: "pair", device: "ledger" }, verify: { kind: "hardware" } },
         screen("bitcoin"),
         undefined,
       ),
@@ -369,6 +369,7 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
               templates: [template],
               network,
             },
+            verify: { kind: "hardware" },
           },
           screen(app),
           undefined,
@@ -390,6 +391,7 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
             templates: ["btc.bip84"],
             network: BTC_NETWORK,
           },
+          verify: { kind: "hardware" },
         },
         screen("bitcoin"),
         undefined,
@@ -742,6 +744,7 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
       // oxlint-disable-next-line eslint/no-await-in-loop -- one psbt review at a time
       const res = await sign("bitcoin", {
         kind: "bitcoin.psbt",
+        origin: "internal",
         network: BTC_NETWORK,
         account: { kind: "hd", walletId: hwId, groupIndex: 0 },
         psbt,

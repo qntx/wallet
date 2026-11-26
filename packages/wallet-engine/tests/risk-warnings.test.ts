@@ -496,6 +496,7 @@ describe("warning findings on PendingRequest.risk", () => {
             psbts.map((input): PreparedBitcoinPsbt => ({
               request: {
                 kind: "bitcoin.psbt",
+                origin: "internal",
                 network: BITCOIN_NET,
                 account: BTC_ACCOUNT_REF,
                 psbt: input.psbt,

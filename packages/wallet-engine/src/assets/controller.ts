@@ -1115,7 +1115,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
         if (!("xpub" in account)) {
           throw new TypeError(`bitcoin account ${template} on ${network} has no xpub`);
         }
-        return { kind: "xpub", template, xpub: account.xpub };
+        return { kind: "xpub", template, xpub: account.xpub, changeMark: account.changeMark };
       }),
     );
     const read = await readBitcoin(es, network, sources, this.options.ownBitcoinTxids());

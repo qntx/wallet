@@ -2400,14 +2400,65 @@ describe("card sign (fake card)", () => {
     return tx.toPSBT(0);
   };
 
-  const psbtReq = (walletId: string, psbt: Uint8Array, templates: string[]) =>
+  const psbtReq = (
+    walletId: string,
+    psbt: Uint8Array,
+    templates: string[],
+    opts?: { readonly origin?: "internal" | "external" },
+  ) =>
     normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: opts?.origin ?? "internal",
       network: BTC_NETWORK,
       account: { kind: "hd", walletId, groupIndex: 0 },
       psbt,
       sign: templates.map((template, index) => ({ index, template })),
     });
+
+  /** A bip84 PSBT spending one own key to a payee plus an own change output at /1/`index`. */
+  const bip84ChangePsbt = (
+    index: number,
+    input?: { readonly change?: number; readonly index?: number },
+  ): Uint8Array => {
+    const inChange = input?.change ?? 0;
+    const inIndex = input?.index ?? 0;
+    const inputKey = HDKey.fromMasterSeed(seed).derive(`m/84'/0'/0'/${inChange}/${inIndex}`);
+    const inputPub = inputKey.publicKey!;
+    const inputSpend = p2wpkh(inputPub);
+    const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+    prev.addInput({ txid: hex("1212".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: inputSpend.script, amount: 100000n });
+    const outKey = HDKey.fromMasterSeed(seed).derive(`m/84'/0'/0'/1/${index}`);
+    const outPub = outKey.publicKey!;
+    const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+    tx.addInput({
+      txid: hex(prev.id),
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: inputSpend.script, amount: 100000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
+      bip32Derivation: [
+        [
+          inputPub,
+          {
+            fingerprint: MASTER_FP,
+            path: [84 + HARDENED, HARDENED, HARDENED, inChange, inIndex],
+          },
+        ],
+      ],
+    });
+    tx.addOutput({
+      script: p2wpkh(HDKey.fromMasterSeed(seed2).derive("m/84'/0'/0'/0/0").publicKey!).script,
+      amount: 90000n,
+    });
+    tx.addOutput({ script: p2wpkh(outPub).script, amount: 1000n });
+    tx.updateOutput(tx.outputsLength - 1, {
+      bip32Derivation: [
+        [outPub, { fingerprint: MASTER_FP, path: [84 + HARDENED, HARDENED, HARDENED, 1, index] }],
+      ],
+    });
+    return tx.toPSBT(0);
+  };
 
   const signResult = (result: Record<string, unknown>): Record<string, unknown> => {
     expect(field(result, "kind")).toBe("sign");
@@ -2698,6 +2749,72 @@ describe("card sign (fake card)", () => {
     expect(card.received).toStrictEqual([0x20, 0x22, 0x32]);
   });
 
+  it("the mark commit lands at begin — before the first tap", async () => {
+    const r = await rig();
+    const card = await loadedCard();
+    const walletId = await addWallet(r, card);
+    const mark = async (): Promise<unknown> =>
+      field(
+        ok(
+          await r.h.call(
+            "wallet.accounts",
+            { walletId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+            r.session,
+          ),
+        ),
+        "changeMark",
+      );
+    await expect(mark()).resolves.toBe(0);
+    // An internal psbt hiding its own change output at /1/20 — the mark-0 bound exactly.
+    const request = psbtReq(walletId, bip84ChangePsbt(20), ["btc.bip84"]);
+    const first = ok(
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "sign", request }, verify: verifyPasskey() },
+        r.session,
+      ),
+    ) as { opId: string; step: Step };
+    // `begin` already committed: the card wallet's sealed mark is raised before the first tap —
+    // a failed commit would have aborted the request with no op at all.
+    await expect(mark()).resolves.toBe(20);
+    let { step } = first;
+    for (let guard = 0; step.kind !== "done"; guard += 1) {
+      if (guard > 60) {
+        throw new Error(`operation did not finish: ${JSON.stringify(step)}`);
+      }
+      if (step.kind === "input") {
+        r.input.push(freshCode());
+      } else if (step.kind === "tap") {
+        r.reader.present(card);
+      }
+      step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
+    }
+    expect(field(field(step, "result") as Record<string, unknown>, "kind")).toBe("sign");
+    // A far own output at /1/5000 is shown, not hidden — the mark does not move.
+    const far = await drive(
+      r,
+      { kind: "sign", request: psbtReq(walletId, bip84ChangePsbt(5000), ["btc.bip84"]) },
+      { codes: [freshCode()], cards: taps(card) },
+      verifyPasskey(),
+    );
+    expect(field(far, "kind")).toBe("sign");
+    await expect(mark()).resolves.toBe(20);
+    // An external request's signed far change input never raises the bound either.
+    const external = await drive(
+      r,
+      {
+        kind: "sign",
+        request: psbtReq(walletId, bip84ChangePsbt(50, { change: 1, index: 30 }), ["btc.bip84"], {
+          origin: "external",
+        }),
+      },
+      { codes: [freshCode()], cards: taps(card) },
+      verifyPasskey(),
+    );
+    expect(field(external, "kind")).toBe("sign");
+    await expect(mark()).resolves.toBe(20);
+  });
+
   it("a small per-tap budget spreads tasks over taps and a lost tag resends only pending work", async () => {
     // OPEN(300) + VERIFY(400) + margin(1000) leaves 550 ms — one ECDSA task (451) per tap.
     const r = await rig(2250);
@@ -2963,6 +3080,7 @@ describe("card sign (fake card)", () => {
     tx.addOutput({ script: p2wpkh(btcLeaf(84, 9).publicKey!).script, amount: 5000n });
     const request = normalizeBitcoin({
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: BTC_NETWORK,
       account: { kind: "hd", walletId, groupIndex: 3 },
       psbt: tx.toPSBT(0),

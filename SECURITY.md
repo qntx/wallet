@@ -23,19 +23,30 @@ a Web Worker on web, an isolated Hermes runtime on React Native, a child
 worker on Node. The main runtime carries no signing secrets except user
 exports and the data key. The kernel accepts one serialised command queue
 and validates every message: protocol version, request id, whitelisted
-fields, a 1 MiB cap, and only `status`/`vault.reset` while the vault is
-unhealthy (`packages/wallet-kernel/src/kernel.ts:407-511`).
+fields, a 1 MiB cap (`MAX_REQUEST_BYTES`), and only `status`/`vault.reset`
+while the vault is unhealthy — the request path is `handle`/`dispatch` in
+`packages/wallet-kernel/src/kernel.ts`.
 
 The gated commands run one live user verification per request inside the
-kernel: `chain.sign`, secret and key exports, wallet deletion, factor and
-policy changes, backup enable, Nostr key export and `spark.approve`.
-Value-moving sessions verify at `sessions.create`/`sessions.open` instead,
-then sign within their approved limits until the next lock. A `device`
-factor can open the vault for everyday use but proves no presence — it can
-never verify (`packages/wallet-kernel/src/vault/vault.ts:401`).
+kernel (`verifyFactor` in `packages/wallet-kernel/src/vault/vault.ts`):
+`chain.sign`, `chain.exportAccount`, `hardware.begin` (sign, pair, and an
+`accounts` fetch that adds material — a re-read of pinned paths needs none),
+the verify-bearing `card.begin` ops (`verifyGate` in
+`packages/wallet-kernel/src/modules/card/ops/index.ts`: create, sign,
+transfer, reseal, erase, change-access, forget-access), `sessions.create` /
+`sessions.open`, `wallet.delete`, `wallet.exportMnemonic`, `keys.import`
+(secret admission) is presence-checked but the factor-bearing key commands
+`keys.export`/`keys.remove`, `backup.enable`/`backup.disable`/
+`backup.restore`, `nostr.exportKey`, factor and policy changes
+(`addFactor`/`removeFactor`/`enrolVerification`/`setAppLock`/
+`setBlindSigning` in `packages/wallet-kernel/src/commands/vault.ts`), and
+`spark.approve`. Value-moving sessions verify at `sessions.create`/
+`sessions.open`, then sign within their approved limits until the next
+lock. A `device` factor can open the vault for everyday use but proves no
+presence — it can never verify (`verifyFactor` rejects it).
 
 Verification prompts are rendered by the kernel and bound to
-`PROMPT_BOUNDS` (`packages/wallet-kernel/src/prompts.ts:254`). The bounds
+`PROMPT_BOUNDS` (`packages/wallet-kernel/src/prompts.ts`). The bounds
 are policy values, not platform facts — neither OS documents a limit — and
 are still to be confirmed on real devices (`docs/device-checklist.md`). A
 `chain.sign`, `hardware.begin` or `spark.approve` prompt that does not fit
@@ -43,7 +54,8 @@ signs blind (or fails `blind-signing-disabled`) instead of letting the OS
 clip it: every warning and caveat row is rendered first and is never cut —
 only detail rows give way to a closing "N more lines" row — and a prompt
 whose warnings alone do not fit is refused `unsupported` whatever the blind
-policy (`packages/wallet-kernel/src/modules/chains/prompt.ts:1888`).
+policy (`boundPrompt` in
+`packages/wallet-kernel/src/modules/chains/prompt.ts`).
 Session-approval and watch-only export prompts are never cut: limits or a
 node list whose text does not fit are refused `invalid-input` before any
 verification. The core prompts are fixed strings whose fit the prompt-bound
@@ -68,6 +80,8 @@ Summary, per platform — details in the sections below:
 | Compromised gateway / RPC  | wrong display data, withheld broadcasts; cannot change signed bytes where a second endpoint exists                                                                          | same                                                                                                                                                                                    | same                                                     |
 | Stolen unlocked device     | unlocked session scope: social actions, DMs, open sessions within limits — nothing verification-gated                                                                       | app lock off: social/DMs only — value-moving sessions refuse `app-lock-required`; app lock on: open sessions within limits until the next lock (15 min presence idle, 24 h, background) | unlocked session scope, as Web                           |
 | Stolen locked device       | offline attack on vault/backup at PBKDF2 / Argon2id cost                                                                                                                    | same, plus keystore wrapping                                                                                                                                                            | same                                                     |
+| Malicious external signer  | foreign keys land unconfirmed until an on-device address check; the device screen is the control — a compromised runtime can forge the verdict                              | same                                                                                                                                                                                    | same                                                     |
+| Lost card (production)     | no card exists in production builds — `PRODUCTION_ANCHORS` is empty, so every card is refused                                                                               | same                                                                                                                                                                                    | same                                                     |
 | Malicious upstream package | versions pinned, `abiVersion` checked at kernel start; release controls are defined in the repo and must be applied by the owner                                            | same                                                                                                                                                                                    | same                                                     |
 
 ## Per attacker
@@ -82,8 +96,10 @@ Summary, per platform — details in the sections below:
   sign arbitrary Nostr events and encrypt/decrypt any DM —
   `nostr.signEvent`, `nostr.nip04Encrypt`/`nip04Decrypt` and
   `nostr.nip44Encrypt`/`nip44Decrypt` take no per-call factor
-  (`packages/wallet-kernel/src/modules/nostr/ops.ts:15-55`; only Nostr key
-  export verifies, `modules/nostr/keys.ts:119-126`).
+  (`packages/wallet-kernel/src/modules/nostr/ops.ts`
+  `sign`/`nip04Encrypt`/`nip04Decrypt`/`nip44Encrypt`/`nip44Decrypt`;
+  only Nostr key export verifies —
+  `packages/wallet-kernel/src/modules/nostr/keys.ts` `exportKey`).
 - **Can** present its own UI and get approved whatever the user is willing
   to confirm — on Face ID and WebAuthn there is no kernel text to compare
   against (presence is proven; content is not shown). Value-moving session
@@ -94,20 +110,25 @@ Summary, per platform — details in the sections below:
   (`SecureInput`, `@qntx/wallet-native/secure-input`) exposes only
   `idle|empty|filled|submitted` to the main runtime — the RN backup
   password reaches the kernel through it and never over the wire
-  (`packages/wallet-kernel/src/commands/backup.ts:392-449`) — but the
+  (`packages/wallet-kernel/src/commands/backup.ts` `ask`) — but the
   kernel cannot stop a decoy field on the same screen.
 - **Value-moving sessions:** every session signature needs the session
   open — a verifying factor after each lock (`sessions.open`); on a
   keystore host whose vault holds a `device` factor (app lock off), create
   and open answer `app-lock-required`, so a session cannot be silently
   re-armed
-  (`packages/wallet-kernel/src/modules/sessions/sessions.ts:66-86`). While
+  (`packages/wallet-kernel/src/modules/sessions/sessions.ts` `assertAppLock`). While
   a session _is_ open, `sessions.sign` still signs — but bounded:
   - `hyperliquid-l1-agent` enforces the approved `limits` — a notional
     budget buys charge (sum of max(price, triggerPx) × size in each
     market's quote currency), a `maxLeverage` cap, and a per-asset size
     cap buys and sells share (ids 0..99999; builder-dex HIP-3 ids ≥ 100000
-    are never admissible). `spent` is committed to the vault record before
+    are never admissible) — `meterHyperliquid` in
+    `packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/meter.ts`,
+    validated by
+    `packages/wallet-kernel/src/modules/sessions/schemes/hyperliquid-l1-agent/params.ts`
+    `hyperliquidL1Params`/`hyperliquidL1Spent`.
+    `spent` is committed to the vault record before
     the signature returns, so relaunching cannot reset it. **The limits
     are the bound on loss**: the kernel cannot know market prices, so a
     sell's self-declared price never bounds it — buys lose at most
@@ -116,17 +137,24 @@ Summary, per platform — details in the sections below:
     price bands are unverified and not relied on). Cancels are free but
     stay inside the allow-list so a session cannot strip protection on
     positions it never touched, and at most two live metered sessions may
-    share one account and network, so the aggregate exposure is the sum of
-    at most two approvals. TWAP orders cannot be metered and are
-    refused. **Where the limits are shown:** on RN iOS — where Face
+    share one account and network (`MAX_METERED_PER_OWNER`), so the
+    aggregate exposure is the sum of at most two approvals. TWAP orders
+    cannot be metered and are refused. **Asset ids, not names:** the
+    approval prompt labels each market by its numeric asset id rendered
+    `#id`, split perp/spot at id 10000 — the kernel keeps no trusted
+    id→name map, so the host must display the id next to its own market
+    name. Residual: a compromised runtime can label its own screen with a
+    different market name — the user's check is the id itself.
+    **Where the limits are shown:** on RN iOS — where Face
     ID/Touch ID renders no prompt text — create and open first show them
     on the kernel's secure-input view, as the label above a kernel-drawn
     4-digit confirmation code the user re-enters; the main runtime never
     learns the code, so a submitted code shows the kernel-rendered label
-    was on screen, then the factor ceremony still runs. Residual: the main
-    runtime sizes the view and can draw over part of it — the code is the
-    label's last line, so clipping hides it first, but an overlay of the
-    rows above it is not prevented. On Android the bounded kernel text is what
+    was on screen, then the factor ceremony still runs. Residual: the code
+    line is the label's last line for the view's own sizing, but ancestors
+    laid out by the main runtime can clip from the top or draw an overlay —
+    neither is prevented (same residual as the phishing note above). On
+    Android the bounded kernel text is what
     BiometricPrompt shows, so no code step is needed. On the Web there is
     no such surface: the limits are whatever the page asked for — the
     Web wallet is a hot wallet. The revoke flow's throwaway agent stays
@@ -137,34 +165,42 @@ Summary, per platform — details in the sections below:
     signature also stays inside a 60 s document window (`expiresAfter`,
     nonce, device clock — the kernel has no trusted time; a clock running
     S ahead stretches post-lock exposure to S + 60 s, and the engine's
-    `assertClock()` 5 s check runs in the main runtime and can be skipped
+    `assertClock()` 5 s check
+    (`packages/wallet-engine/src/apps/hyperliquid/exchange.ts`
+    `assertClock`) runs in the main runtime and can be skipped
     by one that is compromised).
   - **Polymarket** holds no kernel session key: orders are EIP-712 signed
     through the per-request pipeline (each needs verification). The L2
     HMAC credentials can only read positions/orders and cancel — annoying,
-    not value-moving (`packages/wallet-engine/src/apps/polymarket/
-    trade.ts:613,746`, `account.ts:627`).
+    not value-moving
+    (`packages/wallet-engine/src/apps/polymarket/trade.ts`
+    `createPolymarketTrade`,
+    `packages/wallet-engine/src/apps/polymarket/account.ts`
+    `createPolymarketAccount`).
   - **Fiat24** holds no session key: the grant text is signed via
-    `chain.sign` per request with a kernel-enforced deadline ≤ 20 minutes.
-    Within a granted window the holder can view card details and act as
-    the card; it cannot move the signing key
-    (`modules/chains/evm.ts` `FIAT24_SESSION_WINDOW`).
-  - `SESSION_SCHEMES` contains exactly `hyperliquid-l1-agent`
-    (`modules/sessions/schemes/index.ts:10`) — there is no other kernel
+    `chain.sign` per request with a kernel-enforced deadline ≤ 20 minutes
+    (`FIAT24_SESSION_WINDOW` in
+    `packages/wallet-kernel/src/modules/chains/evm.ts`, checked at prepare
+    and re-checked after verification before the device or the software
+    path signs). Within a granted window the holder can view card
+    details and act as the card; it cannot move the signing key.
+  - `SESSION_SCHEMES`
+    (`packages/wallet-kernel/src/modules/sessions/schemes/index.ts`)
+    contains exactly `hyperliquid-l1-agent` — there is no other kernel
     session-key path.
 - **Spark:** transfers out move only under a live approval the user
   verified — `spark.approve` decodes the intent, renders it inside the
   prompt bounds, then runs the factor check
-  (`packages/wallet-kernel/src/modules/spark/index.ts:564-586`). An
+  (`packages/wallet-kernel/src/modules/spark/index.ts` `approve`). An
   approval lives at most 60 s (`APPROVAL_TTL_MS`), at most 8 are live per
   account (`APPROVAL_MAX_PER_ACCOUNT`), and coverage is matched per kind:
   a transfer intent binds the receiver set and per-receiver amounts,
   lightning/exit intents spend a cumulative budget deduped by leaf public
-  key (`index.ts:333-345,377-413`). **Residual:** an outflow classified
+  key. **Residual:** an outflow classified
   `swap` — every leaf paying the SSP identity — carries only `transferId`
   and `totalSats`, so the signer's `authorize` callback cannot tell who it
-  pays or bound the amount, and lets every swap through unapproved
-  (`index.ts:491`). Until the upstream signer binds the leaf set or the
+  pays or bound the amount, and lets every swap through unapproved.
+  Until the upstream signer binds the leaf set or the
   swap intent into the signed payload, a compromised runtime can move any
   amount to the SSP with no approval; the swap is redeemable only through
   SSP cooperation, which contains the practical damage.
@@ -172,25 +208,85 @@ Summary, per platform — details in the sections below:
   keystore; the password and passkey PRF output never cross to the main
   runtime. On **Web** the boundary is weaker by construction — see below.
 
+### Malicious or foreign external signer (Ledger, OneKey, Keystone)
+
+- **The transport is the main runtime.** Every exchange between kernel
+  and device crosses host code the kernel does not control, and a
+  compromised runtime can drive an honest device directly — **the device
+  screen is the control**, not the kernel prompt.
+- **Device-chosen ECDSA nonces cannot be audited host-side** — an
+  anti-exfiltration protocol does not exist here, so a malicious device can
+  leak key material through its signatures undetectably.
+- **`clear`/`blind` device lines are source-derived claims** about pinned
+  app versions — the kernel does not verify what the device will actually
+  render.
+- **Pairing and key-adding fetches are verification-gated** (`pair`
+  requires a factor; `accounts` requires one when the pin lacks paths, and
+  always consumes one when presented — `hardware.begin` in
+  `packages/wallet-kernel/src/modules/signers/index.ts`), but a hostile
+  transport at first fetch can pin foreign receive keys — the fingerprint
+  comparisons replay public values and stop only an accidental second
+  honest device. **The on-device address check is the control:**
+  pinned entries land `confirmed: false` until `verify-address` matches
+  on the device (`servingPath`/`mergePin`; `confirmed` is committed on a
+  match only). `wallet.accounts` reports `confirmed` per account, and
+  `chain.exportAccount` refuses unconfirmed material unless the caller
+  passes `acknowledgeUnconfirmed`, which adds a danger row per node
+  (`exportAccount` in
+  `packages/wallet-kernel/src/modules/chains/export.ts`).
+- **Per-driver confirmation ability:** Ledger and OneKey display the
+  address on-device. Keystone has no host-initiated display — the user
+  compares against the device's Receive menu, which covers only the
+  allow-listed paths (`confirmable` in
+  `packages/wallet-kernel/src/modules/signers/keystone/driver.ts`): EVM,
+  TRON and Solana bip44-style groups, and BTC mainnet account-0 receive
+  addresses — BTC testnet/signet and BTC group > 0 can never be confirmed
+  on a Keystone.
+- **Residual:** a runtime still compromised at check time can forge the
+  verdict — the confirmation marks that a check happened, not that the
+  transport was honest.
+
 ### Malicious dApp or caller
 
 - **Cannot** get a request signed that the decoder cannot display or bound
   (blind signing off by default); **cannot** get an EIP-7702 authorization
   with `chainId = 0` signed — refused before the prompt
-  (`packages/wallet-chains/src/evm/transaction.ts:206`); **cannot** order
-  or cancel through a session scheme outside its approved limits.
-- **Cannot** hide a Bitcoin output as change unless the wallet can find it
-  again: an output to this group's own key is hidden only on the change
-  chain, under a purpose a signed input shares, at an index no further than
-  the gap limit (20) past the highest change index the signed inputs prove
-  (`packages/wallet-chains/src/bitcoin/own.ts:37-55`). Every other own-key
-  output is shown as a send to the user's own address at its unusual path,
-  with a warning that the wallet may not display those funds.
+  (`packages/wallet-chains/src/evm/transaction.ts` `normalizeEvmTransaction`);
+  **cannot** order or cancel through a session scheme outside its approved
+  limits.
+- **Cannot** hide a Bitcoin output as change the wallet cannot find
+  again. The hidden-change bound is the kernel-sealed change mark, never
+  anything in the PSBT: per (wallet, group, purpose, network) a monotonic
+  mark lives in a `change-marks` vault record
+  (`CHANGE_MARKS_KIND`/`commitChangeMarks`/`marksHooks` in
+  `packages/wallet-kernel/src/modules/chains/marks.ts`), raised before
+  signing to the highest hidden change index — and, only for
+  `origin: "internal"` requests, to the highest same-purpose change index
+  among the signed inputs, so an external request's claimed input paths
+  never raise it (`requestChangeMark` in
+  `packages/wallet-chains/src/bitcoin/own.ts`). An own-key output is
+  hidden only on the change chain, under a purpose a signed input shares,
+  at an index at most `BITCOIN_GAP_LIMIT` (20) past that mark and below
+  `BITCOIN_SCAN_LIMIT` (`isDiscoverableChange`). The engine scans the
+  change chain out to `changeScanReach(mark)` — every hidden index is
+  re-discoverable — and `changeAddressOf`
+  (`packages/wallet-engine/src/transactions/bitcoin.ts`) deliberately
+  reuses the bound index when the first free one lies outside it. Every
+  other own-key output is shown as a send to the user's own address at its
+  unusual path, with a warning that the wallet may not display those
+  funds. **Residuals:** a fully compromised runtime can claim `internal`
+  and raise the mark with self-built inputs — coins stay on the user's
+  keys; same class as hiding a balance in its own UI. The mark is not in
+  the backup (entropy only): a seed-only restore starts it at 0, so
+  change parked beyond the plain gap scan by signed-but-unbroadcast
+  transactions is invisible to the fresh device; the same seed on two
+  devices carries two independent marks.
 - **Can** craft deceptive requests. Solana named accounts loaded through
   address lookup tables cannot be verified on-device — there are no state
   proofs for table contents — so a prompt that would name one is handled
   under the blind rule
-  (`packages/wallet-kernel/src/modules/chains/prompt.ts:634,1254`).
+  (`solanaLookupTable` in
+  `packages/wallet-kernel/src/modules/chains/prompt.ts`).
   On Face ID / WebAuthn flows the user sees no kernel text at all, so
   approval there proves presence only.
 
@@ -208,14 +304,15 @@ and the kernel cannot tell the two apart.
 - **Cannot** get a domain verified: a sign-in message from a QR origin has
   no page origin to check, so it carries the `danger` finding
   `qr-sign-in-unverified`, which the user must acknowledge before approval
-  (`packages/wallet-engine/src/requests/controller.ts:2024`).
+  (`packages/wallet-engine/src/requests/controller.ts`).
 - Hardware-wallet accounts sign QR, dApp and internal requests through the
   same signing seam; the device shows its own rendering on top of the
   kernel's.
 - **Watch-only side:** the scanned export is the trust root — a malicious
   export replaces every address, so the user verifies the first receive
   address on the phone. The export itself is verified on the phone with a
-  prompt that names every exported node; `evm.account` discloses the EVM
+  prompt that names every exported node and adds a danger row for each
+  unconfirmed one (`exportAccount` above); `evm.account` discloses the EVM
   addresses of every account of the wallet. Inspect-only mode shows the
   digests a device can display, labelled with a device only where a
   primary source says the device shows that digest; it cannot prove the
@@ -225,11 +322,13 @@ and the kernel cannot tell the two apart.
 
 - **Cannot** add, remove or alter a single vault record or factor — the
   manifest digest covers every row and is rewritten on each structural
-  commit (`packages/wallet-kernel/src/vault/manifest.ts`).
+  commit (`assertManifest` in
+  `packages/wallet-kernel/src/vault/manifest.ts`).
 - **Can** roll the whole vault back to an older consistent image — the
   vault anchor detects this where it is stored honestly
-  (`packages/wallet-kernel/src/kernel.ts:263-264`,
-  `src/vault/anchor.ts`): the 21-byte anchor holds a revision floor and the
+  (`reconcile`/`raiseAnchor` in `packages/wallet-kernel/src/kernel.ts`,
+  `readAnchor` in `packages/wallet-kernel/src/vault/anchor.ts`): the
+  21-byte anchor holds a revision floor and the
   password failure counters, so a restored older image reads `corrupted`
   and the password backoff is not reset. No platform gives an app a
   hardware monotonic counter, so the floor is only as strong as its
@@ -252,7 +351,7 @@ and the kernel cannot tell the two apart.
 
 - **Can** return wrong balances, prices and history — all display data; a
   build that could not cross-check a second endpoint is tagged
-  `reads-unverified` (`packages/wallet-engine/src/requests/checks.ts:13`).
+  `reads-unverified` (`packages/wallet-engine/src/requests/checks.ts`).
   A compromised gateway can withhold or delay broadcasts.
 - **Cannot** change what the kernel signs — values used to build or sign
   transactions come from chain RPC and are cross-checked against the
@@ -271,42 +370,65 @@ and the kernel cannot tell the two apart.
   opens without presence — the holder can act socially and read sealed
   DMs. Value-moving sessions refuse outright: `sessions.create`, `open`
   and `sign` all answer `app-lock-required` on a device-factor vault
-  (`sessions.ts:66-86,251,377,446`), and every verification-gated action
+  (`assertAppLock` above), and every verification-gated action
   still needs a presence verification.
 - With the app lock **on**: every unlock verifies, and an open session
   signs within its approved limits only until the next lock — an explicit
-  `vault.lock`; the idle timeout (Web 5, 15 or 60 minutes as the host
-  configures, native 15 minutes — both count only presence-bearing methods,
-  so trading through a session or background traffic cannot hold the vault
-  open, `packages/wallet-native/kernel/policy.ts`); the max-session deadline
-  (Web and Node 12 h, native 24 h); or background under the auto-lock
-  policy (`packages/wallet-kernel/src/session/session.ts:122-137,235-238`).
+  `vault.lock`; the idle timeout; the max-session deadline; or background
+  under the auto-lock policy (`checkTimeouts` in
+  `packages/wallet-kernel/src/session/session.ts`). The idle rule
+  differs by host: on a **keystore host** (React Native, Node with a
+  keystore) only a successful factor verification re-arms the 15-minute
+  deadline — `verifyFactor` touches the session itself and the request
+  loop counts presence-marked methods only when no keystore exists
+  (`handle` in `packages/wallet-kernel/src/kernel.ts`), so
+  `session.touch` and other callable methods cannot hold the vault open
+  (`NATIVE_POLICY` in `packages/wallet-native/kernel/policy.ts`). On the
+  **Web**, presence-marked methods still count — the Web is a hot wallet
+  (`idle` in `packages/wallet-worker/src/worker/browser-kernel.ts`).
+  Absolute caps: 24 h on native (`NATIVE_POLICY`), 12 h on Web/Node
+  (`MAX_SESSION_MS` in `packages/wallet-worker/src/shared.ts`).
 
 ### Stolen locked device
 
 - The vault needs a verifying factor; `device` cannot verify. A copied
   vault or backup envelope is attacked offline: the backup password runs
-  Argon2id (`packages/wallet-kernel/src/commands/backup.ts:529,561`,
+  Argon2id (`packages/wallet-kernel/src/commands/backup.ts`,
   64 MiB). On hosts where the password passes through the main runtime
   (Web/Node) the engine also refuses a guessable one at enable
-  (`packages/wallet-engine/src/backup/controller.ts:282-292`); on React
+  (`packages/wallet-engine/src/backup/controller.ts`); on React
   Native the kernel collects it through the secure input and enforces the
-  12-code-point minimum (`packages/wallet-kernel/src/vault/factors.ts:78-81`).
+  12-code-point minimum (`BACKUP_PASSWORD_MIN` in
+  `packages/wallet-kernel/src/vault/factors.ts`).
 
 ### Lost card
 
-Card wallets are not yet shipped: the card protocol client is a library
-and the kernel exposes no `card.*` commands. Design residual, not yet
-exercised in code: the access code is the only gate, and a compromised
-main runtime can draw a look-alike entry field — the same phishing class
-as the secure-input residual above.
+- `card.begin`/`card.step`/`card.cancel` carry the whole card op life cycle
+  (`CARD_METHODS` in `packages/wallet/src/protocol/card.ts`). The verify
+  requirement is per op kind (`verifyGate` above): `create`, `sign`,
+  `transfer`, `reseal`, `erase`, `change-access` and `forget-access`
+  verify; `accounts` and `health` are presence-free by design — they hand
+  out no secrets. A `remember` on a verify-bearing op stores a hash of the
+  access code keyed to app-lock-on and a hardware verify
+  (`rememberGated`); the remembered hash alone never lifts the verify —
+  the gate runs first.
+- Genuineness is anchored to `PRODUCTION_ANCHORS`
+  (`packages/wallet-kernel/src/modules/card/protocol/identity.ts`),
+  which is empty today — **a production build refuses every card**; test
+  anchors live in tests only.
+- Host entropy is mixed into CREATE with no host-side proof the card
+  mixed it.
+- APDUs never pass through the main runtime: the kernel hands
+  record-layer ciphertext straight to the native card reader
+  (`__qntx.cardReader`) and the NFC session's text and end are owned by
+  the kernel — the main runtime only drives the tap cadence.
 
 ### Malicious upstream package
 
 Protocol library versions are pinned exactly and recorded in the kernel
 manifest; backend `abiVersion` is checked at kernel start (AGENTS.md
 invariants). The release-path controls are defined in the repository —
-tag-only OIDC publishing in `publish-npm.yml`, the environment and tag
+tag-only OIDC publishing in `.github/workflows/publish-npm.yml`, the environment and tag
 rulesets in `.github/rulesets/` — but they are settings the repository
 owner must apply; until they are applied, any repository writer can tag
 and publish. The response to a compromised release is in
@@ -327,10 +449,21 @@ and publish. The response to a compromised release is in
 - **RN app lock:** leaving it off stores a `device` factor and disables
   presence enforcement for session create/open (`app-lock-required`); a
   wallet holding value-moving sessions should require the app lock.
+- **Unconfirmed signers:** `wallet.accounts` reports `confirmed` per
+  account and `TransactionsController.nextReceiveAddress` returns
+  `{ address, confirmed }`; the host should show an "unconfirmed — verify
+  on the device" state instead of presenting the address as settled, and
+  must pass `acknowledgeUnconfirmed` (QrExportParams) deliberately, never
+  silently.
 - **Backup passwords** must be entered into the kernel secure input
   (masked, no autofill/suggestions/IME learning on both platforms —
-  `SecureInputIos.mm:136-151`, `SecureInputField.kt:115-311`); never into
+  `packages/wallet-native/cpp/platform/SecureInputIos.mm`,
+  `packages/wallet-native/android/src/main/java/com/margelo/nitro/qntxwallet/SecureInputField.kt`);
+  never into
   a runtime-drawn field.
+- **Hyperliquid market names:** the kernel prompt shows the numeric asset
+  id `#id`; hosts must display that id next to the market name they
+  render, because the kernel has no trusted id→name map.
 - **Secret buffers:** every secret field of a kernel request must own its
   memory — a request whose secret shares bytes with another field is
   refused, because the kernel wipes secrets in place.

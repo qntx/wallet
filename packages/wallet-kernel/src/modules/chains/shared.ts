@@ -21,6 +21,8 @@ export type Prepared = {
   readonly prompt: PromptIntent;
   readonly signer?: string;
   readonly plan: ChainPlan;
+  /** Raises to the sealed change marks — committed after verification, before signing. */
+  readonly changeMarks?: ReadonlyArray<{ readonly purpose: number; readonly index: number }>;
 };
 export type SignRequest = ParamsOf<"chain.sign">["request"];
 

@@ -3,9 +3,10 @@ import type { HyperliquidAgentLimits, HyperliquidAgentSpent } from "@qntx/wallet
 import { decimalToUnits, unitsToDecimal } from "../../../../decimal.ts";
 /* The approval prompt the verification dialog shows at create and on reopen after a lock: agent
    name and scope, deadline, buy budget, leverage cap, per-asset size caps split perp/spot (ids
-   below 10000 are perps), and that a sell fills at whatever the exchange accepts; the reopen
-   variant adds the remaining buy budget. Limits whose text exceeds the platform dialog are refused
-   at create, so this rendering is never cut. */
+   below 10000 are perps — rendered as `#id`, the kernel has no trusted id→name table and the host
+   must show the id next to the market name), and that a sell fills at whatever the exchange
+   accepts; the reopen variant adds the remaining buy budget. Limits whose text exceeds the
+   platform dialog are refused at create, so this rendering is never cut. */
 import type { KeystorePrompt } from "../../../../platform.ts";
 import type { PromptLocale } from "../../../../prompts.ts";
 import { utcDate } from "../../../../prompts.ts";
@@ -23,7 +24,7 @@ const capLines = (
   let perps = "";
   let spots = "";
   for (const entry of limits.assets) {
-    const item = `${entry.asset} ≤ ${entry.size}`;
+    const item = `#${entry.asset} ≤ ${entry.size}`;
     if (entry.asset < SPOT_ASSET_BASE) {
       perps += perps === "" ? item : `, ${item}`;
     } else {

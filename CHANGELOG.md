@@ -285,6 +285,14 @@ Gateway (operators):
   moved from `dependencies` to optional peer dependencies — a host using WalletConnect installs
   them itself (they stay bundled for development). Nothing else changes; every other entry works
   without them. (MIGRATION §21)
+- `bitcoin.psbt` requests carry a required `origin` (`"internal" | "external"`) — requests
+  without it are refused. Every `ChainAccount` variant gains `confirmed` and the bitcoin variant
+  gains `changeMark`; `hardware.begin` `pair` requires `verify` and `accounts` answers
+  `approval-required` for keys the pin lacks (both take a `verify`, as does
+  `SignersController.fetchAccounts` and `hardware(wallet).start`); `chain.exportAccount`,
+  `QrExportParams` and `SignStartParams` gain `acknowledgeUnconfirmed?: true`;
+  `TransactionsController.nextReceiveAddress` returns `{ address, confirmed }`. Hardware record
+  bodies changed format without a bump — re-pair after `vault.reset`. (MIGRATION §35)
 
 ### Added
 
@@ -1452,6 +1460,14 @@ Gateway (operators):
 - `@qntx/wallet-engine`: `BitcoinPsbtInput.sign[].template` accepts all four account templates —
   a QR counterpart may name `btc.bip44`/`btc.bip49` where a dApp only uses `btc.bip84`/`btc.bip86`.
   Hosts switching on the template need the new members. (MIGRATION §33)
+- Bun is pinned by the root `packageManager` field (`bun@1.4.4`): every `setup-bun` step resolves
+  that version — the publish path included — and a local mismatch is refused. The
+  `minimumReleaseAgeExcludes` entry for `@qntx/fiat24` is pinned to `@qntx/fiat24@0.1.0`, so only
+  that release skips the 7-day cooldown.
+- SECURITY.md is rewritten for the shipped surfaces (card ops, external signers, the sealed
+  change mark); every source citation is a `file.ts` + symbol pair that
+  `scripts/check-security-anchors.ts` verifies in `lint` — a line-number anchor or a dangling
+  path/symbol fails the gate.
 
 ### Fixed
 
@@ -1759,6 +1775,31 @@ Gateway (operators):
 - `@qntx/wallet-chains`: hidden or reordering characters in a typed-data type name, field name,
   field type or `primaryType` make the document blind (`message-bytes`), like the same characters
   in a value.
+- `@qntx/wallet-kernel` + `@qntx/wallet-chains/bitcoin`: the hidden-change bound is a sealed
+  per-(wallet, group, purpose, network) mark in a `change-marks` vault record, raised before
+  signing by the highest same-purpose change index of the signed inputs — and only when the
+  request declares `origin: "internal"`. A crafted PSBT can no longer park change at an index
+  the wallet will never scan: the engine scans the change chain out to `mark +
+  BITCOIN_GAP_LIMIT` and deliberately reuses the bound index when the first free one lies past
+  it. A seed-only restore starts the mark at 0; SECURITY.md states the residual. (MIGRATION §35)
+- `@qntx/wallet-kernel`: external-signer fetches that add material are verification-gated, and
+  pinned entries are unconfirmed until an on-device check. `hardware.begin` `pair` requires
+  `verify`; `accounts` answers `approval-required` when the pin lacks the requested paths. A
+  hostile transport at first fetch could pin foreign receive keys undetected — pinned entries
+  now land `confirmed: false` until `verify-address` matches on the device, `wallet.accounts`
+  reports the flag, and `chain.exportAccount` refuses unconfirmed material without
+  `acknowledgeUnconfirmed` (which adds a danger row per node). Keystone confirmation is
+  allow-listed to what its Receive menu can show — BTC testnet and BTC group > 0 can never be
+  confirmed there. (MIGRATION §35)
+- `@qntx/wallet-kernel`: on keystore hosts only a successful factor verification re-arms the
+  15-minute idle lock — `session.touch` and other presence-marked methods no longer count, so a
+  compromised main runtime cannot hold the vault (and open sessions) unlocked. On the Web,
+  presence-marked methods still count. (MIGRATION §35)
+- `@qntx/wallet-kernel`: the Hyperliquid approval prompt labels each market by its numeric asset
+  id rendered `#id` (perp/spot split at 10000) instead of a bare id the user cannot map to a
+  coin — the kernel keeps no trusted id→name table, so the id is the field a compromised
+  runtime cannot relabel on the kernel surface. Hosts must show the id next to their market
+  name. (MIGRATION §35)
 
 ## [0.13.0] - 2026-11-09
 

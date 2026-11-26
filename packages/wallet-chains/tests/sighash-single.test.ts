@@ -94,6 +94,7 @@ const request = (
   ],
 ) => ({
   kind: "bitcoin.psbt",
+  origin: "internal",
   network: MAINNET,
   account: ACCOUNT,
   psbt,

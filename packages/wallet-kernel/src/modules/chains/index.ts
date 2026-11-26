@@ -1,11 +1,12 @@
 /**
  * The chains module: `wallet.accounts` — the public account for a template at the wallet's group
  * index, derived from the wallet's entropy record once per session and then served from a cache of
- * public data only. No records: seed and every node are wiped in `finally` on every path.
- * `chain.sign` runs `validate → plan → backend → assemble`: a prepare function (./evm.ts,
- * ./bitcoin.ts, ./solana.ts, ./tron.ts) builds the serialisable plan through `PublicMaterial`
- * (./keys.ts), the prompt is verified, then `signPlan` (./run.ts) signs it against a fresh key
- * source — the plan itself is reused, never recomputed.
+ * public data only. The one record kind it owns is `change-marks` (./marks.ts) — the sealed
+ * hidden-change bound; seed and every node are wiped in `finally` on every path. `chain.sign` runs
+ * `validate → plan → backend → assemble`: a prepare function (./evm.ts, ./bitcoin.ts, ./solana.ts,
+ * ./tron.ts) builds the serialisable plan through `PublicMaterial` (./keys.ts), the prompt is
+ * verified, then `signPlan` (./run.ts) signs it against a fresh key source — the plan itself is
+ * reused, never recomputed.
  */
 
 import { isBlindIntent } from "@qntx/wallet-chains";
@@ -40,6 +41,7 @@ import { assertFiat24Deadline, prepareEvm } from "./evm.ts";
 import { exportAccount } from "./export.ts";
 import { importedKeys, pathString, seedKeys } from "./keys.ts";
 import type { KeySource } from "./keys.ts";
+import { changeMark, commitChangeMarks, marksHooks } from "./marks.ts";
 import { boundChainPrompt, chainPrompt } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
 import { signPlan, taskSignerFor } from "./run.ts";
@@ -67,18 +69,37 @@ export const accountFor = async (
   template: ChainTemplate,
   network: string,
   groupIndex: number,
+  mark: number,
 ): Promise<ChainAccount> => {
   if (template === "evm.bip44") {
-    const pub = await material.secp256k1(leafPath("evm", groupIndex));
-    return { template, network, address: evmAddressFromPublicKey(pub) };
+    const path = leafPath("evm", groupIndex);
+    const pub = await material.secp256k1(path);
+    return {
+      template,
+      network,
+      address: evmAddressFromPublicKey(pub),
+      confirmed: await material.confirmed("secp256k1", path),
+    };
   }
   if (template === "solana.bip44-change") {
-    const pub = await material.ed25519(leafPath("solana", groupIndex));
-    return { template, network, address: solanaAddressFromPublicKey(pub) };
+    const path = leafPath("solana", groupIndex);
+    const pub = await material.ed25519(path);
+    return {
+      template,
+      network,
+      address: solanaAddressFromPublicKey(pub),
+      confirmed: await material.confirmed("ed25519", path),
+    };
   }
   if (template === "tron.bip44") {
-    const pub = await material.secp256k1(leafPath("tron", groupIndex));
-    return { template, network, address: tronAddressFromPublicKey(pub) };
+    const path = leafPath("tron", groupIndex);
+    const pub = await material.secp256k1(path);
+    return {
+      template,
+      network,
+      address: tronAddressFromPublicKey(pub),
+      confirmed: await material.confirmed("secp256k1", path),
+    };
   }
   const purpose = BTC_PURPOSE[template];
   if (purpose === undefined) {
@@ -94,6 +115,8 @@ export const accountFor = async (
     xpub: await material.extendedPublicKey(path, net.bip32),
     fingerprint: fingerprint.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), ""),
     path: pathString(path),
+    changeMark: mark,
+    confirmed: await material.confirmed("secp256k1", path),
   };
 };
 
@@ -103,6 +126,24 @@ export const accountFor = async (
  * (any commit, a removed wallet, a rotated vault) starts empty; lock drops it all.
  */
 type AccountCache = WeakMap<StoredRecord, Map<string, ChainAccount>>;
+
+/** The path `accountFor` derives for a template — leaf for the account chains, account for btc. */
+const accountPath = (template: ChainTemplate, network: string, groupIndex: number): KeyPath => {
+  if (template === "evm.bip44") {
+    return leafPath("evm", groupIndex);
+  }
+  if (template === "tron.bip44") {
+    return leafPath("tron", groupIndex);
+  }
+  if (template === "solana.bip44-change") {
+    return leafPath("solana", groupIndex);
+  }
+  const purpose = BTC_PURPOSE[template];
+  if (purpose === undefined) {
+    throw new KernelError("invalid-input", `unknown template ${template}`);
+  }
+  return [purpose + HARDENED, bitcoinNetwork(network).coinType + HARDENED, groupIndex + HARDENED];
+};
 
 const walletAccounts = async (
   ctx: Parameters<Handler<"wallet.accounts">>[0],
@@ -116,10 +157,28 @@ const walletAccounts = async (
     throw new KernelError("not-found", "no such wallet");
   }
   checkNetwork(params.template, params.network);
+  const purpose = BTC_PURPOSE[params.template];
+  const mark =
+    purpose === undefined
+      ? 0
+      : changeMark(ctx.image, params.walletId, params.groupIndex, purpose, params.network);
   const key = `${String(params.groupIndex)}/${params.template}/${params.network}`;
   const known = cache.get(record)?.get(key);
   if (known !== undefined) {
-    return known;
+    /* The cache freezes only the public account — the mark and the confirmation flag are read
+       fresh on every call. A commit that raises either would replace the record and miss the
+       cache anyway, but computing the flag from the live pin keeps the reasoning local to this
+       line instead of the commit path's. */
+    const confirmed =
+      record.kind === "entropy"
+        ? true
+        : await ctx
+            .externalMaterial(record)
+            .confirmed(
+              params.template === "solana.bip44-change" ? "ed25519" : "secp256k1",
+              accountPath(params.template, params.network, params.groupIndex),
+            );
+    return "xpub" in known ? { ...known, changeMark: mark, confirmed } : { ...known, confirmed };
   }
   const account =
     record.kind === "entropy"
@@ -131,6 +190,7 @@ const walletAccounts = async (
               params.template,
               params.network,
               params.groupIndex,
+              mark,
             );
           } finally {
             keys.wipe();
@@ -141,6 +201,7 @@ const walletAccounts = async (
           params.template,
           params.network,
           params.groupIndex,
+          mark,
         );
   const accounts = cache.get(record) ?? new Map<string, ChainAccount>();
   accounts.set(key, account);
@@ -288,6 +349,7 @@ export const prepareFor = async (
   request: SignRequest,
   material: KeySource["material"],
   now: number,
+  storedMark: (purpose: number) => number,
 ): Promise<Prepared> => {
   const { account } = request;
   if (
@@ -311,7 +373,7 @@ export const prepareFor = async (
   if (account.kind === "imported") {
     throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
   }
-  return prepareBitcoin(request, account, material);
+  return prepareBitcoin(request, account, material, storedMark);
 };
 
 /**
@@ -359,6 +421,8 @@ export type PreparedApproval = {
      Callers render `shown?.prompt ?? chainPrompt(...)`; the hardware device line wraps it. */
   readonly shown: { readonly prompt: KeystorePrompt; readonly oversize: boolean } | undefined;
   readonly plan: ChainPlan;
+  /** Raises to the sealed change marks — committed after verification, before signing. */
+  readonly changeMarks?: ReadonlyArray<{ readonly purpose: number; readonly index: number }>;
 };
 
 export const prepareApproval = async (
@@ -368,7 +432,18 @@ export const prepareApproval = async (
   dek: Secret,
 ): Promise<PreparedApproval> => {
   assertHdTemplates(request);
-  const prepared = await prepareFor(request, material, ctx.platform.now());
+  const storedMark =
+    request.kind === "bitcoin.psbt"
+      ? (purpose: number) =>
+          changeMark(
+            ctx.image,
+            request.account.walletId,
+            request.account.groupIndex,
+            purpose,
+            request.network,
+          )
+      : () => 0;
+  const prepared = await prepareFor(request, material, ctx.platform.now(), storedMark);
   const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
   /* A keystore host shows this text in a bounded system dialog, so it is rendered and measured
      before the blind check: an over-long prompt counts as blind and, when allowed, reaches the
@@ -382,7 +457,13 @@ export const prepareApproval = async (
           PROMPT_BOUNDS[ctx.platform.keystore.platform],
         );
   assertSignable(ctx, dek, prompt, shown?.oversize ?? false);
-  return { request, prompt, shown, plan: prepared.plan };
+  return {
+    request,
+    prompt,
+    shown,
+    plan: prepared.plan,
+    ...(prepared.changeMarks === undefined ? {} : { changeMarks: prepared.changeMarks }),
+  };
 };
 
 const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
@@ -399,11 +480,9 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
     prepareApproval(ctx, request, keys.material, dek),
   );
   await verifyFactor(
-    ctx.platform,
-    ctx.image,
+    ctx,
     verify,
     dek,
-    ctx.commit,
     () =>
       prepared.shown?.prompt ??
       chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
@@ -414,6 +493,19 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   if (request.kind === "evm.fiat24-session") {
     assertFiat24Deadline(request, ctx.platform.now());
   }
+  // The verified intent is committed before any signature exists: a failed commit aborts the
+  // request, an aborted signing still leaves the mark raised (harmless — it only widens the
+  // wallet's own scan).
+  if (request.kind === "bitcoin.psbt" && prepared.changeMarks !== undefined) {
+    await commitChangeMarks(
+      ctx,
+      dek,
+      request.account.walletId,
+      request.account.groupIndex,
+      request.network,
+      prepared.changeMarks,
+    );
+  }
   return openKeys(async (keys) =>
     signPlan(prepared.plan, keys.backend(taskSignerFor(prepared.plan))),
   );
@@ -422,14 +514,14 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
 export function createChainsModule(): ChainsModule {
   let accounts: AccountCache = new WeakMap();
   const vault: VaultHooks = {
-    ownsRecord: () => false,
-    claimUnlocked: (records) => records,
+    ownsRecord: marksHooks.ownsRecord,
+    claimUnlocked: marksHooks.claimUnlocked,
     forget: () => undefined,
     lock: () => {
       accounts = new WeakMap();
     },
-    walletDeleteOps: () => [],
-    parseHeader: () => undefined,
+    walletDeleteOps: marksHooks.walletDeleteOps,
+    parseHeader: marksHooks.parseHeader,
   };
 
   const handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> } = {

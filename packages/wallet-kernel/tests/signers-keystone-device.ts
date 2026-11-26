@@ -347,7 +347,11 @@ export const keystoneDevice = (
         if (meta.fingerprint === mfp) {
           const key = root.derive(renderPath(numberPath(meta.path)));
           if (key.privateKey !== null) {
-            tx.sign(key.privateKey);
+            // A real device signs the input's requested sighash; scure needs it allow-listed.
+            tx.sign(
+              key.privateKey,
+              input.sighashType === undefined ? undefined : [input.sighashType],
+            );
           }
         }
       }

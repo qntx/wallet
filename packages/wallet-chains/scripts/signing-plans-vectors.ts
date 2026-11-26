@@ -520,6 +520,7 @@ const btcPsbtCase = (name: string, inputs: ReadonlyArray<BtcInput>, outputs: num
     name,
     request: {
       kind: "bitcoin.psbt",
+      origin: "internal",
       network: "bip122:000000000019d6689c085ae165831e93",
       psbt: hex(unsignedPsbt),
       inputs: keys.map((k, i) => ({ index: i, path: k.path, publicKey: hex(k.pub) })),

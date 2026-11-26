@@ -5,19 +5,26 @@
  * answer is checked against the pin before it can influence a request.
  *
  * Header `{ device, fingerprint, model?, firmware?, createdAt }` is stored as fixed-order JSON and
- * enters the envelope AAD verbatim; the body is strict JSON `{ nodes, ed25519 }` keyed by `m/…`
- * paths — the same pinned-material codec the card body uses (../../derive/pinned.ts). `device` is
- * any well-formed device string: kinds this build does not know authenticate but stay inert —
- * listed with `supported: false`, never parsed for a body, never driven. Parsing validates fully: a
- * malformed row is `integrity`, never silently ignored.
+ * enters the envelope AAD verbatim; the body is strict JSON `{ nodes, ed25519, confirmed }` keyed
+ * by `m/…` paths — the same pinned-material codec the card body uses (../../derive/pinned.ts) plus
+ * the list of entries an on-device address check confirmed. `device` is any well-formed device
+ * string: kinds this build does not know authenticate but stay inert — listed with `supported:
+ * false`, never parsed for a body, never driven. Parsing validates fully: a malformed row is
+ * `integrity`, never silently ignored.
  */
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
+import type { KeyPath } from "@qntx/wallet-chains";
 import { HARDWARE_DEVICES } from "@qntx/wallet/types";
 import type { HardwareWalletInfo } from "@qntx/wallet/types";
 
-import { parsePinnedEd25519, parsePinnedNodes, pathToString } from "../../derive/pinned.ts";
+import {
+  parsePinnedEd25519,
+  parsePinnedNodes,
+  pathFromString,
+  pathToString,
+} from "../../derive/pinned.ts";
 import type { PinnedKeys } from "../../derive/pinned.ts";
 import { KernelError } from "../../errors.ts";
 import { asCreatedAt, expectKeys, headerFailure, headerObject } from "../../vault/header-codec.ts";
@@ -151,13 +158,21 @@ export function hardwareWalletInfo(header: HardwareHeader): HardwareWalletInfo {
 const bodyFailure = (): KernelError =>
   new KernelError("integrity", "invalid hardware wallet record");
 
+/** The sealed body: the pinned keys plus the entries an on-device check confirmed. */
+export type HardwareBody = {
+  readonly keys: PinnedKeys;
+  /** Paths of pinned entries `verify-address` matched on the device, sorted `m/…` strings. */
+  readonly confirmed: ReadonlyArray<KeyPath>;
+};
+
 /**
  * Parses the sealed body through the shared pinned-material codec: every node is a real secp256k1
- * point, every ed25519 entry a real point, every path well-formed, and the caps (512 nodes, 256
- * ed25519) hold. Hardware pins additionally require all-hardened ed25519 paths — SLIP-10 has no
- * public derivation, so a softer path could never be served. Anything less is `integrity`.
+ * point, every ed25519 entry a real point, every path well-formed, the caps (512 nodes, 256
+ * ed25519) hold, and `confirmed` is canonical — sorted, unique, naming only pinned entries.
+ * Hardware pins additionally require all-hardened ed25519 paths — SLIP-10 has no public derivation,
+ * so a softer path could never be served. Anything less is `integrity`.
  */
-export function parseHardwareBody(plaintext: Uint8Array): PinnedKeys {
+export function parseHardwareBody(plaintext: Uint8Array): HardwareBody {
   let text: string;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
@@ -175,7 +190,7 @@ export function parseHardwareBody(plaintext: Uint8Array): PinnedKeys {
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowed to an object above
   const body = value as Record<string, unknown>;
-  if (Object.keys(body).length !== 2) {
+  if (Object.keys(body).length !== 3) {
     throw bodyFailure();
   }
   const keys: PinnedKeys = {
@@ -187,11 +202,45 @@ export function parseHardwareBody(plaintext: Uint8Array): PinnedKeys {
       throw bodyFailure();
     }
   }
-  return keys;
+  const confirmed = parseConfirmed(body["confirmed"], keys);
+  return { keys, confirmed };
 }
 
+/**
+ * The `confirmed` list: `m/…` paths in canonical order — sorted as strings, unique, and every one
+ * naming an entry the body actually pins. Anything less is `integrity`: a confirmed entry that is
+ * not pinned would certify material the record does not carry.
+ */
+const parseConfirmed = (value: unknown, keys: PinnedKeys): KeyPath[] => {
+  if (!Array.isArray(value)) {
+    throw bodyFailure();
+  }
+  const texts: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      throw bodyFailure();
+    }
+    texts.push(entry);
+  }
+  const sorted = [...texts].sort();
+  if (sorted.some((text, i) => text !== texts[i] || (i > 0 && text === sorted[i - 1]))) {
+    throw bodyFailure();
+  }
+  const pinned = new Set([
+    ...keys.nodes.map((node) => pathToString(node.path)),
+    ...keys.ed25519.map((key) => pathToString(key.path)),
+  ]);
+  return texts.map((text) => {
+    if (!pinned.has(text)) {
+      throw bodyFailure();
+    }
+    return pathFromString(text);
+  });
+};
+
 /** The body's canonical JSON — fixed key order, `m/…` paths, lowercase hex. */
-export function encodeHardwareBody(keys: PinnedKeys): Uint8Array {
+export function encodeHardwareBody(body: HardwareBody): Uint8Array {
+  const { keys } = body;
   const nodes: Record<string, { key: string; chainCode: string; parent?: string }> = {};
   for (const node of keys.nodes) {
     const entry: { key: string; chainCode: string; parent?: string } = {
@@ -207,7 +256,8 @@ export function encodeHardwareBody(keys: PinnedKeys): Uint8Array {
   for (const key of keys.ed25519) {
     ed[pathToString(key.path)] = bytesToHex(key.publicKey);
   }
-  return utf8ToBytes(JSON.stringify({ nodes, ed25519: ed }));
+  const confirmed = body.confirmed.map(pathToString).sort();
+  return utf8ToBytes(JSON.stringify({ nodes, ed25519: ed, confirmed }));
 }
 
 /** The pin a record seals: the claimed fingerprint plus the pinned keys. */

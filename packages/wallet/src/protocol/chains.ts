@@ -9,7 +9,7 @@
 import type { VerifyFactor, MethodSpec } from "./core.ts";
 import { verifier, groupIndex, walletId } from "./core.ts";
 import type { Validator } from "./validate.ts";
-import { arr, bytes, int, literal, obj, opt, str, union } from "./validate.ts";
+import { arr, bool, bytes, int, literal, obj, opt, str, union } from "./validate.ts";
 
 export type ChainTemplate =
   | "evm.bip44"
@@ -32,16 +32,20 @@ export type ChainAccount =
       readonly template: "evm.bip44";
       readonly network: string;
       readonly address: string;
+      /** The serving entry passed an on-device check — always true for seed-custody wallets. */
+      readonly confirmed: boolean;
     }
   | {
       readonly template: "solana.bip44-change";
       readonly network: string;
       readonly address: string;
+      readonly confirmed: boolean;
     }
   | {
       readonly template: "tron.bip44";
       readonly network: string;
       readonly address: string;
+      readonly confirmed: boolean;
     }
   | {
       readonly template: "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
@@ -51,6 +55,9 @@ export type ChainAccount =
       readonly fingerprint: string;
       /** Account derivation path, e.g. "m/84'/0'/0'". */
       readonly path: string;
+      /** Highest proven change-chain index — the sealed mark the change scan reaches beyond. */
+      readonly changeMark: number;
+      readonly confirmed: boolean;
     };
 
 export const template: Validator<ChainTemplate> = union(
@@ -72,7 +79,8 @@ export const caip2: Validator<string> = str(200, /^[a-z0-9-]{3,64}:[0-9a-zA-Z-]{
 const addressResult = (
   t: "evm.bip44" | "solana.bip44-change" | "tron.bip44",
   address: Validator<string> = str(128, /^[0-9a-zA-Z-]{20,128}$/),
-): Validator<ChainAccount> => obj({ template: literal(t), network: caip2, address });
+): Validator<ChainAccount> =>
+  obj({ template: literal(t), network: caip2, address, confirmed: bool });
 
 export type AccountRef =
   | {
@@ -178,6 +186,8 @@ export type ChainSignRequest =
         readonly walletId: string;
         readonly groupIndex: number;
       };
+      /** Who built this request — only "internal" requests may raise the change mark. */
+      readonly origin: "internal" | "external";
       readonly psbt: Uint8Array;
       readonly sign: ReadonlyArray<{
         readonly index: number;
@@ -317,6 +327,7 @@ export const signRequest: Validator<ChainSignRequest> = union(
     kind: literal("bitcoin.psbt"),
     network: caip2,
     account: obj({ kind: literal("hd"), walletId, groupIndex }),
+    origin: union(literal("internal"), literal("external")),
     psbt: bytes(1, 131072),
     sign: arr(obj({ index: int(0, 1024), template: btcTemplate }), 1024),
   }),
@@ -388,6 +399,8 @@ export const chainAccount: Validator<ChainAccount> = union(
     xpub: str(111, /^[a-zA-Z0-9]{111}$/),
     fingerprint: str(8, /^[0-9a-f]{8}$/),
     path: str(11, /^m\/[0-9'/]+$/),
+    confirmed: bool,
+    changeMark: int(0, 2147483647),
   }),
 );
 
@@ -412,6 +425,11 @@ export type ChainExportParams = {
   readonly groupIndex: number;
   readonly nodes: ReadonlyArray<ChainExportNode>;
   readonly verify: VerifyFactor;
+  /**
+   * Acknowledge exporting nodes a device never confirmed on-screen — the prompt shows one danger
+   * row per unconfirmed node. Absent, an unconfirmed node refuses with `approval-required`.
+   */
+  readonly acknowledgeUnconfirmed?: true;
 };
 
 export type ChainExportedKey = {
@@ -472,7 +490,13 @@ export const CHAINS_METHODS: {
   "chain.exportAccount": {
     session: true,
     presence: true,
-    params: obj({ walletId, groupIndex, nodes: arr(exportNode, 4, 1), verify: verifier }),
+    params: obj({
+      walletId,
+      groupIndex,
+      nodes: arr(exportNode, 4, 1),
+      verify: verifier,
+      acknowledgeUnconfirmed: opt(literal(true)),
+    }),
     result: obj({ fingerprint, keys: arr(exportedKey, 4, 1) }),
   },
 };

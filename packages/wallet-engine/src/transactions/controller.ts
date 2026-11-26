@@ -633,7 +633,11 @@ export class TransactionController extends Controller<TransactionControllerState
   }
 
   /** The group's next unused `btc.bip84` receive address on a bitcoin `network`. */
-  async nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string> {
+  async nextReceiveAddress(
+    walletId: string,
+    groupIndex: number,
+    network: string,
+  ): Promise<{ address: string; confirmed: boolean }> {
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }

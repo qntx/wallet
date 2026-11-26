@@ -15,6 +15,7 @@ import {
   normalizeBitcoin,
   planBitcoinMessage,
   planBitcoinPsbt,
+  requestChangeMark,
 } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinOwn, BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
 
@@ -198,9 +199,16 @@ const bitcoinOwn = async (
   b: BitcoinDerive,
   tx: Transaction,
   signed: ReadonlyArray<BitcoinPathTail>,
-): Promise<BitcoinOwn> => {
+  markOf: (purpose: number) => number,
+): Promise<{
+  own: BitcoinOwn;
+  marks: Map<number, number>;
+  hidden: Map<number, number>;
+}> => {
   const change = new Set<string>();
   const unusual = new Map<string, string>();
+  const marks = new Map<number, number>();
+  const hidden = new Map<number, number>();
   for (let i = 0; i < tx.outputsLength; i++) {
     const output = tx.getOutput(i);
     if (output.script === undefined) {
@@ -218,8 +226,11 @@ const bitcoinOwn = async (
           continue;
         }
         const tail = { purpose, change: entry.path[3] ?? 0, index: entry.path[4] ?? 0 };
-        if (isDiscoverableChange(tail, signed)) {
+        const mark = marks.get(purpose) ?? markOf(purpose);
+        marks.set(purpose, mark);
+        if (isDiscoverableChange(tail, signed, mark)) {
           change.add(hex(output.script));
+          hidden.set(purpose, Math.max(hidden.get(purpose) ?? -1, tail.index));
         } else {
           unusual.set(hex(output.script), pathString(entry.path));
         }
@@ -233,13 +244,19 @@ const bitcoinOwn = async (
       }
     }
   }
-  return { change, unusual };
+  return { own: { change, unusual }, marks, hidden };
 };
 
-/** The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. */
+/**
+ * The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. The hidden
+ * change bound is the sealed mark — raised for this classification only by an `internal` request's
+ * same-purpose change inputs — and the resulting raise (the mark plus every hidden index) is what
+ * the caller commits after verification.
+ */
 const prepareBitcoinPsbt = async (
   b: BitcoinDerive,
   request: Extract<BitcoinRequest, { kind: "bitcoin.psbt" }>,
+  storedMark: (purpose: number) => number,
 ): Promise<Prepared> => {
   const tx = Transaction.fromPSBT(request.psbt);
   const inputs = [];
@@ -250,7 +267,9 @@ const prepareBitcoinPsbt = async (
     inputs.push({ index: input.index, key: input.key });
     signed.push(input.tail);
   }
-  const own = await bitcoinOwn(b, tx, signed);
+  const { own, marks, hidden } = await bitcoinOwn(b, tx, signed, (purpose) =>
+    requestChangeMark(storedMark(purpose), purpose, signed, request.origin),
+  );
   let normalized;
   try {
     normalized = normalizeBitcoin(request);
@@ -272,7 +291,24 @@ const prepareBitcoinPsbt = async (
   } catch (error) {
     mapChainError(error);
   }
-  return { prompt: intent, plan: { ...plan, hiddenChange: own.change } };
+  // The raise covers every purpose the request touches: an internal sweep's signed change inputs
+  // raise the mark even when no own output of that purpose exists to classify.
+  const purposes = new Set<number>([...signed.map((tail) => tail.purpose), ...marks.keys()]);
+  const raises = new Map<number, number>();
+  for (const purpose of purposes) {
+    const mark =
+      marks.get(purpose) ?? requestChangeMark(storedMark(purpose), purpose, signed, request.origin);
+    const target = Math.max(mark, hidden.get(purpose) ?? -1);
+    if (target > storedMark(purpose)) {
+      raises.set(purpose, target);
+    }
+  }
+  const changeMarks = [...raises.entries()].map(([purpose, index]) => ({ purpose, index }));
+  return {
+    prompt: intent,
+    plan: { ...plan, hiddenChange: own.change },
+    ...(changeMarks.length > 0 ? { changeMarks } : {}),
+  };
 };
 
 /** The message plan: the declared change/index must derive this address, then normalize/plan. */
@@ -340,6 +376,7 @@ export const prepareBitcoin = async (
   request: BitcoinRequest,
   account: Extract<BitcoinRequest["account"], { kind: "hd" }>,
   material: PublicMaterial,
+  storedMark: (purpose: number) => number,
 ): Promise<Prepared> => {
   const net = bitcoinNetwork(request.network);
   const b: BitcoinDerive = {
@@ -351,7 +388,7 @@ export const prepareBitcoin = async (
     net,
   };
   if (request.kind === "bitcoin.psbt") {
-    return prepareBitcoinPsbt(b, request);
+    return prepareBitcoinPsbt(b, request, storedMark);
   }
   const purpose = "template" in account ? BTC_PURPOSE[account.template] : undefined;
   if (purpose === undefined) {

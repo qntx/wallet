@@ -361,6 +361,7 @@ describe("hardware factor: chain.sign", () => {
     const requestFor = (bytes: Uint8Array) =>
       normalizeBitcoin({
         kind: "bitcoin.psbt",
+        origin: "internal",
         network: BTC_NETWORK,
         account: { kind: "hd", walletId, groupIndex: 0 },
         psbt: bytes,

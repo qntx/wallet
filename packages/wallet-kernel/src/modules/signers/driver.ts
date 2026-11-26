@@ -70,10 +70,12 @@ export type Driver = {
   /** Signs one plan stage: one 64-byte signature per task, in order; assemble verifies. */
   readonly sign: (link: DeviceLink, context: SignContext) => Promise<ReadonlyArray<Uint8Array>>;
   /**
-   * Fetches missing public material (hardened nodes). The driver must prove the answering device
-   * holds `pin` — a device-reported fingerprint, or already-pinned material of the same family
-   * re-fetched byte-for-byte — `wrong-device` on a mismatch, and returns the fingerprint only after
-   * that proof; the module's check on the returned fingerprint is the generic backstop.
+   * Fetches missing public material (hardened nodes). The driver re-checks the answering device's
+   * claimed identity — a device-reported fingerprint, or already-pinned material of the same family
+   * re-fetched byte-for-byte — `wrong-device` on a mismatch. These comparisons only stop an
+   * accidental second honest device: the checked values are public, so a foreign device or the
+   * transport itself can replay them and merge its own keys. The control for that is the on-device
+   * address check — merged entries stay unconfirmed until `verifyAddress` matches.
    */
   readonly accounts: (
     link: DeviceLink,

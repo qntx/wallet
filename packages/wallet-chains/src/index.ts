@@ -80,6 +80,8 @@ export type SignRequest =
         readonly walletId: string;
         readonly groupIndex: number;
       };
+      /** Who built this request — only "internal" requests may raise the change mark. */
+      readonly origin: "internal" | "external";
       readonly psbt: Uint8Array;
       /** Inputs to sign — non-empty, unique, ascending by index, in range; each with its template. */
       readonly sign: ReadonlyArray<{ readonly index: number; readonly template: BitcoinTemplate }>;
