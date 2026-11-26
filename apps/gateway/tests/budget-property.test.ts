@@ -22,6 +22,8 @@ const ACCOUNT: Account = {
   source: "https://test.invalid",
 };
 
+const FLOAT_SLACK = 1e-9;
+
 const run = async (
   isolateCount: number,
   steps: ReadonlyArray<{
@@ -80,8 +82,10 @@ const run = async (
   }
   expect(spent).toBeLessThanOrEqual(granted);
   for (const window of ACCOUNT.budget) {
+    // `grant` refills incrementally, one rate × elapsed term per lease, so the granted total drifts
+    // from this closed-form bound by float rounding (~1e-14 units), far below any real over-grant.
     expect(granted).toBeLessThanOrEqual(
-      window.units + (window.units / window.seconds) * (at / 1000),
+      window.units + (window.units / window.seconds) * (at / 1000) + FLOAT_SLACK,
     );
   }
 };
@@ -105,7 +109,24 @@ describe("durableBudget lease property", () => {
           ),
           run,
         ),
-        { numRuns: 200 },
+        {
+          numRuns: 200,
+          examples: [
+            [
+              2,
+              [
+                { isolate: 1, units: 26, burst: 1, advance: 0 },
+                { isolate: 0, units: 31, burst: 1, advance: 606 },
+                { isolate: 1, units: 1, burst: 1, advance: 742 },
+                { isolate: 0, units: 1, burst: 1, advance: 342 },
+                { isolate: 0, units: 1, burst: 1, advance: 1 },
+                { isolate: 0, units: 1, burst: 1, advance: 4 },
+                { isolate: 0, units: 13, burst: 2, advance: 1125 },
+                { isolate: 1, units: 1, burst: 1, advance: 556 },
+              ],
+            ],
+          ],
+        },
       );
     },
   );
