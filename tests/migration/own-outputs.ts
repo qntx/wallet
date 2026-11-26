@@ -1,6 +1,6 @@
 import type { AssetFlow, IntentWarning } from "@qntx/wallet-chains";
 /**
- * Own-key Bitcoin outputs (section 33): `decodeBitcoinPsbt` takes a `BitcoinOwn` — the script hexes
+ * Own-key Bitcoin outputs (section 34): `decodeBitcoinPsbt` takes a `BitcoinOwn` — the script hexes
  * of the group's own outputs split into discoverable `change` and `unusual` — and reports an
  * unusual own output as a verified outflow with `AssetFlow.ownPath` plus an `unusual-own-output`
  * `IntentWarning`, which the engine surfaces as `bitcoin-unusual-output`. `BITCOIN_GAP_LIMIT` (20)
