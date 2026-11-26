@@ -9,9 +9,12 @@
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { HDKey } from "@scure/bip32";
+import { Address, OutScript, p2pkh, p2wpkh } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { KeyPath } from "@qntx/wallet-chains";
+import { bitcoinNetwork, normalizeBitcoin } from "@qntx/wallet-chains/bitcoin";
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import type { DeviceRequest, DeviceResponse, ProtocolValue } from "@qntx/wallet/protocol";
 
@@ -28,6 +31,7 @@ import type { Harness, KernelResponse } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
 import type { KeystoreCall } from "./keystore.ts";
 import { fakeDevice, masterFingerprint } from "./signers-fake.ts";
+import type { FakeDeviceOptions } from "./signers-fake.ts";
 import {
   hex,
   ok as okHex,
@@ -42,8 +46,10 @@ const H = 0x80_00_00_00;
 const SEED_B = new Uint8Array(64).fill(0xb0);
 const FINGERPRINT = unhex(vectorCase("bitcoin", "fingerprint").result as string);
 const MFP = masterFingerprint(SEED);
+const MFP_NUMBER = new DataView(MFP.buffer, MFP.byteOffset, MFP.byteLength).getUint32(0);
 const BTC_NETWORK = "bip122:000000000019d6689c085ae165831e93";
 const EVM_NETWORK = "eip155:1";
+const SOLANA_NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
@@ -318,6 +324,40 @@ describe("hardware.begin — verification-gated fetches and unconfirmed merges",
     expect(presencePrompts(fk.calls)).toHaveLength(promptsBeforePresented + 1);
   });
 
+  it("a solana-only gap needs the factor too — ed25519 needs are approval-gated", async () => {
+    /* The device pins no ed25519 keys: a solana-only accounts op must hit the same approval
+       gate a secp256k1 gap does — without a factor nothing begins and no exchange is staged. */
+    const { fk, device, h, session } = await bootFake({ ed25519: [] });
+    const paired = await runOp(
+      h,
+      session,
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "keystone" }, verify: VERIFY },
+        session,
+      ),
+      [],
+    );
+    const hwId = strField(field(paired, "wallet"), "walletId");
+    device.requests.length = 0;
+    const solanaOp = {
+      kind: "accounts" as const,
+      walletId: hwId,
+      groupIndex: 0,
+      templates: ["solana.bip44-change"],
+      network: SOLANA_NETWORK,
+    };
+    expect(errCode(await h.call("hardware.begin", { op: solanaOp }, session))).toBe(
+      "approval-required",
+    );
+    expect(device.requests).toHaveLength(0);
+    // With the factor the op begins and asks the device for exactly the ed25519 leaf.
+    const promptsBefore = presencePrompts(fk.calls).length;
+    await h.call("hardware.begin", { op: solanaOp, verify: VERIFY }, session);
+    expect(presencePrompts(fk.calls)).toHaveLength(promptsBefore + 1);
+    expect(device.gaps).toContainEqual({ secp256k1: [], ed25519: [[H + 44, H + 501, H, H]] });
+  });
+
   it("exporting an unconfirmed node needs the acknowledgement and shows a danger row", async () => {
     const { fk, h, session } = await ledgerHarness();
     const paired = await runOp(
@@ -441,9 +481,9 @@ describe("hardware.begin — verification-gated fetches and unconfirmed merges",
 });
 
 /** Keystore harness + the seed-backed fake device as every slot's driver. */
-const bootFake = async () => {
+const bootFake = async (opts?: FakeDeviceOptions) => {
   const fk = fakeKeystore();
-  const device = fakeDevice(SEED);
+  const device = fakeDevice(SEED, opts);
   const h = createHarness({
     keystore: fk.keystore,
     drivers: { keystone: device.driver, ledger: device.driver, onekey: ONEKEY_DRIVER },
@@ -524,6 +564,57 @@ describe("a matched verify-address seals the serving entry confirmed", () => {
       boolField(await chainAccount(h, session2, hwId, 0, "btc.bip84", BTC_NETWORK), "confirmed"),
     ).toBe(false);
   });
+
+  it("confirms the ed25519 serving entry of a solana leaf", async () => {
+    const { device, h, session } = await bootFake();
+    const paired = await runOp(
+      h,
+      session,
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "keystone" }, verify: VERIFY },
+        session,
+      ),
+      [],
+    );
+    const hwId = strField(field(paired, "wallet"), "walletId");
+    expect(
+      boolField(
+        await chainAccount(h, session, hwId, 0, "solana.bip44-change", SOLANA_NETWORK),
+        "confirmed",
+      ),
+    ).toBe(false);
+
+    const verified = await runOp(
+      h,
+      session,
+      await h.call(
+        "hardware.begin",
+        {
+          op: {
+            kind: "verify-address",
+            walletId: hwId,
+            groupIndex: 0,
+            template: "solana.bip44-change",
+            network: SOLANA_NETWORK,
+          },
+        },
+        session,
+      ),
+      ["matched"],
+    );
+    expect(strField(verified, "method")).toBe("compare");
+    expect(device.targets.at(-1)?.path).toBe("m/44'/501'/0'/0'");
+    /* The serving entry is the pinned ed25519 leaf itself — sealing it confirms the account.
+       A secp256k1 serving lookup finds no ancestor under an all-hardened path and would leave
+       the flag unset. */
+    expect(
+      boolField(
+        await chainAccount(h, session, hwId, 0, "solana.bip44-change", SOLANA_NETWORK),
+        "confirmed",
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("hardware sign deadline", () => {
@@ -599,6 +690,12 @@ describe("keystone verifyAddress allow-list", () => {
       "solana.bip44-change",
       "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     ],
+    [
+      "solana group 49",
+      [H + 44, H + 501, H + 49, H],
+      "solana.bip44-change",
+      "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    ],
     ["btc bip84", [H + 84, H, H, 0, 3], "btc.bip84", BTC_NETWORK],
     ["btc bip86", [H + 86, H, H, 0, 0], "btc.bip86", BTC_NETWORK],
   ] as const)("%s reaches the compare exchange", async (_name, path, template, network) => {
@@ -625,6 +722,12 @@ describe("keystone verifyAddress allow-list", () => {
     ["evm hardened leaf", [H + 44, H + 60, H, 0, H], "evm.bip44", "eip155:1"],
     ["index past the firmware max", [H + 44, H + 60, H, 0, 999_999_999], "evm.bip44", "eip155:1"],
     [
+      "solana group past the menu",
+      [H + 44, H + 501, H + 50, H],
+      "solana.bip44-change",
+      "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    ],
+    [
       "solana group past the max",
       [H + 44, H + 501, H + 1_000_000_000, H],
       "solana.bip44-change",
@@ -647,5 +750,300 @@ describe("keystone verifyAddress allow-list", () => {
       ),
     ).rejects.toThrow(KernelError);
     expect(requests).toHaveLength(0);
+  });
+
+  it("the solana sub-account bound is the firmware's 49, not the index input max", async () => {
+    /* The Web3 menu pre-derives only XPUB_TYPE_SOL_BIP44_CHANGE_0..49: a group past it renders on
+       no screen the user could compare, so the driver refuses before any exchange. */
+    for (const group of [50, 999_999_998]) {
+      const { link, requests } = stubLink({ kind: "compare", matched: true });
+      const rejected = KEYSTONE_DRIVER.verifyAddress(
+        link,
+        {
+          path: [H + 44, H + 501, H + group, H],
+          address: "a",
+          template: "solana.bip44-change",
+          network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        },
+        pin,
+      );
+      // oxlint-disable-next-line no-await-in-loop -- each bound case is checked in turn
+      await expect(rejected).rejects.toThrow(KernelError);
+      // oxlint-disable-next-line no-await-in-loop -- same rejection, asserted for its code
+      await expect(rejected).rejects.toMatchObject({ code: "unsupported" });
+      expect(requests).toHaveLength(0);
+    }
+    // Group 49 is the last the menu can show — the compare exchange still goes out.
+    const { link, requests } = stubLink({ kind: "compare", matched: true });
+    const verdict = await KEYSTONE_DRIVER.verifyAddress(
+      link,
+      {
+        path: [H + 44, H + 501, H + 49, H],
+        address: "a",
+        template: "solana.bip44-change",
+        network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      },
+      pin,
+    );
+    expect(requests).toStrictEqual([{ kind: "compare", address: "a", path: "m/44'/501'/49'/0'" }]);
+    expect(verdict).toStrictEqual({ method: "compare", matched: true });
+  });
+
+  it("relays a matched:false compare verdict verbatim", async () => {
+    const { link, requests } = stubLink({ kind: "compare", matched: false });
+    const verdict = await KEYSTONE_DRIVER.verifyAddress(
+      link,
+      { path: [H + 44, H + 60, H, 0, 0], address: "a", template: "evm.bip44", network: "eip155:1" },
+      pin,
+    );
+    expect(requests).toHaveLength(1);
+    expect(verdict).toStrictEqual({ method: "compare", matched: false });
+  });
+});
+
+/* A pin whose node a compromised transport substituted is never "your own address": its outputs
+   are ordinary sends carrying a danger warning, and signing them needs an explicit
+   acknowledgement — like export-account on an unconfirmed entry. Only a matched verify-address
+   seals the entry, after which its outputs classify own again. */
+describe("an unconfirmed pinned entry's outputs are never your own address", () => {
+  /* The pair transcript with the bip44 slot substituted by a foreign seed's node — the rest of
+     the pin stays honest. */
+  const PAIR_SCRIPT_SUBSTITUTED = [
+    appAndVersionStep("bitcoin"),
+    okHex(hex(FINGERPRINT)),
+    okHex(utf8Hex(xpubAtSeed(SEED_B, ACCOUNT_44))),
+    okHex(utf8Hex(xpubAt([H + 49, H, H]))),
+    okHex(utf8Hex(xpubAt([...ACCOUNT_84]))),
+    okHex(utf8Hex(xpubAt([H + 86, H, H]))),
+  ];
+
+  const pubAt = (seed: Uint8Array, path: KeyPath): Uint8Array => {
+    const { publicKey } = hdAt(seed, path);
+    if (publicKey === null) {
+      throw new Error("no public key");
+    }
+    return publicKey;
+  };
+
+  const BIP44_CHANGE: KeyPath = [H + 44, H, H, 1, 0];
+  const addressOf = (script: Uint8Array): string =>
+    Address(bitcoinNetwork(BTC_NETWORK).params).encode(OutScript.decode(script));
+  const foreignChangeAddress = (): string => addressOf(p2pkh(pubAt(SEED_B, BIP44_CHANGE)).script);
+
+  /**
+   * A PSBT paying a fixed payee plus one output that a node of `outputSeed` at m/44'/0'/0'/1/0
+   * serves, derivation-bound under the pin's fingerprint; the spending input is the bip84 key of
+   * `inputSeed` — or `outputSeed`'s bip44 key when `inputTemplate` is "btc.bip44".
+   */
+  const ownOutputPsbt = (
+    inputSeed: Uint8Array,
+    inputTemplate: "btc.bip44" | "btc.bip84",
+    outputSeed: Uint8Array,
+  ): Uint8Array => {
+    const inputPath: KeyPath =
+      inputTemplate === "btc.bip44" ? [H + 44, H, H, 0, 0] : [H + 84, H, H, 0, 0];
+    const inPub = pubAt(inputSeed, inputPath);
+    const inScript = inputTemplate === "btc.bip44" ? p2pkh(inPub).script : p2wpkh(inPub).script;
+    const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+    const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+    prev.addInput({ txid: unhex("10".repeat(32)), index: 0, sequence: 0xff_ff_ff_ff });
+    prev.addOutput({ script: inScript, amount: 100_000n });
+    tx.addInput({
+      txid: prev.id,
+      index: 0,
+      sequence: 0xff_ff_ff_fd,
+      witnessUtxo: { script: inScript, amount: 100_000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
+      bip32Derivation: [[inPub, { fingerprint: MFP_NUMBER, path: [...inputPath] }]],
+    });
+    tx.addOutput({
+      script: OutScript.encode(
+        Address(bitcoinNetwork(BTC_NETWORK).params).decode(
+          "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g",
+        ),
+      ),
+      amount: 90_000n,
+    });
+    const ownPub = pubAt(outputSeed, BIP44_CHANGE);
+    tx.addOutput({ script: p2pkh(ownPub).script, amount: 9000n });
+    tx.updateOutput(tx.outputsLength - 1, {
+      bip32Derivation: [[ownPub, { fingerprint: MFP_NUMBER, path: [...BIP44_CHANGE] }]],
+    });
+    return tx.toPSBT(0);
+  };
+
+  const ownSignRequest = (
+    walletId: string,
+    inputSeed: Uint8Array,
+    inputTemplate: "btc.bip44" | "btc.bip84",
+    outputSeed: Uint8Array,
+  ) =>
+    normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      origin: "external",
+      network: BTC_NETWORK,
+      account: { kind: "hd", walletId, groupIndex: 0 },
+      psbt: ownOutputPsbt(inputSeed, inputTemplate, outputSeed),
+      sign: [{ index: 0, template: inputTemplate }],
+    });
+
+  it("refuses without the acknowledgement and warns as a plain send with it", async () => {
+    const { fk, h, session } = await ledgerHarness();
+    const paired = await runOp(
+      h,
+      session,
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "ledger" }, verify: VERIFY },
+        session,
+      ),
+      PAIR_SCRIPT_SUBSTITUTED,
+    );
+    const hwId = strField(field(paired, "wallet"), "walletId");
+    expect(
+      strField(await chainAccount(h, session, hwId, 0, "btc.bip44", BTC_NETWORK), "xpub"),
+    ).toBe(xpubAtSeed(SEED_B, ACCOUNT_44));
+    expect(
+      boolField(await chainAccount(h, session, hwId, 0, "btc.bip44", BTC_NETWORK), "confirmed"),
+    ).toBe(false);
+
+    const request = ownSignRequest(hwId, SEED, "btc.bip84", SEED_B);
+    const foreignAddress = foreignChangeAddress();
+
+    // No acknowledgement: the op refuses before any prompt or exchange is staged.
+    const callsBefore = fk.calls.length;
+    const refused = await h.call(
+      "hardware.begin",
+      { op: { kind: "sign", request }, verify: VERIFY },
+      session,
+    );
+    expect(errCode(refused)).toBe("approval-required");
+    expect(presencePrompts(fk.calls.slice(callsBefore))).toHaveLength(0);
+
+    // With the acknowledgement it is a plain send to that address plus the danger warning —
+    // never "your own address".
+    const begin = okValue(
+      await h.call(
+        "hardware.begin",
+        {
+          op: { kind: "sign", request, acknowledgeUnconfirmed: true },
+          verify: VERIFY,
+        },
+        session,
+      ),
+    );
+    const { description } = lastPrompt(fk);
+    expect(description).toContain(`to ${foreignAddress}`);
+    expect(description).not.toContain("your own address");
+    expect(description).toContain(`never confirmed the key behind ${foreignAddress}`);
+
+    // The external request raised no change mark.
+    expect(
+      field(await chainAccount(h, session, hwId, 0, "btc.bip44", BTC_NETWORK), "changeMark"),
+    ).toBe(0);
+    await h.call("hardware.cancel", { opId: strField(begin, "opId") }, session);
+  });
+
+  it("does not hide what confirmed change classification would hide", async () => {
+    const { fk, h, session } = await ledgerHarness();
+    const paired = await runOp(
+      h,
+      session,
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "ledger" }, verify: VERIFY },
+        session,
+      ),
+      PAIR_SCRIPT_SUBSTITUTED,
+    );
+    const hwId = strField(field(paired, "wallet"), "walletId");
+
+    // The substituted node serves the spending input too, so its /1/0 output is exactly what a
+    // confirmed entry would classify as hidden change — it still shows as a foreign send.
+    const request = ownSignRequest(hwId, SEED_B, "btc.bip44", SEED_B);
+    const begin = okValue(
+      await h.call(
+        "hardware.begin",
+        {
+          op: { kind: "sign", request, acknowledgeUnconfirmed: true },
+          verify: VERIFY,
+        },
+        session,
+      ),
+    );
+    const { description } = lastPrompt(fk);
+    expect(description).toContain(`to ${foreignChangeAddress()}`);
+    expect(description).not.toContain("your own address");
+    await h.call("hardware.cancel", { opId: strField(begin, "opId") }, session);
+  });
+
+  it("classifies the output own again once verify-address seals the entry", async () => {
+    const { fk, h, session } = await bootFake();
+    const paired = await runOp(
+      h,
+      session,
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "pair", device: "keystone" }, verify: VERIFY },
+        session,
+      ),
+      [],
+    );
+    const hwId = strField(field(paired, "wallet"), "walletId");
+    expect(
+      boolField(await chainAccount(h, session, hwId, 0, "btc.bip44", BTC_NETWORK), "confirmed"),
+    ).toBe(false);
+
+    // The honest bip44 node's /1/0 output is a foreign send while the entry is unconfirmed.
+    const request = ownSignRequest(hwId, SEED, "btc.bip84", SEED);
+    const ownAddress = addressOf(p2pkh(pubAt(SEED, BIP44_CHANGE)).script);
+    expect(
+      errCode(
+        await h.call("hardware.begin", { op: { kind: "sign", request }, verify: VERIFY }, session),
+      ),
+    ).toBe("approval-required");
+    const begin = okValue(
+      await h.call(
+        "hardware.begin",
+        {
+          op: { kind: "sign", request, acknowledgeUnconfirmed: true },
+          verify: VERIFY,
+        },
+        session,
+      ),
+    );
+    expect(lastPrompt(fk).description).toContain(`never confirmed the key behind ${ownAddress}`);
+    await h.call("hardware.cancel", { opId: strField(begin, "opId") }, session);
+
+    // A matched verify-address seals the serving entry; no acknowledgement is needed any more.
+    await runOp(
+      h,
+      session,
+      await h.call(
+        "hardware.begin",
+        {
+          op: {
+            kind: "verify-address",
+            walletId: hwId,
+            groupIndex: 0,
+            template: "btc.bip44",
+            network: BTC_NETWORK,
+            index: 0,
+          },
+        },
+        session,
+      ),
+      ["matched"],
+    );
+    expect(
+      boolField(await chainAccount(h, session, hwId, 0, "btc.bip44", BTC_NETWORK), "confirmed"),
+    ).toBe(true);
+    const rebegin = okValue(
+      await h.call("hardware.begin", { op: { kind: "sign", request }, verify: VERIFY }, session),
+    );
+    const { description } = lastPrompt(fk);
+    expect(description).toContain(`your own address ${ownAddress}`);
+    expect(description).toContain("m/44'/0'/0'/1/0");
+    await h.call("hardware.cancel", { opId: strField(rebegin, "opId") }, session);
   });
 });

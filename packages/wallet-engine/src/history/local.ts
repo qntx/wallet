@@ -10,8 +10,11 @@ export type GroupAddresses = {
   evm?: string;
   solana?: string;
   tron?: string;
-  /** Every scanned own Bitcoin address — the set grows while the Bitcoin source runs. */
-  readonly bitcoin: Set<string>;
+  /**
+   * The scanned own Bitcoin address parties — confirmed templates share the first, each unconfirmed
+   * template its own — appended while the Bitcoin source runs.
+   */
+  readonly bitcoin: Array<Set<string>>;
 };
 
 export type HistoryGroup = {
@@ -30,6 +33,10 @@ const LOCAL_STATUS: Readonly<Record<string, HistoryStatus>> = {
   dropped: "dropped",
   replaced: "replaced",
 };
+
+/** The own-address party a send's inputs sit in — the view its counterparties are read from. */
+const bitcoinParty = (tx: TrackedTransaction, own: GroupAddresses): Set<string> | undefined =>
+  own.bitcoin.find((party) => tx.btc?.inputs.some((input) => party.has(input.address)) === true);
 
 const belongs = (tx: TrackedTransaction, group: HistoryGroup, own: GroupAddresses): boolean => {
   if (tx.account !== group.walletId || tx.hash === undefined || SKIP_STATES.has(tx.state)) {
@@ -53,14 +60,22 @@ const belongs = (tx: TrackedTransaction, group: HistoryGroup, own: GroupAddresse
     return own.tron !== undefined && tx.tron?.from === own.tron;
   }
   // bitcoin
-  return tx.btc?.inputs.some((input) => own.bitcoin.has(input.address)) === true;
+  return bitcoinParty(tx, own) !== undefined;
 };
 
-const ownAddress = (own: GroupAddresses, address: string): boolean =>
+/**
+ * `to` is own when it sits in the party the send was computed from — a send to an address of
+ * another party (a key the device never confirmed) is a counterparty, never self.
+ */
+const ownAddress = (
+  own: GroupAddresses,
+  address: string,
+  party: Set<string> | undefined,
+): boolean =>
   address.toLowerCase() === own.evm?.toLowerCase() ||
   address === own.solana ||
   address === own.tron ||
-  own.bitcoin.has(address);
+  party?.has(address) === true;
 
 /**
  * The group's tracked send as a history entry: present the moment it is signed, `pending` until the
@@ -74,6 +89,7 @@ export const localEntry = (
   if (!belongs(tx, group, own)) {
     return undefined;
   }
+  const party = tx.family === "bitcoin" ? bitcoinParty(tx, own) : undefined;
   const outflows = tx.intent?.outflows ?? [];
   const changes: HistoryChange[] = outflows.map((flow) => ({
     direction: "out",
@@ -95,7 +111,7 @@ export const localEntry = (
     hash: tx.hash ?? "",
     direction: changes.length === 0 ? "self" : "out",
     counterparties: [
-      ...new Set(outflows.map((flow) => flow.to).filter((to) => !ownAddress(own, to))),
+      ...new Set(outflows.map((flow) => flow.to).filter((to) => !ownAddress(own, to, party))),
     ].slice(0, 100),
     changes,
     ...(tx.family === "bitcoin" && tx.btc !== undefined ? { fee: String(tx.btc.fee) } : {}),

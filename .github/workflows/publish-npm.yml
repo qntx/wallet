@@ -118,10 +118,11 @@ jobs:
         with:
           name: npm-${{ matrix.package }}
           path: ${{ runner.temp }}/pack
-      # Trusted publishing needs npm >= 11.5.1, which Node 24 ships.
+      # Trusted publishing needs npm >= 11.5.1; Node 24.22.3 bundles npm 11.19.1 — the exact pin
+      # keeps the publishing CLI stable (nodejs.org/dist/index.json).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24"
+          node-version: "24.22.3"
           registry-url: https://registry.npmjs.org
       - name: Publish
         run: |

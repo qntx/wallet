@@ -161,6 +161,8 @@ const neededPaths = async (
   network: string,
   groupIndex: number,
 ): Promise<{ secp256k1: KeyPath[]; ed25519: KeyPath[] }> => {
+  /* The probe below serves keys only — `confirmed` feeds the confirmed() query this material
+     never gets, so the empty list is an inert argument, not a claim. */
   const material = materialOf(pin, []);
   const need: { secp256k1: KeyPath[]; ed25519: KeyPath[] } = { secp256k1: [], ed25519: [] };
   const purpose = BTC_PURPOSE[template];
@@ -191,7 +193,10 @@ const neededPaths = async (
   return need;
 };
 
-/** Merges freshly fetched pinned keys into the pin, deduplicating by path. */
+/**
+ * Merges freshly fetched pinned keys into the pin, deduplicating by path. Node order is a
+ * convention, not a rule: paths stay unique and serving resolves by deepest prefix.
+ */
 const mergePin = (pin: HardwarePin, fetched: PinnedKeys): HardwarePin => ({
   fingerprint: pin.fingerprint,
   nodes: [
@@ -480,6 +485,7 @@ export function createSignersModule(
       request,
       materialOf(pin, pinBody(pins, record).confirmed),
       dek,
+      op.acknowledgeUnconfirmed === true,
     );
     const display = driver.display(request, prepared.plan, header);
     if (display === "unsupported") {

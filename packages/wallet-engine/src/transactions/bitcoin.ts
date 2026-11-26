@@ -10,7 +10,11 @@ import {
   bitcoinPubkeyFromXpub,
   requestChangeMark,
 } from "@qntx/wallet-chains/bitcoin";
-import type { BitcoinAccountTemplate, BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
+import type {
+  BitcoinAccountTemplate,
+  BitcoinOwn,
+  BitcoinPathTail,
+} from "@qntx/wallet-chains/bitcoin";
 
 import {
   BitcoinScanStore,
@@ -76,6 +80,8 @@ type SpendContext = {
   readonly fp: number;
   /** The sealed change mark the account reported — the bound the kernel will recompute. */
   readonly mark: number;
+  /** Whether the serving entry was ever matched by an on-device verify-address. */
+  readonly confirmed: boolean;
   /** The template's own change chain scan — the change index is picked after selection. */
   readonly changeChain: ReadonlyArray<ScanAddress>;
   /** The scan's account outputs — confirmed, or the wallet's own unconfirmed change. */
@@ -288,11 +294,12 @@ const accountContext = async (
   if (!("xpub" in btcAccount) || btcAccount.xpub === undefined) {
     throw new Error("bitcoin account carries no xpub");
   }
-  const { xpub, fingerprint, path, changeMark } = btcAccount as {
+  const { xpub, fingerprint, path, changeMark, confirmed } = btcAccount as {
     xpub: string;
     fingerprint: string;
     path: string;
     changeMark: number;
+    confirmed: boolean;
   };
   const fp = Number.parseInt(fingerprint, 16);
   const receive = await scanChain(es, xpub, template, network, net.params, 0, -1);
@@ -332,6 +339,7 @@ const accountContext = async (
     network,
     fp,
     mark: changeMark,
+    confirmed,
     changeChain: change,
     candidates: utxos,
     spendable: selectableUtxos(utxos, net.params, frozen),
@@ -776,9 +784,13 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }
     psbt = bindChange(psbt, built, chosen.address);
     const txP = Transaction.fromPSBT(psbt);
-    const own = {
-      change: new Set([hex.encode(scriptPubKey(chosen.address, net.params))]),
+    /* A change address a never-confirmed entry serves is not own: it decodes as a plain send
+       with the danger warning instead of hiding, and signing demands the acknowledgement. */
+    const changeScript = hex.encode(scriptPubKey(chosen.address, net.params));
+    const own: BitcoinOwn = {
+      change: new Set(built.confirmed ? [changeScript] : []),
       unusual: new Map<string, string>(),
+      unconfirmed: new Set(built.confirmed ? [] : [changeScript]),
     };
     const request = {
       kind: "bitcoin.psbt" as const,
@@ -861,7 +873,11 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       tx = await ctx.transition(tx, {});
       let signed: ReturnType<typeof extractSigned>;
       try {
-        const result = await apis.sign({ request, verify });
+        const result = await apis.sign({
+          request,
+          verify,
+          ...(own.unconfirmed.size > 0 ? { acknowledgeUnconfirmed: true } : {}),
+        });
         tx = await ctx.transition(tx, { state: "signed" });
         signed = extractSigned(result);
         commit();
@@ -935,14 +951,16 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       })),
     };
     const net = bitcoinNetwork(built.network);
-    const own = {
-      change: new Set(
-        record.outputs
-          .filter((o) => o.own)
-          .map((o) => hex.encode(scriptPubKey(o.address, net.params))),
-      ),
-      unusual: new Map<string, string>(),
-    };
+    /* A change address a never-confirmed entry serves is not own: it decodes as a plain send
+       with the danger warning instead of hiding, and signing demands the acknowledgement. */
+    const ownScripts = new Set(
+      record.outputs
+        .filter((o) => o.own)
+        .map((o) => hex.encode(scriptPubKey(o.address, net.params))),
+    );
+    const own: BitcoinOwn = built.confirmed
+      ? { change: ownScripts, unusual: new Map<string, string>(), unconfirmed: new Set() }
+      : { change: new Set(), unusual: new Map<string, string>(), unconfirmed: ownScripts };
     const intent = decodeBitcoinPsbt(request, own);
     const txId = newId(ctx.options.random);
     for (const key of held) {
@@ -970,7 +988,11 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       tx = await ctx.transition(tx, {});
       let signed: ReturnType<typeof extractSigned>;
       try {
-        const result = await apis.sign({ request, verify });
+        const result = await apis.sign({
+          request,
+          verify,
+          ...(own.unconfirmed.size > 0 ? { acknowledgeUnconfirmed: true } : {}),
+        });
         tx = await ctx.transition(tx, { state: "signed" });
         signed = extractSigned(result);
         commit();

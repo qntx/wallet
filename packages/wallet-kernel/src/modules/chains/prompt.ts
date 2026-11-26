@@ -418,6 +418,8 @@ const zh: Catalog = {
     "fiat24-account-burn": () =>
       "开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度",
     "unusual-own-output": () => "转入非常规路径上你自己的地址的资金可能不会显示在此钱包中",
+    "unconfirmed-signer-output": (message) =>
+      `危险：设备从未确认 ${message} 背后的密钥——它可能不属于你。向它发送前，请先在设备上核对该账户的地址`,
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
@@ -746,6 +748,8 @@ const en: Catalog = {
       "Opening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract",
     "unusual-own-output": () =>
       "Funds sent to your own address at an unusual path may not appear in this wallet",
+    "unconfirmed-signer-output": (message) =>
+      `Danger: the device never confirmed the key behind ${message} — it may not be yours. Check an address of this account on the device before sending to it`,
   },
   bridgeLine: (network, amount, to, deadline, refundTo) =>
     `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,

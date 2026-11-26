@@ -4,7 +4,9 @@
  * send to the caller's own address at an unusual path, with a warning. The reach bound comes from
  * the kernel's sealed change mark, never from the PSBT: an untrusted request can name any input
  * path, so signed inputs may raise the mark only for requests the wallet itself built (`origin:
- * "internal"`).
+ * "internal"`). An external request still hides change inside the window — the scan reaches it
+ * either way — but commits no raise at all: neither its inputs nor the indexes it hid are sealed
+ * into the mark.
  */
 
 /**
@@ -51,14 +53,21 @@ export const requestChangeMark = (
 /**
  * The own-key outputs of a PSBT, classified by the caller that independently verified them:
  * `change` maps script hex to nothing — it is hidden from the prompt; `unusual` maps script hex to
- * the output's `m/…` path text — it is shown as an outflow to the caller's own address.
+ * the output's `m/…` path text — it is shown as an outflow to the caller's own address;
+ * `unconfirmed` holds script hexes whose key sits on an entry the signer never confirmed on the
+ * device — shown as a plain send with a danger warning, never as "your own address".
  */
 export type BitcoinOwn = {
   readonly change: ReadonlySet<string>;
   readonly unusual: ReadonlyMap<string, string>;
+  readonly unconfirmed: ReadonlySet<string>;
 };
 
-export const EMPTY_BITCOIN_OWN: BitcoinOwn = { change: new Set(), unusual: new Map() };
+export const EMPTY_BITCOIN_OWN: BitcoinOwn = {
+  change: new Set(),
+  unusual: new Map(),
+  unconfirmed: new Set(),
+};
 
 /**
  * An output is discoverable change only on the change chain (`/1/i`), under a purpose at least one

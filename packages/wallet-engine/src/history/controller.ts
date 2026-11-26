@@ -68,7 +68,8 @@ export type HistoryControllerOptions = {
       readonly template: ChainTemplate;
       readonly network: string;
     }) => Promise<
-      { readonly address: string } | { readonly xpub: string; readonly changeMark: number }
+      | { readonly address: string }
+      | { readonly xpub: string; readonly changeMark: number; readonly confirmed: boolean }
     >;
   };
   readonly spark: Pick<SparkController, "history" | "store">;
@@ -177,7 +178,7 @@ const newRuntime = (group: HistoryGroup): GroupRuntime => ({
   seq: 0,
   emitted: [],
   mergeDone: false,
-  own: { bitcoin: new Set() },
+  own: { bitcoin: [] },
   errors: {},
   truncated: new Set(),
   unsupported: new Set(),
@@ -320,8 +321,10 @@ export class HistoryController extends Controller<HistoryState> {
     if (own.tron !== undefined) {
       by["tron"].add(own.tron);
     }
-    for (const address of own.bitcoin) {
-      by["bitcoin"].add(address);
+    for (const party of own.bitcoin) {
+      for (const address of party) {
+        by["bitcoin"].add(address);
+      }
     }
     return {
       evm: [...by["evm"]],
@@ -497,8 +500,8 @@ export class HistoryController extends Controller<HistoryState> {
           network,
           group,
           (bitcoin) => {
-            for (const address of bitcoin) {
-              own.bitcoin.add(address);
+            for (const party of bitcoin) {
+              own.bitcoin.push(new Set(party));
             }
           },
         ),

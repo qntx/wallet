@@ -161,7 +161,7 @@ const make = (options: {
                 ? { address: params.groupIndex === 0 ? OWNER : OWNER2 }
                 : params.template === "solana.bip44-change"
                   ? { address: "SolOwner111111111111111111111111111111111" }
-                  : { xpub: "xpub", changeMark: 0 },
+                  : { xpub: "xpub", changeMark: 0, confirmed: true },
             ),
     },
     spark: {

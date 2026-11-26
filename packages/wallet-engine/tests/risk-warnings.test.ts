@@ -158,7 +158,7 @@ describe("WARNING_RISK", () => {
     );
   });
 
-  it("maps exactly the seven fiat24 kinds plus unusual-own-output", () => {
+  it("maps exactly the seven fiat24 kinds plus the own-output kinds", () => {
     const danger = ["fiat24-unlimited-approval", "fiat24-account-move"];
     const warning = [
       "fiat24-internal-account",
@@ -184,11 +184,18 @@ describe("WARNING_RISK", () => {
       code: "bitcoin-unusual-output",
       level: "warning",
     });
+    // An output a never-confirmed entry serves may pay a key the device does not hold.
+    expect(WARNING_RISK["unconfirmed-signer-output"]).toStrictEqual({
+      code: "bitcoin-unconfirmed-output",
+      level: "danger",
+    });
     const mapped = Object.entries(WARNING_RISK)
       .filter(([, entry]) => entry !== undefined)
       .map(([kind]) => kind)
       .toSorted();
-    expect(mapped).toStrictEqual([...danger, ...warning, "unusual-own-output"].toSorted());
+    expect(mapped).toStrictEqual(
+      [...danger, ...warning, "unusual-own-output", "unconfirmed-signer-output"].toSorted(),
+    );
   });
 
   it("leaves sighash-single-anyonecanpay unmapped — assessBitcoinPsbts already covers it", () => {

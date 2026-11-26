@@ -1,7 +1,11 @@
-import { utf8ToBytes } from "@noble/hashes/utils.js";
+import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { Address, OutScript, Transaction } from "@scure/btc-signer";
+import { p2wpkh } from "@scure/btc-signer/payment.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
+import { bitcoinNetwork, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
+import { chains } from "@qntx/wallet/chains";
 import type { DeviceIo } from "@qntx/wallet/hardware";
 
 import { SignersController } from "../src/signers/controller.ts";
@@ -52,6 +56,61 @@ const activeCardStep = (signers: SignersController): string | undefined => {
   return step?.kind === "card" ? step.step.kind : undefined;
 };
 
+const H = 0x80_00_00_00;
+const BTC_NETWORK = "bip122:000000000019d6689c085ae165831e93";
+
+/**
+ * A bip84 spend paying a foreign output and its change to the paired Keystone's /1/0 — the entry a
+ * fresh pairing never confirmed on the device.
+ */
+const unconfirmedPsbt = async (wallet: Wallet, hwId: string) => {
+  const account = await chains(wallet).account({
+    walletId: hwId,
+    groupIndex: 0,
+    template: "btc.bip84",
+    network: BTC_NETWORK,
+  });
+  if (!("xpub" in account) || account.xpub === undefined) {
+    throw new Error("expected a bitcoin account");
+  }
+  const fingerprint = Number.parseInt(account.fingerprint, 16);
+  const inputPub = bitcoinPubkeyFromXpub(account.xpub, "btc.bip84", BTC_NETWORK, 0, 0);
+  const changePub = bitcoinPubkeyFromXpub(account.xpub, "btc.bip84", BTC_NETWORK, 1, 0);
+  const inputScript = p2wpkh(inputPub).script;
+  const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+  prev.addInput({ txid: hexToBytes("10".repeat(32)), index: 0, sequence: 0xff_ff_ff_ff });
+  prev.addOutput({ script: inputScript, amount: 100_000n });
+  const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+  tx.addInput({
+    txid: prev.id,
+    index: 0,
+    sequence: 0xff_ff_ff_fd,
+    witnessUtxo: { script: inputScript, amount: 100_000n },
+    nonWitnessUtxo: prev.toBytes(true, false),
+    bip32Derivation: [[inputPub, { fingerprint, path: [H + 84, H, H, 0, 0] }]],
+  });
+  tx.addOutput({
+    script: OutScript.encode(
+      Address(bitcoinNetwork(BTC_NETWORK).params).decode(
+        "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g",
+      ),
+    ),
+    amount: 90_000n,
+  });
+  tx.addOutput({ script: p2wpkh(changePub).script, amount: 9000n });
+  tx.updateOutput(1, {
+    bip32Derivation: [[changePub, { fingerprint, path: [H + 84, H, H, 1, 0] }]],
+  });
+  return {
+    kind: "bitcoin.psbt" as const,
+    origin: "internal" as const,
+    network: BTC_NETWORK,
+    account: { kind: "hd" as const, walletId: hwId, groupIndex: 0 },
+    psbt: tx.toPSBT(0),
+    sign: [{ index: 0, template: "btc.bip84" as const }],
+  };
+};
+
 describe("the signers controller", () => {
   it("routes a hardware wallet's signature through deviceIo and publishes exchange steps", async () => {
     const { wallet } = await nodeWallet();
@@ -70,6 +129,35 @@ describe("the signers controller", () => {
     expect(steps).toContain("starting");
     expect(steps).toContain("device");
     expect(signers.getState().active).toBeNull();
+  });
+
+  it("forwards the unconfirmed acknowledgement into the hardware sign op", async () => {
+    const { wallet } = await nodeWallet();
+    const hwId = await pairKeystone(wallet);
+    const base = keystoneIo();
+    let exchanges = 0;
+    const signers = controller(wallet, {
+      deviceIo: {
+        exchange: async (request, context) => {
+          exchanges += 1;
+          return base.exchange(request, context);
+        },
+      },
+    });
+    const request = await unconfirmedPsbt(wallet, hwId);
+    /* The kernel gate refuses before any prompt or device exchange — a dropped flag would land
+       exactly here. */
+    await expect(signers.apis.sign({ request, verify: VERIFY })).rejects.toMatchObject({
+      code: "approval-required",
+    });
+    expect(exchanges).toBe(0);
+    const result = await signers.apis.sign({
+      request,
+      verify: VERIFY,
+      acknowledgeUnconfirmed: true,
+    });
+    expect(result.kind).toBe("bitcoin.psbt");
+    expect((result as { readonly signedPsbt: unknown }).signedPsbt).toBeInstanceOf(Uint8Array);
   });
 
   it("signs vault requests through chains() without an activity", async () => {

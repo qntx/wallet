@@ -81,7 +81,13 @@ const ownOutputTail = (
   derives: ReadonlyMap<BitcoinTemplate, TemplateDerive>,
   network: string,
   params: Parameters<typeof scriptPubKey>[1],
-): { readonly tail: BitcoinPathTail; readonly path: ReadonlyArray<number> } | undefined => {
+):
+  | {
+      readonly tail: BitcoinPathTail;
+      readonly path: ReadonlyArray<number>;
+      readonly template: BitcoinTemplate;
+    }
+  | undefined => {
   if (output.script === undefined) {
     return undefined;
   }
@@ -111,7 +117,7 @@ const ownOutputTail = (
       scriptPubKey(bitcoinAddressFromXpub(d.xpub, template, network, change, index), params),
     );
     if (script === scriptHex) {
-      return { tail: { purpose: PURPOSE_OF[template], change, index }, path };
+      return { tail: { purpose: PURPOSE_OF[template], change, index }, path, template };
     }
   }
   return undefined;
@@ -149,6 +155,7 @@ type TemplateDerive = {
   readonly fp: number;
   readonly base: ReadonlyArray<number>;
   readonly mark: number;
+  readonly confirmed: boolean;
 };
 
 /**
@@ -192,12 +199,13 @@ export const prepareDappPsbts = async (
       if (!("xpub" in derived) || derived.xpub === undefined) {
         throw new Error("bitcoin account carries no xpub");
       }
-      const { xpub, fingerprint, path, changeMark } = derived;
+      const { xpub, fingerprint, path, changeMark, confirmed } = derived;
       derives.set(template, {
         xpub,
         fp: Number.parseInt(fingerprint, 16),
         base: accountPath(path),
         mark: changeMark,
+        confirmed,
       });
       // Scan only templates the batch signs; every template binds its fixed 0/0 address.
       const scanned = signing.has(template)
@@ -363,8 +371,9 @@ export const prepareDappPsbts = async (
         throw invalid("unexpected request kind");
       }
       // The same classification the kernel applies to the request's verified own outputs: only
-      // change the wallet can reach is hidden — every other own-key output is shown with its path.
-      // The bound is the kernel-reported mark under the external origin, never the PSBT's inputs.
+      // change the wallet can reach is hidden, outputs an unconfirmed entry serves are foreign,
+      // and every other own-key output is shown with its path. The bound is the kernel-reported
+      // mark under the external origin, never the PSBT's inputs.
       const markOf = (purpose: number): number => {
         for (const [template, d] of derives) {
           if (PURPOSE_OF[template] === purpose) {
@@ -375,19 +384,26 @@ export const prepareDappPsbts = async (
       };
       const change = new Set<string>();
       const unusual = new Map<string, string>();
+      const unconfirmed = new Set<string>();
       for (let i = 0; i < tx.outputsLength; i++) {
         const output = tx.getOutput(i);
         const found = ownOutputTail(output, derives, network, net.params);
         if (found === undefined || output.script === undefined) {
           continue;
         }
-        if (isDiscoverableChange(found.tail, signedTails, markOf(found.tail.purpose))) {
+        /* An output a never-confirmed entry serves is not own — never hidden, never worded as
+           "your own address"; the kernel prompt shows it as a send with the danger warning and
+           demands the same acknowledgement export-account does. The derivation bound above
+           stays: the kernel needs it to raise that warning. */
+        if (derives.get(found.template)?.confirmed !== true) {
+          unconfirmed.add(hex.encode(output.script));
+        } else if (isDiscoverableChange(found.tail, signedTails, markOf(found.tail.purpose))) {
           change.add(hex.encode(output.script));
         } else {
           unusual.set(hex.encode(output.script), pathText(found.path));
         }
       }
-      const classified: BitcoinOwn = { change, unusual };
+      const classified: BitcoinOwn = { change, unusual, unconfirmed };
       return { request, own: classified, inputs };
     }),
   );
@@ -412,9 +428,15 @@ export const signDappPsbts = async (
   stopped?: SubmittedBatch["stopped"];
 }> => {
   const results: SignResult[] = [];
-  for (const { request } of prepared) {
+  for (const { request, own } of prepared) {
+    /* A PSBT carrying an output an unconfirmed entry serves needs the acknowledgement — the
+       approve step already gated on the danger finding, so it is always granted here. */
     // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
-    const result = await apis.sign({ request, verify });
+    const result = await apis.sign({
+      request,
+      verify,
+      ...(own.unconfirmed.size > 0 ? { acknowledgeUnconfirmed: true } : {}),
+    });
     if (result.kind !== "bitcoin.psbt" || !(result.signedPsbt instanceof Uint8Array)) {
       throw new Error("unexpected bitcoin sign result");
     }

@@ -21,9 +21,19 @@ const H = 0x80000000;
  * `ADDRESS_INDEX_MAX` are 999 999 999 and an input `>=` it is rejected, so the largest showable
  * index is 999 999 998 (keystone3-firmware@7da0b941,
  * src/ui/gui_widgets/multi/gui_standard_receive_widgets.c:27,306 and
- * src/ui/gui_widgets/gui_utxo_receive_widgets.c:32).
+ * src/ui/gui_widgets/gui_utxo_receive_widgets.c:32,1570).
  */
 const KEYSTONE_INDEX_MAX = 999_999_998;
+
+/**
+ * The Solana sub-account groups the Keystone's Web3 menu renders — much narrower than the generic
+ * index bound: `SOL_BIP44_ADDRESS_INDEX_MAX` is 49, `GetSOLMaxAddressIndex` returns it for the
+ * `m/44'/501'/X'/0'` path, `GetSolXpub` returns NULL past `XPUB_TYPE_SOL_BIP44_49`, and only
+ * `XPUB_TYPE_SOL_BIP44_CHANGE_0…49` are pre-derived at all (keystone3-firmware@7da0b941,
+ * src/ui/gui_widgets/multi/web3/gui_multi_path_coin_receive_widgets.c:26,962-973,1292 and
+ * src/crypto/account_public_info.c:432-481).
+ */
+const KEYSTONE_SOLANA_GROUP_MAX = 49;
 
 /**
  * The paths the Keystone's own Receive menu can render — the only paths a `compare` check can prove
@@ -32,8 +42,9 @@ const KEYSTONE_INDEX_MAX = 999_999_998;
  * - `evm.bip44` "BIP44 Standard" `m/44'/60'/0'/0/X`
  *   (src/ui/gui_widgets/multi/web3/gui_multi_path_coin_receive_widgets.c:158,1167)
  * - `tron.bip44` `m/44'/195'/0'/0/X` (src/ui/gui_widgets/multi/gui_standard_receive_widgets.c:971)
- * - `solana.bip44-change` "Sub-account Path" `m/44'/501'/X'/0'`
- *   (src/ui/gui_widgets/multi/web3/gui_multi_path_coin_receive_widgets.c:165,1190)
+ * - `solana.bip44-change` "Sub-account Path" `m/44'/501'/X'/0'` for `X ≤ 49`
+ *   (src/ui/gui_widgets/multi/web3/gui_multi_path_coin_receive_widgets.c:165,1190 and
+ *   `KEYSTONE_SOLANA_GROUP_MAX`)
  * - `btc.*` mainnet account 0, receive chain `m/{44,49,84,86}'/0'/0'/0/i`
  *   (src/ui/gui_widgets/gui_utxo_receive_widgets.c:151-170,1735) Everything else — BTC
  *   testnet/signet (the Web3 firmware derives from coin type 0'), any non-zero account — gets
@@ -54,7 +65,7 @@ const confirmable = (target: {
       path[1] === H + 501 &&
       group !== undefined &&
       group >= H &&
-      group - H <= KEYSTONE_INDEX_MAX &&
+      group - H <= KEYSTONE_SOLANA_GROUP_MAX &&
       path[3] === H
     );
   }

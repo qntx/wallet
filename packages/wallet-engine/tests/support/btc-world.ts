@@ -146,6 +146,13 @@ export type BtcWorld = {
   readonly boot: (backing?: Backing) => Promise<Booted>;
   readonly send: (booted: Booted, amount: bigint, requestId: string) => Promise<TrackedTransaction>;
   readonly fund: (seed: number, value: number, confirmed?: boolean) => FakeUtxo;
+  /** Funds the account's change-chain address at `index` — a deep own-change coin. */
+  readonly fundChange: (
+    chainIndex: number,
+    seed: number,
+    value: number,
+    confirmed?: boolean,
+  ) => FakeUtxo;
   readonly spend: (txid: string, vout: number) => void;
   readonly markUsed: (hash: string, txid: string) => void;
   readonly setStatus: (txid: string, s: unknown) => void;
@@ -291,12 +298,15 @@ export const world = (
   options: {
     readonly independent?: boolean | (() => "available" | "unavailable");
     readonly template?: BitcoinAccountTemplate;
+    /** The flag `chains.account` reports — a device entry never confirmed shows `false`. */
+    readonly confirmed?: boolean;
+    /** The sealed change mark `chains.account` reports — 0 when the wallet proved nothing. */
+    readonly changeMark?: number;
   } = {},
 ): BtcWorld => {
   /** The world's own account template — bip84 unless the test asks for a legacy one. */
   const template: BitcoinAccountTemplate = options.template ?? "btc.bip84";
   const ownAddr = bitcoinAddressFromXpub(rootOf(template).publicExtendedKey, template, NET, 0, 0);
-  const ownScript = scriptPubKey(ownAddr, NETWORK);
   const ownHash = scripthash(ownAddr, NETWORK);
   /** Txid → raw transaction bytes (funding txs and everything the wallet broadcasts). */
   const raws = new Map<string, Uint8Array>();
@@ -334,19 +344,38 @@ export const world = (
     history.set(hash, set);
   };
 
-  /** A real transaction paying receive-address 0 — its txid survives the prevout checks. */
-  const fund = (seed: number, value: number, confirmed = true): FakeUtxo => {
+  /** A real transaction paying one own address — its txid survives the prevout checks. */
+  const fundAt = (address: string, seed: number, value: number, confirmed: boolean): FakeUtxo => {
     const prev = new Transaction({ version: 2 });
     prev.addInput({ txid: SEED_TXID(seed), index: 0, sequence: 0xffffffff });
-    prev.addOutput({ script: ownScript, amount: BigInt(value) });
+    prev.addOutput({ script: scriptPubKey(address, NETWORK), amount: BigInt(value) });
     raws.set(prev.id, prev.toBytes(true, false));
+    const hash = scripthash(address, NETWORK);
     const utxo: FakeUtxo = { txid: prev.id, vout: 0, value, confirmed };
-    const list = utxos.get(ownHash) ?? [];
+    const list = utxos.get(hash) ?? [];
     list.push(utxo);
-    utxos.set(ownHash, list);
-    markUsed(ownHash, prev.id);
+    utxos.set(hash, list);
+    markUsed(hash, prev.id);
     return utxo;
   };
+
+  /** A real transaction paying receive-address 0 — its txid survives the prevout checks. */
+  const fund = (seed: number, value: number, confirmed = true): FakeUtxo =>
+    fundAt(ownAddr, seed, value, confirmed);
+
+  /** A real transaction paying the change-chain address at `index`. */
+  const fundChange = (
+    chainIndex: number,
+    seed: number,
+    value: number,
+    confirmed = true,
+  ): FakeUtxo =>
+    fundAt(
+      bitcoinAddressFromXpub(rootOf(template).publicExtendedKey, template, NET, 1, chainIndex),
+      seed,
+      value,
+      confirmed,
+    );
 
   /** Removes an outpoint from the unspent set — what confirmation of its spender does. */
   const spend = (txid: string, vout: number): void => {
@@ -496,8 +525,8 @@ export const world = (
           xpub: root.publicExtendedKey,
           fingerprint: "00000000",
           path: `m/${PURPOSE[t] ?? 84}'/0'/0'`,
-          changeMark: 0,
-          confirmed: true,
+          changeMark: options.changeMark ?? 0,
+          confirmed: options.confirmed ?? true,
         };
       },
       sign: async (p: SignParams) => {
@@ -582,6 +611,7 @@ export const world = (
       return prepared.submit(VERIFY, () => undefined);
     },
     fund,
+    fundChange,
     spend,
     markUsed,
     setStatus: (txid: string, s: unknown) => {

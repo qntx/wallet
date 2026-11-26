@@ -223,6 +223,35 @@ const stepToDone = async (
   return step;
 };
 
+/**
+ * Seals the template's serving entry confirmed — the matched on-device verify-address a fresh
+ * pairing leaves undone.
+ */
+const confirm = async (
+  h: Harness,
+  session: string,
+  walletId: string,
+  template = "btc.bip84",
+): Promise<void> => {
+  const begin = ok(
+    await h.call(
+      "hardware.begin",
+      {
+        op: {
+          kind: "verify-address",
+          walletId,
+          groupIndex: 0,
+          template,
+          network: BTC_NETWORK,
+          index: 0,
+        },
+      },
+      session,
+    ),
+  );
+  await stepToDone(h, session, strField(begin, "opId"), field(begin, "step"));
+};
+
 const SIGHASH_WARNING =
   "Signed inputs bind only their same-index outputs; the rest of the transaction can change";
 const UNUSUAL_WARNING =
@@ -609,6 +638,7 @@ describe("hardware sign byte-identical to local signing", () => {
 
   it("the mark commit lands at begin — before the device signs anything", async () => {
     const { h, session, hwId } = await boot();
+    await confirm(h, session, hwId);
     const account = { kind: "hd", walletId: hwId, groupIndex: 0 };
     const mark = async (): Promise<ProtocolValue> =>
       field(
@@ -672,6 +702,46 @@ describe("hardware sign byte-identical to local signing", () => {
     );
     expect("err" in external).toBe(false);
     await expect(mark()).resolves.toBe(20);
+  });
+
+  it("an output a never-confirmed entry serves needs the acknowledgement", async () => {
+    const { h, session, hwId } = await boot();
+    /* Fresh pairing — account 0 is pinned but never verified on the device, so an own-key output
+       it serves decodes as a plain send with the danger warning, and both sign paths gate on
+       acknowledgeUnconfirmed. */
+    const request = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      origin: "internal",
+      network: BTC_NETWORK,
+      account: { kind: "hd", walletId: hwId, groupIndex: 0 },
+      psbt: psbtWithChange(3),
+      sign: [{ index: 0, template: "btc.bip84" }],
+    });
+    /* External custody never opens a key source for chain.sign — it is refused device-required
+       before the approval gate; the gate itself lives on hardware.begin. */
+    expect(errCode(await h.call("chain.sign", { request, verify: PASSKEY() }, session))).toBe(
+      "device-required",
+    );
+    expect(
+      errCode(
+        await h.call(
+          "hardware.begin",
+          { op: { kind: "sign", request }, verify: PASSKEY() },
+          session,
+        ),
+      ),
+    ).toBe("approval-required");
+    const begin = ok(
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "sign", request, acknowledgeUnconfirmed: true }, verify: PASSKEY() },
+        session,
+      ),
+    );
+    const done = await stepToDone(h, session, strField(begin, "opId"), field(begin, "step"));
+    expect(bytesField(field(field(done, "result"), "result"), "signedPsbt")).toBeInstanceOf(
+      Uint8Array,
+    );
   });
 });
 
@@ -887,6 +957,7 @@ describe("hardware sign refusals", () => {
       const status = ok(await h.call("status", undefined, session));
       const wallets = field(status, "wallets") as ReadonlyArray<Record<string, ProtocolValue>>;
       const hwId = wallets.find((w) => w["custody"] === "hardware")!["walletId"] as string;
+      await confirm(h, session, hwId);
       const signRes = await signOnDevice(
         h,
         session,

@@ -191,9 +191,13 @@ const bitcoinInput = async (
  * Output binding, independent of which templates sign inputs: an output is this group's own when it
  * carries a derivation entry with our fingerprint — tap entries only for bip86, bip32 entries for
  * 44/49/84 — whose path is a valid `m/purpose'/coin'/group'/{0,1}/i` of this group and whose script
- * equals that key's script for the purpose. Failures just mean "not own". A verified own output is
- * hidden as change only when `isDiscoverableChange` says the wallet can reach it — anything else is
- * shown as a send to the user's own address at the unusual path it names.
+ * equals that key's script for the purpose. Failures just mean "not own". An own-key output the
+ * serving entry never confirmed on the device is `unconfirmed` — a plain send with a danger
+ * warning; it is never hidden, never worded as "your own address", and never touches the marks. A
+ * verified, confirmed own output is hidden as change only when `isDiscoverableChange` says the
+ * wallet can reach it — anything else is shown as a send to the user's own address at the unusual
+ * path it names. The returned `hidden` indexes are the raise the request would commit — the caller
+ * seals them only for `internal` requests.
  */
 const bitcoinOwn = async (
   b: BitcoinDerive,
@@ -207,6 +211,7 @@ const bitcoinOwn = async (
 }> => {
   const change = new Set<string>();
   const unusual = new Map<string, string>();
+  const unconfirmed = new Set<string>();
   const marks = new Map<number, number>();
   const hidden = new Map<number, number>();
   for (let i = 0; i < tx.outputsLength; i++) {
@@ -224,6 +229,11 @@ const bitcoinOwn = async (
         const pub = await childAt(b, purpose, entry.path);
         if (!deepEqual(output.script, expectedScript(purpose, pub))) {
           continue;
+        }
+        // oxlint-disable-next-line no-await-in-loop -- ownership checks keep output order
+        if (!(await b.material.confirmed("secp256k1", entry.path))) {
+          unconfirmed.add(hex(output.script));
+          break;
         }
         const tail = { purpose, change: entry.path[3] ?? 0, index: entry.path[4] ?? 0 };
         const mark = marks.get(purpose) ?? markOf(purpose);
@@ -244,14 +254,16 @@ const bitcoinOwn = async (
       }
     }
   }
-  return { own: { change, unusual }, marks, hidden };
+  return { own: { change, unusual, unconfirmed }, marks, hidden };
 };
 
 /**
  * The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. The hidden
  * change bound is the sealed mark — raised for this classification only by an `internal` request's
  * same-purpose change inputs — and the resulting raise (the mark plus every hidden index) is what
- * the caller commits after verification.
+ * the caller commits after verification. Only `internal` requests produce `changeMarks`: an
+ * external request may hide change within the mark + gap window — the scan reaches it either way —
+ * but commits nothing, so no outside caller can ratchet the sealed mark without broadcasting.
  */
 const prepareBitcoinPsbt = async (
   b: BitcoinDerive,
@@ -292,15 +304,19 @@ const prepareBitcoinPsbt = async (
     mapChainError(error);
   }
   // The raise covers every purpose the request touches: an internal sweep's signed change inputs
-  // raise the mark even when no own output of that purpose exists to classify.
-  const purposes = new Set<number>([...signed.map((tail) => tail.purpose), ...marks.keys()]);
+  // raise the mark even when no own output of that purpose exists to classify. An external
+  // request commits nothing — the outputs it hid stay inside the scan's reach as the mark stands.
   const raises = new Map<number, number>();
-  for (const purpose of purposes) {
-    const mark =
-      marks.get(purpose) ?? requestChangeMark(storedMark(purpose), purpose, signed, request.origin);
-    const target = Math.max(mark, hidden.get(purpose) ?? -1);
-    if (target > storedMark(purpose)) {
-      raises.set(purpose, target);
+  if (request.origin === "internal") {
+    const purposes = new Set<number>([...signed.map((tail) => tail.purpose), ...marks.keys()]);
+    for (const purpose of purposes) {
+      const mark =
+        marks.get(purpose) ??
+        requestChangeMark(storedMark(purpose), purpose, signed, request.origin);
+      const target = Math.max(mark, hidden.get(purpose) ?? -1);
+      if (target > storedMark(purpose)) {
+        raises.set(purpose, target);
+      }
     }
   }
   const changeMarks = [...raises.entries()].map(([purpose, index]) => ({ purpose, index }));

@@ -10,7 +10,7 @@ import { Transaction } from "@scure/btc-signer/transaction.js";
 import { NETWORK } from "@scure/btc-signer/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { decodeBitcoinPsbt, normalizeBitcoin } from "../src/bitcoin/index.ts";
+import { changeScanReach, decodeBitcoinPsbt, normalizeBitcoin } from "../src/bitcoin/index.ts";
 import { bip322ToSign, bip322ToSpendTxid, pushData } from "../src/bitcoin/message.ts";
 import { signBitcoinMessage, signBitcoinPsbt } from "../src/bitcoin/sign.ts";
 import { verifyBitcoinMessage } from "../src/bitcoin/verify.ts";
@@ -527,6 +527,23 @@ describe("normalizeBitcoin", () => {
   it("rejects a derivation-path coin-type mismatch", () => {
     expect(() => normalizeBitcoin(req(buildPsbt({ coinType: 0x80000001 })))).toThrow(ChainError);
   });
+
+  it("refuses an origin that is neither internal nor external", () => {
+    /* The origin decides whether the signed change inputs may raise the wallet's change mark —
+       anything outside the two known values is refused, not defaulted. */
+    expect(() => normalizeBitcoin({ ...req(buildPsbt({})), origin: "app" })).toThrow(ChainError);
+    expect(() => normalizeBitcoin({ ...req(buildPsbt({})), origin: "external" })).not.toThrow();
+  });
+});
+
+describe("change scan reach", () => {
+  it("walks the gap limit past the mark and caps at the scan limit minus one", () => {
+    expect(changeScanReach(0)).toBe(20);
+    expect(changeScanReach(100)).toBe(120);
+    // The last reachable index is 1999 — never 1998 or 2000.
+    expect(changeScanReach(1980)).toBe(1999);
+    expect(changeScanReach(2000)).toBe(1999);
+  });
 });
 
 describe("bitcoin.message normalize", () => {
@@ -590,6 +607,7 @@ describe("decode + verifiability", () => {
     const intent = decodeBitcoinPsbt(psbtReq(), {
       change: new Set([Buffer.from(payeeScript).toString("hex")]),
       unusual: new Map(),
+      unconfirmed: new Set(),
     });
     expect(intent.outflows).toHaveLength(0);
   });
@@ -599,6 +617,7 @@ describe("decode + verifiability", () => {
     const intent = decodeBitcoinPsbt(psbtReq(), {
       change: new Set(),
       unusual: new Map([[Buffer.from(payeeScript).toString("hex"), "m/84'/0'/0'/1/999"]]),
+      unconfirmed: new Set(),
     });
     expect(intent.outflows).toHaveLength(1);
     expect(intent.outflows[0]?.to).toBe(PAYEE);
@@ -607,6 +626,24 @@ describe("decode + verifiability", () => {
     expect(intent.warnings).toContainEqual({
       kind: "unusual-own-output",
       message: "m/84'/0'/0'/1/999",
+    });
+  });
+
+  it("an unconfirmed own output is a plain send with a danger warning, never an own path", () => {
+    const payeeScript = OutScript.encode(Address(NETWORK).decode(PAYEE));
+    const intent = decodeBitcoinPsbt(psbtReq(), {
+      change: new Set(),
+      unusual: new Map(),
+      unconfirmed: new Set([Buffer.from(payeeScript).toString("hex")]),
+    });
+    expect(intent.outflows).toHaveLength(1);
+    expect(intent.outflows[0]?.to).toBe(PAYEE);
+    expect(intent.outflows[0]?.ownPath).toBeUndefined();
+    expect(intent.outflows[0]?.verified).toBe(true);
+    expect(intent.warnings).toContainEqual({
+      kind: "unconfirmed-signer-output",
+      message: PAYEE,
+      level: "danger",
     });
   });
 

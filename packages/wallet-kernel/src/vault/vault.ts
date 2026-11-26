@@ -470,6 +470,8 @@ export async function verifyFactor(
       } finally {
         opened.wipe();
       }
+      /* `verified === false` is unreachable — reconcile only admits factor rows bound to the
+         session DEK — so where the touch sits inside this check is unobservable. */
       if (verified) {
         ctx.session.touch();
         break;

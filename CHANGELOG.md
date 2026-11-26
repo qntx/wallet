@@ -115,16 +115,21 @@ Signing and requests:
   verify; `SafeTransaction.refund` is `{ receiver?, gasPrice, amount }` (`gasToken` /
   `refundReceiver` are removed) and `SignInParse` `malformed` carries `claims`. (MIGRATION §13,
   §15, §18)
-- `@qntx/wallet-chains/bitcoin`: `decodeBitcoinPsbt` takes a `BitcoinOwn` (`{ change, unusual }`)
-  as its second argument — an own-key output is hidden as change only when the wallet can
+- `@qntx/wallet-chains/bitcoin`: `decodeBitcoinPsbt` takes a `BitcoinOwn`
+  (`{ change, unusual, unconfirmed }`) as its second argument — an own-key output is hidden as change only when the wallet can
   discover it (the group's `/1/i` key with `i ≤ mark + BITCOIN_GAP_LIMIT`, a script type a signed
   input shares); every other own-key output is a verified outflow whose `AssetFlow.ownPath`
   carries its `m/…` path, plus an `unusual-own-output` `IntentWarning` surfaced to the user as the
-  `bitcoin-unusual-output` warning finding. `mark` is a kernel-sealed per-(wallet, group, purpose,
-  network) change mark in a `change-marks` vault record (`ChainAccount.changeMark`), raised before
-  signing by the highest same-purpose change index of the signed inputs and only for a request
-  that declares `origin: "internal"`, so a crafted PSBT cannot park change at an index the wallet
-  never scans; a seed-only restore starts it at 0. `bitcoin.psbt` requests therefore carry a
+  `bitcoin-unusual-output` warning finding. An output whose key a never-confirmed device entry
+  serves is in `unconfirmed`: an ordinary send plus an `unconfirmed-signer-output` danger warning
+  (`bitcoin-unconfirmed-output` danger finding), never hidden and never an own-address row.
+  `mark` is a kernel-sealed per-(wallet, group, purpose, network) change mark in a `change-marks`
+  vault record (`ChainAccount.changeMark`), raised before signing — only for a request that
+  declares `origin: "internal"` — to the highest hidden change index and the highest same-purpose
+  change index of the signed inputs. An external request may hide change inside the current
+  window but never raises the mark, so a crafted PSBT cannot park change at an index the wallet
+  never scans, nor ratchet the scan with signatures it never broadcasts; a seed-only restore
+  starts the mark at 0. `bitcoin.psbt` requests therefore carry a
   required `origin` (`"internal" | "external"`): the engine sets it for its own sends, every other
   caller passes `"external"`, and a request without it is refused. The engine's own change
   selection obeys the same rule: change lands on the spending template's own chain at
@@ -1170,8 +1175,16 @@ Gateway (operators):
   serves; entries merged without a check stay unconfirmed. `chain.exportAccount` (and the
   engine's `QrExportParams` / `SignStartParams`) refuse unconfirmed material with
   `approval-required` unless `acknowledgeUnconfirmed: true` is passed, which adds one danger row
-  per unconfirmed node to the approval prompt. A hostile transport at first fetch can therefore
-  pin foreign receive keys only as visibly unconfirmed ones. (MIGRATION §35)
+  per unconfirmed node to the approval prompt. A Bitcoin output on an unconfirmed entry is never
+  your own address: the prompt shows it as an ordinary send with a danger row, and the
+  `hardware.begin` `sign` operation refuses it with `approval-required` unless
+  `acknowledgeUnconfirmed: true` is passed — the engine's signing path passes it once the
+  `bitcoin-unconfirmed-output` danger finding was acknowledged at `approve`. Bitcoin history reads
+  a transfer to an unconfirmed account as a send, never `self`; a host-wired
+  `HistoryControllerOptions.chains.account` answers the xpub variant with `changeMark` and
+  `confirmed`. A hostile transport at first fetch can therefore pin foreign receive keys only as
+  visibly unconfirmed ones; a counterfeit device confirms its own keys and is not detectable
+  host-side. (MIGRATION §34, §35)
 - Hardware prompts lead with the device line — `clear` (check the request on the device) or
   `blind` — ahead of the chain prompt's rows, its room reserved by the prompt bound. For Ledger the
   kernel strips the wallet's own BIP-32 derivations from every PSBT output the prompt shows:
@@ -1183,9 +1196,9 @@ Gateway (operators):
   path allow-list enforced before any QR is shown), signing for every supported request kind —
   EVM legacy/EIP-1559/EIP-7702/personal/typed-data, TRON transaction/message, Solana
   transaction/message, Bitcoin PSBT (incl. taproot) and legacy message — and on-device address
-  verification, allow-listed to what its Receive menu can show (EVM, TRON and Solana bip44-style
-  accounts, BTC mainnet account-0 receive addresses — BTC testnet/signet and BTC group > 0 answer
-  `unsupported` and can never be confirmed on a Keystone). Every UR it exchanges — including
+  verification, allow-listed to what its Receive menu can show (EVM and TRON bip44-style accounts,
+  Solana groups 0–49, BTC mainnet account-0 receive addresses — BTC testnet/signet, BTC group > 0
+  and Solana group ≥ 50 answer `unsupported` and can never be confirmed on a Keystone). Every UR it exchanges — including
   `btc-sign-request`, `btc-signature` and `qr-hardware-call` — is encoded and decoded through
   `@qntx/ur` 4.1.0; digest self-checks before display, request-id binding (a `btc-signature`
   without its request id is malformed, `integrity`), `samePsbtContent` on returned PSBTs.
@@ -1482,8 +1495,16 @@ Gateway (operators):
 - `@qntx/wallet-engine`: `BitcoinPsbtInput.sign[].template` accepts all four account templates —
   a QR counterpart may name `btc.bip44`/`btc.bip49` where a dApp only uses `btc.bip84`/`btc.bip86`.
   Hosts switching on the template need the new members. (MIGRATION §33)
-- Bun is pinned by the root `packageManager` field (`bun@1.4.4`): every `setup-bun` step resolves
-  that version — the publish path included — and a local mismatch is refused. `bunfig.toml`'s
+- Every CI and release tool resolves from the lockfile or an exact pin. Bun is pinned once by the
+  root `packageManager` field (`bun@1.4.4`): every `setup-bun` step reads it, and the reusable
+  `ci-bun`/`ci-hermes` workflows receive the same version from a `toolchain` job. CI runs Vitest
+  through the locked `vp test`, never a registry-resolved `bunx vitest`; the publish job pins
+  Node 24.22.3 and with it npm 11.19.1. Locally the field documents the version; nothing refuses
+  another Bun. `scripts/check-toolchain.ts`
+  (in `lint`) fails a `bunx`/`npx`/`npm exec` of a bin no root or working-directory manifest
+  declares, a reusable-workflow call without the pinned Bun input, and a non-exact `setup-node`
+  version; `scripts/check-dist-deps.ts` (in `check:pkg`) also fails a declared runtime
+  dependency no packed file imports. `bunfig.toml`'s
   `minimumReleaseAgeExcludes` lets exactly `@qntx/fiat24@0.1.0` (published 2026-11-23) and
   `@qntx/ur@4.1.0` (published 2026-11-25), coordinated first-party releases with SLSA provenance,
   skip the 7-day cooldown; each entry is removed once its release is a week old (2026-11-30 and

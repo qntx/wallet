@@ -406,6 +406,16 @@ describe("ledger bitcoin output derivation stripping", () => {
     const shown = psbtV2Maps(stripUnhiddenDerivations(PSBT, HIDDEN, FPR));
     expect(shown.outputs).toHaveLength(4);
   });
+
+  /* An output an UNCONFIRMED pinned entry serves is never change — the kernel hands the driver
+     an empty hiddenChange and the device must see it as a foreign payee, not self-change. */
+  it("strips the pair of an unconfirmed-served output so the device shows it external", () => {
+    const unconfirmed = stripUnhiddenDerivations(PSBT, new Set(), FPR);
+    expect(unconfirmed).not.toBe(PSBT);
+    const maps = psbtV2Maps(unconfirmed);
+    expect(typesOf(maps.outputs[0])).not.toContain(0x02); // no self-change on the device
+    expect(typesOf(maps.outputs[3])).toContain(0x02); // foreign fingerprint stays
+  });
 });
 
 describe("ledger bitcoin client commands", () => {

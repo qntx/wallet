@@ -14,13 +14,30 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  toolchain:
+    runs-on: ubuntu-latest
+    outputs:
+      bun-version: ${{ steps.bun.outputs.bun-version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: package.json
+          sparse-checkout-cone-mode: false
+      - id: bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
   ci:
+    needs: toolchain
     uses: qntx/workflows/.github/workflows/ci-bun.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
     permissions:
       contents: read
     with:
       scripts: "check:pkg test:coverage"
       timeout-minutes: 30
+      bun-version: ${{ needs.toolchain.outputs.bun-version }}
     # bun run lint → build + vp check + check-version + check-cycles + build-provider + check-lint-boundaries
     # bun run test → vp run -r test (per-package vp test)
     # scripts → bun run check:pkg && bun run test:coverage
@@ -62,8 +79,8 @@ jobs:
       - run: bunx vp run @qntx/wallet-engine#build
       - run: |
           set -euo pipefail
-          ENGINE_E2E_ANVIL=1 bunx vitest run tests/evm-anvil.test.ts tests/evm-7702-anvil.test.ts tests/approvals-anvil.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
-          ENGINE_E2E_ANVIL=1 bunx vitest run tests/evm-anvil.test.ts tests/evm-7702-anvil.test.ts tests/nft-anvil.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
+          ENGINE_E2E_ANVIL=1 bunx vp test --project unit tests/evm-anvil.test.ts tests/evm-7702-anvil.test.ts tests/approvals-anvil.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
+          ENGINE_E2E_ANVIL=1 bunx vp test --project unit tests/evm-anvil.test.ts tests/evm-7702-anvil.test.ts tests/nft-anvil.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
           jq -e '.numTotalTests > 0 and .numPendingTests == 0 and .numTodoTests == 0' /tmp/e2e.json
         working-directory: packages/wallet-engine
 
@@ -86,7 +103,7 @@ jobs:
           echo "/tmp/solana-release/bin" >> "$GITHUB_PATH"
       - run: |
           set -euo pipefail
-          ENGINE_E2E_SOLANA=1 bunx vitest run tests/solana-e2e.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
+          ENGINE_E2E_SOLANA=1 bunx vp test --project unit tests/solana-e2e.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
           jq -e '.numTotalTests > 0 and .numPendingTests == 0 and .numTodoTests == 0' /tmp/e2e.json
         working-directory: packages/wallet-engine
 
@@ -102,7 +119,7 @@ jobs:
       # blockstream/esplora bundles bitcoind + electrs + the REST API (mounted at /regtest/api).
       - run: |
           set -euo pipefail
-          ENGINE_E2E_BITCOIN=1 bunx vitest run tests/bitcoin-e2e.test.ts --silent=false --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
+          ENGINE_E2E_BITCOIN=1 bunx vp test --project unit tests/bitcoin-e2e.test.ts --silent=false --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
           jq -e '.numTotalTests > 0 and .numPendingTests == 0 and .numTodoTests == 0' /tmp/e2e.json
         working-directory: packages/wallet-engine
 
@@ -131,7 +148,7 @@ jobs:
             sleep 1
           done
           curl -sf -X POST http://127.0.0.1:9090/wallet/getnowblock -o /dev/null
-          ENGINE_E2E_TRON=1 bunx vitest run tests/tron-e2e.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
+          ENGINE_E2E_TRON=1 bunx vp test --project unit tests/tron-e2e.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
           jq -e '.numTotalTests > 0 and .numPendingTests == 0 and .numTodoTests == 0' /tmp/e2e.json
         working-directory: packages/wallet-engine
 

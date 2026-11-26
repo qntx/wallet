@@ -56,13 +56,30 @@ const fetchPage = async (es: Esplora, hash: string, after?: string): Promise<Esp
  * indexer (`trusted`); a gateway-routed Esplora feed stays unverified. Netting the wallet's own
  * inputs and outputs decides direction; a send is only "out" when the net outflow exceeds the fee
  * the wallet provably paid (every input its own).
+ *
+ * "Own" is not one set: every confirmed template's addresses share the first party, each
+ * unconfirmed template's addresses form their own. The transaction is computed from the first party
+ * it touches — confirmed first, then unconfirmed templates in template order — so a flow between a
+ * confirmed and an unconfirmed account, or between two unconfirmed ones, is never labelled "self":
+ * the other parties' addresses are counterparties.
  */
 export const bitcoinEntry = (
   network: string,
-  own: ReadonlySet<string>,
+  parties: ReadonlyArray<ReadonlySet<string>>,
   tx: EsploraTx,
   trusted: boolean,
 ): HistoryEntry => {
+  const touched = (party: ReadonlySet<string>): boolean =>
+    tx.vin.some(
+      (vin) =>
+        vin.prevout !== null &&
+        vin.prevout.scriptpubkey_address !== undefined &&
+        party.has(vin.prevout.scriptpubkey_address),
+    ) ||
+    tx.vout.some(
+      (vout) => vout.scriptpubkey_address !== undefined && party.has(vout.scriptpubkey_address),
+    );
+  const own = parties.find(touched) ?? new Set<string>();
   let ownIn = 0n;
   for (const vin of tx.vin) {
     if (
@@ -149,14 +166,18 @@ export type BitcoinHistoryDeps = {
     readonly template: BitcoinAccountTemplate;
     readonly network: string;
   }) => Promise<
-    { readonly address: string } | { readonly xpub: string; readonly changeMark: number }
+    | { readonly address: string }
+    | { readonly xpub: string; readonly changeMark: number; readonly confirmed: boolean }
   >;
   readonly trusted: boolean;
 };
 
 export type BitcoinHistoryScan = {
-  /** Every scanned own address on this network — the local-send membership set. */
-  readonly own: ReadonlySet<string>;
+  /**
+   * The own-address parties — the confirmed templates' first, then one per unconfirmed template in
+   * template order — the local-send membership sets.
+   */
+  readonly parties: ReadonlyArray<ReadonlySet<string>>;
   readonly entries: ReadonlyArray<HistoryEntry>;
 };
 
@@ -172,20 +193,43 @@ export const bitcoinHistoryScan = async (
 ): Promise<BitcoinHistoryScan> => {
   const es = options.esplora(network);
   const { params } = bitcoinNetwork(network);
-  const sources = await Promise.all(
-    BITCOIN_TEMPLATES.map(async (template: BitcoinAccountTemplate): Promise<BitcoinSource> => {
+  const accounts = await Promise.all(
+    BITCOIN_TEMPLATES.map(async (template: BitcoinAccountTemplate) => {
       const account = await options.account({ ...group, template, network });
       if (!("xpub" in account)) {
         throw new TypeError(`bitcoin account ${template} on ${network} has no xpub`);
       }
-      return { kind: "xpub", template, xpub: account.xpub, changeMark: account.changeMark };
+      const source: BitcoinSource = {
+        kind: "xpub",
+        template,
+        xpub: account.xpub,
+        changeMark: account.changeMark,
+      };
+      return { source, confirmed: account.confirmed };
     }),
   );
   const scanned = await Promise.all(
-    sources.map(async (source) => scanSource(es, source, network, params)),
+    accounts.map(async ({ source }) => scanSource(es, source, network, params)),
   );
-  // `own` is every scanned address — an unused one can still be a local send's change output.
-  const own = new Set(scanned.flat().map((a) => a.address));
+  /* The local-send membership sets are the entry's parties: confirmed templates' scanned
+     addresses share the first; each unconfirmed template's form their own party so a send to a
+     key the device never confirmed is never read as self. An unused scanned address can still
+     be a local send's change output, so every scanned address belongs to a party. */
+  const confirmed = new Set<string>();
+  const parties: Array<Set<string>> = [confirmed];
+  for (const [i, addresses] of scanned.entries()) {
+    const account = accounts[i];
+    if (account === undefined) {
+      continue;
+    }
+    const party = account.confirmed ? confirmed : new Set<string>();
+    for (const a of addresses) {
+      party.add(a.address);
+    }
+    if (!account.confirmed) {
+      parties.push(party);
+    }
+  }
   const used = scanned.flat().filter((a) => a.used);
   const seen = new Set<string>();
   const txs: EsploraTx[] = [];
@@ -215,11 +259,11 @@ export const bitcoinHistoryScan = async (
       chainPages += 1;
     }
   }
-  const entries = txs.map((tx) => bitcoinEntry(network, own, tx, options.trusted));
+  const entries = txs.map((tx) => bitcoinEntry(network, parties, tx, options.trusted));
   entries.sort(
     (a, b) => (b.timestamp ?? Number.MAX_SAFE_INTEGER) - (a.timestamp ?? Number.MAX_SAFE_INTEGER),
   );
-  return { own, entries };
+  return { parties, entries };
 };
 
 /**
@@ -230,7 +274,7 @@ export const bitcoinHistoryStream = (
   options: BitcoinHistoryDeps,
   network: string,
   group: { readonly walletId: string; readonly groupIndex: number },
-  onOwn: (own: ReadonlySet<string>) => void,
+  onOwn: (parties: ReadonlyArray<ReadonlySet<string>>) => void,
 ): Stream<HistoryEntry> => {
   let scan: Promise<BitcoinHistoryScan> | undefined;
   let done = false;
@@ -241,8 +285,8 @@ export const bitcoinHistoryStream = (
         return { items: [], done: true };
       }
       scan ??= bitcoinHistoryScan(options, network, group);
-      const { own, entries } = await scan;
-      onOwn(own);
+      const { parties, entries } = await scan;
+      onOwn(parties);
       done = true;
       return { items: entries, done: true };
     },

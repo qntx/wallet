@@ -215,6 +215,29 @@ describe("pinnedMaterial.confirmed", () => {
     await expect(other.confirmed("secp256k1", evmLeaf(0))).resolves.toBe(false);
   });
 
+  it("a leaf under nested entries confirms by its deepest serving entry only", async () => {
+    /* A pin holding both an account node and a non-hardened child beneath it serves the
+       leaf through the deeper entry: confirming the shallow parent does not reach the leaf,
+       and confirming the deep entry is exactly what reaches it. */
+    const PARENT = [44 + HARDENED, 195 + HARDENED];
+    const CHILD = [44 + HARDENED, 195 + HARDENED, 0];
+    const LEAF = [...CHILD, 0, 5];
+    const nested = (confirmed: KeyPath[] | "all") =>
+      pinnedMaterial({
+        fingerprint: pin.fingerprint,
+        keys: {
+          nodes: [nodeAt(SEED, PARENT), nodeAt(SEED, CHILD)],
+          ed25519: [],
+        },
+        confirmed,
+      });
+    await expect(nested([PARENT]).confirmed("secp256k1", LEAF)).resolves.toBe(false);
+    await expect(nested([CHILD]).confirmed("secp256k1", LEAF)).resolves.toBe(true);
+    // The leaf itself still derives publicly under the deepest ancestor.
+    const derived = HDKey.fromMasterSeed(SEED).derive("m/44'/195'/0/0/5");
+    await expect(nested([]).secp256k1(LEAF)).resolves.toStrictEqual(derived.publicKey);
+  });
+
   it("no serving entry is device-required, and card material confirms everything", async () => {
     const unconfirmed = pinnedMaterial({
       fingerprint: pin.fingerprint,

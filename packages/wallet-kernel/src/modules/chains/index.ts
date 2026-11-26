@@ -165,10 +165,8 @@ const walletAccounts = async (
   const key = `${String(params.groupIndex)}/${params.template}/${params.network}`;
   const known = cache.get(record)?.get(key);
   if (known !== undefined) {
-    /* The cache freezes only the public account — the mark and the confirmation flag are read
-       fresh on every call. A commit that raises either would replace the record and miss the
-       cache anyway, but computing the flag from the live pin keeps the reasoning local to this
-       line instead of the commit path's. */
+    /* A commit that could raise the mark or flip the flag reloads the image with re-cloned
+       records and misses the cache — a `known` hit means nothing changed since the freeze. */
     const confirmed =
       record.kind === "entropy"
         ? true
@@ -430,6 +428,7 @@ export const prepareApproval = async (
   request: SignRequest,
   material: PublicMaterial,
   dek: Secret,
+  acknowledgeUnconfirmed: boolean,
 ): Promise<PreparedApproval> => {
   assertHdTemplates(request);
   const storedMark =
@@ -444,6 +443,17 @@ export const prepareApproval = async (
           )
       : () => 0;
   const prepared = await prepareFor(request, material, ctx.platform.now(), storedMark);
+  /* Sending to a key the device never confirmed needs an explicit acknowledgement — the gate
+     reads the same danger warning the prompt would show, before any prompt or verification. */
+  if (
+    !acknowledgeUnconfirmed &&
+    (prepared.prompt.warnings?.some((w) => w.kind === "unconfirmed-signer-output") ?? false)
+  ) {
+    throw new KernelError(
+      "approval-required",
+      "signing to a key never confirmed on the device needs acknowledgement",
+    );
+  }
   const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
   /* A keystore host shows this text in a bounded system dialog, so it is rendered and measured
      before the blind check: an over-long prompt counts as blind and, when allowed, reaches the
@@ -476,8 +486,9 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   // The key source opens twice: `prepare` checks ownership, normalizes, decodes and plans — the
   // secret and every node are wiped before the (possibly long) system verification prompt; the
   // sign pass re-opens it and executes the prepared plan unchanged.
+  // hd entropy and imported material are always confirmed — the gate only fails safe here.
   const prepared = await openKeys(async (keys) =>
-    prepareApproval(ctx, request, keys.material, dek),
+    prepareApproval(ctx, request, keys.material, dek, false),
   );
   await verifyFactor(
     ctx,
