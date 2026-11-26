@@ -1048,7 +1048,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-BUUlVh1-.mjs
+	// packages/wallet/dist/protocol-DLE6lHmP.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1484,7 +1484,8 @@
 		network: caip2
 	}), obj({
 		kind: literal("sign"),
-		request: signRequest
+		request: signRequest,
+		acknowledgeUnconfirmed: opt(literal(true))
 	}), obj({
 		kind: literal("verify-address"),
 		walletId,
@@ -40371,7 +40372,8 @@ zoo`.split("\n"));
 	};
 	var EMPTY_BITCOIN_OWN = {
 		change: /* @__PURE__ */ new Set(),
-		unusual: /* @__PURE__ */ new Map()
+		unusual: /* @__PURE__ */ new Map(),
+		unconfirmed: /* @__PURE__ */ new Set()
 	};
 	/**
 	* An output is discoverable change only on the change chain (`/1/i`), under a purpose at least one
@@ -40402,7 +40404,8 @@ zoo`.split("\n"));
 	* Decodes a normalized bitcoin.psbt request for display. `own` is the caller's independently
 	* verified classification of the account's own-key outputs — `change` script hexes are hidden,
 	* `unusual` script hexes become outflows to the caller's own address carrying the path text and one
-	* warning each — not a display hint.
+	* warning each, `unconfirmed` script hexes are plain outflows with a danger warning — not a display
+	* hint.
 	*/
 	var decodeBitcoinPsbt = (request, own = EMPTY_BITCOIN_OWN) => {
 		const tx = parsePsbt(request.psbt);
@@ -40413,7 +40416,7 @@ zoo`.split("\n"));
 		let canFee = true;
 		let outSum = 0n;
 		for (let i = 0; i < tx.outputsLength; i++) {
-			var _addr;
+			var _addr, _addr2;
 			const { script, amount } = tx.getOutput(i);
 			if (script === void 0 || amount === void 0) throw new ChainError("invalid-request", "PSBT output without script or amount");
 			const scriptHex = bytesToHex$2(script);
@@ -40443,8 +40446,13 @@ zoo`.split("\n"));
 				kind: "unusual-own-output",
 				message: ownPath
 			});
+			if (own.unconfirmed.has(scriptHex)) ownWarnings.push({
+				kind: "unconfirmed-signer-output",
+				message: (_addr = addr) !== null && _addr !== void 0 ? _addr : scriptHex,
+				level: "danger"
+			});
 			outflows.push(_objectSpread2({
-				to: (_addr = addr) !== null && _addr !== void 0 ? _addr : scriptHex,
+				to: (_addr2 = addr) !== null && _addr2 !== void 0 ? _addr2 : scriptHex,
 				amount: {
 					asset: SATS,
 					amount: amount.toString(10)
@@ -40942,7 +40950,8 @@ zoo`.split("\n"));
 			"fiat24-account-link": () => "开通账户会将此地址与你向 Fiat24 验证的身份永久关联",
 			"fiat24-account-move": (message) => `危险：这将转移 Fiat24 账户 ${message} 的控制权——包括其中的资金与已验证身份`,
 			"fiat24-account-burn": () => "开通账户会按 Fiat24 为此账号设定的价格燃烧 F24——最多为你对 Fiat24 账户合约的 F24 授权额度",
-			"unusual-own-output": () => "转入非常规路径上你自己的地址的资金可能不会显示在此钱包中"
+			"unusual-own-output": () => "转入非常规路径上你自己的地址的资金可能不会显示在此钱包中",
+			"unconfirmed-signer-output": (message) => `危险：设备从未确认 ${message} 背后的密钥——它可能不属于你。向它发送前，请先在设备上核对该账户的地址`
 		},
 		bridgeLine: (network, amount, to, deadline, refundTo) => `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
 		delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
@@ -41183,7 +41192,8 @@ zoo`.split("\n"));
 			"fiat24-account-link": () => "Opening the account permanently links this address to the identity you verify with Fiat24",
 			"fiat24-account-move": (message) => `Danger: this moves control of Fiat24 account ${message} — its money and the identity verified for it`,
 			"fiat24-account-burn": () => "Opening the account burns F24 at the price Fiat24 sets for this account number — up to your F24 allowance for the Fiat24 account contract",
-			"unusual-own-output": () => "Funds sent to your own address at an unusual path may not appear in this wallet"
+			"unusual-own-output": () => "Funds sent to your own address at an unusual path may not appear in this wallet",
+			"unconfirmed-signer-output": (message) => `Danger: the device never confirmed the key behind ${message} — it may not be yours. Check an address of this account on the device before sending to it`
 		},
 		bridgeLine: (network, amount, to, deadline, refundTo) => `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
 		delegateTo: (name, version) => `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
@@ -41953,13 +41963,18 @@ zoo`.split("\n"));
 	* Output binding, independent of which templates sign inputs: an output is this group's own when it
 	* carries a derivation entry with our fingerprint — tap entries only for bip86, bip32 entries for
 	* 44/49/84 — whose path is a valid `m/purpose'/coin'/group'/{0,1}/i` of this group and whose script
-	* equals that key's script for the purpose. Failures just mean "not own". A verified own output is
-	* hidden as change only when `isDiscoverableChange` says the wallet can reach it — anything else is
-	* shown as a send to the user's own address at the unusual path it names.
+	* equals that key's script for the purpose. Failures just mean "not own". An own-key output the
+	* serving entry never confirmed on the device is `unconfirmed` — a plain send with a danger
+	* warning; it is never hidden, never worded as "your own address", and never touches the marks. A
+	* verified, confirmed own output is hidden as change only when `isDiscoverableChange` says the
+	* wallet can reach it — anything else is shown as a send to the user's own address at the unusual
+	* path it names. The returned `hidden` indexes are the raise the request would commit — the caller
+	* seals them only for `internal` requests.
 	*/
 	var bitcoinOwn = async (b, tx, signed, markOf) => {
 		const change = /* @__PURE__ */ new Set();
 		const unusual = /* @__PURE__ */ new Map();
+		const unconfirmed = /* @__PURE__ */ new Set();
 		const marks = /* @__PURE__ */ new Map();
 		const hidden = /* @__PURE__ */ new Map();
 		for (let i = 0; i < tx.outputsLength; i++) {
@@ -41972,6 +41987,10 @@ zoo`.split("\n"));
 					var _entry$path$, _entry$path$2, _marks$get;
 					const pub = await childAt(b, purpose, entry.path);
 					if (!deepEqual(output.script, expectedScript(purpose, pub))) continue;
+					if (!await b.material.confirmed("secp256k1", entry.path)) {
+						unconfirmed.add(hex(output.script));
+						break;
+					}
 					const tail = {
 						purpose,
 						change: (_entry$path$ = entry.path[3]) !== null && _entry$path$ !== void 0 ? _entry$path$ : 0,
@@ -41994,7 +42013,8 @@ zoo`.split("\n"));
 		return {
 			own: {
 				change,
-				unusual
+				unusual,
+				unconfirmed
 			},
 			marks,
 			hidden
@@ -42004,7 +42024,9 @@ zoo`.split("\n"));
 	* The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. The hidden
 	* change bound is the sealed mark — raised for this classification only by an `internal` request's
 	* same-purpose change inputs — and the resulting raise (the mark plus every hidden index) is what
-	* the caller commits after verification.
+	* the caller commits after verification. Only `internal` requests produce `changeMarks`: an
+	* external request may hide change within the mark + gap window — the scan reaches it either way —
+	* but commits nothing, so no outside caller can ratchet the sealed mark without broadcasting.
 	*/
 	var prepareBitcoinPsbt = async (b, request, storedMark) => {
 		const tx = Transaction.fromPSBT(request.psbt);
@@ -42038,13 +42060,15 @@ zoo`.split("\n"));
 		} catch (error) {
 			mapChainError(error);
 		}
-		const purposes = /* @__PURE__ */ new Set([...signed.map((tail) => tail.purpose), ...marks.keys()]);
 		const raises = /* @__PURE__ */ new Map();
-		for (const purpose of purposes) {
-			var _marks$get2, _hidden$get2;
-			const mark = (_marks$get2 = marks.get(purpose)) !== null && _marks$get2 !== void 0 ? _marks$get2 : requestChangeMark(storedMark(purpose), purpose, signed, request.origin);
-			const target = Math.max(mark, (_hidden$get2 = hidden.get(purpose)) !== null && _hidden$get2 !== void 0 ? _hidden$get2 : -1);
-			if (target > storedMark(purpose)) raises.set(purpose, target);
+		if (request.origin === "internal") {
+			const purposes = /* @__PURE__ */ new Set([...signed.map((tail) => tail.purpose), ...marks.keys()]);
+			for (const purpose of purposes) {
+				var _marks$get2, _hidden$get2;
+				const mark = (_marks$get2 = marks.get(purpose)) !== null && _marks$get2 !== void 0 ? _marks$get2 : requestChangeMark(storedMark(purpose), purpose, signed, request.origin);
+				const target = Math.max(mark, (_hidden$get2 = hidden.get(purpose)) !== null && _hidden$get2 !== void 0 ? _hidden$get2 : -1);
+				if (target > storedMark(purpose)) raises.set(purpose, target);
+			}
 		}
 		const changeMarks = [...raises.entries()].map(([purpose, index]) => ({
 			purpose,
@@ -42724,11 +42748,12 @@ zoo`.split("\n"));
 		if (header.scheme !== "hyperliquid-l1-agent" || header.owner !== signer || header.scope !== action.chain || header.name !== action.name || header.validUntil !== action.validUntil) throw new KernelError("invalid-input", "the approval does not match this wallet's agent");
 		return _objectSpread2(_objectSpread2({}, prompt), {}, { agentHeld: true });
 	};
-	var prepareApproval = async (ctx, request, material, dek) => {
-		var _shown$oversize;
+	var prepareApproval = async (ctx, request, material, dek, acknowledgeUnconfirmed) => {
+		var _prepared$prompt$warn, _prepared$prompt$warn2, _shown$oversize;
 		assertHdTemplates(request);
 		const storedMark = request.kind === "bitcoin.psbt" ? (purpose) => changeMark(ctx.image, request.account.walletId, request.account.groupIndex, purpose, request.network) : () => 0;
 		const prepared = await prepareFor(request, material, ctx.platform.now(), storedMark);
+		if (!acknowledgeUnconfirmed && ((_prepared$prompt$warn = (_prepared$prompt$warn2 = prepared.prompt.warnings) === null || _prepared$prompt$warn2 === void 0 ? void 0 : _prepared$prompt$warn2.some((w) => w.kind === "unconfirmed-signer-output")) !== null && _prepared$prompt$warn !== void 0 ? _prepared$prompt$warn : false)) throw new KernelError("approval-required", "signing to a key never confirmed on the device needs acknowledgement");
 		const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
 		const shown = ctx.platform.keystore === void 0 ? void 0 : boundChainPrompt(promptLocale(ctx.platform.keystore.locale), prompt, PROMPT_BOUNDS[ctx.platform.keystore.platform]);
 		assertSignable(ctx, dek, prompt, (_shown$oversize = shown === null || shown === void 0 ? void 0 : shown.oversize) !== null && _shown$oversize !== void 0 ? _shown$oversize : false);
@@ -42743,7 +42768,7 @@ zoo`.split("\n"));
 		const { dek } = ctx.session.require(session);
 		const { request, verify } = params;
 		const openKeys = request.account.kind === "imported" ? importedSource(ctx, request, dek) : hdSource(ctx, request, dek);
-		const prepared = await openKeys(async (keys) => prepareApproval(ctx, request, keys.material, dek));
+		const prepared = await openKeys(async (keys) => prepareApproval(ctx, request, keys.material, dek, false));
 		await verifyFactor(ctx, verify, dek, () => {
 			var _prepared$shown$promp, _prepared$shown, _ctx$platform$keystor, _ctx$platform$keystor2;
 			return (_prepared$shown$promp = (_prepared$shown = prepared.shown) === null || _prepared$shown === void 0 ? void 0 : _prepared$shown.prompt) !== null && _prepared$shown$promp !== void 0 ? _prepared$shown$promp : chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prepared.prompt);
@@ -46460,7 +46485,7 @@ zoo`.split("\n"));
 		const { header, record } = walletOf(env, walletId);
 		const material = env.ctx.externalMaterial(record);
 		if (request.kind === "solana.message" && request.message.length > 16384) throw new KernelError("card-unsupported", "the message is too large for the card");
-		const prepared = await prepareApproval(env.ctx, request, material, dek);
+		const prepared = await prepareApproval(env.ctx, request, material, dek, false);
 		const keystore = chainPrompt(env.locale, prepared.prompt);
 		const cards = header.cards.map((c) => pinnedShortId(header, c.cardId)).filter((s) => s !== void 0);
 		const tapText = `${keystore.title}\n${keystore.description}\n${signCardLine(env.locale, cards)}`;
@@ -46843,7 +46868,7 @@ zoo`.split("\n"));
 		return _transferOp.apply(this, arguments);
 	}
 	// packages/wallet-kernel/src/modules/card/ops/index.ts
-	/** Preconditions that end `card.begin` before any step: wallets exist, gates, unsupported ops. */
+	/** Preconditions that end `card.begin` before any step: wallets exist and the op is legal. */
 	var checkOperation = (ctx, op) => {
 		const cardRecord = (walletId) => ctx.image.records.find((r) => r.kind === "card-wallet" && r.id === walletId);
 		switch (op.kind) {
@@ -46901,7 +46926,7 @@ zoo`.split("\n"));
 			}
 		}
 	};
-	/** Whether the op takes a `verify`, forbids one, or is not in this layer. */
+	/** Whether the op takes a `verify` or forbids one. */
 	var verifyGate = (op) => {
 		switch (op.kind) {
 			case "status":
@@ -47051,7 +47076,6 @@ zoo`.split("\n"));
 					const { card } = platform;
 					if (card === void 0) throw new KernelError("unsupported", "this host has no card reader");
 					const gate = verifyGate(params.op);
-					if (gate === "unsupported") throw new KernelError("unsupported", "card operations arrive in a later build");
 					checkOperation(ctx, params.op);
 					if (gate === "forbidden" && params.verify !== void 0) throw new KernelError("invalid-input", "this card operation takes no verify");
 					const env = {
@@ -55174,9 +55198,18 @@ zoo`.split("\n"));
 	* `ADDRESS_INDEX_MAX` are 999 999 999 and an input `>=` it is rejected, so the largest showable
 	* index is 999 999 998 (keystone3-firmware@7da0b941,
 	* src/ui/gui_widgets/multi/gui_standard_receive_widgets.c:27,306 and
-	* src/ui/gui_widgets/gui_utxo_receive_widgets.c:32).
+	* src/ui/gui_widgets/gui_utxo_receive_widgets.c:32,1570).
 	*/
 	var KEYSTONE_INDEX_MAX = 999999998;
+	/**
+	* The Solana sub-account groups the Keystone's Web3 menu renders — much narrower than the generic
+	* index bound: `SOL_BIP44_ADDRESS_INDEX_MAX` is 49, `GetSOLMaxAddressIndex` returns it for the
+	* `m/44'/501'/X'/0'` path, `GetSolXpub` returns NULL past `XPUB_TYPE_SOL_BIP44_49`, and only
+	* `XPUB_TYPE_SOL_BIP44_CHANGE_0…49` are pre-derived at all (keystone3-firmware@7da0b941,
+	* src/ui/gui_widgets/multi/web3/gui_multi_path_coin_receive_widgets.c:26,962-973,1292 and
+	* src/crypto/account_public_info.c:432-481).
+	*/
+	var KEYSTONE_SOLANA_GROUP_MAX = 49;
 	/**
 	* The paths the Keystone's own Receive menu can render — the only paths a `compare` check can prove
 	* against (keystone3-firmware@7da0b941):
@@ -55184,8 +55217,9 @@ zoo`.split("\n"));
 	* - `evm.bip44` "BIP44 Standard" `m/44'/60'/0'/0/X`
 	*   (src/ui/gui_widgets/multi/web3/gui_multi_path_coin_receive_widgets.c:158,1167)
 	* - `tron.bip44` `m/44'/195'/0'/0/X` (src/ui/gui_widgets/multi/gui_standard_receive_widgets.c:971)
-	* - `solana.bip44-change` "Sub-account Path" `m/44'/501'/X'/0'`
-	*   (src/ui/gui_widgets/multi/web3/gui_multi_path_coin_receive_widgets.c:165,1190)
+	* - `solana.bip44-change` "Sub-account Path" `m/44'/501'/X'/0'` for `X ≤ 49`
+	*   (src/ui/gui_widgets/multi/web3/gui_multi_path_coin_receive_widgets.c:165,1190 and
+	*   `KEYSTONE_SOLANA_GROUP_MAX`)
 	* - `btc.*` mainnet account 0, receive chain `m/{44,49,84,86}'/0'/0'/0/i`
 	*   (src/ui/gui_widgets/gui_utxo_receive_widgets.c:151-170,1735) Everything else — BTC
 	*   testnet/signet (the Web3 firmware derives from coin type 0'), any non-zero account — gets
@@ -55196,7 +55230,7 @@ zoo`.split("\n"));
 		const { path } = target;
 		if (target.template === "solana.bip44-change") {
 			const group = path.at(2);
-			return path.length === 4 && path[0] === 2147483692 && path[1] === 2147484149 && group !== void 0 && group >= H && group - H <= KEYSTONE_INDEX_MAX && path[3] === H;
+			return path.length === 4 && path[0] === 2147483692 && path[1] === 2147484149 && group !== void 0 && group >= H && group - H <= KEYSTONE_SOLANA_GROUP_MAX && path[3] === H;
 		}
 		const index = path.at(-1);
 		if (index === void 0 || index < 0 || index > KEYSTONE_INDEX_MAX) return false;
@@ -62123,7 +62157,7 @@ zoo`.split("\n"));
 			const record = hardwareRecord(ctx, request.account.walletId);
 			const { driver, device, header } = driverFor(record);
 			const pin = pinAt(pins, record);
-			const prepared = await prepareApproval(ctx, request, materialOf(pin, pinBody(pins, record).confirmed), dek);
+			const prepared = await prepareApproval(ctx, request, materialOf(pin, pinBody(pins, record).confirmed), dek, op.acknowledgeUnconfirmed === true);
 			const display = driver.display(request, prepared.plan, header);
 			if (display === "unsupported") throw new KernelError("unsupported", "the device cannot sign this request");
 			const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
