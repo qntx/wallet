@@ -13,19 +13,24 @@ Hardening and reach. The vault moves to format 6: an authenticated manifest, and
 outside the store that floors the revision and rate-limits password attempts, so a rolled-back
 store cannot replay an old vault. The kernel signs what it can describe and refuses what it
 cannot show unless the owner allows blind signing, broadcasts whose outcome is unknown are never
-failed, and the cloud-backup password is stretched with Argon2id. Hardware signers join software
-wallets — the Keystone 3 Pro pairs and signs over QR while `WalletInfo` becomes a `custody`
-union — the wallet gains a QR signer mode that answers a watch-only counterpart's animated UR
-requests through the ordinary approval pipeline — and the engine gains an approvals inventory
-with revocation, an NFT inventory with
-transfer requests, push notifications through the gateway, iCloud and Google Drive backup
-transports with versioned backup files, and a Fiat24 app on Arbitrum One. React Native gains a
-silent `device` factor and an optional app lock. TRON joins EVM, Solana and Bitcoin as a fourth
-chain family, the EVM table grows to 41 mainnets, and Solana v1 transactions are supported.
+failed, and the cloud-backup password is stretched with Argon2id. React Native gains a silent
+`device` factor and an optional app lock. TRON joins EVM, Solana and Bitcoin as a fourth chain
+family, the EVM table grows to 41 mainnets, and Solana v1 transactions are supported.
+
+Signing is split into plan → backend → assemble, and the same plans now run on external signers:
+`WalletInfo` becomes a `custody` union (`vault`, `hardware`, `card`). Hardware wallets pair and
+sign through the kernel — Keystone 3 Pro over QR, Ledger and OneKey over USB or Bluetooth — and
+every pinned key stays unconfirmed until the device shows it. qntx card wallets (React Native)
+keep the seed only on one to three NFC cards; this release pins no production card anchor, so
+every card is refused as `card-not-genuine` until a later release ships it. A QR signer mode
+answers a watch-only counterpart's animated UR requests through the ordinary approval pipeline.
+
 The engine adds fiat prices, per-group activity history, Bitcoin coin control, Spark tokens,
-WalletConnect, and opt-in apps (Hyperliquid, Polymarket) whose L1 actions are signed by
-kernel-held session keys metered against limits the owner approved. Signing is split into plan → backend → assemble. The qntx card wallet is
-not usable yet: only its experimental native groundwork ships.
+an approvals inventory with revocation, an NFT inventory with transfer requests, push
+notifications through the gateway, iCloud and Google Drive backup transports with versioned
+backup files, WalletConnect, and opt-in apps: Hyperliquid, whose L1 actions are signed by a
+kernel-held session key metered against limits the owner approved; Polymarket; and Fiat24 on
+Arbitrum One.
 
 Upgrading is not data-preserving. Vaults written by 0.13.0 (format 3) are `unsupported` and must
 be reset, 0.13.0 cloud-backup files can no longer be read, and the engine database is rebuilt
@@ -112,17 +117,28 @@ Signing and requests:
   §15, §18)
 - `@qntx/wallet-chains/bitcoin`: `decodeBitcoinPsbt` takes a `BitcoinOwn` (`{ change, unusual }`)
   as its second argument — an own-key output is hidden as change only when the wallet can
-  discover it (the group's `/1/i` key, a script type a signed input shares, `i` within
-  `BITCOIN_GAP_LIMIT` of the highest proven same-purpose change index); every other own-key
-  output is a verified outflow whose `AssetFlow.ownPath` carries its `m/…` path, plus an
-  `unusual-own-output` `IntentWarning` surfaced to the user as the `bitcoin-unusual-output`
-  warning finding. The engine's own change selection obeys the same rule: change lands on the
-  spending template's own chain at `min(first unused, bound)` — `btc.bip44`/`btc.bip49` sends no
-  longer migrate change to native segwit. (MIGRATION §34)
+  discover it (the group's `/1/i` key with `i ≤ mark + BITCOIN_GAP_LIMIT`, a script type a signed
+  input shares); every other own-key output is a verified outflow whose `AssetFlow.ownPath`
+  carries its `m/…` path, plus an `unusual-own-output` `IntentWarning` surfaced to the user as the
+  `bitcoin-unusual-output` warning finding. `mark` is a kernel-sealed per-(wallet, group, purpose,
+  network) change mark in a `change-marks` vault record (`ChainAccount.changeMark`), raised before
+  signing by the highest same-purpose change index of the signed inputs and only for a request
+  that declares `origin: "internal"`, so a crafted PSBT cannot park change at an index the wallet
+  never scans; a seed-only restore starts it at 0. `bitcoin.psbt` requests therefore carry a
+  required `origin` (`"internal" | "external"`): the engine sets it for its own sends, every other
+  caller passes `"external"`, and a request without it is refused. The engine's own change
+  selection obeys the same rule: change lands on the spending template's own chain at
+  `min(first unused, mark + BITCOIN_GAP_LIMIT)` — `btc.bip44`/`btc.bip49` sends no longer migrate
+  change to native segwit. (MIGRATION §34, §35)
+- `@qntx/wallet-engine`: `TransactionController.nextReceiveAddress` returns
+  `{ address, confirmed }` instead of the address string. (MIGRATION §35)
 - Kernel prompts render every warning row before the detail rows, and a bounded prompt drops only
   detail rows — a request whose warnings alone cannot fit the dialog is `unsupported` even with
-  blind signing on. `@qntx/wallet-native` locks the session after 15 idle minutes counted on
-  presence-bearing methods only. (MIGRATION §34)
+  blind signing on. `@qntx/wallet-native` locks the session after 15 idle minutes, and on every
+  keystore host (React Native, Node with a keystore) only a successful factor verification
+  re-arms the idle deadline — `session.touch` and other presence-marked methods do not, so a
+  compromised main runtime cannot hold the vault unlocked; on the Web presence-marked methods
+  still count. (MIGRATION §34, §35)
 
 Transactions:
 
@@ -184,49 +200,52 @@ Engine options, facades and the in-app browser:
   option and `AppContext.account` are required — an app derives through the same apis; a host
   composing apps without the engine passes `chains(wallet).account`. (MIGRATION §32)
 - `@qntx/wallet-engine`: `RequestEndedError`'s constructor takes a third `signed` argument; read
-  `error.signed` to tell whether anything may have been broadcast. `EvmSignInput.nonce` pins the
-  nonce of an app's `evm.transaction` (`NonceConflictError` at `prepare`). (MIGRATION §29)
+  `error.signed` to tell whether anything may have been broadcast — `false` proves nothing it
+  produced was broadcast. (MIGRATION §29)
 - `@qntx/wallet-engine`: dApp sessions record the account group (and Nostr identity) they were
   granted and follow the app's group selection; switching group invalidates every pending request.
   `ConnectionController.setActiveGroup`, `activeGroup`, `accounts`, `solanaAccount`,
   `bitcoinAccounts`, `nostrAccount`, the handlers' `solanaAccountsChanged` /
   `bitcoinAccountsChanged` and `activeGroup` option are removed; WebLN takes `sparkNetwork`.
-  `RequestOrigin` gains `{ kind: "app", id }` and WalletConnect origins (`DappOrigin`). The injected
+  `RequestOrigin` gains `{ kind: "app", id }`, `{ kind: "qr", declared? }` (a request scanned from a
+  QR counterpart) and WalletConnect origins (`DappOrigin`) — every switch on its `kind` must name
+  them. The injected
   Solana and Bitcoin providers reject a refused request with `4001` instead of `-32603`.
-  (MIGRATION §2, §13, §21)
+  (MIGRATION §2, §13, §21, §33)
 - `@qntx/wallet-engine/connect`: the injected script generates the EIP-6963 uuid per document
   (`ProviderInfo.uuid` is removed), installs only in the top-level document and tags every bridge
   message; `BrowserBridge.message` must receive the URL of the frame that sent it
   (react-native-webview 13.13.5 or later). `BrowserBridgeOptions` requires a `tron` handler
   (`engine.tronWallet`). (MIGRATION §2, §17)
 
-Session keys, apps and native factors:
+Backup and the native keystore:
 
-- `@qntx/wallet/sessions`: a `hyperliquid-l1-agent` session is approved and metered.
-  `sessions.create` takes the scheme's `limits` (`HyperliquidAgentLimits` — a notional budget, a
-  `maxLeverage` cap and per-asset `{ asset, size }` caps over ids 0..99999 that buys and sells
-  both charge) and a `verify` factor, and the new `sessions.open(address, verify)` re-approves it
-  after every lock; `sessions.sign` on an unopened session answers `approval-required`, an order
-  outside the approved bounds `limit-exceeded`, and create, open and sign all answer
-  `app-lock-required` while a React Native vault still holds its `device` factor (app lock off).
-  `SessionInfo` gains `limits` and `spent` (the scheme's `HyperliquidAgentSpent` as opaque
-  `ProtocolValue` — no `SESSION_SPENT` grammar). The signable actions are an explicit allow-list —
-  `scheduleCancel` is not among it — at most two live metered sessions may exist per owner and
-  scope (`conflict`), and an approval text that cannot fit the platform dialog is `invalid-input`.
-  On iOS create/open confirm the limits with a kernel-chosen 4-digit code on the secure-input hub
-  before the factor ceremony — the new `SecureInputKind` `"session-approval"`, `cancelled` on a
-  wrong code, `unsupported` on a host without a secure-input surface. (MIGRATION §31)
-- `@qntx/wallet-engine/apps/hyperliquid`: `enable` and `renew` take `{ limits, verify }`
-  (`HyperliquidEnableInput`), and `provider.reopen(group, verify)` re-opens the agent session in
-  the kernel. `HyperliquidErrorCategory` gains `reopen-required`, `app-lock-required` and
-  `limit-exceeded`. `trade.twap` and `actions.twap` are removed — a TWAP's slices carry no price
-  the kernel can meter (`trade.twapCancel` stays) — and `trade.scheduleCancel` /
-  `actions.scheduleCancel` are removed with the kernel's allow-list. (MIGRATION §13, §31)
+- `CloudStore` loses `available()`; every failure is a `CloudStoreError`. The port's
+  semantics (portable names, a 4 000 000-byte text cap, atomic whole-file writes, no partial reads,
+  read-your-own-write, eventually consistent but complete lists, delete-missing succeeds) are
+  documented on the type and checked by one conformance suite across every implementation.
+  Cloud backups are versioned: each upload is a new file
+  `qntx-wallet-backup-<id>-<sha256>.json` instead of an overwrite; two devices updating the same
+  backup keep both versions, and a version that holds wallets this device lacks reports `conflict`
+  without blocking this device's upload. `BackupController.list()` items carry the backup `id`;
+  `BackupErrorCategory` gains `quota` and `auth-required` (status `error`). (MIGRATION §28)
 - `@qntx/wallet`: `BackupFactorInput`'s password arm is `{ kind: "password"; password?: string }`
   — on React Native the kernel collects the entry through `SecureInput` and a `password` field is
   `unsupported`; on Web and Node it stays required. (MIGRATION §8, §30)
 - `@qntx/wallet-native`: the keystore contract gains the required `platform: "ios" | "android"`
   — `bindNativeKeystore` rejects any other value. (MIGRATION §3)
+
+Wallets:
+
+- `@qntx/wallet`: `WalletInfo` is a `custody` union — `wallet.custody === "vault"` narrows to the
+  shape 0.13.0 returned (`VaultWalletInfo`); `HardwareWalletInfo` (`custody: "hardware"`) carries
+  `device`, `fingerprint`, `supported` and optional `model`/`firmware` but no `origin`, `words`,
+  `backup` or `passphrase`, and `CardWalletInfo` (`custody: "card"`) carries `origin`
+  (`"card-generated" | "card-imported"`), `backup: "cards"`, `members` and `cards`
+  (`CardInfo[]`) — narrow on `custody` before reading any of them. Seed-bound commands answer
+  `unsupported` for an external-custody wallet (`exportMnemonic`, Nostr key derivation and sync,
+  Spark, `sessions.create`), `chain.sign` answers `device-required`, and `wallet.accounts`
+  answers `device-required` for a group the signer has not exported yet. (MIGRATION §24, §30)
 
 Assets, networks and Spark:
 
@@ -255,44 +274,6 @@ Gateway (operators):
   broadcast answers `502 {"error":"outcome-unknown"}` instead of being retried on the next
   provider. The Solana RPC allow-list drops `getBlock`. A deployed gateway requires
   `cf-connecting-ip`. (MIGRATION §22)
-- Price requests are partitioned by chain family. The route is `POST /v1/prices/:family` (`evm`,
-  `solana`, `bitcoin`, `tron`); its body may name only that family's assets (else
-  `400 invalid-request`; an unknown family is `404`), and the engine sends one request per family
-  under that family's client id, so the held asset set no longer links the gateway scopes.
-  `@qntx/wallet-engine/gateway/contract` adds `PRICE_FAMILIES`, `PriceFamily`, `priceFamily`,
-  `priceAssetFamily` and `pricesPath`. Deploy the gateway with the engine. (MIGRATION §9, §22)
-- `CloudStore` loses `available()`; every failure is a `CloudStoreError`. The port's
-  semantics (portable names, a 4 000 000-byte text cap, atomic whole-file writes, no partial reads,
-  read-your-own-write, eventually consistent but complete lists, delete-missing succeeds) are
-  documented on the type and checked by one conformance suite across every implementation.
-  Cloud backups are versioned: each upload is a new file
-  `qntx-wallet-backup-<id>-<sha256>.json` instead of an overwrite; two devices updating the same
-  backup keep both versions, and a version that holds wallets this device lacks reports `conflict`
-  without blocking this device's upload. `BackupController.list()` items carry the backup `id`;
-  `BackupErrorCategory` gains `quota` and `auth-required` (status `error`). (MIGRATION §28)
-- `PushKeyStore` gains `ids()`: at `init` the notifications controller deletes every host-stored
-  key whose subscription row is gone — after `vault.reset()` the erased wallets' gateway
-  subscriptions keep delivering within the 30-day retention and an orphaned key would let the
-  notification extension keep opening that activity. (MIGRATION §27)
-- `WalletInfo` is a `custody` union — `wallet.custody === "vault"` narrows to the shape
-  0.13.0 returned; `custody: "hardware"` wallets carry `device`, `fingerprint` and optional
-  `model`/`firmware`. Seed-bound commands answer `unsupported` for a hardware wallet
-  (`exportMnemonic`, Nostr key derivation and sync, Spark, `sessions.create`), `chain.sign`
-  answers `device-required`, and `wallet.accounts` answers `device-required` for a group the
-  device has not exported yet. (MIGRATION §24)
-- `@qntx/wallet-engine/walletconnect`: the WalletConnect SDK packages
-  (`@reown/walletkit`, `@walletconnect/core`, `@walletconnect/types`, `@walletconnect/utils`)
-  moved from `dependencies` to optional peer dependencies — a host using WalletConnect installs
-  them itself (they stay bundled for development). Nothing else changes; every other entry works
-  without them. (MIGRATION §21)
-- `bitcoin.psbt` requests carry a required `origin` (`"internal" | "external"`) — requests
-  without it are refused. Every `ChainAccount` variant gains `confirmed` and the bitcoin variant
-  gains `changeMark`; `hardware.begin` `pair` requires `verify` and `accounts` answers
-  `approval-required` for keys the pin lacks (both take a `verify`, as does
-  `SignersController.fetchAccounts` and `hardware(wallet).start`); `chain.exportAccount`,
-  `QrExportParams` and `SignStartParams` gain `acknowledgeUnconfirmed?: true`;
-  `TransactionsController.nextReceiveAddress` returns `{ address, confirmed }`. Hardware record
-  bodies changed format without a bump — re-pair after `vault.reset`. (MIGRATION §35)
 
 ### Added
 
@@ -365,7 +346,9 @@ Gateway (operators):
   `failure`; persisted with the currency in the engine store and cleared on lock. Display-only: a
   lint rule keeps `src/prices` out of every build and sign path. Assets
   the gateway cannot price at all are `unsupported` in `PricesState.errors` (their stored quote is
-  dropped); hidden tokens are neither priced nor valued.
+  dropped); hidden tokens are neither priced nor valued. The engine sends one price request per
+  chain family under that family's client id, so the held asset set does not link the gateway
+  scopes. (MIGRATION §9)
 - `@qntx/wallet-engine`: `engine.portfolio.group(group)` — exact fiat valuation (bigint
   fixed-point) of the balances already in state and the group's total, with per-holding
   staleness (`PRICE_STALE_MS`, 10 min by the provider's `updatedAt`).
@@ -417,7 +400,9 @@ Gateway (operators):
   assets of one chain family in one fiat currency (`usd`, `eur`, `gbp`, `jpy`, `cny`, `krw`, `hkd`, `sgd`, `cad`, `aud`, `chf`);
   CoinGecko Pro primary (`COINGECKO_API_KEY`), DefiLlama fallback;
   answers cached per asset and currency for 30 s, converted to bounded decimal strings without
-  float arithmetic, `no-store`.
+  float arithmetic, `no-store`. The body may name only the route family's assets (`evm`,
+  `solana`, `bitcoin`, `tron`; else `400 invalid-request`, an unknown family is `404`). Contract:
+  `PRICE_FAMILIES`, `PriceFamily`, `priceFamily`, `priceAssetFamily`, `pricesPath`.
 - `@qntx/gateway`: `POST /v1/history/:caip2` — EVM transfers of an address over Alchemy
   `alchemy_getAssetTransfers` (existing `ALCHEMY_API_KEY`, breaker id `alchemy-transfers`),
   newest first, block-frontier pagination; `404 unsupported` on a served network without a
@@ -526,27 +511,42 @@ Gateway (operators):
 - Kernel prompts for every described Hyperliquid and Polymarket shape in English and Simplified
   Chinese.
 - `@qntx/wallet/protocol`: `sessions.create`, `sessions.list`, `sessions.open`,
-  `sessions.delete` and `sessions.sign`. Types: `SessionInfo`, `SessionSchemes`, `SessionSchemeId`,
-  `HyperliquidAgentLimits`, `SESSION_SPENT`, `HyperliquidL1Action`, `HyperliquidL1Order`,
-  `HyperliquidL1Params` and `HyperliquidNetwork`.
+  `sessions.delete` and `sessions.sign`. Types: `SessionInfo` (with the scheme's `limits` and
+  `spent` as opaque `ProtocolValue`), `SessionSchemes`, `SessionSchemeId`,
+  `HyperliquidAgentLimits`, `HyperliquidAssetLimit`, `HyperliquidAgentSpent`,
+  `HyperliquidL1Action`, `HyperliquidL1Order`, `HyperliquidL1Params` and `HyperliquidNetwork`.
 - Kernel: generic session keys. Each is a secp256k1 key generated in the enclave for one HD
   account and sealed as a `session-key` vault record. A session key is never exported or backed
   up, is deleted with its wallet, and belongs to a scheme from a compile-time table. A record whose
   scheme this build does not know is listed as unsupported. It cannot sign and can still be
   deleted, and it never makes the vault `unsupported`.
-- Kernel: the `hyperliquid-l1-agent` session scheme. It signs only the allow-listed L1 trading
-  actions (`order`, `cancel`, `cancelByCloid`, `modify`, `batchModify`, `scheduleCancel`,
-  `updateLeverage`, `updateIsolatedMargin`, `twapCancel`). The kernel re-encodes each
-  action and computes the connectionId itself. It signs only while the vault is unlocked and before
-  the session's `validUntil`. Each signature needs a nonce within 60 seconds of the kernel clock and
-  an `expiresAfter` at most 60 seconds ahead. Hyperliquid rejects an action after its
-  `expiresAfter`, so a signature can be submitted at most a minute after it was made, including
-  after a lock. A `scheduleCancel` time must be at least 5 seconds out and within the session's
-  validity. Create and the new open command verify the owner and bind `limits` — a cumulative
-  notional budget, a leverage cap and an asset allow-list — into the record; every signed order
-  is charged against `spent` before the signature returns and out-of-bounds use is
-  `limit-exceeded`. On a keystore host whose vault holds the `device` factor (app lock off),
-  create, open and sign all answer `app-lock-required`.
+- Kernel: the `hyperliquid-l1-agent` session scheme, approved and metered. It signs only the
+  allow-listed L1 trading actions (`order`, `cancel`, `cancelByCloid`, `modify`, `batchModify`,
+  `updateLeverage`, `updateIsolatedMargin`, `twapCancel`) — not `twapOrder`, whose slices carry no
+  price the kernel can meter, nor `scheduleCancel`, which no allow-list can scope. The kernel
+  re-encodes each action and computes the connectionId itself. It signs only while the vault is
+  unlocked and before the session's `validUntil`; each signature needs a nonce within 60 seconds
+  of the kernel clock and an `expiresAfter` at most 60 seconds ahead, so a signature can be
+  submitted at most a minute after it was made, including after a lock.
+  - `sessions.create` takes the scheme's `limits` (`HyperliquidAgentLimits`: a cumulative
+    `notional` budget that buys charge, a `maxLeverage` cap on `updateLeverage`, and 1–16
+    per-asset `{ asset, size }` caps over ids 0..99999 that buys and sells both charge) and a
+    `verify` factor; `sessions.open(address, verify)` re-approves the session after every lock,
+    and `sessions.sign` on an unopened session answers `approval-required`. Every signed order is
+    charged into `spent` before the signature returns; out-of-bounds use is `limit-exceeded`.
+  - The approval prompt restates the limits and labels each market by its numeric asset id
+    rendered `#id` (perp/spot split at 10000) — the kernel keeps no trusted id→name table, so the
+    id is the field a compromised runtime cannot relabel; hosts show it next to their market
+    name. An approval text that cannot fit the platform dialog is `invalid-input`. On iOS, create
+    and open first confirm the limits with a kernel-chosen 4-digit code on the secure-input hub
+    (`SecureInputKind` `"session-approval"`; `cancelled` on a wrong code, `unsupported` on a host
+    without a secure-input surface).
+  - Create, open and sign answer `app-lock-required` while a keystore host's vault holds its
+    `device` factor (app lock off), and `unsupported` for a card or hardware wallet before any
+    prompt. At most two live metered sessions may exist per owner and scope (`conflict`).
+  - A stolen session key is bounded: a compromised main runtime can trade at most the remaining
+    budget and cannot withdraw. The kernel cannot know prices, so absurd prices in a thin book can
+    lose up to the whole budget.
 - Kernel: when `chain.sign` signs an `approveAgent`, it reports whether this wallet holds the agent
   as a `hyperliquid-l1-agent` session key. It refuses an approval whose terms differ from the held
   session's.
@@ -639,11 +639,11 @@ Gateway (operators):
   `list`, `open`, `delete`, `sign`) the way `spark(wallet)` and `nostr(wallet)` expose their
   protocols. `create` and `sign` are typed per scheme; `create`/`open` take the `verify` factor the
   kernel approves the session's `limits` under. `sign` verifies the kernel's answer: it rebuilds
-  the scheme's document and rejects `integrity` unless the session key signed it.
+  the scheme's document and rejects `integrity` unless the session key signed it. (MIGRATION §31)
 - `@qntx/wallet-engine/apps`: a separate entry (hosts that do not import it bundle nothing new).
-  `createApps({ wallet, requests, networks, fetch, socket, now, setTimer, random, logger, openStore,
-  gateway, apps: [hyperliquid(…), polymarket(…)] })` returns `controller` (an `AppsController` typed by
-  the listed definitions), `destroy` and one api per listed app id. Providers ship in the
+  `createApps({ wallet, account, requests, networks, fetch, socket, now, setTimer, random, logger,
+  openStore, gateway, apps: [hyperliquid(…), polymarket(…)] })` returns `controller` (an
+  `AppsController` typed by the listed definitions), `destroy` and one api per listed app id. Providers ship in the
   `/apps/hyperliquid` and `/apps/polymarket` sub-entries, so a host bundles only the apps it imports:
   - `AppsController`: per account group and app state (`disabled`, `enabling`, `enabled`,
     `needs-reauthorization`, `needs-migration`, `unavailable`), terms acknowledgement, gateway eligibility, and a
@@ -657,12 +657,15 @@ Gateway (operators):
   - `HyperliquidProvider`: market and account reads, live views (order book, trades, candles,
     account, spot balances, open orders, fills) with reconnect, resubscribe and stale marking,
     order placement (limit, market with a computed slippage cap, stop/take-profit, attached and
-    position TP/SL, reduce-only, post-only), modify, cancel, cancel-all, scheduled cancel, TWAP
-    cancel, leverage, isolated margin, close position, perp↔spot transfers, `usdSend`, `spotSend`,
+    position TP/SL, reduce-only, post-only), modify, cancel, cancel-all, TWAP cancel, leverage,
+    isolated margin, close position, perp↔spot transfers, `usdSend`, `spotSend`,
     `withdraw3`, and USDC deposits from Arbitrum through CCTP (`depositForBurnWithHook` to the
     account's own perps or spot balance, after an exact USDC approval when the allowance is short).
+    `enable` and `renew` take `{ limits, verify }` (`HyperliquidEnableInput`), and
     `reopen(group, verify)` re-approves the agent session in the kernel after a lock — the prompt
-    restates the approved limits and the remaining budget.
+    restates the approved limits and the remaining budget. `HyperliquidErrorCategory` includes
+    `reopen-required`, `app-lock-required` and `limit-exceeded`. There is no TWAP placement and no
+    scheduled cancel: the kernel's allow-list refuses both. (MIGRATION §31)
   - L1 actions are signed by the account's own kernel-held agent without a per-order prompt;
     user-signed actions go through the request pipeline as kernel-described typed data. A lost
     order POST is reconciled by client order id and never re-sent.
@@ -676,7 +679,7 @@ Gateway (operators):
   Otherwise the pipeline treats these requests as internal: typed data only for
   `evm-sign`/`tron-sign`, no phishing check, no per-origin queue.
 - Repository: `scripts/check-kernel-budget.ts`, run by `bun run lint`, measures the application
-  share of the native kernel bundle by ablation. The budget is 5 % (2.53 % measured at release),
+  share of the native kernel bundle by ablation. The budget is 5 % (2.01 % measured for 0.14.0),
   plus per-unit budgets for each protocol-family decoder and session scheme. `AGENTS.md` records
   the kernel growth rule.
 - Gateway `GET /v1/eligibility`: per-app availability (`available`, `close-only`, `blocked`),
@@ -715,9 +718,11 @@ Gateway (operators):
 - `@qntx/wallet-engine`: TRON `send` accepts `memo` (written to `raw_data.data`); the quote adds the live `getMemoFee` (`TronFeeQuote.memo`). `vectors/chains/tron-fees.json` gains 25 mainnet memo transfers bounding it.
 - `@qntx/wallet-engine`: `watch-asset` accepts TRC-20 tokens (on-chain `symbol`/`decimals`, built-in-table impersonation check).
 - `ConnectionController`: `tron` namespace (scopes for every enabled TRON network, `ConnectionSession.tronNetwork`, `setTronNetwork`); the engine facade exposes `tronWallet`.
-- `@qntx/wallet-engine/walletconnect`: WalletConnect v2 wallet side on Reown WalletKit
-  (`@reown/walletkit` 1.6.0, `@walletconnect/core`/`utils` 2.25.0, exact pins; WalletConnect
-  Community License — commercial terms are a release gate). `createWalletConnect({ projectId,
+- `@qntx/wallet-engine/walletconnect`: WalletConnect v2 wallet side on Reown WalletKit. The SDK
+  packages (`@reown/walletkit` 1.6.0, `@walletconnect/core`, `@walletconnect/types` and
+  `@walletconnect/utils` 2.25.0, exact pins, under the WalletConnect Community License) are
+  optional peer dependencies: a host using this entry installs them itself, and every other entry
+  works without them. `createWalletConnect({ projectId,
   metadata, storage, wallet, engine, now, logger })` pairs `wc:` URIs, validates session proposals
   (`eip155`, `solana`, `bip122`; unsupported required namespaces/chains/methods/events are rejected
   with 5104/5100/5101/5102), approves them as ConnectionController sessions keyed
@@ -728,7 +733,8 @@ Gateway (operators):
   requests are answered `4100 Request expired`; group switches update the session and emit
   `accountsChanged`/`chainChanged`; revoking, a peer delete, a session expiry or deleting the wallet
   disconnects. One-click auth (`session_authenticate`, CAIP-222 + ReCaps) is approved as a SIWE
-  message through the pipeline. Telemetry is off. Hosts that do not import the entry bundle none of it.
+  message through the pipeline. Telemetry is off. Hosts that do not import the entry bundle none
+  of it. (MIGRATION §21)
 - `@qntx/wallet-engine`: `WalletConnectOrigin`, `WalletConnectVerify`, `DappOrigin`, `dappUrl`,
   `walletConnectKey`; `RequestOrigin`, `ConnectionOrigin` and every dApp request input accept a
   WalletConnect origin. Risk codes `verify-mismatch` and `verify-threat`.
@@ -872,50 +878,6 @@ Gateway (operators):
   call.
 - `vectors/chains/signing-plans.json` (generator `packages/wallet-chains/scripts/signing-plans-vectors.ts`):
   plans and artefacts for every family, digests from viem, tronweb, bitcoinjs-lib and @solana/kit.
-- **qntx card protocol client** (experimental; `packages/wallet-kernel/src/modules/card/protocol/`, private to
-  the kernel, not yet wired to any kernel command). A self-contained host implementation of the
-  qntx card protocol 1 (`qntx/wallet-applet` `spec/protocol.md`): card IDs and short IDs,
-  certificate verification against batch anchors (`PRODUCTION_ANCHORS` is empty until the first
-  production batch; a card that chains to no anchor — including one that never finished
-  personalisation — is `card-not-genuine`), `accessHash` through
-  the injected Argon2id (6–64 printable ASCII characters, `m = 64 MiB, t = 3, p = 4`), OPEN with
-  the signed ephemeral ECDH and SP 800-56C key schedule, the AES-CBC/CMAC record layer with
-  counters, pre-wrapped records and teardown on any failure (`session-broken`, keys wiped), encoders
-  for every inner command, the per-command status-word mapping to a typed `CardError` union, and
-  decoders that verify every card output: WalletInfo membership and CREATE echoes, public keys,
-  Wei25519 points mapped to RFC 8032 encodings with subgroup checks, ECDSA (low-s normalisation,
-  recovery bit, repeated `r`), BIP-340 under the taproot-tweaked key, Ed25519 streaming and
-  assembly under strict RFC 8032 verification, OFFER and EXPORT signatures for multi-card transfer
-  and re-seal. Pure and synchronous except `accessHash`; runs in bare Hermes with no globals. It
-  already follows the two protocol amendments the owner approved (spec proposals B1 and B2, being
-  applied in the applet repository): `VERIFY`'s wait gate answers `6986` (`wait-required`) and
-  `6985` is a wrong card state for every command; `finish` carries 1–236 bytes and the client never
-  sends an empty one. Their spec vectors arrive with the applet's next vector drop.
-- `vectors/card/`: the applet's published vector files pinned by commit and SHA-256
-  (`vectors/card/SOURCE`, `scripts/check-card-vectors.ts <applet checkout>` fails on drift), and
-  `oracle.json`, independent host-side vectors from `scripts/vectors/card-oracle.py`
-  (libsecp256k1, the Argon2 reference implementation, pyca/cryptography).
-- `bun run smoke:hermes` also runs the card protocol client under bare Hermes
-  (`packages/wallet-kernel` `smoke:hermes`).
-- `scripts/check-kernel-budget.ts` reports the card protocol client on its own line with a
-  measured budget; `scripts/check-boundaries.ts` keeps `modules/card/protocol/` self-contained.
-- `@qntx/wallet-native` (experimental, not yet used by the kernel): two kernel-only native capabilities for the qntx card wallet (OD-5).
-  `__qntx.cardReader` opens an NFC reader session whose visible text only the kernel sets (iOS:
-  `NFCTagReaderSession.alertMessage`, set once before `begin`; Android: reader mode behind the
-  module's own dialog, polling only while that dialog holds window focus) and exchanges APDUs
-  directly between the kernel runtime and native code: the main runtime never relays them and only
-  drives the tap cadence (the card-wallet transport architecture, AGENTS.md). `__qntx.secureInput`
-  collects a card access code or printed short ID from a native field and hands the bytes to the
-  kernel runtime only. Neither is registered with Nitro or reachable from the main runtime.
-  Kernel-side bindings: `kernel/card.ts` (`bindNativeCardReader`, `bindNativeSecureInput`),
-  wired into the kernel as `KernelPlatform.card` (reader, secure input and certificate anchors).
-- `@qntx/wallet-native/secure-input`: the `SecureInput` Nitro host component. The main runtime can
-  mount and size it and receives only `idle | empty | filled | submitted`; the kernel decides
-  whether it collects an access code (masked, printable ASCII, ≤ 64), a short ID (8 hex digits)
-  or the backup password (`backup-password` — how the kernel collects it on React Native) and
-  which label it shows. The field is editable only while a kernel request is pending, takes
-  focus and raises the keyboard on that request, has no edit menu (no paste, copy or cut), is
-  excluded from autofill, and on Android sets `FLAG_SECURE` while an access code is being typed.
 - **qntx card wallets** (React Native). A wallet's seed can live only on one to three qntx cards:
   the vault keeps a `card-wallet` record (card IDs and pinned certificates, the wallet anchor,
   the public keys a tap fetched, optionally the sealed access-code hash), never the seed.
@@ -926,28 +888,73 @@ Gateway (operators):
   (`CARD_METHODS`); the host only starts, observes and cancels — APDUs flow between the kernel
   runtime and the native reader, the kernel collects the access code from `SecureInput`, and the
   NFC sheet's text is the kernel's decoded prompt of the request (for a blind request, the blind
-  warning and the network).
+  warning and the network). Web and Node answer `unsupported`. **This release pins no production
+  certificate anchor (`PRODUCTION_ANCHORS` is empty until the first production batch), so every
+  card — including one that never finished personalisation — is refused as `card-not-genuine`;**
+  card wallets become usable with the release that ships the anchor. (MIGRATION §30)
 - Card signing covers every `chain.sign` request: EVM transactions (incl. EIP-7702
   authorisations), personal messages and EIP-712 (incl. Fiat24 sessions and app-origin typed
-  data), Bitcoin PSBTs (multi-input, all four account templates, Taproot key path), BIP-322 and legacy messages, Solana
-  legacy/v0/v1 transactions and messages (≤ 16 KiB), and TRON. ECDSA, BIP-340 and Ed25519
-  (streamed) run on the card; every card signature is verified against the cached public key
-  before assembly, and a repeated ECDSA `r` within one operation is `card-fault`. A plan that
-  needs more than one tap resumes on the next tap of the same card without a new prompt.
+  data), Bitcoin PSBTs (multi-input, all four account templates, Taproot key path), BIP-322 and
+  legacy messages, Solana legacy/v0/v1 transactions and messages (≤ 16 KiB), and TRON. ECDSA,
+  BIP-340 and Ed25519 (streamed) run on the card; every card signature is verified against the
+  cached public key before assembly, and a repeated ECDSA `r` within one operation is
+  `card-fault`. A plan that needs more than one tap resumes on the next tap of the same card
+  without a new prompt.
 - Every tap is its own authenticated session: the card's certificate must chain to a pinned
   anchor (else `card-not-genuine`), its ephemeral key must not repeat, the card ID must be the
   one the step expects before any access-code hash is sent (`card-id-mismatch`), a failure
   counter that moved without this kernel is `card-tampered`, and every exit path wipes the code,
   the hashes, the session keys and any generated entropy or imported seed. An operation without
-  progress for 120 s, a lock or `card.cancel` discards it.
+  progress for 120 s, a lock or `card.cancel` discards it. A remembered access code is suspended
+  while the app lock is off — it cannot verify until the lock comes back on. Session keys
+  (`sessions.create` / `open`) answer `unsupported` for a card wallet.
+- The card protocol client (`packages/wallet-kernel/src/modules/card/protocol/`, private to the
+  kernel): a self-contained host implementation of qntx card protocol 1 (`qntx/wallet-applet`
+  `spec/protocol.md`) — card IDs and short IDs, certificate verification against batch anchors,
+  `accessHash` through the injected Argon2id (6–64 printable ASCII characters,
+  `m = 64 MiB, t = 3, p = 4`), OPEN with the signed ephemeral ECDH and SP 800-56C key schedule,
+  the AES-CBC/CMAC record layer with counters, pre-wrapped records and teardown on any failure
+  (`session-broken`, keys wiped), encoders for every inner command, the per-command status-word
+  mapping to a typed `CardError` union, and decoders that verify every card output: WalletInfo
+  membership and CREATE echoes, public keys, Wei25519 points mapped to RFC 8032 encodings with
+  subgroup checks, ECDSA (low-s normalisation, recovery bit, repeated `r`), BIP-340 under the
+  taproot-tweaked key, Ed25519 streaming and assembly under strict RFC 8032 verification, OFFER
+  and EXPORT signatures for multi-card transfer and re-seal. Pure and synchronous except
+  `accessHash`; runs in bare Hermes with no globals. It follows the two protocol amendments the
+  owner approved (spec proposals B1 and B2): `VERIFY`'s wait gate answers `6986`
+  (`wait-required`) and `6985` is a wrong card state for every command; `finish` carries 1–236
+  bytes and the client never sends an empty one.
 - `@qntx/wallet`: `CardWalletInfo`, `VaultWalletInfo`, `CardInfo`; error codes
   `card-not-genuine`, `card-id-mismatch`, `card-erased`, `card-locked`,
   `card-tampered`, `card-fault`, `card-unsupported`. `@qntx/wallet/protocol`: `CARD_METHODS`, the
   `cardId` validator and the `Card*` wire types.
+- `@qntx/wallet-native`: two kernel-only native capabilities for card wallets. `__qntx.cardReader`
+  opens an NFC reader session whose visible text only the kernel sets (iOS:
+  `NFCTagReaderSession.alertMessage`, set once before `begin`; Android: reader mode behind the
+  module's own dialog, polling only while that dialog holds window focus) and exchanges APDUs
+  directly between the kernel runtime and native code: the main runtime never relays them and only
+  drives the tap cadence. `__qntx.secureInput` collects a card access code or printed short ID
+  from a native field and hands the bytes to the kernel runtime only. Neither is registered with
+  Nitro or reachable from the main runtime. They are wired into the kernel as
+  `KernelPlatform.card` (reader, secure input and certificate anchors).
+- `@qntx/wallet-native/secure-input`: the `SecureInput` Nitro host component. The main runtime can
+  mount and size it and receives only `idle | empty | filled | submitted`; the kernel decides
+  whether it collects an access code (masked, printable ASCII, ≤ 64), a short ID (8 hex digits),
+  the backup password (`backup-password` — how the kernel collects it on React Native) or a
+  session-approval code, and which label it shows. The field is editable only while a kernel
+  request is pending, takes focus and raises the keyboard on that request, has no edit menu (no
+  paste, copy or cut), is excluded from autofill, and on Android sets `FLAG_SECURE` while an
+  access code is being typed.
+- `vectors/card/`: the applet's published vector files pinned by commit and SHA-256
+  (`vectors/card/SOURCE`, `scripts/check-card-vectors.ts <applet checkout>` fails on drift), and
+  `oracle.json`, independent host-side vectors from `scripts/vectors/card-oracle.py`
+  (libsecp256k1, the Argon2 reference implementation, pyca/cryptography).
 - `scripts/card-sim/` and `bun run card:sim`: the real qntx applet at the commit
   `vectors/card/SOURCE` pins, in its patched jcardsim, behind a multi-card stdio bridge with a
   power-loss hook; the kernel's simulator suites and CI's `card.yml` run against it.
-- `scripts/check-kernel-budget.ts` reports the card module on its own line with a measured budget.
+  `bun run smoke:hermes` also runs the card protocol client under bare Hermes, and
+  `scripts/check-kernel-budget.ts` reports the card module on its own line with a measured budget;
+  `scripts/check-boundaries.ts` keeps `modules/card/protocol/` self-contained.
 - `apps/harness`: a card-surfaces page (`EXPO_PUBLIC_CARD_SURFACES=1`) that drives both surfaces
   through a real kernel runtime with a fake card reader, and a leak check proving the typed code
   never appears in any main-runtime message, log, event payload or React state.
@@ -993,8 +1000,6 @@ Gateway (operators):
 - `@qntx/wallet-engine`: app origins may prepare `evm.transaction` and `evm.fiat24-session`
   requests (decoded and prompted like any other); dApps still cannot request a Fiat24 session and
   the wallet's internal requests still sign only typed data.
-- `@qntx/wallet-engine`: `RequestEndedError.signed` — whether the request had reached `signed`
-  when it ended; `false` proves nothing it produced was broadcast.
 - `@qntx/wallet-engine/apps`: `AppStorage.list(group)`.
 - `@qntx/wallet-engine`: the chain decoder's intent warnings become risk findings for every
   origin. `RiskFinding.code` gains `fiat24-unlimited-approval` and `fiat24-account-move`
@@ -1039,7 +1044,6 @@ Gateway (operators):
 - `@qntx/wallet-engine`: `StakePosition` gains `staker` and `withdrawer`; the TRON account schema
   carries `owner_permission`, `active_permission` and `witness_permission`;
   `TransactionController.addressOf` and `prepareSolanaRevoke`.
-
 - `@qntx/wallet-engine`: `engine.nfts` (`NftController`) — NFT inventory per owner and network
   from the gateway: ERC-721 and ERC-1155 on the 22 built-in EVM mainnets the gateway's NFT
   provider covers, and Solana (Metaplex Token Metadata, programmable, Core and compressed NFTs).
@@ -1089,7 +1093,11 @@ Gateway (operators):
   weekly, are deleted when a wallet is disabled or removed, and stay active while the vault is
   locked. A submitted outgoing transaction of an opted-in wallet is registered so the gateway can
   report its settlement or on-chain failure. New `EngineOptions.pushKeys` (`PushKeyStore`) hands the
-  per-subscription payload keys to the host for its notification extension. A family whose
+  per-subscription payload keys to the host for its notification extension; at `init` the
+  controller deletes every host-stored key whose subscription row is gone (`PushKeyStore.ids()`),
+  so a key orphaned by `vault.reset()` cannot keep opening the erased wallets' deliveries during
+  the gateway's 30-day retention. A partially pinned external-custody wallet subscribes the groups
+  and families it can read. A family whose
   addresses need a hardware device that has not pinned that path reports `device-required` in the
   per-wallet `NotificationStatus` — the same for a card wallet's family with no cached
   material — instead of silently staying pending, and a failing family no
@@ -1138,32 +1146,57 @@ Gateway (operators):
   public material (device identity, master fingerprint, pinned public keys); `pinnedMaterial`
   serves `wallet.accounts`, including public derivation off the non-hardened tail. A wallet whose
   `custody` is `"hardware"` carries no seed, so no hardware secret ever exists in the kernel.
-- `@qntx/wallet`: `WalletInfo` is a `custody` union — `VaultWalletInfo` (the existing shape) or
-  `HardwareWalletInfo` (`device`, `fingerprint`, optional `model`/`firmware`, and `supported`:
+- `@qntx/wallet`: `HardwareWalletInfo` (see the breaking `custody` union above; `supported` says
   whether this build ships a driver for `device` — a wallet paired under a device kind a later
-  build dropped stays inert, not unreadable). `HARDWARE_DEVICES`
-  lists the supported devices. Error codes `device-required`, `device-locked`,
-  `device-app-closed`, `device-rejected`, `wrong-device`.
+  build dropped stays inert, not unreadable) and `HARDWARE_DEVICES` (`keystone`, `ledger`,
+  `onekey`). Error codes `device-required`, `device-locked`, `device-app-closed`,
+  `device-rejected` (the user refused on the device, also an on-device address check) and
+  `wrong-device` (another device answered, or it showed a different address).
 - `@qntx/wallet/hardware`: `hardware(wallet)` — `start(op, { io, verify? })` runs one operation
   (`pair`, `accounts`, `sign`, `verify-address`) over a host-supplied `DeviceIo` and returns a
   `SignerTask`; `sign` takes the same `verify` factor and re-runs the same result checks as
-  `chains().sign`. `HidPort`/`BlePort` are the host transport contracts the shipped
+  `chains().sign`. Fetches that add device material are verification-gated: `pair` requires
+  `verify` (`invalid-input` without it), and `accounts` for paths the pin lacks answers
+  `approval-required` unless a `verify` is passed; a re-read of pinned paths needs neither.
+  `HidPort`/`BlePort` are the host transport contracts the shipped
   `ledgerHidExchange`/`ledgerBleExchange`/`oneKeyHidExchange`/`oneKeyBleExchange` run over.
   `qrParts`/`qrReader` are the UR plumbing for air-gapped transports:
   cyclic uppercase fountain parts and a strict incremental decoder over `@qntx/ur` 4.1.0 (optional
   peer).
+- Pinned keys are unconfirmed until the device shows them. Every `ChainAccount` variant carries
+  `confirmed` (software-seed and card accounts are always confirmed) and the bitcoin variant the
+  sealed `changeMark`. A `verify-address` answered `matched: true` seals the serving path into the
+  hardware record's `confirmed` list — confirming one account node confirms every group it
+  serves; entries merged without a check stay unconfirmed. `chain.exportAccount` (and the
+  engine's `QrExportParams` / `SignStartParams`) refuse unconfirmed material with
+  `approval-required` unless `acknowledgeUnconfirmed: true` is passed, which adds one danger row
+  per unconfirmed node to the approval prompt. A hostile transport at first fetch can therefore
+  pin foreign receive keys only as visibly unconfirmed ones. (MIGRATION §35)
+- Hardware prompts lead with the device line — `clear` (check the request on the device) or
+  `blind` — ahead of the chain prompt's rows, its room reserved by the prompt bound. For Ledger the
+  kernel strips the wallet's own BIP-32 derivations from every PSBT output the prompt shows:
+  app-bitcoin hides a change-chain output carrying the policy's fingerprint with no index bound, so
+  an unusual-path own-key output the phone shows would otherwise be hidden on the device.
+  (MIGRATION §34)
 - **Keystone 3 Pro over QR** (`modules/signers/keystone/`): pairing from the sync
   `crypto-multi-accounts`, per-group account keys via `qr-hardware-call` key derivation (firmware
   path allow-list enforced before any QR is shown), signing for every supported request kind —
   EVM legacy/EIP-1559/EIP-7702/personal/typed-data, TRON transaction/message, Solana
   transaction/message, Bitcoin PSBT (incl. taproot) and legacy message — and on-device address
-  verification. Firmware-3.2.2-compatible CBOR registries, digest self-checks before display,
-  request-id binding, `samePsbtContent` on returned PSBTs. `vectors/keystone/` +
-  `scripts/vectors/keystone.ts` pin sync, sign and hardware-call frames against the vendor
-  encoders.
-- **OneKey hardware wallets over USB or BLE** (`modules/signers/onekey/`; emulator-tested on Classic 1S
-  3.21.0 and Pro 4.21.0; Classic, Mini and Touch follow the same protocol under firmware gates from
-  source, untested on hardware): `"onekey"` in
+  verification, allow-listed to what its Receive menu can show (EVM, TRON and Solana bip44-style
+  accounts, BTC mainnet account-0 receive addresses — BTC testnet/signet and BTC group > 0 answer
+  `unsupported` and can never be confirmed on a Keystone). Every UR it exchanges — including
+  `btc-sign-request`, `btc-signature` and `qr-hardware-call` — is encoded and decoded through
+  `@qntx/ur` 4.1.0; digest self-checks before display, request-id binding (a `btc-signature`
+  without its request id is malformed, `integrity`), `samePsbtContent` on returned PSBTs.
+  `vectors/keystone/` + `scripts/vectors/keystone.ts` pin sync, sign and hardware-call frames
+  against the vendor encoders and the firmware 3.2.2 sources. **Coverage:** written from the
+  Keystone 3 firmware 3.2.2 and ur-registry sources and checked against vendor encoders only — not
+  run on a device or an emulator.
+- **OneKey hardware wallets over USB or BLE** (`modules/signers/onekey/`). **Coverage:** verified
+  on the vendor emulators of Classic 1S firmware 3.21.0 and Pro firmware 4.21.0; Classic, Mini and
+  Touch follow the same protocol under firmware gates written from source and are untested; no
+  model has been tested on hardware. `"onekey"` in
   `HARDWARE_DEVICES` and a Protocol-V1 wire client with the driver over it. Pairing pins six
   secp256k1 account nodes (BIP-44/49/84/86, EVM, TRON) and the SLIP-10 ed25519 Solana leaf with
   root-fingerprint agreement and host-side address cross-checks; `sign` re-probes the pinned
@@ -1173,7 +1206,9 @@ Gateway (operators):
   taproot) and legacy/BIP-322 messages (BIP-322 on Pro ≥ 4.9.3). `@qntx/wallet/hardware` exports
   `oneKeyHidExchange` (64-byte report writes, whole-sequence answers), `oneKeyBleExchange`
   (MTU-split writes, concatenated notifications) and `oneKeyIo` — the host half of the OneKey
-  transport. `vectors/onekey/` pins emulator recordings at
+  transport; both collect an answer to its announced length exactly (a short HID report, an empty
+  read or a BLE stream past the declared payload is `integrity`). `vectors/onekey/` pins
+  emulator recordings at
   protocol and driver level for Classic 1S 3.21.0 and Pro 4.21.0; `onekey.yml` re-records them
   in CI.
 - `@qntx/wallet-chains/evm`: `evmSigningPreimage` — the unsigned EIP-155/EIP-2718 bytes whose
@@ -1181,7 +1216,10 @@ Gateway (operators):
   EIP-712 document, for signers that take the two hashes; `@qntx/wallet-chains/bitcoin`:
   `legacyMessageHash`.
 - **Ledger Nano S Plus / Nano X / Stax / Flex** (`modules/signers/ledger/`, device literal
-  `"ledger"`): pairing from the Bitcoin app (the only Ledger app that reveals the BIP-32 master
+  `"ledger"`). **Coverage:** verified on Speculos emulating the Nano S Plus with the pinned app
+  releases (Bitcoin 2.5.1, Ethereum 1.24.0, Solana 1.16.0, Tron 0.8.2); Nano X, Stax and Flex run
+  the same apps and APDU protocols but are untested, and no model has been tested on hardware.
+  Pairing from the Bitcoin app (the only Ledger app that reveals the BIP-32 master
   fingerprint) with the four group-0 Bitcoin account keys pinned; per-family account keys from the
   Ethereum (chain-code public key), Tron and Solana apps, one app per `accounts` call; on-device
   address display for every family; signing of EVM legacy / EIP-2930 / EIP-1559 / personal_sign /
@@ -1193,7 +1231,11 @@ Gateway (operators):
   shows the request in full or signs blind. Refused before any prompt (`unsupported`): EIP-7702
   (not in the Ethereum app's default build since 1.24.0), raw Solana messages that are not formal
   off-chain documents, BIP-322 (Bitcoin app 2.6.0 is not released to devices), mixed-template
-  PSBTs, non-mainnet Bitcoin.
+  PSBTs, non-mainnet Bitcoin. Fetching a non-bitcoin family's accounts re-proves the live device's
+  identity first — those apps cannot reveal the master fingerprint, so one already-pinned key of
+  the same family is re-fetched and must match byte for byte (`wrong-device` otherwise); the first
+  fetch of a family is trust-on-first-use, like pairing, until an on-device address check
+  confirms it.
 - The Ledger protocol client (`modules/signers/ledger/protocol/`): a pure, Hermes-safe implementation of
   the documented APDU protocols of the Bitcoin (v2: merkleized PSBTv2, default wallet policies,
   bounded interactive client), Ethereum (incl. EIP-712 full mode and the legacy safe-chunk rule),
@@ -1212,13 +1254,16 @@ Gateway (operators):
   pinned apps (`scripts/ledger/apps.json`) and re-checks the transcripts and the end-to-end
   signing flow live on Speculos.
 - `@qntx/wallet-engine`: `EngineOptions.deviceIo` — the host's per-device-kind `DeviceIo`
-  factory, wired once at `createWalletEngine` — and `engine.signers`, the engine's
+  factory, wired once at `createWalletEngine` and the one transport seam for every hardware
+  signature whatever the request's origin (absent, hardware signatures fail `unsupported`) — and
+  `engine.signers`, the engine's
   external-signer orchestration. `getState`/`store.subscribe` reports the one `SignerActivity`
   allowed at a time (a card operation publishes the kernel's `card` steps, a hardware operation
   `device` exchanges); a second start refuses `conflict` without touching the running operation;
   a vault lock cancels it. `cancel()` ends the running operation; `verifyAddress` shows an
   address on the device's screen; `fetchAccounts` pulls one family's pinned accounts (Bitcoin
-  once per enabled network, the others once) and re-runs that family's discovery check. Every
+  once per enabled network, the others once; it takes the same `verify` as `hardware.begin`
+  `accounts`) and re-runs that family's discovery check. Every
   engine signature routes through it — vault material signs directly, a card request runs a card
   task, a hardware request a device operation — and the typed refusals (`unsupported` for
   sessions/Spark/Nostr, `invalid-input` for a Fiat24 session grant) land before any activity
@@ -1233,13 +1278,6 @@ Gateway (operators):
 - `@qntx/wallet`: `chain.exportAccount` / `chains(wallet).exportAccount` — the selected account's
   public keys (the EVM account node with its chain code, per-family leaf keys, the Bitcoin
   account xpub), behind user verification, from derived (vault) or pinned (hardware) material.
-- `@qntx/wallet-engine`: `RequestOrigin` gains `{ kind: "qr", declared? }` — a request that
-  entered through a scanned UR frame, attributed to the counterpart's self-declared label
-  (display-only, untrusted). Every switch on `RequestOrigin["kind"]` must name it. (MIGRATION §33)
-- `@qntx/wallet-engine`: `EngineOptions.deviceIo` is the one transport seam for every hardware
-  signature whatever the request's origin — the interim `devices` (`DeviceTransport`)
-  per-signature callback is removed; absent, hardware signatures fail `unsupported`.
-  (MIGRATION §32, §33)
 - `@qntx/wallet-engine/qr`: QR signer mode — `createQrScanner` folds scanned UR frames into a
   payload, `readQrRequest` decodes and re-checks it, `inspectQrRequest` decodes without binding,
   `qrSigner({ engine, wallet }).prepare` binds it (per-family network binding, account match,
@@ -1254,24 +1292,16 @@ Gateway (operators):
   The counterpart side:
   `readQrExport`, `qrSignRequest`, `readQrSignature` and the `QrLink`/`QrSignInput`/
   `QrSentRequest`/`QrSignature` types. `WatchAccount.qr` persists a phone link on a watch-only
-  account so a Web session can sign through it without holding keys. (MIGRATION §33)
+  account so a Web session can sign through it without holding keys. The signer serves vault,
+  card and hardware wallets (imported keys stay refused), resolves the request's own family only
+  and surfaces a family with no pinned material as `device-required`; the master fingerprint is
+  the device's for hardware and the group's `btc.bip84` mainnet fingerprint for vault and card.
+  `QrEngineSurface` includes `signers: { apis }`. A request scanned this way carries the origin
+  `{ kind: "qr", declared? }`, attributed to the counterpart's self-declared label (display-only,
+  untrusted). (MIGRATION §33)
 
 ### Changed
 
-- `@qntx/wallet`: `sessions.create` and `sessions.open` on a card or hardware wallet answer
-  `unsupported` before the app-lock check, the limits text, the session-approval secure input or
-  any factor ceremony. A remembered card access code is suspended while the app lock is off —
-  it cannot verify until the lock comes back on. (MIGRATION §30, §32)
-- `@qntx/wallet-engine/qr`: the signer accepts card wallets (imported keys stay refused), resolves
-  the request's own family only, and surfaces a family with no pinned material as `device-required`;
-  the master fingerprint is the device's for hardware, the group's `btc.bip84` mainnet fingerprint
-  for vault and card. `QrEngineSurface` gains `signers: { apis }`. (MIGRATION §33)
-- `@qntx/wallet`: hardware prompts lead with the device line (`clear` — check it on the
-  device — or `blind`) ahead of the chain prompt's rows, room reserved by the same bound. For
-  Ledger, the wallet's own BIP-32 derivations are stripped from PSBT outputs the prompt shows —
-  app-bitcoin would hide an unusual-path own-key change output the phone displays. (MIGRATION §34)
-- `@qntx/wallet-engine`: push subscribes the readable groups and families of a partially pinned
-  wallet instead of dropping the wallet's subscriptions. (MIGRATION §27)
 - `@qntx/wallet`: password re-verification (signing, exports, factor and backup management) is
   rate-limited like unlock. `keys.list` no longer renews the idle timer. The call watchdog is
   suspended while a system verification prompt is open, so a slow user no longer crashes the
@@ -1374,9 +1404,6 @@ Gateway (operators):
   cannot take it (vault locked, write error) the row is retried by its own loop and replayed at the
   next unlock. A `signed` row recovered at unlock becomes `submitted` with `rebroadcast: false` —
   watched on chain, never resent. `lock()` clears transaction rows and call batches from memory.
-- `@qntx/wallet-engine`: a Solana durable-nonce transaction is `dropped` only when the nonce
-  account's signature history covering the time since submission does not list it; a listed
-  signature settles the row.
 - **gateway:** client shares, POLICY budgets and flood limiters (IP 3,000 / RPC 1,500 / default 400 per 60 s) are sized from measured engine usage so a fresh all-family cold start uses at most a third of one client prefix's allowance; the README states the concurrency target and its arithmetic.
 - **ci:** the gateway deploy workflow checks required secrets before deploying, rolls back only when the previous version shares the Durable Object migrations (Cloudflare refuses rollbacks across a migration) and alerts otherwise; a new `gateway-workerd` job boots the real worker with Durable Object and rate-limit bindings and runs the smoke plan and budget scenarios against stub upstreams, plus `wrangler deploy --dry-run` for both environments.
 - `@qntx/wallet-chains`: Velora/Paraswap Delta orders deliberately stay blind: the verifying contract is an owner-upgradable module adapter, so the order bounds are not fixed by the signed bytes. 1inch Fusion orders stay blind: their extension's amount getter decides the taking amount and is only hash-committed in `salt`.
@@ -1385,11 +1412,12 @@ Gateway (operators):
   whatever its origin. The wallet signs Fiat24 grants only when it builds them itself.
 - `@qntx/wallet-chains`: an ERC-7821 batch's `DisplayIntent.warnings` now includes the warnings of
   its inner calls. The kernel prompt now also shows the warnings of each Safe inner call.
-- **build:** the size budgets `apps-hyperliquid` 19 → 20 KiB (measured 19 372 B) and chains `tron`
-  80 → 84 KiB (measured 81 364 B) moved once. `scripts/check-kernel-budget.ts` records the owner
-  decision of 2026-11-22 keeping the `hyperliquid-l1-agent` scheme at 16 384 B (15 940 B measured
-  with the L1 encoder in `@qntx/wallet-chains/evm`), and sets the decoder lines from measurement
-  with ≥ 5 % headroom: hyperliquid 11 776 B, polymarket 12 288 B, fiat24 15 872 B.
+- **build:** gzip size budgets for every new entry (engine `apps`, `apps-fiat24`,
+  `apps-hyperliquid`, `apps-polymarket`, `push`, `qr`, `walletconnect`; chains `tron`) and a
+  raised chains `bitcoin` budget, each set from measurement by `scripts/size-check.ts`.
+  `scripts/check-kernel-budget.ts` records the owner decision of 2026-11-22 keeping the
+  `hyperliquid-l1-agent` scheme at 16 384 B and sets the decoder lines from measurement with ≥ 5 %
+  headroom (hyperliquid, polymarket, fiat24).
 - `@qntx/wallet-engine`: one recipient rule for every request. Outflows, swap and bridge settlement
   recipients, staking withdrawals and delegations, nested calls, and the typed-data order
   receivers, Seaport consideration recipients, Safe destinations and Hyperliquid user-signed
@@ -1413,8 +1441,7 @@ Gateway (operators):
 - **@qntx/wallet-chains** — the `*/sign` entries add one local task signer per family
   (`signEvmTask`, `signTronTask`, `signSolanaTask`, `signBitcoinTask`); the raw-key functions
   (`signEvmTransaction`, `signBitcoinPsbt`, …) keep their signatures and outputs and now run
-  plan → task signer → assemble. Legacy P2PKH sighashes still come from `@scure/btc-signer`. The
-  `bitcoin` family size budget is 64 KiB gzip (measured 62 152 B; raised once by owner decision).
+  plan → task signer → assemble. Legacy P2PKH sighashes still come from `@scure/btc-signer`.
 - **Kernel** — `chain.sign` prepares with public keys only (`PublicMaterial`), keeps the plan
   across the verification prompt, and signs it through a `SigningBackend` (today the vault seed /
   imported key). `wallet.accounts` derives addresses and xpubs through the same `PublicMaterial`.
@@ -1424,19 +1451,19 @@ Gateway (operators):
   undecodable typed data) are refused before the prompt with `invalid-input`. A taproot input
   carrying `tapLeafScript` or `tapMerkleRoot` is refused instead of also receiving a script-path
   signature.
-- `@qntx/wallet-native` (experimental card groundwork): the library's Android manifest declares
-  nothing — `android.permission.NFC`, `android.permission.HIDE_OVERLAY_WINDOWS` and the optional
-  `android.hardware.nfc` feature are the host app's to opt into until card wallets ship (the
-  package README lists the exact entries; the harness declares them itself). The iOS pod
-  weak-links CoreNFC. Host apps that want card wallets on iOS add the NFC tag-reading
-  entitlement, `NFCReaderUsageDescription` and the ISO 7816 select identifiers
-  `F0716E74780101`, `D2760000850101` (see the package README). (MIGRATION §30)
+- `@qntx/wallet-native`: the library's Android manifest declares nothing for card wallets —
+  `android.permission.NFC`, `android.permission.HIDE_OVERLAY_WINDOWS` and the optional
+  `android.hardware.nfc` feature are the host app's to opt into (the package README lists the
+  exact entries; the harness declares them itself). The iOS pod weak-links CoreNFC. Host apps that
+  offer card wallets on iOS add the NFC tag-reading entitlement, `NFCReaderUsageDescription` and
+  the ISO 7816 select identifiers `F0716E74780101`, `D2760000850101` (see the package README).
+  (MIGRATION §30)
 - **gateway:** client addresses are parsed strictly: IPv4-mapped IPv6 addresses are keyed by their embedded IPv4 /24, and a deployed gateway answers `400 invalid-request` to a request without a usable `cf-connecting-ip`.
-- **engine:** a Bitcoin balance read follows BIP-44 account discovery (an unused template's change chain is not walked, except `btc.bip84`, which receives every legacy-template send's change), derives UTXOs from the `/scripthash/:h/txs` page when it is complete, and remembers unused templates for the discovery interval: a fresh account's cold start costs 200 Esplora calls instead of 480 and a foreground refresh 81 instead of 380.
-- **build:** `bunfig.toml` exempts `@qntx/fiat24` from the 7-day release cooldown until
-  2026-11-30 (0.1.0 was published 2026-11-23 with SLSA provenance from qntx/fiat24 v0.1.0;
-  bun 1.4.0 ignores `name@version` entries). Remove the entry after that date.
-- **build:** size budget `apps-fiat24` 118 KiB (measured 115 557 B: the bundled SDK).
+- `@qntx/wallet-engine`: a Bitcoin balance read derives UTXOs from the `/scripthash/:h/txs` page
+  when it is complete and remembers templates verified unused for the discovery interval, skipping
+  them until it expires — except `btc.bip84`, the default receive template, which is always
+  re-scanned for deposits. Both chains of a scanned template are walked, the change chain out to
+  the sealed change mark's reach.
 - `@qntx/wallet-engine`: a held Solana mint with 0 decimals and a supply of 1 is an NFT and no
   longer appears in the token list (custom tokens excepted).
 - Gateway: `PriceCache` / `priceCacheOf` become the shared `EdgeCache` / `edgeCacheOf(origin, open)`;
@@ -1452,18 +1479,15 @@ Gateway (operators):
   an upgrade never discards persisted user data from the first production release on. Fenced
   TypeScript blocks in README.md, MIGRATION.md and every package/app README compile under
   `bun run typecheck`.
-- `@qntx/ur` is pinned at 4.1.0 across the workspace; the kernel's Keystone driver encodes and
-  decodes every UR it exchanges through it — `btc-sign-request`, `btc-signature` and
-  `qr-hardware-call` included — and the hand-written CBOR, firmware-3.2.2 registry copies and
-  local codecs are gone. A `btc-signature` without its request id is now malformed (`integrity`)
-  rather than `wrong-device`.
 - `@qntx/wallet-engine`: `BitcoinPsbtInput.sign[].template` accepts all four account templates —
   a QR counterpart may name `btc.bip44`/`btc.bip49` where a dApp only uses `btc.bip84`/`btc.bip86`.
   Hosts switching on the template need the new members. (MIGRATION §33)
 - Bun is pinned by the root `packageManager` field (`bun@1.4.4`): every `setup-bun` step resolves
-  that version — the publish path included — and a local mismatch is refused. The
-  `minimumReleaseAgeExcludes` entry for `@qntx/fiat24` is pinned to `@qntx/fiat24@0.1.0`, so only
-  that release skips the 7-day cooldown.
+  that version — the publish path included — and a local mismatch is refused. `bunfig.toml`'s
+  `minimumReleaseAgeExcludes` lets exactly `@qntx/fiat24@0.1.0` (published 2026-11-23) and
+  `@qntx/ur@4.1.0` (published 2026-11-25), coordinated first-party releases with SLSA provenance,
+  skip the 7-day cooldown; each entry is removed once its release is a week old (2026-11-30 and
+  2026-12-02).
 - SECURITY.md is rewritten for the shipped surfaces (card ops, external signers, the sealed
   change mark); every source citation is a `file.ts` + symbol pair that
   `scripts/check-security-anchors.ts` verifies in `lint` — a line-number anchor or a dangling
@@ -1471,21 +1495,6 @@ Gateway (operators):
 
 ### Fixed
 
-- `@qntx/wallet-engine`: a second signer operation started while one runs no longer cancels the
-  running one — `card()`/`hardware()` start semantics tore down the tap or device confirmation in
-  progress before the `conflict` refusal; the op now refuses before it starts, and an unsupported
-  device refuses without publishing an activity.
-- `@qntx/wallet-kernel`: fetching a non-bitcoin family's accounts on a Ledger re-proves the live
-  device's identity first — those apps cannot reveal the master fingerprint, so one already-pinned
-  key of the same family is re-fetched and must match byte for byte (`wrong-device` otherwise);
-  material from a different device answering could merge undetected before. The first fetch of a
-  family stays trust-on-first-use, like pairing; verify an address on the device to close it.
-- `@qntx/wallet-kernel`: a user rejecting an on-device address verification reports
-  `device-rejected` on every driver — a Ledger rejection was previously read as `wrong-device`,
-  the code reserved for a device showing a different address.
-- `@qntx/wallet`: the OneKey HID/BLE exchanges collect a device answer to its announced length
-  exactly — short HID reports, an empty read and a BLE stream past the declared payload are
-  `integrity` like the Ledger assemblers report them.
 - `@qntx/wallet-native`: the kernel bytecode is compiled with `-Xes6-block-scoping`. hermesc
   leaves ES6 block scoping off by default, so on React Native a closure over a loop-scoped
   `let`/`const` in kernel code saw the last iteration's value. The kernel now refuses to start in
@@ -1540,15 +1549,13 @@ Gateway (operators):
 - `@qntx/wallet-engine` sends: an ambiguous broadcast no longer leads to a double payment — the id
   comes from the signed bytes, the EVM nonce and Bitcoin inputs are held before the network call,
   and the tracker rebroadcasts the same bytes until the outcome is known, including after a
-  restart. A Bitcoin transaction unknown to both Esplora endpoints for 30 minutes is `dropped` and
-  releases its inputs; inputs are released on every terminal state; one whose input a confirmed
-  foreign transaction spends settles `replaced`.
+  restart. A Bitcoin transaction's inputs are released on every terminal state, and one whose
+  input a confirmed foreign transaction spends settles `replaced`.
 - `@qntx/wallet-engine` Bitcoin fee bumps: replacements spend only the original's inputs and the
   original account; coin selection spends only confirmed outputs and the wallet's own unconfirmed
   change, and replacements never add unconfirmed inputs; replacement and CPFP fees use a
-  per-template vsize estimate and the replacement's own size for the BIP-125 rule-4 floor; CPFP of
-  a bip44/bip49 parent builds on the bip84 change chain; a cancel that cannot pay its fee is
-  refused.
+  per-template vsize estimate and the replacement's own size for the BIP-125 rule-4 floor; a
+  cancel that cannot pay its fee is refused.
 - `@qntx/wallet-engine` Spark: paying a Bitcoin address shows the SSP fee and refuses a quote above
   `maxFeeSats` before approval; a corrupt exit-chain index, chain record or payment note is
   skipped instead of failing the client or the history page.
@@ -1579,10 +1586,24 @@ Gateway (operators):
   payment. Its expiry is bounded by the processed block height plus 150.
 - `@qntx/wallet-engine` sends: signed bytes are never broadcast unless they reached the store; a
   vault that locks first fails the send with nothing sent.
-- `@qntx/wallet-engine` Solana tracking: a transaction is `dropped` only when the expiry is proven
-  — the block height (read first) is past `lastValidBlockHeight`, the cluster has no entry at any
-  commitment, and the status came from a bank at least as far along. A transaction landing between
-  the reads is no longer finalised `dropped`.
+- `@qntx/wallet-engine` Solana tracking: a transaction ends `dropped` only on a proof. A blockhash
+  transaction needs the block height (read first) past `lastValidBlockHeight`, the polling
+  endpoint's own `isBlockhashValid` saying the blockhash is dead, no entry at any commitment, a
+  status from a bank at least as far along, and the answering node's history reaching back before
+  the submission (`getFirstAvailableBlock` and its `getBlockTime`, which cover the blockstore and
+  BigTable the status lookup searches) — otherwise it stays `submitted`. A durable-nonce
+  transaction (first instruction `AdvanceNonceAccount`, from the wallet or a dApp) is never
+  dropped by block height: only when the nonce account (read at `finalized`) no longer holds its
+  nonce, a bank at least as fresh has no status entry, and the nonce account's signature history
+  covering the time since submission does not list it (a listed signature settles the row); one
+  whose nonce account was loaded from a lookup table stays tracked until it lands. Every read of a
+  drop proof comes from one pinned upstream, and a configured host endpoint must prove the same
+  drop — without one, three consecutive polls spanning more than one blockhash processing age
+  (150 blocks × 400 ms) — and the upstream the poll is pinned to never corroborates itself (after
+  a gateway failover to a host endpoint the host-only rule applies); the self-corroboration rule
+  also governs TRON drops and reorgs. A transaction landing between the reads, a lagging
+  endpoint, a single gateway upstream or a long time offline can no longer end a landed
+  transaction `dropped`.
 - `@qntx/wallet-engine` EVM nonces: a nonce is reserved for its transaction in the same step as the
   request's commit, so two overlapping approvals can no longer sign the same nonce; a refused send
   frees only its own nonce and never one a live transaction holds; a self-sponsored EIP-7702
@@ -1607,10 +1628,6 @@ Gateway (operators):
   wiped `SecretWire` zeroes any late copy.
 - `@qntx/wallet`: a params byte field that is classified neither secret nor public fails
   typecheck, so a new secret field cannot silently become a plain call.
-- `@qntx/wallet-native`: a start that fails after claiming the kernel slot keeps the
-  still-stopping predecessor for the next start and unregisters its lifecycle host; a successor
-  waits for the whole chain of stopping runtimes instead of crashing the session after 10 s; a
-  runtime destroyed while waiting never evaluates the kernel.
 - `@qntx/wallet-engine`: a Spark payment whose commit answer was lost, or that was still in flight
   when the app stopped, is no longer invisible after the request returns: it stays recorded and
   shown as pending until the operator settles or fails it.
@@ -1633,13 +1650,6 @@ Gateway (operators):
   best-effort for the same reason.
 - A broadcast settling after lock→unlock no longer writes into the new session's transactions or
   re-arms its timers.
-- Solana durable-nonce transactions (first instruction `AdvanceNonceAccount`), from the wallet or a
-  dApp, are never dropped by block height; they end only when they land or when the nonce account
-  (read at `finalized`) no longer holds their nonce and a bank at least as fresh has no status
-  entry. A nonce account loaded from a lookup table is kept tracked until the transaction lands.
-- A Solana blockhash expiry is proven only when the polling endpoint's own `isBlockhashValid`
-  says the blockhash is dead — a bound read from a lagging endpoint at request time can no longer
-  drop a transaction that can still land.
 - Spark payments that throw after the commit call are no longer reported failed unless the Spark
   operator's own listing shows no such transfer; otherwise they stay `unknown` (WebLN `-32010`).
   Spark errors are categorized by class before message text (a 502 mentioning "rejected" is a
@@ -1649,8 +1659,6 @@ Gateway (operators):
 - `@qntx/wallet`: the type-level guard that every bytes-carrying RPC param field is classified
   secret or public now sees bytes in union members, nullable array elements, `ArrayBuffer`s and
   `Map`/`Set` values.
-- `@qntx/wallet-native`: each lock/unlock no longer leaks the previous kernel runtime and its copy
-  of the kernel bytecode (the predecessor chain is released on teardown).
 - scripts: the source boundary checker no longer skips `.js`/`.cts` files, nested
   `generated`/`dist`/`node_modules` directories or symlinks, and refuses `#imports`, tsconfig
   `paths`, absolute specifiers, `require()` and `import.meta.glob` in library source.
@@ -1673,13 +1681,6 @@ Gateway (operators):
   nested structs, arrays) contain hidden or reordering characters are blind `message-bytes`,
   exactly like text messages; the kernel prompt leads with the hidden-characters warning. RGI
   emoji sequences stay described.
-- `@qntx/wallet-engine`: a Solana transaction is `dropped` only when every read of the poll comes
-  from one pinned upstream and a configured host endpoint proves the same drop, or, without one,
-  after three consecutive polls spanning more than one blockhash processing age (150 blocks ×
-  400 ms). One gateway upstream could previously end a landed transaction `dropped`.
-- `@qntx/wallet-native`: `HybridKernelHost` failed to compile on iOS (`reset()` on a const
-  captured `shared_ptr`).
-- `apps/harness`: the V1 probe module followed the `SecretBytes` kernel-runtime hooks again.
 - Importing a single private key now triggers a backup upload (coverage counted only HD wallets).
 - A restore into a fresh vault that skipped a wallet needing its BIP-39 passphrase no longer lets
   the first sync overwrite the only cloud copy of that wallet.
@@ -1692,9 +1693,6 @@ Gateway (operators):
   gets Simplified-Chinese verification prompts — the tag parses as BCP-47 (an explicit script
   maps Hans to zh-Hans and anything else to English; without one, TW/HK/MO map to English, else
   zh-Hans).
-- `@qntx/wallet`: pinned hardware-wallet material bytes are copied out of kernel replies — a
-  reply transfer detached the stored pin buffers, so a later answer (a QR account export) read
-  empty or invalid keys.
 
 ### Security
 
@@ -1709,14 +1707,6 @@ Gateway (operators):
   wallet or retired backup key restored, blind signing re-enabled) and a zeroed password failure
   counter are detected through the vault anchor above, within the limits SECURITY.md lists per
   host.
-- `@qntx/wallet-kernel`: a stolen `hyperliquid-l1-agent` session key is bounded. Create and
-  re-open (`sessions.open`) need a fresh user verification and are refused `app-lock-required`
-  while the vault holds its `device` factor; every signature is metered against the approved
-  `limits` — cumulative notional budget, leverage cap, asset allow-list — and `spent` is committed
-  before the signature returns, so a compromised main runtime can trade at most up to the
-  remaining budget (the scheme signs only the allow-listed L1 actions and cannot withdraw). The
-  budget is the bound on loss: the kernel cannot know prices, so absurd spot prices in a thin
-  book can lose up to it.
 - `@qntx/wallet-kernel` + `@qntx/wallet-native`: the backup password is collected inside the
   kernel runtime through `SecureInput` on React Native — the main runtime sees only
   `idle | empty | filled | submitted`, never the characters; a compromised runtime can still draw
@@ -1730,8 +1720,6 @@ Gateway (operators):
 - `@qntx/wallet-chains`: an EIP-7702 authorization or `eip155` id with chain id 0 — the
   chain-universal form that replays on every chain — is refused before any prompt, and only
   canonical eip155 ids parse.
-- `@qntx/wallet-engine`: the price request no longer carries every family's assets under the
-  `service` client id, which let the gateway link a wallet's per-family scopes by its asset set.
 - `@qntx/wallet`: `chains(wallet).sign` refuses a kernel result whose kind differs from the request's for every request kind (a Solana request previously accepted any result kind unchecked).
 - `@qntx/wallet-chains`: an undecoded Solana program that receives the signer is described only with an exposure statement leading the prompt — it can move all SOL of the account and act with its authority on every listed writable account (the signer's ATAs for listed mints are named). Writable lookup-table accounts or more than 12 such accounts make the request blind with the new reason `program-authority`.
 - `@qntx/wallet-chains`: an undecoded typed-data document with any hash or raw-bytes leaf (non-empty `bytes`, `bytesN`, or a string encoding ≥ 32 bytes / > 40 hex digits) is blind `typed-data-commitment`; a readable decoy leaf no longer makes it described.
@@ -1760,14 +1748,6 @@ Gateway (operators):
   refused, mainnet reads are `reads-unverified`). `Independent` (the `NetworkController`
   cross-check client) gains `source: "host" | "gateway"`; history marks entries verified only when
   a host endpoint answered.
-- `@qntx/wallet-engine`: a Solana blockhash transaction ends `dropped` only when the answering
-  node's history provably reaches back before the submission (`getFirstAvailableBlock` and its
-  `getBlockTime`, which cover the blockstore and BigTable that the status lookup searches). A node
-  without that history leaves the transaction `submitted`; it no longer reads a landed transaction
-  as dropped after a long time offline.
-- `@qntx/wallet-engine`: a Solana or TRON drop or reorg is never corroborated by the upstream the
-  poll is pinned to. When the gateway failed over to a host endpoint, the host-only rule applies
-  (repeated observations spanning the network's bound) instead of the host confirming itself.
 - `@qntx/wallet-engine`: a Spark cooperative exit is assessed against known bitcoin addresses
   (`first-recipient`, `address-poisoning`). Approval and permission grantees — token and operator
   spenders, Solana stake authorities, TRON permission keys, Morpho `authorized` and Aave
@@ -1775,31 +1755,6 @@ Gateway (operators):
 - `@qntx/wallet-chains`: hidden or reordering characters in a typed-data type name, field name,
   field type or `primaryType` make the document blind (`message-bytes`), like the same characters
   in a value.
-- `@qntx/wallet-kernel` + `@qntx/wallet-chains/bitcoin`: the hidden-change bound is a sealed
-  per-(wallet, group, purpose, network) mark in a `change-marks` vault record, raised before
-  signing by the highest same-purpose change index of the signed inputs — and only when the
-  request declares `origin: "internal"`. A crafted PSBT can no longer park change at an index
-  the wallet will never scan: the engine scans the change chain out to `mark +
-  BITCOIN_GAP_LIMIT` and deliberately reuses the bound index when the first free one lies past
-  it. A seed-only restore starts the mark at 0; SECURITY.md states the residual. (MIGRATION §35)
-- `@qntx/wallet-kernel`: external-signer fetches that add material are verification-gated, and
-  pinned entries are unconfirmed until an on-device check. `hardware.begin` `pair` requires
-  `verify`; `accounts` answers `approval-required` when the pin lacks the requested paths. A
-  hostile transport at first fetch could pin foreign receive keys undetected — pinned entries
-  now land `confirmed: false` until `verify-address` matches on the device, `wallet.accounts`
-  reports the flag, and `chain.exportAccount` refuses unconfirmed material without
-  `acknowledgeUnconfirmed` (which adds a danger row per node). Keystone confirmation is
-  allow-listed to what its Receive menu can show — BTC testnet and BTC group > 0 can never be
-  confirmed there. (MIGRATION §35)
-- `@qntx/wallet-kernel`: on keystore hosts only a successful factor verification re-arms the
-  15-minute idle lock — `session.touch` and other presence-marked methods no longer count, so a
-  compromised main runtime cannot hold the vault (and open sessions) unlocked. On the Web,
-  presence-marked methods still count. (MIGRATION §35)
-- `@qntx/wallet-kernel`: the Hyperliquid approval prompt labels each market by its numeric asset
-  id rendered `#id` (perp/spot split at 10000) instead of a bare id the user cannot map to a
-  coin — the kernel keeps no trusted id→name table, so the id is the field a compromised
-  runtime cannot relabel on the kernel surface. Hosts must show the id next to their market
-  name. (MIGRATION §35)
 
 ## [0.13.0] - 2026-11-09
 
