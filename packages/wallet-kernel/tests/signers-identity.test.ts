@@ -694,9 +694,7 @@ describe("keystone verifyAddress allow-list", () => {
       },
       pin,
     );
-    expect(requests).toStrictEqual([
-      { kind: "compare", address: "a", path: "m/44'/501'/49'/0'" },
-    ]);
+    expect(requests).toStrictEqual([{ kind: "compare", address: "a", path: "m/44'/501'/49'/0'" }]);
     expect(verdict).toStrictEqual({ method: "compare", matched: true });
   });
 
