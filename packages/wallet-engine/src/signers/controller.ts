@@ -86,10 +86,11 @@ export class SignersController extends Controller<SignersState> {
           ? this.options.wallet.getSnapshot().wallets.find((w) => w.walletId === account.walletId)
           : undefined;
       if (info?.custody === "card") {
+        // Card pins confirm every entry by construction — the acknowledgement never applies.
         return this.cardSign(params.request, params.verify);
       }
       if (info?.custody === "hardware") {
-        return this.deviceSign(info, params.request, params.verify);
+        return this.deviceSign(info, params.request, params.verify, params.acknowledgeUnconfirmed);
       }
       return chains(this.options.wallet).sign(params);
     },
@@ -236,11 +237,20 @@ export class SignersController extends Controller<SignersState> {
     info: WalletInfo,
     request: Parameters<ChainApis["sign"]>[0]["request"],
     verify: VerifyFactor,
+    acknowledgeUnconfirmed?: true,
   ): Promise<ChainSignResult> {
     // Resolved before begin: an unsupported device refuses without publishing an activity.
     const io = this.deviceIo(info);
     const result = await this.trackDevice(info, "sign", () =>
-      hardware(this.options.wallet).start({ kind: "sign", request }, { io, verify }),
+      hardware(this.options.wallet).start(
+        {
+          kind: "sign",
+          request,
+          // Only hardware material can be unconfirmed — the kernel gate needs the flag forwarded.
+          ...(acknowledgeUnconfirmed === true ? { acknowledgeUnconfirmed: true } : {}),
+        },
+        { io, verify },
+      ),
     );
     if (result.kind !== "sign") {
       throw new WalletError("integrity", "device answered a different operation");
