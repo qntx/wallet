@@ -10,11 +10,28 @@ permissions:
   contents: read
 
 jobs:
+  toolchain:
+    runs-on: ubuntu-latest
+    outputs:
+      bun-version: ${{ steps.bun.outputs.bun-version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: package.json
+          sparse-checkout-cone-mode: false
+      - id: bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
   smoke:
+    needs: toolchain
     uses: qntx/workflows/.github/workflows/ci-hermes.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
     permissions:
       contents: read
     with:
+      bun-version: ${{ needs.toolchain.outputs.bun-version }}
       # Must track the Hermes version bundled with the React Native version the
       # harness and meowl target (RN 0.88 → hermes-v260318099.0.4).
       hermes-commit: d412d3bd851278712c20cca25d094e32641a0465

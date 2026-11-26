@@ -65,7 +65,7 @@ jobs:
       - run: >-
           bun scripts/vectors/onekey-emulator.ts --driver
           --model ${{ matrix.model }} --out "$RUNNER_TEMP/onekey"
-      - run: ONEKEY_TRANSCRIPTS="$RUNNER_TEMP/onekey" bunx vitest run tests/onekey-*.test.ts
+      - run: ONEKEY_TRANSCRIPTS="$RUNNER_TEMP/onekey" bunx vp test --project unit 'tests/onekey-*.test.ts'
         working-directory: packages/wallet-kernel
       # The engine sessions start from an uninitialized device too: replace the seeded container.
       - run: |
@@ -77,6 +77,6 @@ jobs:
       - run: >-
           bun scripts/vectors/onekey-emulator.ts --engine
           --model ${{ matrix.model }} --out "$RUNNER_TEMP/onekey"
-      - run: ONEKEY_TRANSCRIPTS="$RUNNER_TEMP/onekey" bunx vitest run tests/signers-e2e/onekey.test.ts
+      - run: ONEKEY_TRANSCRIPTS="$RUNNER_TEMP/onekey" bunx vp test --project unit tests/signers-e2e/onekey.test.ts
         working-directory: packages/wallet-engine
       - run: bun scripts/vectors/onekey-check.ts --model ${{ matrix.model }} --fresh "$RUNNER_TEMP/onekey"
