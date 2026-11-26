@@ -466,7 +466,8 @@ export type IntentWarningKind =
   | "fiat24-account-link"
   | "fiat24-account-move"
   | "fiat24-account-burn"
-  | "unusual-own-output";
+  | "unusual-own-output"
+  | "unconfirmed-signer-output";
 
 export type IntentWarning = {
   readonly kind: IntentWarningKind;

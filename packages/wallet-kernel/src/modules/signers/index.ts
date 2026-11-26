@@ -480,6 +480,7 @@ export function createSignersModule(
       request,
       materialOf(pin, pinBody(pins, record).confirmed),
       dek,
+      op.acknowledgeUnconfirmed === true,
     );
     const display = driver.display(request, prepared.plan, header);
     if (display === "unsupported") {

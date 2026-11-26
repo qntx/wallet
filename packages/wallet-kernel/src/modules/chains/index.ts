@@ -430,6 +430,7 @@ export const prepareApproval = async (
   request: SignRequest,
   material: PublicMaterial,
   dek: Secret,
+  acknowledgeUnconfirmed: boolean,
 ): Promise<PreparedApproval> => {
   assertHdTemplates(request);
   const storedMark =
@@ -444,6 +445,17 @@ export const prepareApproval = async (
           )
       : () => 0;
   const prepared = await prepareFor(request, material, ctx.platform.now(), storedMark);
+  /* Sending to a key the device never confirmed needs an explicit acknowledgement — the gate
+     reads the same danger warning the prompt would show, before any prompt or verification. */
+  if (
+    !acknowledgeUnconfirmed &&
+    (prepared.prompt.warnings?.some((w) => w.kind === "unconfirmed-signer-output") ?? false)
+  ) {
+    throw new KernelError(
+      "approval-required",
+      "signing to a key never confirmed on the device needs acknowledgement",
+    );
+  }
   const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
   /* A keystore host shows this text in a bounded system dialog, so it is rendered and measured
      before the blind check: an over-long prompt counts as blind and, when allowed, reaches the
@@ -477,7 +489,7 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   // secret and every node are wiped before the (possibly long) system verification prompt; the
   // sign pass re-opens it and executes the prepared plan unchanged.
   const prepared = await openKeys(async (keys) =>
-    prepareApproval(ctx, request, keys.material, dek),
+    prepareApproval(ctx, request, keys.material, dek, params.acknowledgeUnconfirmed === true),
   );
   await verifyFactor(
     ctx,

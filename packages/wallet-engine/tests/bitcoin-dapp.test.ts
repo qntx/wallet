@@ -4,11 +4,13 @@ import { NETWORK, p2tr, p2wpkh, Transaction } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { BitcoinTemplate } from "@qntx/wallet-chains";
+import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import type { ChainAccount, ChainsApi } from "@qntx/wallet/chains";
 
 import { prepareDappPsbts, signDappPsbts } from "../src/chains/bitcoin-dapp.ts";
 import type { Esplora } from "../src/chains/bitcoin.ts";
+import { assessWarnings } from "../src/requests/risk.ts";
 import type { BitcoinPsbtInput } from "../src/requests/types.ts";
 
 const MNEMONIC =
@@ -396,4 +398,121 @@ describe("signDappPsbts", () => {
     ).rejects.toThrow("invalidated");
     expect(posted).toHaveLength(0);
   });
+});
+
+/* A pinned entry the device never confirmed is not own: its own-key outputs are unconfirmed —
+   never hidden, never worded as an own path — the preview carries the danger finding and the
+   sign call carries the acknowledgement the kernel demands. */
+describe("an unconfirmed template's outputs are never own", () => {
+  const apisUnconfirmed = {
+    account: async (params: { template: string }): Promise<ChainAccount> =>
+      Promise.resolve(
+        params.template.startsWith("btc.")
+          ? {
+              ...accountFor(params.template as BitcoinTemplate),
+              confirmed: params.template !== "btc.bip84",
+            }
+          : { template: "evm.bip44", network: "eip155:1", address: "0x0", confirmed: true },
+      ),
+  };
+
+  it(
+    "classifies its output unconfirmed, warns danger, and acknowledges on sign",
+    { timeout: 20_000 },
+    async () => {
+      const { es } = rig();
+      const change = scriptOf("btc.bip84", 1, 0);
+      const changeHex = Buffer.from(change).toString("hex");
+      const psbt = dappPsbt(
+        [{ script: scriptOf("btc.bip84"), amount: 100_000n }],
+        [
+          { script: PAYEE_SCRIPT, amount: 80_000n },
+          { script: change, amount: 15_000n },
+        ],
+      );
+      const [prepared] = await prepareDappPsbts(
+        apisUnconfirmed,
+        es,
+        GROUP,
+        MAINNET,
+        [{ psbt, sign: [signEntry(0, "btc.bip84")] }],
+        new Set<string>(),
+      );
+      /* What a confirmed entry hides as change is foreign under an unconfirmed one — the bound
+         derivation stays so the kernel raises the same warning. */
+      expect(prepared!.own.change.has(changeHex)).toBe(false);
+      expect(prepared!.own.unusual.has(changeHex)).toBe(false);
+      expect(prepared!.own.unconfirmed.has(changeHex)).toBe(true);
+      const bound = Transaction.fromPSBT(prepared!.request.psbt).getOutput(1);
+      expect(bound.bip32Derivation?.[0]?.[1].path.at(-1)).toBe(0);
+
+      // The preview intent warns danger; the risk table turns it into the finding approve gates.
+      const intent = decodeBitcoinPsbt(prepared!.request, prepared!.own);
+      expect(intent.warnings).toContainEqual({
+        kind: "unconfirmed-signer-output",
+        message: expect.any(String),
+        level: "danger",
+      });
+      expect(assessWarnings([intent])).toStrictEqual([
+        { code: "bitcoin-unconfirmed-output", level: "danger" },
+      ]);
+
+      const seen: Array<Parameters<ChainsApi["sign"]>[0]> = [];
+      const signing: Pick<ChainsApi, "sign"> = {
+        sign: async (params) => {
+          seen.push(params);
+          return signPsbt(params);
+        },
+      };
+      await signDappPsbts(
+        signing,
+        [prepared!],
+        false,
+        { kind: "password", password: "pw" },
+        () => undefined,
+        async () => Promise.resolve("txid"),
+      );
+      expect(seen[0]?.acknowledgeUnconfirmed).toBe(true);
+    },
+  );
+
+  it(
+    "leaves the acknowledgement off a confirmed template's sign call",
+    { timeout: 20_000 },
+    async () => {
+      const { es, apis } = rig();
+      const psbt = dappPsbt(
+        [{ script: scriptOf("btc.bip84"), amount: 100_000n }],
+        [
+          { script: PAYEE_SCRIPT, amount: 80_000n },
+          { script: scriptOf("btc.bip84", 1, 0), amount: 15_000n },
+        ],
+      );
+      const [prepared] = await prepareDappPsbts(
+        apis,
+        es,
+        GROUP,
+        MAINNET,
+        [{ psbt, sign: [signEntry(0, "btc.bip84")] }],
+        new Set<string>(),
+      );
+      expect(prepared!.own.unconfirmed.size).toBe(0);
+      const seen: Array<Parameters<ChainsApi["sign"]>[0]> = [];
+      const signing: Pick<ChainsApi, "sign"> = {
+        sign: async (params) => {
+          seen.push(params);
+          return signPsbt(params);
+        },
+      };
+      await signDappPsbts(
+        signing,
+        [prepared!],
+        false,
+        { kind: "password", password: "pw" },
+        () => undefined,
+        async () => Promise.resolve("txid"),
+      );
+      expect(seen[0]?.acknowledgeUnconfirmed).toBeUndefined();
+    },
+  );
 });

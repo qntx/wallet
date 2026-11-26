@@ -53,14 +53,21 @@ export const requestChangeMark = (
 /**
  * The own-key outputs of a PSBT, classified by the caller that independently verified them:
  * `change` maps script hex to nothing — it is hidden from the prompt; `unusual` maps script hex to
- * the output's `m/…` path text — it is shown as an outflow to the caller's own address.
+ * the output's `m/…` path text — it is shown as an outflow to the caller's own address;
+ * `unconfirmed` holds script hexes whose key sits on an entry the signer never confirmed on the
+ * device — shown as a plain send with a danger warning, never as "your own address".
  */
 export type BitcoinOwn = {
   readonly change: ReadonlySet<string>;
   readonly unusual: ReadonlyMap<string, string>;
+  readonly unconfirmed: ReadonlySet<string>;
 };
 
-export const EMPTY_BITCOIN_OWN: BitcoinOwn = { change: new Set(), unusual: new Map() };
+export const EMPTY_BITCOIN_OWN: BitcoinOwn = {
+  change: new Set(),
+  unusual: new Map(),
+  unconfirmed: new Set(),
+};
 
 /**
  * An output is discoverable change only on the change chain (`/1/i`), under a purpose at least one

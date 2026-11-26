@@ -223,6 +223,35 @@ const stepToDone = async (
   return step;
 };
 
+/**
+ * Seals the template's serving entry confirmed — the matched on-device verify-address a fresh
+ * pairing leaves undone.
+ */
+const confirm = async (
+  h: Harness,
+  session: string,
+  walletId: string,
+  template = "btc.bip84",
+): Promise<void> => {
+  const begin = ok(
+    await h.call(
+      "hardware.begin",
+      {
+        op: {
+          kind: "verify-address",
+          walletId,
+          groupIndex: 0,
+          template,
+          network: BTC_NETWORK,
+          index: 0,
+        },
+      },
+      session,
+    ),
+  );
+  await stepToDone(h, session, strField(begin, "opId"), field(begin, "step"));
+};
+
 const SIGHASH_WARNING =
   "Signed inputs bind only their same-index outputs; the rest of the transaction can change";
 const UNUSUAL_WARNING =
@@ -609,6 +638,7 @@ describe("hardware sign byte-identical to local signing", () => {
 
   it("the mark commit lands at begin — before the device signs anything", async () => {
     const { h, session, hwId } = await boot();
+    await confirm(h, session, hwId);
     const account = { kind: "hd", walletId: hwId, groupIndex: 0 };
     const mark = async (): Promise<ProtocolValue> =>
       field(
@@ -887,6 +917,7 @@ describe("hardware sign refusals", () => {
       const status = ok(await h.call("status", undefined, session));
       const wallets = field(status, "wallets") as ReadonlyArray<Record<string, ProtocolValue>>;
       const hwId = wallets.find((w) => w["custody"] === "hardware")!["walletId"] as string;
+      await confirm(h, session, hwId);
       const signRes = await signOnDevice(
         h,
         session,

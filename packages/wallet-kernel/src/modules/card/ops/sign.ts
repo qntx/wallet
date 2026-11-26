@@ -110,7 +110,8 @@ export const prepareSign = async (
   if (request.kind === "solana.message" && request.message.length > 16_384) {
     throw new KernelError("card-unsupported", "the message is too large for the card");
   }
-  const prepared = await prepareApproval(env.ctx, request, material, dek);
+  // A card pin confirms every entry by construction ("all") — there is nothing to acknowledge.
+  const prepared = await prepareApproval(env.ctx, request, material, dek, false);
   const keystore = chainPrompt(env.locale, prepared.prompt);
   const cards = header.cards
     .map((c) => pinnedShortId(header, c.cardId))

@@ -48,7 +48,8 @@ export type BitcoinDisplay = {
  * Decodes a normalized bitcoin.psbt request for display. `own` is the caller's independently
  * verified classification of the account's own-key outputs — `change` script hexes are hidden,
  * `unusual` script hexes become outflows to the caller's own address carrying the path text and one
- * warning each — not a display hint.
+ * warning each, `unconfirmed` script hexes are plain outflows with a danger warning — not a display
+ * hint.
  */
 export const decodeBitcoinPsbt = (
   request: Extract<SignRequest, { kind: "bitcoin.psbt" }>,
@@ -95,6 +96,15 @@ export const decodeBitcoinPsbt = (
       // A verified own-key output the wallet does not discover: named by its path so the user
       // can find the funds — but the wallet may never show them, hence the warning.
       ownWarnings.push({ kind: "unusual-own-output", message: ownPath });
+    }
+    if (own.unconfirmed.has(scriptHex)) {
+      /* The key behind this output sits on an entry the signer never confirmed on the device —
+         a plain send line plus a danger warning; never "your own address". */
+      ownWarnings.push({
+        kind: "unconfirmed-signer-output",
+        message: addr ?? scriptHex,
+        level: "danger",
+      });
     }
     outflows.push({
       to: addr ?? scriptHex,

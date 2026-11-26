@@ -21,7 +21,7 @@ import { scripthash } from "../src/chains/bitcoin-scan.ts";
 import type { ScanAddress } from "../src/chains/bitcoin-scan.ts";
 import { changeAddressOf } from "../src/transactions/bitcoin.ts";
 import type { SignParams } from "../src/transactions/route.ts";
-import { HD, NET, world } from "./support/btc-world.ts";
+import { CHANGE_ADDR, HD, NET, world } from "./support/btc-world.ts";
 
 const PURPOSE = 84;
 
@@ -125,6 +125,25 @@ describe("a send whose first unused change index lies past the scan's reach", ()
     // The tracked intent hides it too: no own-path row and no unusual-own-output warning.
     const { intent } = tx;
     expect(intent?.outflows.every((o) => o.ownPath === undefined)).toBe(true);
+    expect(intent?.warnings.every((w) => w.kind !== "unusual-own-output")).toBe(true);
+  });
+});
+
+describe("a send whose serving entry was never confirmed on the device", () => {
+  it("shows the change as a foreign send with the danger warning and acknowledges on sign", async () => {
+    const w = world({ confirmed: false });
+    w.fund(1, 50_000);
+    const booted = await w.boot();
+    const tx = await w.send(booted, 10_000n, "req-1");
+
+    // The sign call carries the acknowledgement the kernel demands for unconfirmed-served keys.
+    expect(w.signedCalls.at(-1)?.acknowledgeUnconfirmed).toBe(true);
+    // The change decoded as a plain send — never hidden, never an own path — plus the danger
+    // warning the kernel prompt shows too.
+    const { intent } = tx;
+    expect(intent?.warnings.some((w) => w.kind === "unconfirmed-signer-output")).toBe(true);
+    expect(intent?.outflows.every((o) => o.ownPath === undefined)).toBe(true);
+    expect(intent?.outflows.some((o) => o.to === CHANGE_ADDR)).toBe(true);
     expect(intent?.warnings.every((w) => w.kind !== "unusual-own-output")).toBe(true);
   });
 });

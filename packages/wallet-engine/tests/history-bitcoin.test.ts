@@ -44,7 +44,7 @@ const OWN_OUT = "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh";
 
 describe("bitcoinEntry", () => {
   it("reads the fixture tx as incoming when only the receiving address is ours", () => {
-    const e = bitcoinEntry(BTC_NET, new Set([OWN_OUT]), TX, true);
+    const e = bitcoinEntry(BTC_NET, [new Set([OWN_OUT])], TX, true);
     expect(e.direction).toBe("in");
     expect(e.counterparties).toStrictEqual([OWN_IN]);
     expect(e.fee).toBeUndefined();
@@ -65,7 +65,7 @@ describe("bitcoinEntry", () => {
   });
 
   it("reads the fixture tx as outgoing when only the input address is ours", () => {
-    const e = bitcoinEntry(BTC_NET, new Set([OWN_IN]), TX, true);
+    const e = bitcoinEntry(BTC_NET, [new Set([OWN_IN])], TX, true);
     expect(e.direction).toBe("out");
     expect(e.fee).toBe("1272");
     expect(e.changes[0]?.amount).toBe("120876469");
@@ -74,13 +74,13 @@ describe("bitcoinEntry", () => {
   });
 
   it("nets both own sides when the input and a change output are ours", () => {
-    const e = bitcoinEntry(BTC_NET, new Set([OWN_IN, OWN_OUT]), TX, true);
+    const e = bitcoinEntry(BTC_NET, [new Set([OWN_IN, OWN_OUT])], TX, true);
     expect(e.direction).toBe("out");
     expect(e.changes[0]?.amount).toBe("120870365");
   });
 
   it("leaves the entry unverified when the indexer read went to the gateway", () => {
-    const e = bitcoinEntry(BTC_NET, new Set([OWN_OUT]), TX, false);
+    const e = bitcoinEntry(BTC_NET, [new Set([OWN_OUT])], TX, false);
     expect(e.direction).toBe("in");
     expect(e.verified).toBe(false);
   });
@@ -113,8 +113,9 @@ const addressOf = (template: BitcoinAccountTemplate, chain: 0 | 1, index: number
   return address;
 };
 
-const chains: Pick<ChainsApi, "account"> = {
-  account: async (params) => {
+const accountFor =
+  (confirmed: (template: BitcoinAccountTemplate) => boolean): ChainsApi["account"] =>
+  (params) => {
     const t = params.template;
     if (t === "btc.bip44" || t === "btc.bip49" || t === "btc.bip84" || t === "btc.bip86") {
       return Promise.resolve({
@@ -124,12 +125,13 @@ const chains: Pick<ChainsApi, "account"> = {
         fingerprint: "deadbeef",
         path: "m",
         changeMark: 0,
-        confirmed: true,
+        confirmed: confirmed(t),
       });
     }
     return Promise.reject(new Error(`unexpected template ${t}`));
-  },
-};
+  };
+
+const chains: Pick<ChainsApi, "account"> = { account: accountFor(() => true) };
 
 type Pages = { readonly txs: ReadonlyArray<unknown>; readonly chain?: ReadonlyArray<unknown> };
 
@@ -161,8 +163,10 @@ const esplora = (funded: ReadonlyMap<string, Pages>, paths: string[]): Esplora =
   post: async () => Promise.reject(new Error("unmocked")),
 });
 
-const scan = async (es: Esplora) =>
-  bitcoinHistoryScan({ esplora: () => es, account: chains.account, trusted: true }, BTC_NET, GROUP);
+const scanWith = async (account: ChainsApi["account"], es: Esplora) =>
+  bitcoinHistoryScan({ esplora: () => es, account, trusted: true }, BTC_NET, GROUP);
+
+const scan = async (es: Esplora) => scanWith(chains.account, es);
 
 describe("bitcoinHistoryScan", () => {
   it("pages a used address through /txs then /txs/chain/<last-confirmed-txid>", async () => {
@@ -174,13 +178,13 @@ describe("bitcoinHistoryScan", () => {
       ]),
       paths,
     );
-    const { entries, own } = await scan(es);
+    const { entries, parties } = await scan(es);
     const tail = fixture.firstPage.at(-1)?.txid;
     expect(paths).toContain(`/scripthash/${scripthash(funded, NETWORK)}/txs/chain/${tail}`);
     const txids = new Set(entries.map((e) => e.hash));
     expect(entries).toHaveLength(txids.size);
     expect(entries).toHaveLength(fixture.firstPage.length + fixture.chainPage.length);
-    expect(own.has(funded)).toBe(true);
+    expect(parties.some((party) => party.has(funded))).toBe(true);
   });
 
   it("classifies an incoming payment to a derived taproot address", async () => {
@@ -225,6 +229,82 @@ describe("bitcoinHistoryScan", () => {
     expect(e?.direction).toBe("self");
     expect(e?.changes).toStrictEqual([]);
     expect(e?.fee).toBe("500");
+  });
+});
+
+/* A pinned entry the device never confirmed is not own: its scanned addresses form their own
+   party, so a flow to or from a confirmed account is never labelled "self". */
+describe("an unconfirmed template's addresses form their own party", () => {
+  const account = accountFor((t) => t !== "btc.bip44");
+  const OWN84 = addressOf("btc.bip84", 0, 0);
+  const CHANGE84 = addressOf("btc.bip84", 1, 0);
+  const FOREIGN44 = addressOf("btc.bip44", 1, 0);
+  const EXTERNAL = "bc1qexternal000000000000000000000000000";
+
+  const move = (
+    txid: string,
+    vin: ReadonlyArray<{ readonly address: string; readonly value: number }>,
+    vout: ReadonlyArray<{ readonly address: string; readonly value: number }>,
+  ): EsploraTx => ({
+    txid,
+    fee: 500,
+    vin: vin.map((v) => ({
+      prevout: { scriptpubkey_address: v.address, value: v.value },
+    })),
+    vout: vout.map((v) => ({ scriptpubkey_address: v.address, value: v.value })),
+    status: { confirmed: true, block_height: 900001, block_time: 1700000100 },
+  });
+
+  it("a confirmed → unconfirmed transfer is out, the foreign-key address the counterparty", async () => {
+    const tx = move(
+      "cc".repeat(32),
+      [{ address: OWN84, value: 60_000 }],
+      [
+        { address: FOREIGN44, value: 50_000 },
+        { address: CHANGE84, value: 9_500 },
+      ],
+    );
+    const { entries, parties } = await scanWith(
+      account,
+      esplora(new Map([[scripthash(OWN84, NETWORK), { txs: [tx] }]]), []),
+    );
+    const e = entries.find((x) => x.hash === tx.txid);
+    expect(e?.direction).toBe("out");
+    expect(e?.counterparties).toStrictEqual([FOREIGN44]);
+    expect(parties).toHaveLength(2);
+    expect(parties[0]?.has(OWN84)).toBe(true);
+    expect(parties[1]?.has(FOREIGN44)).toBe(true);
+  });
+
+  it("an inflow to the unconfirmed account reads from its own party", async () => {
+    const tx = move(
+      "dd".repeat(32),
+      [{ address: EXTERNAL, value: 70_000 }],
+      [{ address: FOREIGN44, value: 69_500 }],
+    );
+    const { entries } = await scanWith(
+      account,
+      esplora(new Map([[scripthash(FOREIGN44, NETWORK), { txs: [tx] }]]), []),
+    );
+    const e = entries.find((x) => x.hash === tx.txid);
+    expect(e?.direction).toBe("in");
+    expect(e?.counterparties).toStrictEqual([EXTERNAL]);
+    expect(e?.changes[0]?.amount).toBe("69500");
+  });
+
+  it("a self-transfer inside the confirmed party stays self", async () => {
+    const tx = move(
+      "ee".repeat(32),
+      [{ address: OWN84, value: 60_000 }],
+      [{ address: CHANGE84, value: 59_500 }],
+    );
+    const { entries } = await scanWith(
+      account,
+      esplora(new Map([[scripthash(OWN84, NETWORK), { txs: [tx] }]]), []),
+    );
+    const e = entries.find((x) => x.hash === tx.txid);
+    expect(e?.direction).toBe("self");
+    expect(e?.counterparties).toStrictEqual([]);
   });
 });
 

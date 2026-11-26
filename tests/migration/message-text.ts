@@ -59,6 +59,8 @@ export function describeWarning(warning: IntentWarning): string {
       return "opening the account burns F24 at the issuer-set price";
     case "unusual-own-output":
       return "funds sent to your own address at an unusual path may not appear in this wallet";
+    case "unconfirmed-signer-output":
+      return "the device never confirmed the key behind this address — it may not be yours";
     // oxlint-disable-next-line typescript/switch-exhaustiveness-check -- the never assignment is the exhaustiveness proof
     default: {
       const exhaustive: never = kind;

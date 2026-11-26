@@ -54,7 +54,15 @@ export type HardwareOperation =
       readonly templates: ReadonlyArray<ChainTemplate>;
       readonly network: string;
     }
-  | { readonly kind: "sign"; readonly request: ChainSignRequest }
+  | {
+      readonly kind: "sign";
+      readonly request: ChainSignRequest;
+      /**
+       * Acknowledge sending to a key the device never confirmed on-screen — the prompt shows a
+       * danger row for the output. Absent, such a send refuses with `approval-required`.
+       */
+      readonly acknowledgeUnconfirmed?: true;
+    }
   | {
       readonly kind: "verify-address";
       readonly walletId: string;
@@ -119,7 +127,11 @@ const hardwareOperation: Validator<HardwareOperation> = union(
     templates: arr(template, 7, 1),
     network: caip2,
   }),
-  obj({ kind: literal("sign"), request: signRequest }),
+  obj({
+    kind: literal("sign"),
+    request: signRequest,
+    acknowledgeUnconfirmed: opt(literal(true)),
+  }),
   obj({
     kind: literal("verify-address"),
     walletId,

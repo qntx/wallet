@@ -291,6 +291,8 @@ export const world = (
   options: {
     readonly independent?: boolean | (() => "available" | "unavailable");
     readonly template?: BitcoinAccountTemplate;
+    /** The flag `chains.account` reports — a device entry never confirmed shows `false`. */
+    readonly confirmed?: boolean;
   } = {},
 ): BtcWorld => {
   /** The world's own account template — bip84 unless the test asks for a legacy one. */
@@ -497,7 +499,7 @@ export const world = (
           fingerprint: "00000000",
           path: `m/${PURPOSE[t] ?? 84}'/0'/0'`,
           changeMark: 0,
-          confirmed: true,
+          confirmed: options.confirmed ?? true,
         };
       },
       sign: async (p: SignParams) => {

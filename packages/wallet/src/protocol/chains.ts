@@ -238,7 +238,15 @@ export type ChainSignResult =
       readonly signature: Uint8Array;
     };
 
-export type ChainSignParams = { readonly request: ChainSignRequest; readonly verify: VerifyFactor };
+export type ChainSignParams = {
+  readonly request: ChainSignRequest;
+  readonly verify: VerifyFactor;
+  /**
+   * Acknowledge sending to a key a device never confirmed on-screen — the prompt shows a danger row
+   * for the output. Absent, such a send refuses with `approval-required`.
+   */
+  readonly acknowledgeUnconfirmed?: true;
+};
 
 const accountRef: Validator<AccountRef> = union(
   obj({ kind: literal("hd"), walletId, groupIndex, template }),
@@ -484,7 +492,11 @@ export const CHAINS_METHODS: {
   "chain.sign": {
     session: true,
     presence: true,
-    params: obj({ request: signRequest, verify: verifier }),
+    params: obj({
+      request: signRequest,
+      verify: verifier,
+      acknowledgeUnconfirmed: opt(literal(true)),
+    }),
     result: signResult,
   },
   "chain.exportAccount": {

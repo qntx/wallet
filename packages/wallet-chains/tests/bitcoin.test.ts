@@ -590,6 +590,7 @@ describe("decode + verifiability", () => {
     const intent = decodeBitcoinPsbt(psbtReq(), {
       change: new Set([Buffer.from(payeeScript).toString("hex")]),
       unusual: new Map(),
+      unconfirmed: new Set(),
     });
     expect(intent.outflows).toHaveLength(0);
   });
@@ -599,6 +600,7 @@ describe("decode + verifiability", () => {
     const intent = decodeBitcoinPsbt(psbtReq(), {
       change: new Set(),
       unusual: new Map([[Buffer.from(payeeScript).toString("hex"), "m/84'/0'/0'/1/999"]]),
+      unconfirmed: new Set(),
     });
     expect(intent.outflows).toHaveLength(1);
     expect(intent.outflows[0]?.to).toBe(PAYEE);
@@ -607,6 +609,24 @@ describe("decode + verifiability", () => {
     expect(intent.warnings).toContainEqual({
       kind: "unusual-own-output",
       message: "m/84'/0'/0'/1/999",
+    });
+  });
+
+  it("an unconfirmed own output is a plain send with a danger warning, never an own path", () => {
+    const payeeScript = OutScript.encode(Address(NETWORK).decode(PAYEE));
+    const intent = decodeBitcoinPsbt(psbtReq(), {
+      change: new Set(),
+      unusual: new Map(),
+      unconfirmed: new Set([Buffer.from(payeeScript).toString("hex")]),
+    });
+    expect(intent.outflows).toHaveLength(1);
+    expect(intent.outflows[0]?.to).toBe(PAYEE);
+    expect(intent.outflows[0]?.ownPath).toBeUndefined();
+    expect(intent.outflows[0]?.verified).toBe(true);
+    expect(intent.warnings).toContainEqual({
+      kind: "unconfirmed-signer-output",
+      message: PAYEE,
+      level: "danger",
     });
   });
 

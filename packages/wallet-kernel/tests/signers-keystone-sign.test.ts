@@ -323,6 +323,36 @@ const signOnDevice = async (
   return { id: 0, ok: field(field(step, "result"), "result") };
 };
 
+/**
+ * Seals the bip84 serving entry confirmed — the matched on-device verify-address a fresh pairing
+ * leaves undone.
+ */
+const confirm = async (h: Harness, session: string, walletId: string): Promise<void> => {
+  const begin = ok(
+    await h.call(
+      "hardware.begin",
+      {
+        op: {
+          kind: "verify-address",
+          walletId,
+          groupIndex: 0,
+          template: "btc.bip84",
+          network: BTC_NETWORK,
+          index: 0,
+        },
+      },
+      session,
+    ),
+  );
+  ok(
+    await h.call(
+      "hardware.step",
+      { opId: strField(begin, "opId"), response: { kind: "compare", matched: true } },
+      session,
+    ),
+  );
+};
+
 const evmTx = (type: string, extra: Record<string, unknown>) => ({
   kind: "evm.transaction",
   network: EVM_NETWORK,
@@ -734,6 +764,7 @@ describe("keystone signing byte-identical to local signing", () => {
       ),
     );
     const hwId = strField(field(field(done, "result"), "wallet"), "walletId");
+    await confirm(h, session, hwId);
 
     // The signed input sits at /0/0: a change index past the bound is shown, not hidden.
     const tx = Transaction.fromPSBT(psbt("btc.bip84"), {

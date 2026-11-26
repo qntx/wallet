@@ -34,6 +34,9 @@ export type ChainsApi = {
   readonly sign: (params: {
     readonly request: ChainSignRequest;
     readonly verify: VerifyFactor;
+    /* Sending to a key served by device material never confirmed on the device refuses with
+       `approval-required` unless the host acknowledged the danger-row warning. */
+    readonly acknowledgeUnconfirmed?: true;
   }) => Promise<ChainSignResult>;
   readonly exportAccount: (params: {
     readonly walletId: string;
@@ -54,6 +57,9 @@ function createChainsApi(internals: WalletInternals): ChainsApi {
         const result = await internals.secretCall("chain.sign", async (wire) => ({
           request: params.request,
           verify: await internals.resolveVerifyFactor(params.verify, wire),
+          ...(params.acknowledgeUnconfirmed === undefined
+            ? {}
+            : { acknowledgeUnconfirmed: params.acknowledgeUnconfirmed }),
         }));
         await checkSignResult(internals, params.request, result);
         return result;
