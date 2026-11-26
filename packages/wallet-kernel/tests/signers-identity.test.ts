@@ -599,6 +599,12 @@ describe("keystone verifyAddress allow-list", () => {
       "solana.bip44-change",
       "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     ],
+    [
+      "solana group 49",
+      [H + 44, H + 501, H + 49, H],
+      "solana.bip44-change",
+      "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    ],
     ["btc bip84", [H + 84, H, H, 0, 3], "btc.bip84", BTC_NETWORK],
     ["btc bip86", [H + 86, H, H, 0, 0], "btc.bip86", BTC_NETWORK],
   ] as const)("%s reaches the compare exchange", async (_name, path, template, network) => {
@@ -625,6 +631,12 @@ describe("keystone verifyAddress allow-list", () => {
     ["evm hardened leaf", [H + 44, H + 60, H, 0, H], "evm.bip44", "eip155:1"],
     ["index past the firmware max", [H + 44, H + 60, H, 0, 999_999_999], "evm.bip44", "eip155:1"],
     [
+      "solana group past the menu",
+      [H + 44, H + 501, H + 50, H],
+      "solana.bip44-change",
+      "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    ],
+    [
       "solana group past the max",
       [H + 44, H + 501, H + 1_000_000_000, H],
       "solana.bip44-change",
@@ -647,5 +659,55 @@ describe("keystone verifyAddress allow-list", () => {
       ),
     ).rejects.toThrow(KernelError);
     expect(requests).toHaveLength(0);
+  });
+
+  it("the solana sub-account bound is the firmware's 49, not the index input max", async () => {
+    /* The Web3 menu pre-derives only XPUB_TYPE_SOL_BIP44_CHANGE_0..49: a group past it renders on
+       no screen the user could compare, so the driver refuses before any exchange. */
+    for (const group of [50, 999_999_998]) {
+      const { link, requests } = stubLink({ kind: "compare", matched: true });
+      const rejected = KEYSTONE_DRIVER.verifyAddress(
+        link,
+        {
+          path: [H + 44, H + 501, H + group, H],
+          address: "a",
+          template: "solana.bip44-change",
+          network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        },
+        pin,
+      );
+      // oxlint-disable-next-line no-await-in-loop -- each bound case is checked in turn
+      await expect(rejected).rejects.toThrow(KernelError);
+      // oxlint-disable-next-line no-await-in-loop -- same rejection, asserted for its code
+      await expect(rejected).rejects.toMatchObject({ code: "unsupported" });
+      expect(requests).toHaveLength(0);
+    }
+    // Group 49 is the last the menu can show — the compare exchange still goes out.
+    const { link, requests } = stubLink({ kind: "compare", matched: true });
+    const verdict = await KEYSTONE_DRIVER.verifyAddress(
+      link,
+      {
+        path: [H + 44, H + 501, H + 49, H],
+        address: "a",
+        template: "solana.bip44-change",
+        network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      },
+      pin,
+    );
+    expect(requests).toStrictEqual([
+      { kind: "compare", address: "a", path: "m/44'/501'/49'/0'" },
+    ]);
+    expect(verdict).toStrictEqual({ method: "compare", matched: true });
+  });
+
+  it("relays a matched:false compare verdict verbatim", async () => {
+    const { link, requests } = stubLink({ kind: "compare", matched: false });
+    const verdict = await KEYSTONE_DRIVER.verifyAddress(
+      link,
+      { path: [H + 44, H + 60, H, 0, 0], address: "a", template: "evm.bip44", network: "eip155:1" },
+      pin,
+    );
+    expect(requests).toHaveLength(1);
+    expect(verdict).toStrictEqual({ method: "compare", matched: false });
   });
 });
