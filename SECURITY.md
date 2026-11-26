@@ -34,13 +34,15 @@ kernel (`verifyFactor` in `packages/wallet-kernel/src/vault/vault.ts`):
 the verify-bearing `card.begin` ops (`verifyGate` in
 `packages/wallet-kernel/src/modules/card/ops/index.ts`: create, sign,
 transfer, reseal, erase, change-access, forget-access), `sessions.create` /
-`sessions.open`, `wallet.delete`, `wallet.exportMnemonic`, `keys.import`
-(secret admission) is presence-checked but the factor-bearing key commands
+`sessions.open`, `wallet.delete`, `wallet.exportMnemonic`,
 `keys.export`/`keys.remove`, `backup.enable`/`backup.disable`/
 `backup.restore`, `nostr.exportKey`, factor and policy changes
 (`addFactor`/`removeFactor`/`enrolVerification`/`setAppLock`/
 `setBlindSigning` in `packages/wallet-kernel/src/commands/vault.ts`), and
-`spark.approve`. Value-moving sessions verify at `sessions.create`/
+`spark.approve`. `keys.import` (secret admission) runs no verification by
+design (`importKey` in `packages/wallet-kernel/src/commands/keys.ts`): its
+method is only marked presence, which re-arms the Web idle timer and
+nothing else. Value-moving sessions verify at `sessions.create`/
 `sessions.open`, then sign within their approved limits until the next
 lock. A `device` factor can open the vault for everyday use but proves no
 presence — it can never verify (`verifyFactor` rejects it).
@@ -71,18 +73,18 @@ request the chain decoder can neither display nor bound fails
 
 Summary, per platform — details in the sections below:
 
-| Attacker                   | Web                                                                                                                                                                         | React Native                                                                                                                                                                            | Node                                                     |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Compromised main runtime   | page-level attacker — the Web wallet is a hot wallet (session limits are whatever the page asked for); in scope only where it defeats the Worker boundary                   | deception and phished fields possible; no secrets, no unverified gated signature; open sessions bounded by limits shown on a kernel surface                                             | same as RN minus keystore prompts; dev host              |
-| Malicious dApp or caller   | deceptive requests; nothing the decoder cannot display or bound                                                                                                             | same — on iOS session limits still appear on the kernel secure-input view; other prompts are presence-only under Face ID                                                                | same                                                     |
-| QR counterpart             | chooses every signed byte (EVM nonce and fees included); sign-in domains are unverifiable and need an explicit acknowledgement; nothing the decoder cannot display or bound | same                                                                                                                                                                                    | same                                                     |
-| Storage writer             | whole-vault rollback caught only if the anchor store (Cache Storage) is untouched                                                                                           | whole-vault rollback caught (anchor outside the app container); record-level tamper impossible                                                                                          | store and anchor are process memory; neither outlives it |
-| Compromised gateway / RPC  | wrong display data, withheld broadcasts; cannot change signed bytes where a second endpoint exists                                                                          | same                                                                                                                                                                                    | same                                                     |
-| Stolen unlocked device     | unlocked session scope: social actions, DMs, open sessions within limits — nothing verification-gated                                                                       | app lock off: social/DMs only — value-moving sessions refuse `app-lock-required`; app lock on: open sessions within limits until the next lock (15 min presence idle, 24 h, background) | unlocked session scope, as Web                           |
-| Stolen locked device       | offline attack on vault/backup at PBKDF2 / Argon2id cost                                                                                                                    | same, plus keystore wrapping                                                                                                                                                            | same                                                     |
-| Malicious external signer  | foreign keys land unconfirmed until an on-device address check; the device screen is the control — a compromised runtime can forge the verdict                              | same                                                                                                                                                                                    | same                                                     |
-| Lost card (production)     | no card exists in production builds — `PRODUCTION_ANCHORS` is empty, so every card is refused                                                                               | same                                                                                                                                                                                    | same                                                     |
-| Malicious upstream package | versions pinned, `abiVersion` checked at kernel start; release controls are defined in the repo and must be applied by the owner                                            | same                                                                                                                                                                                    | same                                                     |
+| Attacker                   | Web                                                                                                                                                                                                                                   | React Native                                                                                                                                                                            | Node                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Compromised main runtime   | page-level attacker — the Web wallet is a hot wallet (session limits are whatever the page asked for); in scope only where it defeats the Worker boundary                                                                             | deception and phished fields possible; no secrets, no unverified gated signature; open sessions bounded by limits shown on a kernel surface                                             | same as RN minus keystore prompts; dev host              |
+| Malicious dApp or caller   | deceptive requests; nothing the decoder cannot display or bound                                                                                                                                                                       | same — on iOS session limits still appear on the kernel secure-input view; other prompts are presence-only under Face ID                                                                | same                                                     |
+| QR counterpart             | chooses every signed byte (EVM nonce and fees included); sign-in domains are unverifiable and need an explicit acknowledgement; nothing the decoder cannot display or bound                                                           | same                                                                                                                                                                                    | same                                                     |
+| Storage writer             | whole-vault rollback caught only if the anchor store (Cache Storage) is untouched                                                                                                                                                     | whole-vault rollback caught (anchor outside the app container); record-level tamper impossible                                                                                          | store and anchor are process memory; neither outlives it |
+| Compromised gateway / RPC  | wrong display data, withheld broadcasts; cannot change signed bytes where a second endpoint exists                                                                                                                                    | same                                                                                                                                                                                    | same                                                     |
+| Stolen unlocked device     | unlocked session scope: social actions, DMs, open sessions within limits — nothing verification-gated                                                                                                                                 | app lock off: social/DMs only — value-moving sessions refuse `app-lock-required`; app lock on: open sessions within limits until the next lock (15 min presence idle, 24 h, background) | unlocked session scope, as Web                           |
+| Stolen locked device       | offline attack on vault/backup at PBKDF2 / Argon2id cost                                                                                                                                                                              | same, plus keystore wrapping                                                                                                                                                            | same                                                     |
+| Malicious external signer  | foreign keys a transport injects land unconfirmed until an on-device address check, and Bitcoin prompts never treat them as your own; a counterfeit or malicious device is not detectable host-side — its check confirms its own keys | same                                                                                                                                                                                    | same                                                     |
+| Lost card (production)     | no card exists in production builds — `PRODUCTION_ANCHORS` is empty, so every card is refused                                                                                                                                         | same                                                                                                                                                                                    | same                                                     |
+| Malicious upstream package | versions pinned, `abiVersion` checked at kernel start; release controls are defined in the repo and must be applied by the owner                                                                                                      | same                                                                                                                                                                                    | same                                                     |
 
 ## Per attacker
 
@@ -226,22 +228,38 @@ Summary, per platform — details in the sections below:
   `packages/wallet-kernel/src/modules/signers/index.ts`), but a hostile
   transport at first fetch can pin foreign receive keys — the fingerprint
   comparisons replay public values and stop only an accidental second
-  honest device. **The on-device address check is the control:**
-  pinned entries land `confirmed: false` until `verify-address` matches
-  on the device (`servingPath`/`mergePin`; `confirmed` is committed on a
-  match only). `wallet.accounts` reports `confirmed` per account, and
-  `chain.exportAccount` refuses unconfirmed material unless the caller
+  honest device. **The on-device address check is the control against
+  the transport:** pinned entries land `confirmed: false` until
+  `verify-address` matches on the device (`servingPath`/`mergePin`;
+  `confirmed` is committed on a match only). `confirmed` tells "this
+  device's keys" from "keys the transport injected" — it says nothing
+  about the device itself: a counterfeit or malicious device holds the
+  foreign keys, shows the pinned address and is confirmed; no host-side
+  check can detect it. `wallet.accounts` reports `confirmed` per account,
+  and `chain.exportAccount` refuses unconfirmed material unless the caller
   passes `acknowledgeUnconfirmed`, which adds a danger row per node
   (`exportAccount` in
   `packages/wallet-kernel/src/modules/chains/export.ts`).
+- **Unconfirmed keys are never "your own address".** A Bitcoin output
+  whose key an unconfirmed entry serves is not hidden as change, not
+  worded as an own-address send and never raises the change mark: the
+  prompt shows it as an ordinary send with a danger row
+  (`bitcoinOwn` in `packages/wallet-kernel/src/modules/chains/bitcoin.ts`),
+  and `chain.sign` / `hardware.begin` `sign` refuse `approval-required`
+  before any prompt unless the caller passes `acknowledgeUnconfirmed`
+  (`prepareApproval` in `packages/wallet-kernel/src/modules/chains/index.ts`).
+  The engine's dApp, QR and own-send previews apply the same rule and
+  raise a `bitcoin-unconfirmed-output` danger finding, and its history
+  reads transfers to such keys as sends, never as `self`.
 - **Per-driver confirmation ability:** Ledger and OneKey display the
   address on-device. Keystone has no host-initiated display — the user
   compares against the device's Receive menu, which covers only the
   allow-listed paths (`confirmable` in
-  `packages/wallet-kernel/src/modules/signers/keystone/driver.ts`): EVM,
-  TRON and Solana bip44-style groups, and BTC mainnet account-0 receive
-  addresses — BTC testnet/signet and BTC group > 0 can never be confirmed
-  on a Keystone.
+  `packages/wallet-kernel/src/modules/signers/keystone/driver.ts`): EVM
+  and TRON bip44-style groups, Solana groups 0–49
+  (`KEYSTONE_SOLANA_GROUP_MAX` — the firmware pre-derives only those), and
+  BTC mainnet account-0 receive addresses — BTC testnet/signet, BTC
+  group > 0 and Solana group ≥ 50 can never be confirmed on a Keystone.
 - **Residual:** a runtime still compromised at check time can forge the
   verdict — the confirmation marks that a check happened, not that the
   transport was honest.
@@ -259,12 +277,14 @@ Summary, per platform — details in the sections below:
   anything in the PSBT: per (wallet, group, purpose, network) a monotonic
   mark lives in a `change-marks` vault record
   (`CHANGE_MARKS_KIND`/`commitChangeMarks`/`marksHooks` in
-  `packages/wallet-kernel/src/modules/chains/marks.ts`), raised before
-  signing to the highest hidden change index — and, only for
-  `origin: "internal"` requests, to the highest same-purpose change index
-  among the signed inputs, so an external request's claimed input paths
-  never raise it (`requestChangeMark` in
-  `packages/wallet-chains/src/bitcoin/own.ts`). An own-key output is
+  `packages/wallet-kernel/src/modules/chains/marks.ts`). Only
+  `origin: "internal"` requests — the ones the engine built — raise it,
+  before signing, to the highest hidden change index and the highest
+  same-purpose change index among the signed inputs
+  (`requestChangeMark` in `packages/wallet-chains/src/bitcoin/own.ts`); an
+  external request may hide change inside the current window but commits
+  no raise at all, so no outside caller can ratchet the mark (and the scan
+  cost behind it) by getting signatures it never broadcasts. An own-key output is
   hidden only on the change chain, under a purpose a signed input shares,
   at an index at most `BITCOIN_GAP_LIMIT` (20) past that mark and below
   `BITCOIN_SCAN_LIMIT` (`isDiscoverableChange`). The engine scans the
@@ -276,7 +296,11 @@ Summary, per platform — details in the sections below:
   unusual path, with a warning that the wallet may not display those
   funds. **Residuals:** a fully compromised runtime can claim `internal`
   and raise the mark with self-built inputs — coins stay on the user's
-  keys; same class as hiding a balance in its own UI. The mark is not in
+  keys; same class as hiding a balance in its own UI. A change chain whose
+  used addresses walk the gap scan to `BITCOIN_SCAN_LIMIT` (2000) makes
+  that template's scan fail (`scanChainWithHistory` in
+  `packages/wallet-engine/src/chains/bitcoin-scan.ts`) — a cap on scan
+  work, reachable only with that many used addresses. The mark is not in
   the backup (entropy only): a seed-only restore starts it at 0, so
   change parked beyond the plain gap scan by signed-but-unbroadcast
   transactions is invisible to the fresh device; the same seed on two
@@ -449,12 +473,17 @@ and publish. The response to a compromised release is in
 - **RN app lock:** leaving it off stores a `device` factor and disables
   presence enforcement for session create/open (`app-lock-required`); a
   wallet holding value-moving sessions should require the app lock.
-- **Unconfirmed signers:** `wallet.accounts` reports `confirmed` per
-  account and `TransactionsController.nextReceiveAddress` returns
-  `{ address, confirmed }`; the host should show an "unconfirmed — verify
-  on the device" state instead of presenting the address as settled, and
-  must pass `acknowledgeUnconfirmed` (QrExportParams) deliberately, never
-  silently.
+- **Unconfirmed signers:** the flag is carried by `wallet.accounts`
+  (`confirmed` per account), `TransactionsController.nextReceiveAddress`
+  (`{ address, confirmed }`), `chain.exportAccount` and `QrExportParams`
+  (`acknowledgeUnconfirmed`), Bitcoin signing (the danger row, the
+  `bitcoin-unconfirmed-output` finding and `acknowledgeUnconfirmed` on
+  `chain.sign`/`hardware.begin`) and Bitcoin history. It is **not** carried
+  by the engine's account tree, asset balances or the accounts a host
+  grants to a dApp or WalletConnect session — the host picks those. Show
+  an "unconfirmed — verify on the device" state wherever the host presents
+  such an account, do not grant one to a dApp without it, and pass every
+  `acknowledgeUnconfirmed` deliberately, never silently.
 - **Backup passwords** must be entered into the kernel secure input
   (masked, no autofill/suggestions/IME learning on both platforms —
   `packages/wallet-native/cpp/platform/SecureInputIos.mm`,

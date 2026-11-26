@@ -2808,10 +2808,14 @@ An own-key PSBT output is hidden as change only when the wallet can discover it:
 the change chain at `i ≤ mark + BITCOIN_GAP_LIMIT` (20 — the BIP-44 address gap limit), with a
 script type at least one signed input shares, where `mark` is the kernel-sealed change mark of §35.
 Every other own-key output is _shown_: `decodeBitcoinPsbt(request, own)` takes a `BitcoinOwn`
-(`{ change, unusual }` — script hex sets/maps, `EMPTY_BITCOIN_OWN` when there is none) and reports
-such an output as a verified outflow whose `AssetFlow.ownPath` carries the `m/…` path text, plus an
-`unusual-own-output` `IntentWarning` (message = path) that the engine surfaces as the
-`bitcoin-unusual-output` warning finding. The engine's own change selection obeys the same rule:
+(`{ change, unusual, unconfirmed }` — script hex sets/maps, `EMPTY_BITCOIN_OWN` when there is none)
+and reports such an output as a verified outflow whose `AssetFlow.ownPath` carries the `m/…` path
+text, plus an `unusual-own-output` `IntentWarning` (message = path) that the engine surfaces as the
+`bitcoin-unusual-output` warning finding. An output whose key a device entry serves that was never
+confirmed on the device (§35) is in `unconfirmed`: it is never hidden and never an own-address
+row — it decodes as an ordinary send plus an `unconfirmed-signer-output` warning (message =
+address, `level: "danger"`), which the engine surfaces as the `bitcoin-unconfirmed-output` danger
+finding. The engine's own change selection obeys the same rule:
 change goes on the spending template's own change chain — sends from `btc.bip44` / `btc.bip49` no
 longer migrate change to native segwit — at `min(first unused index, bound)`, where
 `bound = mark + BITCOIN_GAP_LIMIT` with the same sealed mark; an index past the bound reuses index `bound` rather
@@ -2837,20 +2841,23 @@ presence-marked methods still count. The 24 h `maxSessionMs` is unchanged.
 import type { AssetFlow, IntentWarning } from "@qntx/wallet-chains";
 /**
  * Own-key Bitcoin outputs (section 34): `decodeBitcoinPsbt` takes a `BitcoinOwn` — the script hexes
- * of the group's own outputs split into discoverable `change` and `unusual` — and reports an
- * unusual own output as a verified outflow with `AssetFlow.ownPath` plus an `unusual-own-output`
- * `IntentWarning`, which the engine surfaces as `bitcoin-unusual-output`. `BITCOIN_GAP_LIMIT` (20)
- * bounds what counts as discoverable change. Compiled only.
+ * of the group's own outputs split into discoverable `change`, `unusual`, and `unconfirmed` — and
+ * reports an unusual own output as a verified outflow with `AssetFlow.ownPath` plus an
+ * `unusual-own-output` `IntentWarning`, which the engine surfaces as `bitcoin-unusual-output`. An
+ * output on an entry the signer never confirmed is a plain outflow with an
+ * `unconfirmed-signer-output` danger warning. `BITCOIN_GAP_LIMIT` (20) bounds what counts as
+ * discoverable change. Compiled only.
  */
 import { EMPTY_BITCOIN_OWN } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinOwn } from "@qntx/wallet-chains/bitcoin";
 
-/** Build the `own` argument: script hexes that are change, and unusual ones with their paths. */
+/** Build the `own` argument: change, unusual ones with their paths, and unconfirmed ones. */
 export function ownOutputs(
   change: ReadonlySet<string>,
   unusual: ReadonlyMap<string, string>,
+  unconfirmed: ReadonlySet<string>,
 ): BitcoinOwn {
-  return { change, unusual };
+  return { change, unusual, unconfirmed };
 }
 
 /** No own-key outputs in the PSBT — the same decode as before. */
@@ -2868,6 +2875,11 @@ export function unusualWarning(warning: IntentWarning): string | undefined {
   return warning.kind === "unusual-own-output" ? warning.message : undefined;
 }
 
+/** A key the device never confirmed: the message is the address and the level is `danger`. */
+export function unconfirmedWarning(warning: IntentWarning): string | undefined {
+  return warning.kind === "unconfirmed-signer-output" ? warning.message : undefined;
+}
+
 /** The bound the kernel hides change under, and the decoder's new two-argument shape. */
 export { BITCOIN_GAP_LIMIT, decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 ```
@@ -2879,9 +2891,11 @@ hidden-change bound comes from a kernel-sealed mark rather than the PSBT. The ho
 changes:
 
 1. **`bitcoin.psbt` requests carry a required `origin`** (`"internal" | "external"`) — only an
-   `internal` request's signed inputs may raise the change mark. The engine sets it for its own
-   sends; every other caller (dApp, QR counterpart, host) passes `"external"` (`psbtOrigin` in
-   the snippet). Requests without `origin` are refused.
+   `internal` request raises the change mark, through its signed change inputs and the change it
+   hides. An `external` request may hide change inside the current window (`mark + 20`) but never
+   raises the mark, so signatures it never broadcasts cannot push the wallet's scan further. The
+   engine sets `internal` for its own sends; every other caller (dApp, QR counterpart, host)
+   passes `"external"` (`psbtOrigin` in the snippet). Requests without `origin` are refused.
 2. **`ChainAccount` gains `confirmed` on every variant** — `true` once the serving entry passed
    an on-device address check (`verify-address`); software-seed and card accounts are always
    confirmed (`accountState` in the snippet). The bitcoin variant also gains `changeMark`, the
@@ -2901,38 +2915,57 @@ changes:
    an export touching an unconfirmed node fails `approval-required`; with it the approval prompt
    leads with one danger row per unconfirmed node (`exportParams` in the snippet). Pass the flag
    only after showing that state; never silently.
-6. **`nextReceiveAddress` returns `{ address, confirmed }`** — destructure `address` where you
+6. **Bitcoin sends to unconfirmed keys need an acknowledgement.** An output whose key an
+   unconfirmed entry serves is shown as an ordinary send with a danger row (§34) — never as your
+   own address, never hidden as change. `chain.sign`, `ChainsApi.sign` and the `hardware.begin`
+   `sign` operation gain `acknowledgeUnconfirmed?: true`; without it such a request fails
+   `approval-required` before any prompt (`signUnconfirmed` in the snippet). The engine passes it
+   itself once `approve` received the `bitcoin-unconfirmed-output` danger finding in
+   `acknowledged`; that includes the change of a send from an account whose node was never
+   confirmed — run `verify-address` once to stop it.
+7. **`nextReceiveAddress` returns `{ address, confirmed }`** — destructure `address` where you
    used the string, and surface `confirmed` next to it (`receive` in the snippet).
-7. **Keystone confirmation is allow-listed** to what its Receive menu can show — EVM, TRON and
-   Solana bip44-style accounts, and BTC mainnet account-0 receive addresses. `verify-address`
-   for BTC testnet/signet or BTC group > 0 answers `unsupported` before any exchange: those
-   entries can never be confirmed on a Keystone.
-8. **Native idle lock is verification-armed.** On keystore hosts (React Native, Node with a
-   keystore) only a successful factor verification re-arms the 15-minute deadline —
-   `session.touch` and other presence-marked methods no longer do. On the Web they still count.
-   The absolute caps are unchanged (24 h native, 12 h Web/Node).
-9. **Hyperliquid approvals name markets by `#id`.** The kernel keeps no trusted id→name map;
-   the approval prompt shows the numeric asset id. Show the id next to the market name your UI
-   renders — the id is what the user can check.
+8. **Keystone confirmation is allow-listed** to what its Receive menu can show — EVM and TRON
+   bip44-style accounts, Solana groups 0–49 and BTC mainnet account-0 receive addresses.
+   `verify-address` for BTC testnet/signet, BTC group > 0 or Solana group ≥ 50 answers
+   `unsupported` before any exchange: those entries can never be confirmed on a Keystone.
+9. **Host-wired `chains.account` answers carry the mark and the flag.** A host that builds its
+   own engine controllers (tests, custom wiring) answers the Bitcoin xpub variant of
+   `AccountTreeControllerOptions.chains.account` with `{ xpub, changeMark }` and of
+   `HistoryControllerOptions.chains.account` with `{ xpub, changeMark, confirmed }` — the history
+   reads a transfer to an unconfirmed account as a send, never as `self` (`historyAccount` in
+   the snippet). `wallet.accounts` already returns both fields.
+10. **Native idle lock is verification-armed.** On keystore hosts (React Native, Node with a
+    keystore) only a successful factor verification re-arms the 15-minute deadline —
+    `session.touch` and other presence-marked methods no longer do. On the Web they still count.
+    The absolute caps are unchanged (24 h native, 12 h Web/Node).
+11. **Hyperliquid approvals name markets by `#id`.** The kernel keeps no trusted id→name map;
+    the approval prompt shows the numeric asset id. Show the id next to the market name your UI
+    renders — the id is what the user can check.
 
 [`tests/migration/signer-confirmation.ts`](tests/migration/signer-confirmation.ts):
 
 ```ts
 import type { VerifyFactor } from "@qntx/wallet";
-import type { SignersController, TransactionController } from "@qntx/wallet-engine";
+import type {
+  HistoryControllerOptions,
+  SignersController,
+  TransactionController,
+} from "@qntx/wallet-engine";
 import type { QrExportParams } from "@qntx/wallet-engine/qr";
-import type { ChainAccount, ChainSignRequest } from "@qntx/wallet/chains";
+import type { ChainAccount, ChainSignRequest, ChainsApi } from "@qntx/wallet/chains";
 import type { HardwareApi } from "@qntx/wallet/hardware";
 
 /**
  * Signer confirmation and the sealed change mark (section 35): `bitcoin.psbt` requests carry a
  * required `origin`; every `ChainAccount` reports `confirmed` and the bitcoin variant adds
- * `changeMark`; fetches that add device keys take a `verify`; exports of unconfirmed material need
- * `acknowledgeUnconfirmed`; and `nextReceiveAddress` returns `{ address, confirmed }`. Compiled
- * only.
+ * `changeMark`; fetches that add device keys take a `verify`; exports of — and Bitcoin sends to —
+ * unconfirmed material need `acknowledgeUnconfirmed`; `nextReceiveAddress` returns `{ address,
+ * confirmed }`; and a host-wired history `chains.account` answers the xpub variant with
+ * `changeMark` and `confirmed`. Compiled only.
  */
 
-/** Every `bitcoin.psbt` request declares where it came from — "external" never raises the mark. */
+/** Every `bitcoin.psbt` request declares where it came from — only "internal" raises the mark. */
 export function psbtOrigin(request: ChainSignRequest): "internal" | "external" | undefined {
   return request.kind === "bitcoin.psbt" ? request.origin : undefined;
 }
@@ -2981,4 +3014,20 @@ export async function receive(
 ): Promise<{ address: string; confirmed: boolean }> {
   return transactions.nextReceiveAddress("w", 0, "bitcoin");
 }
+
+/** A send to a key the device never confirmed: show the danger row first, then acknowledge it. */
+export async function signUnconfirmed(
+  api: ChainsApi,
+  request: ChainSignRequest,
+  verify: VerifyFactor,
+): Promise<void> {
+  await api.sign({ request, verify, acknowledgeUnconfirmed: true });
+}
+
+/** A host-wired history account: the xpub variant reports the sealed mark and confirmation. */
+export const historyAccount: HistoryControllerOptions["chains"]["account"] = async (params) => {
+  void params;
+  await Promise.resolve();
+  return { xpub: "xpub…", changeMark: 0, confirmed: false };
+};
 ```

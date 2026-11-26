@@ -1,18 +1,23 @@
 import type { VerifyFactor } from "@qntx/wallet";
-import type { SignersController, TransactionController } from "@qntx/wallet-engine";
+import type {
+  HistoryControllerOptions,
+  SignersController,
+  TransactionController,
+} from "@qntx/wallet-engine";
 import type { QrExportParams } from "@qntx/wallet-engine/qr";
-import type { ChainAccount, ChainSignRequest } from "@qntx/wallet/chains";
+import type { ChainAccount, ChainSignRequest, ChainsApi } from "@qntx/wallet/chains";
 import type { HardwareApi } from "@qntx/wallet/hardware";
 
 /**
  * Signer confirmation and the sealed change mark (section 35): `bitcoin.psbt` requests carry a
  * required `origin`; every `ChainAccount` reports `confirmed` and the bitcoin variant adds
- * `changeMark`; fetches that add device keys take a `verify`; exports of unconfirmed material need
- * `acknowledgeUnconfirmed`; and `nextReceiveAddress` returns `{ address, confirmed }`. Compiled
- * only.
+ * `changeMark`; fetches that add device keys take a `verify`; exports of — and Bitcoin sends to —
+ * unconfirmed material need `acknowledgeUnconfirmed`; `nextReceiveAddress` returns `{ address,
+ * confirmed }`; and a host-wired history `chains.account` answers the xpub variant with
+ * `changeMark` and `confirmed`. Compiled only.
  */
 
-/** Every `bitcoin.psbt` request declares where it came from — "external" never raises the mark. */
+/** Every `bitcoin.psbt` request declares where it came from — only "internal" raises the mark. */
 export function psbtOrigin(request: ChainSignRequest): "internal" | "external" | undefined {
   return request.kind === "bitcoin.psbt" ? request.origin : undefined;
 }
@@ -61,3 +66,19 @@ export async function receive(
 ): Promise<{ address: string; confirmed: boolean }> {
   return transactions.nextReceiveAddress("w", 0, "bitcoin");
 }
+
+/** A send to a key the device never confirmed: show the danger row first, then acknowledge it. */
+export async function signUnconfirmed(
+  api: ChainsApi,
+  request: ChainSignRequest,
+  verify: VerifyFactor,
+): Promise<void> {
+  await api.sign({ request, verify, acknowledgeUnconfirmed: true });
+}
+
+/** A host-wired history account: the xpub variant reports the sealed mark and confirmation. */
+export const historyAccount: HistoryControllerOptions["chains"]["account"] = async (params) => {
+  void params;
+  await Promise.resolve();
+  return { xpub: "xpub…", changeMark: 0, confirmed: false };
+};
