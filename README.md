@@ -2,9 +2,9 @@
 
 # wallet
 
-Self-custodial wallet SDK for TypeScript: an isolated secret enclave (Web Worker, React Native kernel runtime) with HD derivation, a unified vault, Nostr, Spark and multi-chain signing, and qntx card wallets whose seed never leaves the cards.
+Self-custodial wallet SDK for TypeScript: an isolated secret enclave (Web Worker, React Native kernel runtime) with HD derivation, a unified vault, Nostr, Spark and multi-chain signing (EVM, Solana, Bitcoin, TRON), hardware signers (Keystone 3 Pro over QR, Ledger and OneKey over USB or Bluetooth — see the [`@qntx/wallet` README](packages/wallet/README.md) for which models and firmware are verified), and qntx card wallets whose seed never leaves the cards. Card wallets are not usable in 0.14.0: no production card certificate anchor is pinned yet, so every card is refused as `card-not-genuine`.
 
-Changes are tracked in [CHANGELOG.md](CHANGELOG.md); the 0.13.0 upgrade guide lives in [MIGRATION.md](MIGRATION.md); contributor invariants and the local gate live in [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+Changes are tracked in [CHANGELOG.md](CHANGELOG.md); the upgrade guide from 0.13.0 lives in [MIGRATION.md](MIGRATION.md); contributor invariants and the local gate live in [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

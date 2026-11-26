@@ -49,16 +49,16 @@ export default {
 - `android.minSdkVersion: 30` — required: per-use Keystore keys that accept a biometric _or_ the
   device credential need API 30 (`setUserAuthenticationParameters` semantics).
 
-## Card surfaces (experimental)
+## Card wallets
 
-Card wallets are not available in this release: the kernel's card protocol client is not wired to
-any command or API. `SecureInput` and the native NFC reader are groundwork whose API may change in
-any release without a major bump.
+Card wallets run end to end on React Native — the kernel drives the native NFC reader and
+collects the access code through `SecureInput` — but **this release pins no production card
+certificate anchor, so every card answers `card-not-genuine`** until a later release ships the
+anchor. Keep card UI behind a flag until then.
 
-The library's Android manifest declares nothing: the NFC and overlay entries stay in the host
-app until card wallets ship. To build a host that exercises the card surfaces, declare them
-yourself — with Expo (`android.permissions` plus a `uses-feature` manifest mod) or in
-`android/app/src/main/AndroidManifest.xml`:
+The library's Android manifest declares nothing: a host that offers card wallets declares the NFC
+and overlay entries itself — with Expo (`android.permissions` plus a `uses-feature` manifest mod)
+or in `android/app/src/main/AndroidManifest.xml`:
 
 ```xml
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -68,7 +68,7 @@ yourself — with Expo (`android.permissions` plus a `uses-feature` manifest mod
 </manifest>
 ```
 
-Once card wallets ship, the host app will also need, on iOS:
+On iOS the host app also needs:
 
 - The entitlement `com.apple.developer.nfc.readersession.formats` = `["TAG"]`.
 - `ios.infoPlist.NFCReaderUsageDescription` — the purpose string shown under the NFC system
@@ -95,8 +95,8 @@ subpath so importing the package root does not eagerly load the Nitro view machi
 
 Card operations themselves run through `card(wallet)` from `@qntx/wallet/card`: the kernel opens
 the NFC session, sets its text, exchanges the APDUs and closes it; the host never touches the
-reader. Production builds pin no card certificate anchor yet, so every card answers
-`card-not-genuine` until a release ships the production anchor.
+reader. `SecureInput` also collects the cloud-backup password and the iOS session-approval code
+on React Native.
 
 ## Usage
 

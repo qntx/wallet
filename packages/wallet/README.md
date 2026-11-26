@@ -56,7 +56,11 @@ const event = await signer.signEvent({
 secp256k1 key inside the enclave for one HD account under a named scheme and returns its address,
 `list`/`delete` manage the set, and `sign` produces the key's signature over the document its
 scheme defines — for `hyperliquid-l1-agent`, the phantom-agent signature over an allow-listed L1
-action. A Hyperliquid agent only becomes valid once the owner approves it on Hyperliquid — the
+action. A `hyperliquid-l1-agent` session is approved and metered: `create` takes the owner's
+`limits` (a notional budget, a leverage cap and per-asset size caps) and a `verify` factor,
+`open(address, verify)` re-approves it after every lock, and the kernel charges every signed order
+against the limits (`limit-exceeded` past them). On React Native the scheme needs the app lock on
+(`app-lock-required` otherwise). A Hyperliquid agent only becomes valid once the owner approves it on Hyperliquid — the
 kernel binds that signature's `agentName` to the recorded validity window — and the private key
 never leaves the enclave. For `hyperliquid-l1-agent` every signature must carry an `expiresAfter`
 at most 60 s after it is made and a nonce within ±60 s, both measured on the device clock. The
@@ -65,13 +69,21 @@ device clock running S ahead of real time stretches the 60 s to S + 60 s of real
 refuses to sign when the device is more than 5 s off Hyperliquid's server time, but that check runs
 in the main runtime.
 
-`@qntx/wallet/hardware` drives external signers — currently the Keystone 3 Pro over QR — that keep
-their seed entirely off the device running the wallet. `hardware(wallet)` exposes `pair`,
-`accounts`, `sign` and `verifyAddress`; each takes a host `DeviceIo` that transports the kernel's
-requests (for a Keystone: animate `qrParts(request.show)`, fold scanned frames through
-`qrReader(request.scan)`). The kernel validates every frame, checks every returned signature, and
-a `sign` re-runs the same verification as `chains().sign`; the host only moves bytes and shows
-prompts. `@qntx/ur` is an optional peer required only by this subpath.
+`@qntx/wallet/hardware` drives external signers that keep their seed entirely off the device
+running the wallet. `hardware(wallet).start(op, { io, verify })` runs `pair`, `accounts`, `sign` or
+`verify-address` over a host `DeviceIo` that transports the kernel's requests (for a Keystone:
+animate `qrParts(request.show)`, fold scanned frames through `qrReader(request.scan)`; for Ledger
+and OneKey: `ledgerIo` / `oneKeyIo` over a host `HidPort` or `BlePort`). The kernel validates every
+frame, checks every returned signature, and a `sign` re-runs the same verification as
+`chains().sign`; the host only moves bytes and shows prompts. Pairing requires a `verify`, and a
+pinned key stays `confirmed: false` until `verify-address` shows it on the device. `@qntx/ur` is an
+optional peer required only by this subpath.
+
+| Device                                           | Transport    | Verified on                                                                         | Source-only (untested)                    |
+| ------------------------------------------------ | ------------ | ----------------------------------------------------------------------------------- | ----------------------------------------- |
+| Keystone 3 Pro                                   | QR (UR)      | nothing — vendor encoders and firmware 3.2.2 sources only                           | every model and firmware                  |
+| Ledger Nano S Plus / Nano X / Stax / Flex        | USB HID, BLE | Speculos Nano S Plus with Bitcoin 2.5.1, Ethereum 1.24.0, Solana 1.16.0, Tron 0.8.2 | Nano X, Stax, Flex; any physical device   |
+| OneKey Classic 1S / Pro / Classic / Mini / Touch | USB HID, BLE | vendor emulators: Classic 1S firmware 3.21.0, Pro firmware 4.21.0                   | Classic, Mini, Touch; any physical device |
 
 `@qntx/wallet/card` drives qntx card wallets (React Native only; Web and Node answer
 `unsupported`). A card wallet's seed lives only on its one to three cards — `WalletInfo.custody`
@@ -96,7 +108,8 @@ const sign = async (wallet: Wallet, request: ChainSignRequest) => {
 The host only starts, observes and cancels: the kernel reads the access code from the secure
 field, exchanges the APDUs with the native NFC reader and sets the NFC sheet's text from the
 request it decoded. `create`, `add`, `accounts`, `health`, `change-access`, `erase`, `transfer`
-and `reseal` run the same way.
+and `reseal` run the same way. **This release pins no production card certificate anchor, so
+every card answers `card-not-genuine`** until a later release ships the anchor.
 
 ### React
 
