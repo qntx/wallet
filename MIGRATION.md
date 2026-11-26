@@ -10,7 +10,9 @@ Every snippet below is a file under [`tests/migration/`](tests/migration), compi
 form: it must fail to compile, so the guide breaks if an old API comes back or a new one moves.
 
 Upgrade all `@qntx/wallet*` packages together: the host packages pin the exact `@qntx/wallet`
-release their kernel was built for.
+release their kernel was built for. `@qntx/wallet`'s root declarations now reference
+`@qntx/wallet-chains/evm` (the session protocol types); a host that compiles with
+`skipLibCheck: false` and did not install the optional `@qntx/wallet-chains` peer adds it.
 
 ## What users lose on upgrade
 

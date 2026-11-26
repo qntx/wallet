@@ -12,6 +12,12 @@ its own — a `Wallet` comes from a host package that spawns the kernel, current
 npm install @qntx/wallet @qntx/wallet-worker
 ```
 
+`@qntx/nostr`, `@qntx/spark`, `@qntx/wallet-chains` and `@qntx/ur` are optional peers, each needed
+only by the subpaths that use it: `@qntx/nostr` by `./nostr`; `@qntx/spark` by the types of
+`./spark`; `@qntx/wallet-chains` at runtime by `./chains`, `./sessions`, `./card` and `./hardware`,
+and by the root's session protocol types (a host compiling with `skipLibCheck: false` installs it);
+`@qntx/ur` by `./hardware`. The root entry and `./spark` load without any of them.
+
 ## Usage
 
 ```ts
