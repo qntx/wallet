@@ -24,6 +24,7 @@ import {
   parseChangeMarksHeader,
 } from "../src/modules/chains/marks.ts";
 import type { ChangeMarksHeader } from "../src/modules/chains/marks.ts";
+import type { KeystorePrompt } from "../src/platform.ts";
 import type { Secret } from "../src/secret/secret.ts";
 import { wipe } from "../src/secret/secret.ts";
 import { passkeyKek, unwrapDek } from "../src/vault/factors.ts";
@@ -33,6 +34,8 @@ import { sealRecord } from "../src/vault/vault.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { kernelError, loadVectors } from "./helpers.ts";
+import { fakeKeystore } from "./keystore.ts";
+import type { KeystoreCall } from "./keystore.ts";
 
 function ok(response: KernelResponse): ProtocolValue {
   if ("err" in response) {
@@ -256,6 +259,14 @@ const marksRecord = async (h: Harness, walletId: string): Promise<StoredRecord |
 const isMarksPut = (op: StoreOp): op is Extract<StoreOp, { op: "put-record" }> =>
   op.op === "put-record" && op.record.kind === CHANGE_MARKS_KIND;
 
+/** Presence prompts the keystore saw — each hardware verify carries the rendered intent. */
+const presencePrompts = (calls: ReadonlyArray<KeystoreCall>): KeystorePrompt[] =>
+  calls.flatMap((call) =>
+    call.op === "open" && call.protection === "presence" && call.prompt !== undefined
+      ? [call.prompt]
+      : [],
+  );
+
 /** A store view that fails a change-marks commit while `armed()` — the abort test's fault. */
 const failMarksCommit =
   (armed: () => boolean) =>
@@ -452,6 +463,51 @@ describe("change marks lifecycle", () => {
     );
     expect("err" in internal).toBe(false);
     await expect(accountMark(h, session, walletId)).resolves.toBe(500);
+  });
+
+  it("an external sign hides change inside the window but never raises the mark", async () => {
+    /* The classification window is unchanged — an external request still hides an own change
+       output within mark + 20, so the prompt shows only the payee — but nothing it signs is
+       committed to the sealed mark: an outside caller cannot ratchet the wallet's scan reach
+       with signatures it never broadcasts. */
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(vectors.mnemonic),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(res, "session");
+    const walletId = strField(field(res, "wallet"), "walletId");
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
+    const signExternal = (outputs: Parameters<typeof ownPsbt>[1]) =>
+      h.call(
+        "chain.sign",
+        {
+          request: psbtRequest(walletId, "external", [{ template: "btc.bip84" }], outputs),
+          verify: { kind: "hardware" },
+        },
+        session,
+      );
+    const lastPrompt = () => presencePrompts(fake.calls).at(-1);
+
+    // The /1/20 output hides at the mark-0 bound: the prompt names neither it nor "your own
+    // address" — and the mark does not move.
+    const hidden = await signExternal([{ purpose: 84, change: 1, index: 20 }]);
+    expect("err" in hidden).toBe(false);
+    expect(lastPrompt()?.description).not.toContain("your own address");
+    expect(lastPrompt()?.description).not.toContain("m/84'/0'/0'/1/20");
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
+
+    /* So the next request's /1/40 output is outside the still-frozen window: it is shown as a
+       send to the user's own address at the unusual path, and the mark still stays put. */
+    const shown = await signExternal([{ purpose: 84, change: 1, index: 40 }]);
+    expect("err" in shown).toBe(false);
+    expect(lastPrompt()?.description).toContain("your own address");
+    expect(lastPrompt()?.description).toContain("m/84'/0'/0'/1/40");
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
   });
 
   it("the mark is per group index, purpose and network", async () => {

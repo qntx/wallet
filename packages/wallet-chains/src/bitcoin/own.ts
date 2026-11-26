@@ -4,7 +4,9 @@
  * send to the caller's own address at an unusual path, with a warning. The reach bound comes from
  * the kernel's sealed change mark, never from the PSBT: an untrusted request can name any input
  * path, so signed inputs may raise the mark only for requests the wallet itself built (`origin:
- * "internal"`).
+ * "internal"`). An external request still hides change inside the window — the scan reaches it
+ * either way — but commits no raise at all: neither its inputs nor the indexes it hid are sealed
+ * into the mark.
  */
 
 /**
