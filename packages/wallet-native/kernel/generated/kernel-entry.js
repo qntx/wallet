@@ -61960,7 +61960,10 @@ zoo`.split("\n"));
 		}
 		return need;
 	};
-	/** Merges freshly fetched pinned keys into the pin, deduplicating by path. */
+	/**
+	* Merges freshly fetched pinned keys into the pin, deduplicating by path. Node order is a
+	* convention, not a rule: paths stay unique and serving resolves by deepest prefix.
+	*/
 	var mergePin = (pin, fetched) => ({
 		fingerprint: pin.fingerprint,
 		nodes: [...pin.nodes, ...fetched.nodes.filter((n) => !pin.nodes.some((have) => samePath(have.path, n.path)))],
