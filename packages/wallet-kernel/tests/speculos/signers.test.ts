@@ -271,12 +271,12 @@ const psbtFor = (template: "btc.bip84" | "btc.bip86"): Uint8Array => {
 };
 
 /**
- * A bip84 PSBT like {@link psbtFor} with a second output bound to `m/84'/0'/0'/1/3` — an own key the
- * pin serves but the device never confirmed. Its address is the same every run, so the test can
- * look for it on the review screens.
+ * A bip84 PSBT like {@link psbtFor} on the group's account with a second output bound to its
+ * `…/1/3` key — an own key the pin serves but the device never confirmed. Its address is the same
+ * every run, so the test can look for it on the review screens.
  */
-const psbtWithUnconfirmedOutput = (): Uint8Array => {
-  const pub = pubAt("m/84'/0'/0'/0/0");
+const psbtWithUnconfirmedOutput = (group: number): Uint8Array => {
+  const pub = pubAt(`m/84'/0'/${group}'/0/0`);
   const spend = p2wpkh(pub);
   const prev = new Transaction({
     version: 2,
@@ -286,9 +286,10 @@ const psbtWithUnconfirmedOutput = (): Uint8Array => {
   });
   prev.addInput({ txid: "12".repeat(32), index: 0 });
   prev.addOutput({ script: spend.script, amount: 100_000n });
-  const outPub = pubAt("m/84'/0'/0'/1/3");
-  const path0 = [84 + 0x80000000, 0x80000000, 0x80000000, 0, 0];
-  const path13 = [84 + 0x80000000, 0x80000000, 0x80000000, 1, 3];
+  const outPub = pubAt(`m/84'/0'/${group}'/1/3`);
+  const account = group + 0x80000000;
+  const path0 = [84 + 0x80000000, 0x80000000, account, 0, 0];
+  const path13 = [84 + 0x80000000, 0x80000000, account, 1, 3];
   const tx = new Transaction({
     version: 2,
     allowUnknownInputs: true,
@@ -807,21 +808,30 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
   }, 300_000);
 
   it("shows an unconfirmed-served output's address — the device never hides it as change", async () => {
-    /* A second pairing of the same device pins the same fingerprint but confirms nothing: an
-       output bound to its /1/3 key decodes as a plain send. The kernel strips that output's
-       wallet derivation for the device, so the review must display its address like any other
-       payee — app-bitcoin-new hides outputs still carrying the wallet's change derivation. */
-    const paired = ok(
+    /* A group fetched but never verify-address'd pins entries the kernel serves without the
+       confirmed seal: an output bound to its /1/3 key decodes as a plain send. The kernel strips
+       that output's wallet derivation for the device, so the review must display its address like
+       any other payee — app-bitcoin-new hides outputs still carrying the wallet's change
+       derivation. */
+    ok(
       await runOp(
         h,
         session,
         "bitcoin",
-        { op: { kind: "pair", device: "ledger" }, verify: { kind: "hardware" } },
+        {
+          op: {
+            kind: "accounts",
+            walletId: hwId,
+            groupIndex: 2,
+            templates: ["btc.bip84"],
+            network: BTC_NETWORK,
+          },
+          verify: { kind: "hardware" },
+        },
         screen("bitcoin"),
         undefined,
       ),
     );
-    const unconfirmedId = strField(field(donePayload(paired), "wallet"), "walletId");
     const done = ok(
       await runOp(
         h,
@@ -834,8 +844,8 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
               kind: "bitcoin.psbt",
               origin: "internal",
               network: BTC_NETWORK,
-              account: { kind: "hd", walletId: unconfirmedId, groupIndex: 0 },
-              psbt: psbtWithUnconfirmedOutput(),
+              account: { kind: "hd", walletId: hwId, groupIndex: 2 },
+              psbt: psbtWithUnconfirmedOutput(2),
               sign: [{ index: 0, template: "btc.bip84" }],
             },
             acknowledgeUnconfirmed: true,
@@ -847,7 +857,7 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
       ),
     );
     expect(bytesField(signResult(done), "signedPsbt")).toBeInstanceOf(Uint8Array);
-    const shown = p2wpkh(pubAt("m/84'/0'/0'/1/3"), btcParams).address;
+    const shown = p2wpkh(pubAt("m/84'/0'/2'/1/3"), btcParams).address;
     // The review chunks the address with spaces — compare without them.
     const flat = screen("bitcoin").texts.map((text) => text.replaceAll(" ", ""));
     expect(flat.some((text) => text.includes(shown))).toBe(true);
