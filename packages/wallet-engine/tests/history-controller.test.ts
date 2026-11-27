@@ -15,6 +15,8 @@ const OWNER2 = "0x70A65731F328d3e24Be8abc0dBd0bDa2e46bDf8B";
 const OTHER = "0xfa5180956e87bff2d1fce8423d2e755846ac3b24";
 // Same first/last four characters as OTHER — the address-poisoning lookalike shape.
 const LOOKALIKE = `0xfa51${"0".repeat(32)}3b24`;
+// Same first/last four characters as OWNER2 — a lookalike of the second group's address.
+const LOOKALIKE2 = `0x70a6${"0".repeat(32)}df8b`;
 const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const GROUP = { walletId: "w", groupIndex: 0 } as const;
 const GROUP2 = { walletId: "w", groupIndex: 1 } as const;
@@ -76,6 +78,8 @@ const make = (options: {
   readonly txValue?: string;
   readonly store?: EngineStore;
   readonly failAccounts?: boolean;
+  /** Groups whose `chains.account` entry reports `confirmed: false` — a key never device-shown. */
+  readonly unconfirmedGroups?: ReadonlyArray<number>;
   /** Gateway requests carrying one of these `address`es hang until `respond()`. */
   readonly deferredAddresses?: ReadonlyArray<string>;
 }): Rig => {
@@ -158,9 +162,12 @@ const make = (options: {
           ? Promise.reject(new Error("chains.account down"))
           : Promise.resolve(
               params.template === "evm.bip44"
-                ? { address: params.groupIndex === 0 ? OWNER : OWNER2 }
+                ? {
+                    address: params.groupIndex === 0 ? OWNER : OWNER2,
+                    confirmed: !options.unconfirmedGroups?.includes(params.groupIndex),
+                  }
                 : params.template === "solana.bip44-change"
-                  ? { address: "SolOwner111111111111111111111111111111111" }
+                  ? { address: "SolOwner111111111111111111111111111111111", confirmed: true }
                   : { xpub: "xpub", changeMark: 0, confirmed: true },
             ),
     },
@@ -732,6 +739,42 @@ describe("HistoryController", () => {
     expect(flags).toContain("zero-value-transfer");
     expect(getTxs()).toStrictEqual(txsBefore);
     expect(getBook()).toStrictEqual(bookBefore);
+    controller.lock();
+  });
+
+  it("a lookalike of an unconfirmed group's address is not flagged — the known set skips it", async () => {
+    const { controller } = make({
+      unconfirmedGroups: [1],
+      page: {
+        items: [
+          {
+            hash: hash("bb"),
+            block: "100",
+            timestamp: 5_000_000,
+            transfers: [
+              {
+                kind: "erc20",
+                from: LOOKALIKE2,
+                to: OWNER2,
+                contract: "0x9999999999999999999999999999999999999999",
+                tokenId: null,
+                amount: "700",
+                decimals: 6,
+                symbol: null,
+                logIndex: null,
+              },
+            ],
+          },
+        ],
+        cursor: null,
+      },
+    });
+    await controller.init();
+    await controller.load(GROUP2);
+    // The group's own key was never confirmed on the device: it is not a known address, so a
+    // counterparty resembling it earns no poisoning flag on its account.
+    const flags = controller.getState().groups["w:1"]?.entries[0]?.flags;
+    expect(flags).not.toContain("lookalike-counterparty");
     controller.lock();
   });
 });

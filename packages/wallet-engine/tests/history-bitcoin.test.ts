@@ -243,6 +243,13 @@ describe("an unconfirmed template's addresses form their own party", () => {
   const FOREIGN44 = addressOf("btc.bip44", 1, 0);
   const EXTERNAL = "bc1qexternal000000000000000000000000000";
 
+  it("marks exactly the unconfirmed template's scanned addresses unconfirmed", async () => {
+    const { unconfirmed } = await scanWith(account, esplora(new Map(), []));
+    expect(unconfirmed.has(FOREIGN44)).toBe(true);
+    expect(unconfirmed.has(OWN84)).toBe(false);
+    expect(unconfirmed.has(CHANGE84)).toBe(false);
+  });
+
   const move = (
     txid: string,
     vin: ReadonlyArray<{ readonly address: string; readonly value: number }>,
@@ -326,7 +333,10 @@ describe("localEntry parties", () => {
   const OWN84 = addressOf("btc.bip84", 0, 0);
   const FOREIGN44 = addressOf("btc.bip44", 1, 0);
   const EXTERNAL = "bc1qexternal000000000000000000000000000";
-  const own = { bitcoin: [new Set([OWN84]), new Set([FOREIGN44])] };
+  const own = {
+    bitcoin: [new Set([OWN84]), new Set([FOREIGN44])],
+    unconfirmed: new Set([FOREIGN44]),
+  };
 
   const send = (inputs: string[], to: string): TrackedTransaction => ({
     id: "tx-1",

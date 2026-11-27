@@ -26,9 +26,11 @@ import { BITCOIN_MAINNET, PURPOSE_TEMPLATE } from "./link.ts";
 import type { QrRequest } from "./request.ts";
 
 /**
- * Everything binding checks against: the selected account's authenticated facts — the master
- * fingerprint (hardware's is authenticated device info; a vault's or card's comes from its Bitcoin
- * account), the resolved leaf addresses per family, and the enabled networks per family.
+ * Everything binding checks against: the selected account's facts — the resolved leaf addresses per
+ * family and the enabled networks per family. The master fingerprint is a public value the
+ * transport reports: nothing authenticates it, and a hostile reader can claim any value — matching
+ * it here is a consistency check for the user's benefit, not what makes the binding safe. Safety
+ * rests on the kernel verifying every input of the transaction the request carries.
  */
 export type QrAccountFacts = {
   readonly walletId: string;

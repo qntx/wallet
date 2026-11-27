@@ -68,7 +68,7 @@ export type HistoryControllerOptions = {
       readonly template: ChainTemplate;
       readonly network: string;
     }) => Promise<
-      | { readonly address: string }
+      | { readonly address: string; readonly confirmed: boolean }
       | { readonly xpub: string; readonly changeMark: number; readonly confirmed: boolean }
     >;
   };
@@ -178,7 +178,7 @@ const newRuntime = (group: HistoryGroup): GroupRuntime => ({
   seq: 0,
   emitted: [],
   mergeDone: false,
-  own: { bitcoin: [] },
+  own: { bitcoin: [], unconfirmed: new Set() },
   errors: {},
   truncated: new Set(),
   unsupported: new Set(),
@@ -312,18 +312,22 @@ export class HistoryController extends Controller<HistoryState> {
         }
       }
     }
-    if (own.evm !== undefined) {
+    // An address a device-unconfirmed entry serves never enters the known set — it was never
+    // seen on a trusted screen, so a lookalike wearing it must keep its poisoning flag.
+    if (own.evm !== undefined && !own.unconfirmed.has(own.evm)) {
       by["evm"].add(own.evm);
     }
-    if (own.solana !== undefined) {
+    if (own.solana !== undefined && !own.unconfirmed.has(own.solana)) {
       by["solana"].add(own.solana);
     }
-    if (own.tron !== undefined) {
+    if (own.tron !== undefined && !own.unconfirmed.has(own.tron)) {
       by["tron"].add(own.tron);
     }
     for (const party of own.bitcoin) {
       for (const address of party) {
-        by["bitcoin"].add(address);
+        if (!own.unconfirmed.has(address)) {
+          by["bitcoin"].add(address);
+        }
       }
     }
     return {
@@ -406,12 +410,21 @@ export class HistoryController extends Controller<HistoryState> {
     ]);
     if (evmAccount !== undefined && "address" in evmAccount) {
       own.evm = evmAccount.address;
+      if (!evmAccount.confirmed) {
+        own.unconfirmed.add(evmAccount.address);
+      }
     }
     if (solanaAccount !== undefined && "address" in solanaAccount) {
       own.solana = solanaAccount.address;
+      if (!solanaAccount.confirmed) {
+        own.unconfirmed.add(solanaAccount.address);
+      }
     }
     if (tronAccount !== undefined && "address" in tronAccount) {
       own.tron = tronAccount.address;
+      if (!tronAccount.confirmed) {
+        own.unconfirmed.add(tronAccount.address);
+      }
     }
   }
 
@@ -499,9 +512,12 @@ export class HistoryController extends Controller<HistoryState> {
           },
           network,
           group,
-          (bitcoin) => {
+          (bitcoin, unconfirmed) => {
             for (const party of bitcoin) {
               own.bitcoin.push(new Set(party));
+            }
+            for (const address of unconfirmed) {
+              own.unconfirmed.add(address);
             }
           },
         ),
