@@ -29,7 +29,7 @@ import {
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { SignRequest } from "@qntx/wallet-chains";
+import type { KeyPath, SignRequest } from "@qntx/wallet-chains";
 import {
   bitcoinNetwork,
   decodeBitcoinPsbt,
@@ -1832,6 +1832,16 @@ describe("chain.sign", () => {
     };
     const warningsOf = (prompt: Awaited<ReturnType<typeof prepare>>["prompt"]) =>
       prompt.warnings ?? [];
+    /** `material.secp256k1` that answers every path except those in `missing` (device-required). */
+    const unservable = (keys: ReturnType<typeof seedKeys>, missing: ReadonlyArray<KeyPath>) => {
+      const serve = keys.material.secp256k1;
+      return async (path: KeyPath): Promise<Uint8Array> => {
+        if (missing.some((p) => p.length === path.length && p.every((v, i) => v === path[i]))) {
+          throw new KernelError("device-required", "the pin has no such path");
+        }
+        return serve(path);
+      };
+    };
 
     it("shows change at an index beyond the scan's reach — with its path — and still signs", async () => {
       const { prompt, result } = await prepare(
@@ -2082,14 +2092,13 @@ describe("chain.sign", () => {
     it("an output whose path the material cannot serve fails instead of reading as foreign", async () => {
       /* `device-required` while an output is classified is a real answer — the signer must
          serve or the request fails; swallowing it as "not own" would show a crafted own-key
-         output as a plain payee. */
+         output as a plain payee. Only the output's path is unservable — the signed input's
+         derivation must resolve or the request fails before classification even runs. */
       const keys = seedKeys(seed, rng);
       try {
         const material = {
           ...keys.material,
-          secp256k1: async () => {
-            return Promise.reject(new KernelError("device-required", "the pin has no such path"));
-          },
+          secp256k1: unservable(keys, [[84 + HARDENED, HARDENED, HARDENED, 1, 3]]),
         };
         const request = asPsbt(
           normalizeBitcoin({
