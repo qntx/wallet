@@ -9,6 +9,8 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-27
+
 Hardening and reach. The vault moves to format 6: an authenticated manifest, and a vault anchor
 outside the store that floors the revision and rate-limits password attempts, so a rolled-back
 store cannot replay an old vault. The kernel signs what it can describe and refuses what it
@@ -2553,7 +2555,8 @@ engine is in this repository but not yet published to npm.
 - `@qntx/wallet-worker/node`: `createNodeWallet` runs the same kernel in `worker_threads`, with the test-only `createSoftwarePasskey`.
 - The kernel: BIP-39 (random with a backup quiz, import, export), passkey wallets (PRF output as BIP-39 entropy), BIP-32 and NIP-06 derivation, `walletId`, an XChaCha20-Poly1305 vault whose public headers are authenticated and record-kind agnostic (an unknown kind reports `corrupted` rather than silently dropping data), password and passkey factors with online rate limiting, sessions with idle and absolute limits, a statically composed Nostr module (derived keys, nsec, ncryptsec, generated, NIP-46 client; NIP-04, NIP-44 and batched NIP-59 unwrapping).
 
-[Unreleased]: https://github.com/qntx/wallet/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/qntx/wallet/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/qntx/wallet/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/qntx/wallet/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/qntx/wallet/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/qntx/wallet/compare/v0.10.0...v0.11.0
