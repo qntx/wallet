@@ -2998,6 +2998,47 @@ describe("card sign (fake card)", () => {
     await expect(mark(strField(unlocked, "session"))).resolves.toBe(0);
   });
 
+  it("a lock and unlock during the sign verify still refuses the dead session token", async () => {
+    /* The op's own `session.current()` would answer the NEW session — only the re-check of the
+       caller's token keeps a verify that outlived its session from staging under the next one. */
+    const r = await keystoreRig("ios", 60_000);
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    const release = r.fake.hold();
+    const prompted = new Promise<void>((resolve) => {
+      r.fake.watchOpen(resolve);
+    });
+    const pending = r.h.call(
+      "card.begin",
+      {
+        op: {
+          kind: "sign",
+          request: psbtReq(walletId, bip84ChangePsbt(20, undefined, seed2), ["btc.bip84"]),
+        },
+        verify: HARDWARE,
+      },
+      r.session,
+    );
+    await prompted;
+    r.h.advance(60_001); // idle deadline — the session ends
+    // The kernel runs one call at a time: the unlock is queued behind begin and lands only
+    // after the held prompt releases — the new session exists before the marks assertion.
+    const unlocking = r.h.call("vault.unlock", { factor: DEVICE });
+    release();
+    const begin = await pending;
+    const unlocked = ok(await unlocking);
+    await expect(errCode(Promise.resolve(begin))).resolves.toBe("locked");
+    // No marks committed under the new session either — the dead token's work never landed.
+    const accounts = ok(
+      await r.h.call(
+        "wallet.accounts",
+        { walletId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+        strField(unlocked, "session"),
+      ),
+    );
+    expect(field(accounts, "changeMark")).toBe(0);
+  });
+
   it("a session that ends during the add verify fails locked before the op stages", async () => {
     /* The post-verify session re-check is the only gate between the prompt and the operation
        itself for ops with no pre-commit work — without it a dead session would still stage
