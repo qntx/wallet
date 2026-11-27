@@ -25,6 +25,7 @@ import { EVM_DELEGATOR, normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { CATALOGS } from "../src/modules/chains/prompt.ts";
+import type { ChainPlan } from "../src/modules/chains/run.ts";
 import { ONEKEY_DRIVER } from "../src/modules/signers/onekey/driver.ts";
 import { devicePromptLine } from "../src/modules/signers/prompt.ts";
 import { promptFits, PROMPT_BOUNDS } from "../src/prompts.ts";
@@ -32,8 +33,8 @@ import type { Harness, KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
 import type { KeystoreCall } from "./keystore.ts";
-import { fakeDevice } from "./signers-fake.ts";
-import type { FakeDeviceOptions } from "./signers-fake.ts";
+import { ACCOUNT_NODES, fakeDevice } from "./signers-fake.ts";
+import type { FakeDevice, FakeDeviceOptions } from "./signers-fake.ts";
 
 const HARDENED = 0x80000000;
 const MNEMONIC =
@@ -250,6 +251,23 @@ const confirm = async (
     ),
   );
   await stepToDone(h, session, strField(begin, "opId"), field(begin, "step"));
+};
+
+/** The plan the device's sign last received — the kernel's per-stage classification. */
+const lastStage = (device: FakeDevice): ChainPlan => {
+  const stage = device.stages.at(-1);
+  if (stage === undefined) {
+    throw new Error("no sign stage reached the driver");
+  }
+  return stage;
+};
+
+/** The hidden-change script set of a bitcoin stage — absent on every other plan kind. */
+const hiddenChangeOf = (stage: ChainPlan): ReadonlySet<string> => {
+  if (!("hiddenChange" in stage) || stage.hiddenChange === undefined) {
+    throw new Error("the sign stage was not a bitcoin plan");
+  }
+  return stage.hiddenChange;
 };
 
 const SIGHASH_WARNING =
@@ -742,6 +760,68 @@ describe("hardware sign byte-identical to local signing", () => {
     expect(bytesField(field(field(done, "result"), "result"), "signedPsbt")).toBeInstanceOf(
       Uint8Array,
     );
+  });
+
+  it("an unconfirmed-served output never lands in the stage's hidden change set", async () => {
+    /* `hiddenChange` names the outputs a device may silently treat as wallet change — the Ledger
+       driver strips every other output's wallet derivation, so an unconfirmed output in this set
+       would reach the transport still bound and be hidden as own change instead of shown as the
+       plain send the prompt decoded. */
+    const { h, session, hwId, device } = await boot();
+    const request = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      origin: "internal",
+      network: BTC_NETWORK,
+      account: { kind: "hd", walletId: hwId, groupIndex: 0 },
+      psbt: psbtWithChange(3),
+      sign: [{ index: 0, template: "btc.bip84" }],
+    });
+    const begin = ok(
+      await h.call(
+        "hardware.begin",
+        { op: { kind: "sign", request, acknowledgeUnconfirmed: true }, verify: PASSKEY() },
+        session,
+      ),
+    );
+    const done = await stepToDone(h, session, strField(begin, "opId"), field(begin, "step"));
+    expect(strField(done, "kind")).toBe("done");
+    expect(hiddenChangeOf(lastStage(device))).toHaveLength(0);
+  });
+
+  it("an accounts gap re-fetch after verify-address keeps the confirmed seal", async () => {
+    /* The merge re-seals the record — dropping the confirmed list there would silently un-verify
+       every entry a matched on-device address check already sealed. */
+    const { h, session, hwId } = await boot({
+      nodes: ACCOUNT_NODES.filter((path) => path[0] !== 86 + HARDENED),
+    });
+    await confirm(h, session, hwId);
+    // The bip86 node was never pinned — fetching it merges a fresh entry and reseals the body;
+    // a fetch of unpinned paths is verification-gated, an already-pinned re-fetch is not.
+    const gap = ok(
+      await h.call(
+        "hardware.begin",
+        {
+          op: {
+            kind: "accounts",
+            walletId: hwId,
+            groupIndex: 0,
+            templates: ["btc.bip86"],
+            network: BTC_NETWORK,
+          },
+          verify: PASSKEY(),
+        },
+        session,
+      ),
+    );
+    await stepToDone(h, session, strField(gap, "opId"), field(gap, "step"));
+    const served = ok(
+      await h.call(
+        "wallet.accounts",
+        { walletId: hwId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+        session,
+      ),
+    );
+    expect(field(served, "confirmed")).toBe(true);
   });
 });
 

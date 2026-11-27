@@ -467,6 +467,8 @@ export function createSignersModule(
   ): Promise<ResultOf<"hardware.begin">> => {
     const { dek } = ctx.session.require(session);
     const { op } = params;
+    /* Dispatch pins the contract the gate proved: this path runs only for a sign op whose factor
+       was already verified — a missing one is an integrity failure, not a fresh prompt. */
     if (op.kind !== "sign" || params.verify === undefined) {
       throw new KernelError("integrity", "unreachable: sign begin without the sign op or verify");
     }

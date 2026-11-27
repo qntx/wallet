@@ -193,6 +193,8 @@ export const samePath = (a: KeyPath, b: KeyPath): boolean =>
  * master and hardened gaps never derive publicly.
  */
 const nodeAt = (pin: Pin, path: KeyPath): HDKey | undefined => {
+  /* Only a non-hardened tail is servable — public derivation cannot produce hardened children,
+     so a prefix whose tail hardens serves nothing beyond itself. */
   const [ancestor] = pin.keys.nodes
     .filter(
       (node) =>

@@ -20,6 +20,7 @@ import { pathToString } from "../src/derive/pinned.ts";
 import type { KernelError } from "../src/errors.ts";
 import { seedKeys } from "../src/modules/chains/keys.ts";
 import { taskSignerFor } from "../src/modules/chains/run.ts";
+import type { ChainPlan } from "../src/modules/chains/run.ts";
 import type { DeviceLink, Driver } from "../src/modules/signers/driver.ts";
 
 const HARDENED = 0x80000000;
@@ -110,6 +111,8 @@ export type FakeDevice = {
   readonly gaps: Array<{ secp256k1: KeyPath[]; ed25519: KeyPath[] }>;
   /** Every `{ address, path }` verifyAddress was asked to show. */
   readonly targets: Array<{ address: string; path: string }>;
+  /** Every stage plan sign was handed — the kernel's classification the device driver sees. */
+  readonly stages: ChainPlan[];
 };
 
 export const fakeDevice = (seed: Uint8Array, opts?: FakeDeviceOptions): FakeDevice => {
@@ -118,6 +121,7 @@ export const fakeDevice = (seed: Uint8Array, opts?: FakeDeviceOptions): FakeDevi
   const exchanges: Array<Promise<DeviceResponse>> = [];
   const gaps: Array<{ secp256k1: KeyPath[]; ed25519: KeyPath[] }> = [];
   const targets: Array<{ address: string; path: string }> = [];
+  const stages: ChainPlan[] = [];
 
   const exchange = async (link: DeviceLink, request: DeviceRequest): Promise<DeviceResponse> => {
     requests.push(request);
@@ -153,6 +157,7 @@ export const fakeDevice = (seed: Uint8Array, opts?: FakeDeviceOptions): FakeDevi
     },
     display: () => opts?.display ?? "clear",
     sign: async (link, context) => {
+      stages.push(context.stage);
       await exchange(link, { kind: "message", data: utf8ToBytes(context.request.kind) });
       const source = seedKeys(opts?.signSeed ?? seed, (n) => new Uint8Array(n));
       const backend = source.backend(taskSignerFor(context.stage));
@@ -187,5 +192,5 @@ export const fakeDevice = (seed: Uint8Array, opts?: FakeDeviceOptions): FakeDevi
       return { method: "compare", matched: response.kind === "compare" && response.matched };
     },
   };
-  return { driver, requests, exchanges, gaps, targets };
+  return { driver, requests, exchanges, gaps, targets, stages };
 };

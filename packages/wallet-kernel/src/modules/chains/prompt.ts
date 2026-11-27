@@ -1899,6 +1899,8 @@ export function boundPrompt(
   if (promptFits(flat, bound)) {
     return { prompt: flat, oversize: false };
   }
+  /* The blind title is the shortest heading the prompt can fall back to — when even it exceeds
+     the title bound no dialog can carry the warnings, so the request is refused outright. */
   if (bound.title !== undefined && codePoints(catalog.blindTitle) > bound.title) {
     throw new KernelError("unsupported", "the prompt's warnings do not fit the dialog");
   }
