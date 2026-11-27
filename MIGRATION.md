@@ -2160,14 +2160,16 @@ The vault gains a `card-wallet` record kind; existing vault wallets are unchange
    request. Starting a second task cancels the first. Inside the engine every card signature
    runs under `engine.signers` as a `card` activity (§32) — a send or dApp request taps without
    the host calling `start`.
-3. **Operations.** `status`, `add` (register a card that already holds a wallet in this vault),
+3. **Operations.** `status`, `add` (adopt a card whose wallet is not in this vault yet — a card
+   whose wallet is already there fails `already-exists`),
    `accounts`, `health`, `change-access`, `erase` (`last: true` for the last card of a
    card-generated wallet), `create` (1–3 cards; `source: { kind: "generate" }` or
    `{ kind: "wallet", walletId }`, which moves a vault wallet onto the cards and deletes its sealed
    seed in the same commit), `transfer` (finish a pending member), `reseal` (a new code for a
-   member that forgot it, from another member), `sign` and `forget-access`. `change-access`,
-   `erase`, `create`, `transfer`, `reseal`, `sign` and `forget-access` require a `verify` factor;
-   `status`, `add`, `accounts` and `health` refuse one (`invalid-input`). `remember: true`
+   member that forgot it, from another member), `sign` and `forget-access`. `add`,
+   `change-access`, `erase`, `create`, `transfer`, `reseal`, `sign` and `forget-access` require a
+   `verify` factor — `add` admits a whole wallet as confirmed own material, so it is gated like a
+   hardware `pair`; `status`, `accounts` and `health` refuse one (`invalid-input`). `remember: true`
    (save the access code's hash in the vault) needs the app lock and a `hardware` factor, else
    `unsupported`.
 4. **Capabilities a card wallet lacks.** Nostr, Spark, session keys (`sessions.create`) and
@@ -2922,7 +2924,10 @@ changes:
    any prompt (`signUnconfirmed` in the snippet). The engine's signing path passes it once
    `approve` received the `bitcoin-unconfirmed-output` danger finding in `acknowledged`; that
    includes the change of a send from an account whose node was never confirmed — run
-   `verify-address` once to stop it.
+   `verify-address` once to stop it where the device can confirm the entry. A Keystone BTC
+   testnet/signet or group > 0 account can never be confirmed (item 8), so every send with change
+   from it asks for that danger acknowledgement forever: label such accounts permanently
+   unverified, or do not offer them for sending.
 7. **`nextReceiveAddress` returns `{ address, confirmed }`** — destructure `address` where you
    used the string, and surface `confirmed` next to it (`receive` in the snippet).
 8. **Keystone confirmation is allow-listed** to what its Receive menu can show — EVM and TRON
@@ -2932,8 +2937,9 @@ changes:
 9. **Host-wired `chains.account` answers carry the mark and the flag.** A host that builds its
    own engine controllers (tests, custom wiring) answers the Bitcoin xpub variant of
    `AccountTreeControllerOptions.chains.account` with `{ xpub, changeMark }` and of
-   `HistoryControllerOptions.chains.account` with `{ xpub, changeMark, confirmed }` — the history
-   reads a transfer to an unconfirmed account as a send, never as `self` (`historyAccount` in
+   `HistoryControllerOptions.chains.account` with `{ xpub, changeMark, confirmed }` and its
+   address variant with `{ address, confirmed }` — the history reads a transfer to an unconfirmed
+   account as a send, never as `self`, and never counts its address as known (`historyAccount` in
    the snippet). `wallet.accounts` already returns both fields.
 10. **Native idle lock is verification-armed.** On keystore hosts (React Native, Node with a
     keystore) only a successful factor verification re-arms the 15-minute deadline —
@@ -2942,6 +2948,19 @@ changes:
 11. **Hyperliquid approvals name markets by `#id`.** The kernel keeps no trusted id→name map;
     the approval prompt shows the numeric asset id. Show the id next to the market name your UI
     renders — the id is what the user can check.
+12. **Unconfirmed accounts are not subscribed for push and are not "known" to history.** The
+    engine leaves an account whose serving entry is unconfirmed out of the push subscriptions it
+    registers with the gateway, and out of the known-address set the history's
+    `address-poisoning` flag compares against. Nothing to call; expect no push events for such an
+    account until `verify-address` confirms it.
+13. **A send that spends a change coin beyond the sealed scan reach is cross-checked.** When the
+    engine's own send, replacement or CPFP would spend a change-chain coin past
+    `changeScanReach(changeMark)` — a coin only the endpoint's "used" answers led to — and a second
+    endpoint is configured, the engine reads the coin's transaction there first. A second endpoint
+    that does not know it, or serves a different output, refuses the build with `ChainError`
+    `invalid-request` ("the endpoints disagree on a far change coin") and nothing is signed; a
+    failed second read adds `reads-unverified`. Treat the refusal like any other endpoint
+    disagreement: retry later or switch the primary endpoint.
 
 [`tests/migration/signer-confirmation.ts`](tests/migration/signer-confirmation.ts):
 

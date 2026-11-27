@@ -1504,8 +1504,20 @@ Gateway (operators):
   (in `lint`) fails a `bunx`/`npx`/`npm exec` of a bin no root or working-directory manifest
   declares, a reusable-workflow call without the pinned Bun input, and a non-exact `setup-node`
   version; `scripts/check-dist-deps.ts` (in `check:pkg`) also fails a declared runtime
-  dependency no packed file imports. `bunfig.toml`'s
-  `minimumReleaseAgeExcludes` lets exactly `@qntx/fiat24@0.1.0` (published 2026-11-23) and
+  dependency no packed file imports. The checker also covers composite actions (any
+  `action.yml`), Dockerfiles (`FROM` by digest, `RUN` through the command rules) and every
+  `uses:` ref (a 40-hex commit, reusable workflows included); it fails `curl … | sh` installers,
+  `npm install`/`bun add`/`pnpm dlx`/`yarn dlx`, `bun install` without `--frozen-lockfile`,
+  `pip install` without `--require-hashes`, tool words inside quoted `sh -c` bodies, container,
+  service and `docker run` images without a digest, a non-exact `setup-java` or
+  `foundry-toolchain` version, a multi-line `minimumReleaseAgeExcludes` entry that is not an exact
+  pin, and a `bun.lock` with no `bunfig.toml` cooldown beside it; its header lists what it does
+  not cover. CI pins Temurin 25.0.5+8 and Foundry v1.10.0, the OneKey emulator images install
+  hash-pinned Python requirements, `apps/harness` gets the 7-day cooldown, and the Browser
+  workflow's consumer smoke installs its third-party closure from a committed
+  `package-lock.json` with lifecycle scripts disabled. `bun run test` now also runs the root
+  `scripts/**/*.test.ts` suite (the gate scripts' own tests), which no gate ran before.
+  `bunfig.toml`'s `minimumReleaseAgeExcludes` lets exactly `@qntx/fiat24@0.1.0` (published 2026-11-23) and
   `@qntx/ur@4.1.0` (published 2026-11-25), coordinated first-party releases with SLSA provenance,
   skip the 7-day cooldown; each entry is removed once its release is a week old (2026-11-30 and
   2026-12-02).
@@ -1776,6 +1788,21 @@ Gateway (operators):
 - `@qntx/wallet-chains`: hidden or reordering characters in a typed-data type name, field name,
   field type or `primaryType` make the document blind (`message-bytes`), like the same characters
   in a value.
+- `@qntx/wallet-kernel`: card `add` requires a `verify` factor (`invalid-input` without one), like
+  hardware `pair` — it adopts a card's whole wallet as confirmed own material, and before it a
+  holder of an unlocked phone and their own genuine card could plant that wallet presence-free.
+  `card.begin` re-checks the session after every verification, before change marks commit or the
+  first tap. (MIGRATION §30)
+- `@qntx/wallet-engine`: a hostile Esplora endpoint could seal a far change mark through the
+  wallet's own send — claim the change chain used out to an invented coin near
+  `BITCOIN_SCAN_LIMIT` and have the user spend it, leaving every later scan of that template
+  walking ~2000 change addresses. A send, replacement or CPFP that would spend a change coin past
+  the sealed scan reach now reads that coin's transaction on the second endpoint first and
+  refuses (`invalid-request`) when that endpoint does not serve it; with a single endpoint the
+  ratchet remains a documented residual (SECURITY.md). (MIGRATION §35)
+- `@qntx/wallet-engine`: accounts whose serving entry is unconfirmed are no longer subscribed for
+  push notifications and no longer count as known addresses for the history's
+  `address-poisoning` flag. (MIGRATION §35)
 
 ## [0.13.0] - 2026-11-09
 
