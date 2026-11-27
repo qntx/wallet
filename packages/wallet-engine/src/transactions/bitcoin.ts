@@ -377,16 +377,6 @@ type BuiltCoin = {
 };
 
 /**
- * A change-chain coin past the sealed-mark scan reach is where a hostile primary endpoint plants an
- * invented input: it answers "used" along the chain, the gap walk follows, and the kernel seals the
- * coin's index as the new change mark before the signature exists — one nonexistent prevout
- * ratchets every later scan and the transaction can never confirm. The independent endpoint's copy
- * of the funding transaction settles it: a definite "unknown" (4xx), an answer that is not a
- * parseable transaction, or a transaction whose txid or claimed outpoint differs in script or value
- * refuses the build outright; only a transient read failure downgrades the request to unverified
- * reads. With no second endpoint configured the primary's word stands — the documented residual.
- */
-/**
  * The outpoint the second endpoint's `/tx/:txid/hex` answer carries for `txid:vout`, or `undefined`
  * when it is not a parseable transaction for that txid — every such answer is a disagreement, never
  * a downgrade.
@@ -411,6 +401,16 @@ const outpointOf = (
   }
 };
 
+/**
+ * A change-chain coin past the sealed-mark scan reach is where a hostile primary endpoint plants an
+ * invented input: it answers "used" along the chain, the gap walk follows, and the kernel seals the
+ * coin's index as the new change mark before the signature exists — one nonexistent prevout
+ * ratchets every later scan and the transaction can never confirm. The independent endpoint's copy
+ * of the funding transaction settles it: a definite "unknown" (4xx), an answer that is not a
+ * parseable transaction, or a transaction whose txid or claimed outpoint differs in script or value
+ * refuses the build outright; only a transient read failure downgrades the request to unverified
+ * reads. With no second endpoint configured the primary's word stands — the documented residual.
+ */
 const crossCheckFarChangeCoins = async (
   coins: ReadonlyArray<BuiltCoin>,
   built: SpendContext,
