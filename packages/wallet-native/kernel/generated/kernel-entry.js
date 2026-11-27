@@ -36489,7 +36489,7 @@ zoo`.split("\n"));
 		84,
 		86
 	]);
-	var before = (a, b) => a.groupIndex - b.groupIndex || a.purpose - b.purpose || (a.network < b.network ? -1 : 1);
+	var before = (a, b) => a.groupIndex - b.groupIndex || a.purpose - b.purpose || (a.network < b.network ? -1 : a.network > b.network ? 1 : 0);
 	function parseChangeMarksHeader(text) {
 		const object = headerObject(text);
 		expectKeys(object, ["walletId", "marks"]);
@@ -40366,18 +40366,6 @@ zoo`.split("\n"));
 		const pub = xpubChild(xpub, network, change, index);
 		return template === "btc.bip86" ? pub.subarray(1) : pub;
 	}
-	/**
-	* The kernel-sealed change mark for the next classification: `stored`, raised to the highest
-	* change-chain index among the same-purpose signed inputs — but only for a request the wallet
-	* itself built. An external request can name any input path, so its inputs never raise the mark.
-	*/
-	var requestChangeMark = (stored, purpose, signed, origin) => {
-		let mark = stored;
-		if (origin === "internal") {
-			for (const input of signed) if (input.purpose === purpose && input.change === 1 && input.index > mark) mark = input.index;
-		}
-		return mark;
-	};
 	var EMPTY_BITCOIN_OWN = {
 		change: /* @__PURE__ */ new Set(),
 		unusual: /* @__PURE__ */ new Map(),
@@ -40386,7 +40374,8 @@ zoo`.split("\n"));
 	/**
 	* An output is discoverable change only on the change chain (`/1/i`), under a purpose at least one
 	* signed input shares, at an index inside what the gap-limited scan reaches: the sealed change mark
-	* plus the gap limit, bounded by the scan limit.
+	* `mark` plus the gap limit, bounded by the scan limit. `mark` is always the kernel-sealed value —
+	* signed inputs never widen it.
 	*/
 	var isDiscoverableChange = (output, signed, mark) => output.change === 1 && signed.some((input) => input.purpose === output.purpose) && output.index <= mark + 20 && output.index < 2e3;
 	var SATS = "sats";
@@ -41976,14 +41965,13 @@ zoo`.split("\n"));
 	* warning; it is never hidden, never worded as "your own address", and never touches the marks. A
 	* verified, confirmed own output is hidden as change only when `isDiscoverableChange` says the
 	* wallet can reach it — anything else is shown as a send to the user's own address at the unusual
-	* path it names. The returned `hidden` indexes are the raise the request would commit — the caller
-	* seals them only for `internal` requests.
+	* path it names. The returned `hidden` map holds the highest change index each purpose hid — the
+	* raise the request would commit; the caller seals it only for `internal` requests.
 	*/
 	var bitcoinOwn = async (b, tx, signed, markOf) => {
 		const change = /* @__PURE__ */ new Set();
 		const unusual = /* @__PURE__ */ new Map();
 		const unconfirmed = /* @__PURE__ */ new Set();
-		const marks = /* @__PURE__ */ new Map();
 		const hidden = /* @__PURE__ */ new Map();
 		for (let i = 0; i < tx.outputsLength; i++) {
 			const output = tx.getOutput(i);
@@ -41992,7 +41980,7 @@ zoo`.split("\n"));
 				const entry = derivationOf$1(output, b.fingerprint, purpose);
 				if (entry === void 0) continue;
 				try {
-					var _entry$path$, _entry$path$2, _marks$get;
+					var _entry$path$, _entry$path$2;
 					const pub = await childAt(b, purpose, entry.path);
 					if (!deepEqual(output.script, expectedScript(purpose, pub))) continue;
 					if (!await b.material.confirmed("secp256k1", entry.path)) {
@@ -42004,9 +41992,7 @@ zoo`.split("\n"));
 						change: (_entry$path$ = entry.path[3]) !== null && _entry$path$ !== void 0 ? _entry$path$ : 0,
 						index: (_entry$path$2 = entry.path[4]) !== null && _entry$path$2 !== void 0 ? _entry$path$2 : 0
 					};
-					const mark = (_marks$get = marks.get(purpose)) !== null && _marks$get !== void 0 ? _marks$get : markOf(purpose);
-					marks.set(purpose, mark);
-					if (isDiscoverableChange(tail, signed, mark)) {
+					if (isDiscoverableChange(tail, signed, markOf(purpose))) {
 						var _hidden$get;
 						change.add(hex(output.script));
 						hidden.set(purpose, Math.max((_hidden$get = hidden.get(purpose)) !== null && _hidden$get !== void 0 ? _hidden$get : -1, tail.index));
@@ -42024,17 +42010,16 @@ zoo`.split("\n"));
 				unusual,
 				unconfirmed
 			},
-			marks,
 			hidden
 		};
 	};
 	/**
 	* The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. The hidden
-	* change bound is the sealed mark — raised for this classification only by an `internal` request's
-	* same-purpose change inputs — and the resulting raise (the mark plus every hidden index) is what
-	* the caller commits after verification. Only `internal` requests produce `changeMarks`: an
-	* external request may hide change within the mark + gap window — the scan reaches it either way —
-	* but commits nothing, so no outside caller can ratchet the sealed mark without broadcasting.
+	* change bound is the sealed mark alone — a signed input can name any path, so inputs never widen
+	* it — and the raise an `internal` request commits after verification is exactly the change indexes
+	* it hid. Only `internal` requests produce `changeMarks`: an external request may hide change
+	* within the mark + gap window — the scan reaches it either way — but commits nothing, so no
+	* outside caller can ratchet the sealed mark without broadcasting.
 	*/
 	var prepareBitcoinPsbt = async (b, request, storedMark) => {
 		const tx = Transaction.fromPSBT(request.psbt);
@@ -42048,7 +42033,7 @@ zoo`.split("\n"));
 			});
 			signed.push(input.tail);
 		}
-		const { own, marks, hidden } = await bitcoinOwn(b, tx, signed, (purpose) => requestChangeMark(storedMark(purpose), purpose, signed, request.origin));
+		const { own, hidden } = await bitcoinOwn(b, tx, signed, storedMark);
 		let normalized;
 		try {
 			normalized = normalizeBitcoin(request);
@@ -42068,24 +42053,14 @@ zoo`.split("\n"));
 		} catch (error) {
 			mapChainError(error);
 		}
-		const raises = /* @__PURE__ */ new Map();
-		if (request.origin === "internal") {
-			const purposes = /* @__PURE__ */ new Set([...signed.map((tail) => tail.purpose), ...marks.keys()]);
-			for (const purpose of purposes) {
-				var _marks$get2, _hidden$get2;
-				const mark = (_marks$get2 = marks.get(purpose)) !== null && _marks$get2 !== void 0 ? _marks$get2 : requestChangeMark(storedMark(purpose), purpose, signed, request.origin);
-				const target = Math.max(mark, (_hidden$get2 = hidden.get(purpose)) !== null && _hidden$get2 !== void 0 ? _hidden$get2 : -1);
-				if (target > storedMark(purpose)) raises.set(purpose, target);
-			}
-		}
-		const changeMarks = [...raises.entries()].map(([purpose, index]) => ({
+		const raises = request.origin === "internal" ? [...hidden.entries()].map(([purpose, index]) => ({
 			purpose,
 			index
-		}));
+		})) : [];
 		return _objectSpread2({
 			prompt: intent,
 			plan: _objectSpread2(_objectSpread2({}, plan), {}, { hiddenChange: own.change })
-		}, changeMarks.length > 0 ? { changeMarks } : {});
+		}, raises.length > 0 ? { changeMarks: raises } : {});
 	};
 	/** The message plan: the declared change/index must derive this address, then normalize/plan. */
 	var prepareBitcoinMessage = async (b, purpose, request) => {

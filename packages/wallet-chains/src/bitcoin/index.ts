@@ -16,7 +16,6 @@ export {
   changeScanReach,
   EMPTY_BITCOIN_OWN,
   isDiscoverableChange,
-  requestChangeMark,
 } from "./own.ts";
 export type { BitcoinOwn, BitcoinPathTail, BitcoinRequestOrigin } from "./own.ts";
 export {

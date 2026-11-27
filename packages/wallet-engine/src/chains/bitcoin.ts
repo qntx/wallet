@@ -150,7 +150,17 @@ export const esplora = (
       if (!res.ok) {
         throw new EsploraError(`esplora ${base}${path}: ${res.status}`, res.status >= 500);
       }
-      const text = await res.text();
+      let text: string;
+      try {
+        // The timeout still bounds the body read: a stalled stream aborts the same signal —
+        // surface it as transient like the fetch failure above, not as a raw AbortError.
+        text = await res.text();
+      } catch (error) {
+        throw new EsploraError(
+          `esplora ${base}${path}: body read failed (${error instanceof Error ? error.name : "unknown"})`,
+          true,
+        );
+      }
       try {
         return { value: JSON.parse(text) as unknown };
       } catch {

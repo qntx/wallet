@@ -2,11 +2,10 @@
  * Which own-key outputs a signing prompt may hide as change. An output on this group's keys is
  * discoverable only when the wallet's gap-limited scan can reach it — anything else is shown as a
  * send to the caller's own address at an unusual path, with a warning. The reach bound comes from
- * the kernel's sealed change mark, never from the PSBT: an untrusted request can name any input
- * path, so signed inputs may raise the mark only for requests the wallet itself built (`origin:
- * "internal"`). An external request still hides change inside the window — the scan reaches it
- * either way — but commits no raise at all: neither its inputs nor the indexes it hid are sealed
- * into the mark.
+ * the kernel's sealed change mark, never from the PSBT: a signed input can name any path, so inputs
+ * never raise the mark. An `internal` request — one the wallet itself built — seals only the hidden
+ * change indexes it carried, up to the highest each purpose hid; an external request still hides
+ * change inside the window — the scan reaches it either way — but commits nothing.
  */
 
 /**
@@ -18,7 +17,11 @@ export const BITCOIN_GAP_LIMIT = 20;
 /** The highest change-chain index a scan may reach — a hard bound on scan work. */
 export const BITCOIN_SCAN_LIMIT = 2000;
 
-/** Who built a `bitcoin.psbt` request: the wallet engine itself, or an outside caller. */
+/**
+ * Who built a `bitcoin.psbt` request: the wallet engine itself (`internal`), or an outside caller
+ * (`external`). Only an internal request may seal the change indexes it hid into the mark; signed
+ * inputs raise it for neither origin.
+ */
 export type BitcoinRequestOrigin = "internal" | "external";
 
 /** The `change`/`index` tail of an account path `m/purpose'/coin'/group'/change/index`. */
@@ -26,28 +29,6 @@ export type BitcoinPathTail = {
   readonly purpose: number;
   readonly change: number;
   readonly index: number;
-};
-
-/**
- * The kernel-sealed change mark for the next classification: `stored`, raised to the highest
- * change-chain index among the same-purpose signed inputs — but only for a request the wallet
- * itself built. An external request can name any input path, so its inputs never raise the mark.
- */
-export const requestChangeMark = (
-  stored: number,
-  purpose: number,
-  signed: ReadonlyArray<BitcoinPathTail>,
-  origin: BitcoinRequestOrigin,
-): number => {
-  let mark = stored;
-  if (origin === "internal") {
-    for (const input of signed) {
-      if (input.purpose === purpose && input.change === 1 && input.index > mark) {
-        mark = input.index;
-      }
-    }
-  }
-  return mark;
 };
 
 /**
@@ -72,7 +53,8 @@ export const EMPTY_BITCOIN_OWN: BitcoinOwn = {
 /**
  * An output is discoverable change only on the change chain (`/1/i`), under a purpose at least one
  * signed input shares, at an index inside what the gap-limited scan reaches: the sealed change mark
- * plus the gap limit, bounded by the scan limit.
+ * `mark` plus the gap limit, bounded by the scan limit. `mark` is always the kernel-sealed value —
+ * signed inputs never widen it.
  */
 export const isDiscoverableChange = (
   output: BitcoinPathTail,

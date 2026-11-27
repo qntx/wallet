@@ -224,6 +224,30 @@ describe("esplora client timeout", () => {
     await expect(es.get("/blocks/tip/height")).rejects.toMatchObject({ transient: true });
   });
 
+  it("rejects a body that outlives the timeout with a transient EsploraError", async () => {
+    /* The abort fires while `res.text()` is awaited — the same signal bounds the body read, so
+       the failure surfaces as a transient EsploraError like the fetch failure above, never a
+       raw AbortError a caller cannot tell apart from a node refusal. */
+    const bodyHangs: EsploraFetch = async (_url, init) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: () => undefined },
+        json: async () => new Promise<unknown>(() => {}),
+        text: async () =>
+          new Promise<string>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              reject(new DOMException("aborted", "AbortError"));
+            });
+          }),
+      });
+    const es = esploraClient(["http://electrs.test"], bodyHangs, realTimerDeps, 20);
+    await expect(es.get("/tx/aa/hex")).rejects.toMatchObject({
+      name: "EsploraError",
+      transient: true,
+    });
+  });
+
   it("maps a 5xx to transient and a 4xx to permanent", async () => {
     const es500 = esploraClient(
       ["http://electrs.test"],

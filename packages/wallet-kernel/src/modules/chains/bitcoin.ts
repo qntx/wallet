@@ -15,7 +15,6 @@ import {
   normalizeBitcoin,
   planBitcoinMessage,
   planBitcoinPsbt,
-  requestChangeMark,
 } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinOwn, BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
 
@@ -196,8 +195,8 @@ const bitcoinInput = async (
  * warning; it is never hidden, never worded as "your own address", and never touches the marks. A
  * verified, confirmed own output is hidden as change only when `isDiscoverableChange` says the
  * wallet can reach it — anything else is shown as a send to the user's own address at the unusual
- * path it names. The returned `hidden` indexes are the raise the request would commit — the caller
- * seals them only for `internal` requests.
+ * path it names. The returned `hidden` map holds the highest change index each purpose hid — the
+ * raise the request would commit; the caller seals it only for `internal` requests.
  */
 const bitcoinOwn = async (
   b: BitcoinDerive,
@@ -206,13 +205,11 @@ const bitcoinOwn = async (
   markOf: (purpose: number) => number,
 ): Promise<{
   own: BitcoinOwn;
-  marks: Map<number, number>;
   hidden: Map<number, number>;
 }> => {
   const change = new Set<string>();
   const unusual = new Map<string, string>();
   const unconfirmed = new Set<string>();
-  const marks = new Map<number, number>();
   const hidden = new Map<number, number>();
   for (let i = 0; i < tx.outputsLength; i++) {
     const output = tx.getOutput(i);
@@ -236,9 +233,7 @@ const bitcoinOwn = async (
           break;
         }
         const tail = { purpose, change: entry.path[3] ?? 0, index: entry.path[4] ?? 0 };
-        const mark = marks.get(purpose) ?? markOf(purpose);
-        marks.set(purpose, mark);
-        if (isDiscoverableChange(tail, signed, mark)) {
+        if (isDiscoverableChange(tail, signed, markOf(purpose))) {
           change.add(hex(output.script));
           hidden.set(purpose, Math.max(hidden.get(purpose) ?? -1, tail.index));
         } else {
@@ -254,16 +249,16 @@ const bitcoinOwn = async (
       }
     }
   }
-  return { own: { change, unusual, unconfirmed }, marks, hidden };
+  return { own: { change, unusual, unconfirmed }, hidden };
 };
 
 /**
  * The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. The hidden
- * change bound is the sealed mark — raised for this classification only by an `internal` request's
- * same-purpose change inputs — and the resulting raise (the mark plus every hidden index) is what
- * the caller commits after verification. Only `internal` requests produce `changeMarks`: an
- * external request may hide change within the mark + gap window — the scan reaches it either way —
- * but commits nothing, so no outside caller can ratchet the sealed mark without broadcasting.
+ * change bound is the sealed mark alone — a signed input can name any path, so inputs never widen
+ * it — and the raise an `internal` request commits after verification is exactly the change indexes
+ * it hid. Only `internal` requests produce `changeMarks`: an external request may hide change
+ * within the mark + gap window — the scan reaches it either way — but commits nothing, so no
+ * outside caller can ratchet the sealed mark without broadcasting.
  */
 const prepareBitcoinPsbt = async (
   b: BitcoinDerive,
@@ -279,9 +274,7 @@ const prepareBitcoinPsbt = async (
     inputs.push({ index: input.index, key: input.key });
     signed.push(input.tail);
   }
-  const { own, marks, hidden } = await bitcoinOwn(b, tx, signed, (purpose) =>
-    requestChangeMark(storedMark(purpose), purpose, signed, request.origin),
-  );
+  const { own, hidden } = await bitcoinOwn(b, tx, signed, storedMark);
   let normalized;
   try {
     normalized = normalizeBitcoin(request);
@@ -303,28 +296,17 @@ const prepareBitcoinPsbt = async (
   } catch (error) {
     mapChainError(error);
   }
-  // The raise covers every purpose the request touches: an internal sweep's signed change inputs
-  // raise the mark even when no own output of that purpose exists to classify. An external
-  // request commits nothing — the outputs it hid stay inside the scan's reach as the mark stands.
-  const raises = new Map<number, number>();
-  if (request.origin === "internal") {
-    const purposes = new Set<number>([...signed.map((tail) => tail.purpose), ...marks.keys()]);
-    for (const purpose of purposes) {
-      const mark =
-        marks.get(purpose) ??
-        requestChangeMark(storedMark(purpose), purpose, signed, request.origin);
-      const target = Math.max(mark, hidden.get(purpose) ?? -1);
-      // Only a strictly larger target is a raise — re-sealing the same index dirties the image.
-      if (target > storedMark(purpose)) {
-        raises.set(purpose, target);
-      }
-    }
-  }
-  const changeMarks = [...raises.entries()].map(([purpose, index]) => ({ purpose, index }));
+  // The raise is exactly what the request hid — the highest hidden change index per purpose.
+  // `commitChangeMarks` ignores a raise that does not extend the stored mark, so a hidden index
+  // at or below the seal costs no record write; an external request commits nothing either way.
+  const raises =
+    request.origin === "internal"
+      ? [...hidden.entries()].map(([purpose, index]) => ({ purpose, index }))
+      : [];
   return {
     prompt: intent,
     plan: { ...plan, hiddenChange: own.change },
-    ...(changeMarks.length > 0 ? { changeMarks } : {}),
+    ...(raises.length > 0 ? { changeMarks: raises } : {}),
   };
 };
 

@@ -12,7 +12,8 @@ import { routeCpfp, routeReplace, routeSend } from "./send-helpers.ts";
 const HD = HDKey.fromMasterSeed(new Uint8Array(64).fill(1)).derive("m/84'/0'/0'");
 const PUB = HD.deriveChild(0).deriveChild(0);
 const TO_ADDR = p2wpkh(PUB.publicKey!, NETWORK).address;
-const CHANGE_ADDR = p2wpkh(HD.deriveChild(1).deriveChild(0).publicKey!, NETWORK).address;
+/** The first change index the wallet picks: mark 0 hands out /1/1 — index 0 is never used. */
+const CHANGE_ADDR = p2wpkh(HD.deriveChild(1).deriveChild(1).publicKey!, NETWORK).address;
 const TXID = (n: number) => n.toString(16).padStart(2, "0").repeat(32);
 
 const { script } = p2wpkh(PUB.publicKey!, NETWORK);
@@ -457,6 +458,35 @@ describe("bitcoin rbf", () => {
       expect(posted).toHaveLength(before);
       prepared.release();
       await expect(route.prepare(c, params, "req-2")).resolves.toBeDefined();
+    });
+
+    it("a failed replacement frees the extra input and the change index it reserved", async () => {
+      /* The parent pays everything out — no own change — so the bump reserves a fresh change
+         index plus a spare input, then dies inside the extra's raw-transaction read (the
+         endpoint has no bytes for the txid). Both reservations must come back: a later send
+         selects the same outpoint (the fetch error, not "insufficient") and hands out the same
+         change index. */
+      const stale = TXID(99);
+      setUtxos([{ txid: funding(1, 50_000).txid, vout: 0, value: 50_000 }]);
+      const c = ctx();
+      const original = await send(c, 49_400n);
+      expect(btcOf(original).outputs.every((o) => !o.own)).toBe(true);
+      setUtxos([{ txid: stale, vout: 0, value: 30_000 }]);
+      await expect(route.prepareReplace(c, original, "speed-up", "req-rbf")).rejects.toThrow(
+        "Unexpected end of buffer",
+      );
+
+      hexCalls.length = 0;
+      await expect(route.prepare(c, params, "req-next")).rejects.toThrow(
+        "Unexpected end of buffer",
+      );
+      // The fetch was attempted — a still-reserved outpoint would have been skipped outright.
+      expect(hexCalls).toContain(stale);
+
+      setUtxos([{ txid: funding(2, 50_000).txid, vout: 0, value: 50_000 }]);
+      const prepared = await route.prepare(c, params, "req-good");
+      const tx = await prepared.submit(verify, () => undefined);
+      expect(btcOf(tx).outputs.find((o) => o.own)?.address).toBe(CHANGE_ADDR);
     });
   });
 

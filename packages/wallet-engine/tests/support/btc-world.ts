@@ -106,7 +106,8 @@ const rootOf = (template: string): HDKey =>
 export const HD = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'");
 export const PUB = HD.deriveChild(0).deriveChild(0);
 export const OUR_ADDR = p2wpkh(pubkey(PUB), NETWORK).address;
-export const CHANGE_ADDR = p2wpkh(pubkey(HD.deriveChild(1).deriveChild(0)), NETWORK).address;
+/** The first change index the wallet ever picks: mark 0 hands out /1/1 — index 0 is never used. */
+export const CHANGE_ADDR = p2wpkh(pubkey(HD.deriveChild(1).deriveChild(1)), NETWORK).address;
 export const RECIP = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
 export const NET = "bip122:000000000019d6689c085ae165831e93";
 export const ACCOUNT = {

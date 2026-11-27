@@ -17,7 +17,6 @@ import {
   changeScanReach,
   isDiscoverableChange,
   normalizeBitcoin,
-  requestChangeMark,
 } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinOwn, BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
 import type { ChainsApi } from "@qntx/wallet/chains";
@@ -252,6 +251,15 @@ export const prepareDappPsbts = async (
       der: { fingerprint: d.fp, path: [...d.base, chain, index] },
     };
   };
+  // The bound is the sealed mark as the kernel reported it — signed inputs widen it for no origin.
+  const markOf = (purpose: number): number => {
+    for (const [template, d] of derives) {
+      if (PURPOSE_OF[template] === purpose) {
+        return d.mark;
+      }
+    }
+    return 0;
+  };
 
   return Promise.all(
     psbts.map(async (entry): Promise<PreparedBitcoinPsbt> => {
@@ -372,16 +380,7 @@ export const prepareDappPsbts = async (
       }
       // The same classification the kernel applies to the request's verified own outputs: only
       // change the wallet can reach is hidden, outputs an unconfirmed entry serves are foreign,
-      // and every other own-key output is shown with its path. The bound is the kernel-reported
-      // mark under the external origin, never the PSBT's inputs.
-      const markOf = (purpose: number): number => {
-        for (const [template, d] of derives) {
-          if (PURPOSE_OF[template] === purpose) {
-            return requestChangeMark(d.mark, purpose, signedTails, "external");
-          }
-        }
-        return 0;
-      };
+      // and every other own-key output is shown with its path.
       const change = new Set<string>();
       const unusual = new Map<string, string>();
       const unconfirmed = new Set<string>();
