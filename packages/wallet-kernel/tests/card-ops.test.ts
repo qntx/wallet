@@ -2998,6 +2998,26 @@ describe("card sign (fake card)", () => {
     await expect(mark(strField(unlocked, "session"))).resolves.toBe(0);
   });
 
+  it("a session that ends during the add verify fails locked before the op stages", async () => {
+    /* The post-verify session re-check is the only gate between the prompt and the operation
+       itself for ops with no pre-commit work — without it a dead session would still stage
+       the first step. */
+    const r = await keystoreRig("ios", 60_000);
+    const release = r.fake.hold();
+    const prompted = new Promise<void>((resolve) => {
+      r.fake.watchOpen(resolve);
+    });
+    const pending = r.h.call(
+      "card.begin",
+      { op: { kind: "add", groups: 1 }, verify: HARDWARE },
+      r.session,
+    );
+    await prompted;
+    r.h.advance(60_001);
+    release();
+    await expect(errCode(pending)).resolves.toBe("locked");
+  });
+
   it("a small per-tap budget spreads tasks over taps and a lost tag resends only pending work", async () => {
     // OPEN(300) + VERIFY(400) + margin(1000) leaves 550 ms — one ECDSA task (451) per tap.
     const r = await rig(2250);
