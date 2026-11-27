@@ -6,10 +6,23 @@
  * release-age exemptions. The last test runs the real repo through every check — a regression that
  * breaks one of these invariants fails here before `bun run lint` does.
  */
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vite-plus/test";
 
-import { checkBunfig, checkManifest, checkRepository, checkWorkflow } from "./check-toolchain.ts";
+import {
+  checkBunfig,
+  checkDockerfile,
+  checkManifest,
+  checkRepository,
+  checkWorkflow,
+} from "./check-toolchain.ts";
 import type { DependencyIndex } from "./check-toolchain.ts";
+
+const ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
+const tree = (path: string): string => readFileSync(join(ROOT, path), "utf8");
 
 /** The bins the fixture manifests offer: vp from vite-plus, wrangler, playwright, expo. */
 const BINS: Record<string, string> = {
@@ -92,7 +105,7 @@ describe("checkWorkflow setup-bun", () => {
     const errors = checkWorkflow(
       ".github/workflows/ci.yml",
       stepsJob(
-        `${SETUP_BUN}\n      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c\n        with:\n          distribution: temurin\n`,
+        `${SETUP_BUN}\n      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c\n        with:\n          distribution: temurin\n          java-version: "25.0.5+8"\n`,
       ),
       index,
     );
@@ -118,7 +131,7 @@ describe("checkWorkflow setup-bun", () => {
   it("fails a reference that is not a uses: line", () => {
     const errors = checkWorkflow(
       ".github/workflows/ci.yml",
-      stepsJob(`      - run: bun install # needs oven-sh/setup-bun@\n`),
+      stepsJob(`      - run: bun install --frozen-lockfile # needs oven-sh/setup-bun@\n`),
       index,
     );
     expect(errors).toHaveLength(1);
@@ -444,9 +457,11 @@ describe("checkManifest", () => {
 });
 
 describe("checkBunfig", () => {
+  const AGE = "minimumReleaseAge = 604800\n";
+
   it("passes exact name@version entries", () => {
     const errors = checkBunfig(
-      'minimumReleaseAgeExcludes = ["@qntx/fiat24@0.1.0", "@qntx/ur@4.1.0"]',
+      `${AGE}minimumReleaseAgeExcludes = ["@qntx/fiat24@0.1.0", "@qntx/ur@4.1.0"]`,
     );
     expect(errors).toStrictEqual([]);
   });
@@ -457,9 +472,199 @@ describe("checkBunfig", () => {
     ["a two-part version", '"@qntx/fiat24@0.1"'],
     ["a tag", '"@qntx/fiat24@latest"'],
   ])("fails %s", (_name, entry) => {
-    const errors = checkBunfig(`minimumReleaseAgeExcludes = [${entry}]`);
+    const errors = checkBunfig(`${AGE}minimumReleaseAgeExcludes = [${entry}]`);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("name@X.Y.Z");
+  });
+
+  it("fails a bare exclusion written on a continuation line", () => {
+    const errors = checkBunfig(
+      `${AGE}minimumReleaseAgeExcludes = [\n  "@qntx/fiat24",\n]\n`,
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("name@X.Y.Z");
+  });
+
+  it("fails a bare exclusion in single quotes or behind a comment", () => {
+    const single = checkBunfig(`${AGE}minimumReleaseAgeExcludes = ['@qntx/fiat24']`);
+    expect(single).toHaveLength(1);
+    const commented = checkBunfig(
+      `${AGE}minimumReleaseAgeExcludes = [\n  "@qntx/fiat24", # let it through\n]\n`,
+    );
+    expect(commented).toHaveLength(1);
+  });
+
+  it("requires the release-age cooldown itself", () => {
+    expect(checkBunfig("")).toHaveLength(1);
+    expect(checkBunfig("minimumReleaseAge = 3600")).toHaveLength(1);
+  });
+});
+
+describe("checkWorkflow composite-action uses rules", () => {
+  const composite = (steps: string): string =>
+    `name: x\nruns:\n  using: composite\n  steps:\n${steps}`;
+  const inComposite = (step: string): string[] =>
+    checkWorkflow(".github/actions/setup/action.yml", composite(step), index);
+
+  it("checks a composite setup-bun step like a job step", () => {
+    const floating = `    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6\n      with:\n        bun-version: latest\n`;
+    expect(inComposite(floating).length).toBeGreaterThan(0);
+    const pinned = `    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6\n      with:\n        bun-version-file: package.json\n`;
+    expect(inComposite(pinned)).toStrictEqual([]);
+  });
+
+  it("checks a composite setup-node step like a job step", () => {
+    const floating = `    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1\n      with:\n        node-version: "24"\n`;
+    expect(inComposite(floating).length).toBeGreaterThan(0);
+    const exact = `    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1\n      with:\n        node-version: "24.22.3"\n`;
+    expect(inComposite(exact)).toStrictEqual([]);
+  });
+});
+
+describe("checkCommand installer and image rules", () => {
+  const jobRun = (command: string): string[] =>
+    checkWorkflow(".github/workflows/x.yml", stepsJob(`      - run: ${command}\n`), index);
+
+  it.each([
+    "curl -fsSL https://bun.sh/install | bash",
+    "wget -qO- https://x.y/z | sh",
+    "npm install -g some-tool",
+    "npm i some-tool",
+    "npm add some-tool",
+    "bun add -g some-tool",
+    "bun install",
+    "pnpm dlx some-tool",
+    "yarn dlx some-tool",
+    "pnpx some-tool",
+    "pip install some-tool",
+    "pip3 install some-tool",
+    'sh -c "bunx some-tool"',
+    "sh -c 'npm install some-tool'",
+    "docker run --rm node:latest node -v",
+    "docker pull postgres:latest",
+  ])("fails `%s`", (command) => {
+    expect(jobRun(command).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    "npm ci --ignore-scripts",
+    "bun ci",
+    "bun install --frozen-lockfile",
+    "pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt",
+    "curl -fsSL -o /tmp/x.tar.gz https://x.y/z && echo 'abc  /tmp/x.tar.gz' | sha256sum -c -",
+    "docker run --rm node@sha256:9d4cbb9f8c41b80f0ee9b94e56739bc54ba0eb7e56b37b68a4a48f5a5ecace4f node -v",
+  ])("passes `%s`", (command) => {
+    expect(jobRun(command)).toStrictEqual([]);
+  });
+
+  it("lets docker run an image the same workflow builds", () => {
+    const source =
+      "jobs:\n  t:\n    steps:\n" +
+      "      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc\n" +
+      "        with:\n          tags: onekey-emu-${{ matrix.model }}\n" +
+      "      - run: docker run -d --name emu -p 54935:54935/udp onekey-emu-${{ matrix.model }}\n";
+    expect(checkWorkflow(".github/workflows/x.yml", source, index)).toStrictEqual([]);
+  });
+
+  it("fails container and service images by floating tag", () => {
+    const source =
+      "jobs:\n  t:\n    runs-on: ubuntu-latest\n    container:\n      image: node:latest\n" +
+      "    services:\n      db:\n        image: postgres:latest\n    steps:\n      - run: echo ok\n";
+    expect(checkWorkflow(".github/workflows/x.yml", source, index)).toHaveLength(2);
+  });
+
+  it("fails an allow-listed reusable workflow on a branch ref", () => {
+    const source =
+      "jobs:\n  release:\n    uses: qntx/workflows/.github/workflows/release.yml@main\n";
+    expect(checkWorkflow(".github/workflows/release.yml", source, index)).toHaveLength(1);
+  });
+
+  it("fails a setup-java step whose java-version is not exact", () => {
+    const step =
+      "      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c\n" +
+      '        with:\n          distribution: temurin\n          java-version: "25"\n';
+    expect(
+      checkWorkflow(".github/workflows/x.yml", stepsJob(step), index).length,
+    ).toBeGreaterThan(0);
+    const exact = step.replace('java-version: "25"', 'java-version: "25.0.5+8"');
+    expect(checkWorkflow(".github/workflows/x.yml", stepsJob(exact), index)).toStrictEqual([]);
+  });
+
+  it("fails a foundry-toolchain step with no or floating version", () => {
+    const base =
+      "      - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf\n";
+    expect(
+      checkWorkflow(".github/workflows/x.yml", stepsJob(base), index).length,
+    ).toBeGreaterThan(0);
+    const stable = `${base}        with:\n          version: stable\n`;
+    expect(
+      checkWorkflow(".github/workflows/x.yml", stepsJob(stable), index).length,
+    ).toBeGreaterThan(0);
+    const pinned = `${base}        with:\n          version: v1.10.0\n`;
+    expect(checkWorkflow(".github/workflows/x.yml", stepsJob(pinned), index)).toStrictEqual([]);
+  });
+});
+
+describe("checkDockerfile", () => {
+  const DIGEST = `sha256:${"a".repeat(64)}`;
+
+  it("passes digest-pinned bases, prior-stage references and hashed pip installs", () => {
+    const source =
+      `FROM python:3.10-slim-bookworm@${DIGEST} AS build\n` +
+      "COPY requirements.txt /tmp/requirements.txt\n" +
+      "RUN pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt\n" +
+      `FROM python:3.10-slim-bookworm@${DIGEST}\n` +
+      "COPY --from=build /src /src\n";
+    expect(checkDockerfile("Dockerfile.x", source, index)).toStrictEqual([]);
+  });
+
+  it("fails an undigested FROM and joins \\-continued RUN bodies", () => {
+    const source = 'FROM node:latest\nRUN pip install --no-cache-dir \\\n    "scons"\n';
+    const errors = checkDockerfile("Dockerfile.x", source, index);
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toContain("FROM node:latest");
+    expect(errors[1]).toContain("--require-hashes");
+  });
+});
+
+describe("the repository pins its live toolchain instances", () => {
+  it("card.yml pins an exact JDK", () => {
+    expect(tree(".github/workflows/card.yml")).toContain('java-version: "25.0.5+8"');
+  });
+
+  it("every foundry-toolchain step pins an exact foundry version", () => {
+    expect(tree(".github/workflows/ci.yml")).toContain("version: v1.10.0");
+  });
+
+  it("the OneKey emulator images install python packages by hash", () => {
+    for (const model of ["pro", "classic1s"]) {
+      const dockerfile = tree(`packages/wallet-kernel/tests/onekey-emulator/Dockerfile.${model}`);
+      expect(dockerfile).toContain(`--require-hashes -r /tmp/requirements-${model}.txt`);
+      expect(
+        existsSync(
+          join(
+            ROOT,
+            `packages/wallet-kernel/tests/onekey-emulator/requirements-${model}.txt`,
+          ),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("every bun.lock directory carries the release-age cooldown", () => {
+    expect(existsSync(join(ROOT, "apps/harness/bun.lock"))).toBe(true);
+    const bunfig = tree("apps/harness/bunfig.toml");
+    expect(checkBunfig(bunfig)).toStrictEqual([]);
+  });
+
+  it("the consumer smoke installs from a committed lockfile with no lifecycle scripts", () => {
+    expect(
+      existsSync(join(ROOT, "packages/wallet-worker/tests/consumer/package-lock.json")),
+    ).toBe(true);
+    const smoke = tree("packages/wallet-worker/scripts/consumer-smoke.ts");
+    expect(smoke).toContain("ci");
+    expect(smoke).toContain("--ignore-scripts");
+    expect(smoke).toContain("--offline");
   });
 });
 
