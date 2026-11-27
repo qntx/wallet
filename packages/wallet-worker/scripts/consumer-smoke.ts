@@ -8,7 +8,7 @@
  * any .js/.wasm request answered with the SPA fallback's text/html is the bundler-entry bug.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -36,14 +36,82 @@ const pack = (pkg: string, dest: string): string => {
   return join(dest, name);
 };
 
+const FIRST_PARTY = new Set(["@qntx/wallet-chains", "@qntx/wallet", "@qntx/wallet-worker"]);
+const CONSUMER = join(ROOT, "packages/wallet-worker/tests/consumer");
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+
+const manifest = (path: string): Record<string, unknown> => {
+  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+  if (!isRecord(parsed)) {
+    throw new Error(`${path} did not parse to an object`);
+  }
+  return parsed;
+};
+const entriesOf = (value: unknown): Array<[string, string]> => {
+  const out: Array<[string, string]> = [];
+  if (isRecord(value)) {
+    for (const [name, spec] of Object.entries(value)) {
+      if (typeof spec === "string") {
+        out.push([name, spec]);
+      }
+    }
+  }
+  return out;
+};
+
+// The scaffold's third-party dependencies are a pure function of the three
+// manifests: the union of their dependencies plus @qntx/wallet's non-first-party
+// peers (npm does not auto-install tarball peers) plus the repo's vite.
+const expectedDependencies = (): Record<string, string> => {
+  const deps: Record<string, string> = {};
+  for (const pkg of FIRST_PARTY) {
+    for (const [name, spec] of entriesOf(
+      manifest(join(ROOT, "packages", pkg.slice(6), "package.json"))["dependencies"],
+    )) {
+      if (!FIRST_PARTY.has(name)) {
+        deps[name] = spec;
+      }
+    }
+  }
+  for (const [name, spec] of entriesOf(
+    manifest(join(ROOT, "packages/wallet/package.json"))["peerDependencies"],
+  )) {
+    if (!FIRST_PARTY.has(name)) {
+      deps[name] = spec.replace(/^~/, "");
+    }
+  }
+  const root = manifest(join(ROOT, "package.json"));
+  for (const [name, spec] of entriesOf(root["devDependencies"])) {
+    if (name === "vite") {
+      deps[name] = spec;
+    }
+  }
+  return Object.fromEntries(Object.entries(deps).toSorted(([a], [b]) => a.localeCompare(b)));
+};
+
+const expected = expectedDependencies();
+const committed = Object.fromEntries(
+  entriesOf(manifest(join(CONSUMER, "package.json"))["dependencies"]),
+);
+if (JSON.stringify(committed) !== JSON.stringify(expected)) {
+  throw new Error(
+    "tests/consumer/package.json drifted from the workspace manifests.\n" +
+      `Expected dependencies:\n${JSON.stringify(expected, null, 2)}\n` +
+      "Regenerate both files: cd packages/wallet-worker/tests/consumer && " +
+      "npm install --package-lock-only --ignore-scripts " +
+      "--before=<ISO date 7 days ago> # honour the registry cooldown",
+  );
+}
+
 const app = mkdtempSync(join(tmpdir(), "qntx-consumer-smoke-"));
 console.log("consumer app:", app);
 
 mkdirSync(join(app, "src"), { recursive: true });
-writeFileSync(
-  join(app, "package.json"),
-  JSON.stringify({ name: "qntx-consumer-smoke", private: true, type: "module" }, null, 2),
-);
+// The committed manifest + lockfile make every third-party install reproducible
+// (`npm ci`) instead of resolving the newest range on the day the smoke runs.
+copyFileSync(join(CONSUMER, "package.json"), join(app, "package.json"));
+copyFileSync(join(CONSUMER, "package-lock.json"), join(app, "package-lock.json"));
 writeFileSync(
   join(app, "index.html"),
   `<!doctype html><html><body><script type="module" src="/src/main.ts"></script></body></html>`,
@@ -106,38 +174,27 @@ globalThis.qntx = {
 `,
 );
 
+const chainsTgz = pack("wallet-chains", app);
 const walletTgz = pack("wallet", app);
 const workerTgz = pack("wallet-worker", app);
-console.log("packed:", walletTgz, workerTgz);
+console.log("packed:", chainsTgz, walletTgz, workerTgz);
 
-// npm does not auto-install peers of local tarballs: name the published peers as a consumer would
-// after reading the README (@qntx/wallet peers on nostr + spark). Versions come from the manifests
-// so the smoke never drifts from what the packages declare.
-const specOf = (path: string, section: string, name: string): string => {
-  const parsed: unknown = JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8"));
-  const deps: unknown =
-    typeof parsed === "object" && parsed !== null ? Reflect.get(parsed, section) : undefined;
-  const spec: unknown =
-    typeof deps === "object" && deps !== null ? Reflect.get(deps, name) : undefined;
-  if (typeof spec !== "string") {
-    throw new TypeError(`${path}: no ${section}["${name}"]`);
-  }
-  return spec;
-};
-const peer = (name: string): string =>
-  `${name}@${specOf("../../wallet/package.json", "peerDependencies", name).replace(/^~/, "")}`;
-const vite = specOf("../../../package.json", "devDependencies", "vite");
+// Third-party packages come from the committed lockfile with lifecycle scripts
+// off; the first-party tarballs then install offline (--no-save keeps the
+// lockfile untouched) so no registry resolution happens at smoke time.
+run("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], app);
 run(
   "npm",
   [
     "install",
+    "--no-save",
+    "--offline",
+    "--ignore-scripts",
     "--no-audit",
     "--no-fund",
+    chainsTgz,
     walletTgz,
     workerTgz,
-    peer("@qntx/nostr"),
-    peer("@qntx/spark"),
-    `vite@${vite}`,
   ],
   app,
 );
@@ -164,7 +221,6 @@ const fail = (msg: string): never => {
   throw new Error(`CONSUMER SMOKE FAILED: ${msg}`);
 };
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage();

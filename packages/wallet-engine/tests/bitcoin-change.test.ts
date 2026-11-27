@@ -11,6 +11,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   BITCOIN_GAP_LIMIT,
+  BITCOIN_SCAN_LIMIT,
   bitcoinAddressFromXpub,
   isDiscoverableChange,
   requestChangeMark,
@@ -21,7 +22,7 @@ import { scripthash } from "../src/chains/bitcoin-scan.ts";
 import type { ScanAddress } from "../src/chains/bitcoin-scan.ts";
 import { changeAddressOf } from "../src/transactions/bitcoin.ts";
 import type { SignParams } from "../src/transactions/route.ts";
-import { CHANGE_ADDR, HD, NET, world } from "./support/btc-world.ts";
+import { ACCOUNT, CHANGE_ADDR, HD, NET, RECIP, world } from "./support/btc-world.ts";
 
 const PURPOSE = 84;
 
@@ -165,4 +166,155 @@ describe("a send whose serving entry was never confirmed on the device", () => {
     expect(intent?.outflows.some((o) => o.to === CHANGE_ADDR)).toBe(true);
     expect(intent?.warnings.every((w) => w.kind !== "unusual-own-output")).toBe(true);
   });
+});
+
+describe("a change coin past the sealed-mark reach", () => {
+  const FAR = 1979;
+
+  /** The hostile primary claims every change address before `end` was used — the gap walk follows. */
+  const usedUpTo = (w: ReturnType<typeof world>, end: number): void => {
+    for (let i = 0; i < end; i += 1) {
+      const addr = bitcoinAddressFromXpub(HD.publicExtendedKey, "btc.bip84", NET, 1, i);
+      w.markUsed(scripthash(addr, NETWORK), "ab".repeat(32));
+    }
+  };
+
+  /** The world's raw bytes for `txid` — every funding transaction keeps them. */
+  const fundingHex = (w: ReturnType<typeof world>, txid: string): string => {
+    const raw = w.rawHexOf(txid);
+    if (raw === undefined) {
+      throw new Error(`world has no raw bytes for ${txid}`);
+    }
+    return raw;
+  };
+
+  /** The txs/utxo reads `requests` made against `hashes`'s addresses. */
+  const scripthashReads = (
+    requests: ReadonlyArray<string>,
+    hashes: ReadonlySet<string>,
+  ): string[] =>
+    requests.flatMap((u) => {
+      const h = /^\/scripthash\/([0-9a-f]{64})\/(txs|utxo)$/.exec(u)?.[1];
+      return h !== undefined && hashes.has(h) ? [u] : [];
+    });
+
+  const prepareFarSend = async (w: ReturnType<typeof world>) =>
+    w
+      .boot()
+      .then(async (booted) =>
+        booted.ctl.prepareSend(
+          { account: { ...ACCOUNT }, network: NET, to: RECIP, amount: 10_000n, fee: "slow" },
+          "req-far",
+        ),
+      );
+
+  it("is refused when the second endpoint does not know its funding transaction", async () => {
+    const w = world({ independent: true });
+    usedUpTo(w, FAR);
+    // The primary invents this coin: the second endpoint's 404 settles the disagreement.
+    w.fundChange(FAR, 9, 200_000);
+    await expect(prepareFarSend(w)).rejects.toMatchObject({ code: "invalid-request" });
+    // The invented coin never reached the signer — no internal PSBT exists to seal its index.
+    expect(w.signedCalls).toStrictEqual([]);
+    expect(w.independentRequests.filter((u) => u.endsWith("/hex"))).not.toStrictEqual([]);
+  }, 120_000);
+
+  it("frees the refused coin so a retry under an honest endpoint selects it", async () => {
+    const w = world({ independent: true });
+    usedUpTo(w, FAR);
+    const coin = w.fundChange(FAR, 9, 200_000);
+    const booted = await w.boot();
+    // The independent's 404 refuses this prepare; the coin must not stay reserved under req-far.
+    await expect(
+      booted.ctl.prepareSend(
+        { account: { ...ACCOUNT }, network: NET, to: RECIP, amount: 10_000n, fee: "slow" },
+        "req-far",
+      ),
+    ).rejects.toMatchObject({ code: "invalid-request" });
+    w.setIndependentHex(coin.txid, fundingHex(w, coin.txid));
+    const tx = await w.send(booted, 10_000n, "req-retry");
+    expect(tx.state).not.toBe("failed");
+    const psbt = Transaction.fromPSBT(psbtOf(w.signedCalls));
+    const inputTxids = Array.from({ length: psbt.inputsLength }, (_, i) =>
+      Buffer.from(psbt.getInput(i).txid as Uint8Array).toString("hex"),
+    );
+    expect(inputTxids).toContain(coin.txid);
+  }, 120_000);
+
+  it("is refused when the second endpoint's outpoint disagrees with the claim", async () => {
+    const w = world({ independent: true });
+    usedUpTo(w, FAR);
+    const coin = w.fundChange(FAR, 9, 200_000);
+    // A real transaction whose txid is not the coin's — too small to be selected over it.
+    const other = w.fund(11, 600);
+    w.setIndependentHex(coin.txid, fundingHex(w, other.txid));
+    await expect(prepareFarSend(w)).rejects.toMatchObject({ code: "invalid-request" });
+    expect(w.signedCalls).toStrictEqual([]);
+  }, 120_000);
+
+  it("proceeds when the second endpoint serves the same funding transaction", async () => {
+    const w = world({ independent: true });
+    usedUpTo(w, FAR);
+    const coin = w.fundChange(FAR, 9, 200_000);
+    w.setIndependentHex(coin.txid, fundingHex(w, coin.txid));
+    const booted = await w.boot();
+    const tx = await w.send(booted, 10_000n, "req-far");
+    expect(tx.state).not.toBe("failed");
+    // The coin is real, so the mark raise it carries is legitimate: the signed PSBT spends it.
+    const psbt = Transaction.fromPSBT(psbtOf(w.signedCalls));
+    const inputTxids = Array.from({ length: psbt.inputsLength }, (_, i) =>
+      Buffer.from(psbt.getInput(i).txid as Uint8Array).toString("hex"),
+    );
+    expect(inputTxids).toContain(coin.txid);
+  }, 120_000);
+
+  it("proceeds flagged unverified when the second read fails transiently", async () => {
+    const w = world({ independent: true });
+    usedUpTo(w, FAR);
+    const coin = w.fundChange(FAR, 9, 200_000);
+    w.setIndependentHex(coin.txid, new TypeError("fetch failed"));
+    const prepared = await prepareFarSend(w);
+    expect(prepared.checks).toContain("reads-unverified");
+    prepared.release();
+  }, 120_000);
+
+  it("proceeds on the primary's word alone when no second endpoint is configured", async () => {
+    const w = world();
+    usedUpTo(w, FAR);
+    w.fundChange(FAR, 9, 200_000);
+    const booted = await w.boot();
+    const tx = await w.send(booted, 10_000n, "req-far");
+    expect(tx.state).not.toBe("failed");
+  }, 120_000);
+
+  it("never asks the second endpoint about a coin inside the reach", async () => {
+    const w = world({ independent: true, changeMark: 100 });
+    // Index 50 lies under the reach mark 100 proves — a spendable coin that is not far.
+    w.fundChange(50, 7, 200_000);
+    const booted = await w.boot();
+    const tx = await w.send(booted, 10_000n, "req-in");
+    expect(tx.state).not.toBe("failed");
+    expect(w.independentRequests.filter((u) => u.endsWith("/hex"))).toStrictEqual([]);
+  }, 120_000);
+
+  it("bounds the rescan a sealed mark costs to two reads per scanned address", async () => {
+    const w = world({ changeMark: FAR });
+    w.fund(1, 50_000);
+    const booted = await w.boot();
+    const before = w.requests.length;
+    const prepared = await booted.ctl.prepareSend(
+      { account: { ...ACCOUNT }, network: NET, to: RECIP, amount: 10_000n, fee: "slow" },
+      "req-after",
+    );
+    prepared.release();
+    const changeHashes = new Set(
+      Array.from({ length: BITCOIN_SCAN_LIMIT }, (_, i) =>
+        scripthash(bitcoinAddressFromXpub(HD.publicExtendedKey, "btc.bip84", NET, 1, i), NETWORK),
+      ),
+    );
+    // txs + utxo per scanned change address, and the walk can never pass the scan limit.
+    expect(scripthashReads(w.requests.slice(before), changeHashes).length).toBeLessThanOrEqual(
+      2 * BITCOIN_SCAN_LIMIT,
+    );
+  }, 120_000);
 });

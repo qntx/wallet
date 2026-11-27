@@ -40,6 +40,7 @@ import type { Controller } from "./controller.ts";
 import type { EngineLogger } from "./events.ts";
 import { gatewayFetch, gatewaySession } from "./gateway/client.ts";
 import { tokenAssetId } from "./gateway/contract/index.ts";
+import type { PushFamily } from "./gateway/contract/push.ts";
 import { HistoryController } from "./history/controller.ts";
 import { lidoPosition } from "./lido/index.ts";
 import type { LidoPosition } from "./lido/index.ts";
@@ -443,6 +444,66 @@ const defaultSetTimer = (ms: number, fn: () => void): (() => void) => {
   };
 };
 
+type WatchGroupAddresses = (
+  group: { readonly walletId: string; readonly groupIndex: number },
+  family: "evm" | "solana" | "tron",
+) => Promise<
+  ReadonlyArray<{
+    readonly network: string;
+    readonly address: string;
+    readonly confirmed: boolean;
+  }>
+>;
+
+/**
+ * The address set a push subscription watches on one family: every group's confirmed addresses. An
+ * address a device-unconfirmed entry serves is never subscribed — subscribing it would have the
+ * gateway report that key's incoming transfers as the wallet's own (and learn the address), for
+ * material no trusted screen ever showed. One group waiting on its signer must not blind the
+ * family's readable groups: the status stays `device-required` only when nothing can be watched.
+ */
+export const pushAddresses = async (
+  options: {
+    readonly accounts: Pick<AccountTreeController, "getState">;
+    readonly groupAddresses: WatchGroupAddresses;
+  },
+  walletId: string,
+  family: PushFamily,
+): Promise<ReadonlyArray<string>> => {
+  // A bitcoin receive chain needs a gap-limit policy; the gateway has no watcher either.
+  if (family === "bitcoin") {
+    return [];
+  }
+  const out: string[] = [];
+  let deviceNeeded = false;
+  for (const group of options.accounts.getState().groups[walletId] ?? []) {
+    let derived: ReadonlyArray<{
+      readonly network: string;
+      readonly address: string;
+      readonly confirmed: boolean;
+    }>;
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- groups derive serially, like portfolio
+      derived = await options.groupAddresses({ walletId, groupIndex: group.index }, family);
+    } catch (error) {
+      if (error instanceof WalletError && error.code === "device-required") {
+        deviceNeeded = true;
+        continue;
+      }
+      throw error;
+    }
+    for (const { address, confirmed } of derived) {
+      if (confirmed) {
+        out.push(address);
+      }
+    }
+  }
+  if (out.length === 0 && deviceNeeded) {
+    throw new WalletError("device-required", "every group's path lives on the device");
+  }
+  return out;
+};
+
 export function createWalletEngine(options: EngineOptions): WalletEngine {
   const setTimer = options.setTimer ?? defaultSetTimer;
   const gateway =
@@ -827,7 +888,13 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const groupAddresses = async (
     group: { readonly walletId: string; readonly groupIndex: number },
     family: "evm" | "solana" | "tron",
-  ): Promise<ReadonlyArray<{ readonly network: string; readonly address: string }>> => {
+  ): Promise<
+    ReadonlyArray<{
+      readonly network: string;
+      readonly address: string;
+      readonly confirmed: boolean;
+    }>
+  > => {
     const enabled = networks.enabled(family);
     const [first] = enabled;
     if (
@@ -850,7 +917,11 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         network: first,
       });
       return "address" in account
-        ? enabled.map((network) => ({ network, address: account.address }))
+        ? enabled.map((network) => ({
+            network,
+            address: account.address,
+            confirmed: account.confirmed,
+          }))
         : [];
     } catch (error) {
       // Hardware groups without a pinned path need the device — surface it, don't swallow.
@@ -874,36 +945,8 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     accounts,
     networks,
     transactions,
-    addresses: async (walletId, family) => {
-      // A bitcoin receive chain needs a gap-limit policy; the gateway has no watcher either.
-      if (family === "bitcoin") {
-        return [];
-      }
-      const out: string[] = [];
-      let deviceNeeded = false;
-      for (const group of accounts.getState().groups[walletId] ?? []) {
-        let derived: ReadonlyArray<{ readonly network: string; readonly address: string }>;
-        try {
-          // oxlint-disable-next-line eslint/no-await-in-loop -- groups derive serially, like portfolio
-          derived = await groupAddresses({ walletId, groupIndex: group.index }, family);
-        } catch (error) {
-          /* One group waiting on its signer must not blind the family's readable groups —
-             the status stays `device-required` only when nothing can be watched. */
-          if (error instanceof WalletError && error.code === "device-required") {
-            deviceNeeded = true;
-            continue;
-          }
-          throw error;
-        }
-        for (const { address } of derived) {
-          out.push(address);
-        }
-      }
-      if (out.length === 0 && deviceNeeded) {
-        throw new WalletError("device-required", "every group's path lives on the device");
-      }
-      return out;
-    },
+    addresses: async (walletId, family) =>
+      pushAddresses({ accounts, groupAddresses }, walletId, family),
     reconcile: async (event) => {
       const loaded = history.getState().groups;
       await Promise.all([

@@ -314,6 +314,7 @@ const prepareBitcoinPsbt = async (
         marks.get(purpose) ??
         requestChangeMark(storedMark(purpose), purpose, signed, request.origin);
       const target = Math.max(mark, hidden.get(purpose) ?? -1);
+      // Only a strictly larger target is a raise — re-sealing the same index dirties the image.
       if (target > storedMark(purpose)) {
         raises.set(purpose, target);
       }

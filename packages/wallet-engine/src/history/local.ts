@@ -15,6 +15,13 @@ export type GroupAddresses = {
    * template its own — appended while the Bitcoin source runs.
    */
   readonly bitcoin: Array<Set<string>>;
+  /**
+   * The own addresses a device-unconfirmed entry serves — material the device never confirmed
+   * on-screen. They stay own for local-send membership (a send to one is still not self), but the
+   * known set must not vouch for them: a lookalike counterparty wearing such an address keeps its
+   * poisoning flag.
+   */
+  readonly unconfirmed: Set<string>;
 };
 
 export type HistoryGroup = {

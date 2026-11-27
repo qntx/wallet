@@ -32,7 +32,7 @@ kernel (`verifyFactor` in `packages/wallet-kernel/src/vault/vault.ts`):
 `chain.sign`, `chain.exportAccount`, `hardware.begin` (sign, pair, and an
 `accounts` fetch that adds material — a re-read of pinned paths needs none),
 the verify-bearing `card.begin` ops (`verifyGate` in
-`packages/wallet-kernel/src/modules/card/ops/index.ts`: create, sign,
+`packages/wallet-kernel/src/modules/card/ops/index.ts`: add, create, sign,
 transfer, reseal, erase, change-access, forget-access), `sessions.create` /
 `sessions.open`, `wallet.delete`, `wallet.exportMnemonic`,
 `keys.export`/`keys.remove`, `backup.enable`/`backup.disable`/
@@ -250,7 +250,11 @@ Summary, per platform — details in the sections below:
   (`prepareApproval` in `packages/wallet-kernel/src/modules/chains/index.ts`).
   The engine's dApp, QR and own-send previews apply the same rule and
   raise a `bitcoin-unconfirmed-output` danger finding, and its history
-  reads transfers to such keys as sends, never as `self`.
+  reads transfers to such keys as sends, never as `self`. On Face ID and
+  WebAuthn ceremonies no kernel text is shown (trust boundary, above), so
+  the danger row is not either: there `acknowledgeUnconfirmed`, which the main
+  runtime supplies, is the only gate, and the device screen and the host's
+  own UI are the only places the user can see the warning.
 - **Per-driver confirmation ability:** Ledger and OneKey display the
   address on-device. Keystone has no host-initiated display — the user
   compares against the device's Receive menu, which covers only the
@@ -382,6 +386,18 @@ and the kernel cannot tell the two apart.
   second endpoint where one exists (nonce, blockhash, Solana lookup
   tables); the relay switches providers only when the submission provably
   never arrived.
+- **Can**, as the only Bitcoin endpoint, ratchet the sealed change mark
+  through the wallet's own send: answering "used" along the change chain
+  out to an invented coin and getting the user to spend it makes the kernel
+  seal that coin's index before the broadcast fails, so every later scan of
+  that template walks the change chain to `changeScanReach(mark)` — up to
+  `BITCOIN_SCAN_LIMIT` (2000) addresses, against an honest endpoint too.
+  The same endpoint can already lie about balances; nothing becomes
+  undiscoverable and the hidden-change bound is unchanged. With a second
+  endpoint configured the engine first reads any change coin beyond the
+  sealed reach there and refuses the build when it does not serve that
+  outpoint (`crossCheckFarChangeCoins` in
+  `packages/wallet-engine/src/transactions/bitcoin.ts`).
 - **Privacy:** the gateway sees a fresh client id per session and per
   scope (one per chain family plus `service`), and each scope's requests
   name only that scope's data. What links scopes is the network layer —
@@ -429,10 +445,13 @@ and the kernel cannot tell the two apart.
 
 - `card.begin`/`card.step`/`card.cancel` carry the whole card op life cycle
   (`CARD_METHODS` in `packages/wallet/src/protocol/card.ts`). The verify
-  requirement is per op kind (`verifyGate` above): `create`, `sign`,
-  `transfer`, `reseal`, `erase`, `change-access` and `forget-access`
-  verify; `accounts` and `health` are presence-free by design — they hand
-  out no secrets. A `remember` on a verify-bearing op stores a hash of the
+  requirement is per op kind (`verifyGate` above): `add`, `create`,
+  `sign`, `transfer`, `reseal`, `erase`, `change-access` and
+  `forget-access` verify — `add` adopts a card's whole wallet as fully
+  confirmed own material, so it is gated like a hardware `pair`; `status`,
+  `accounts` and `health` are presence-free by design — they hand out no
+  secrets and add no trusted material. The session is re-checked after the
+  verification, before change marks commit or the first tap. A `remember` on a verify-bearing op stores a hash of the
   access code keyed to app-lock-on and a hardware verify
   (`rememberGated`); the remembered hash alone never lifts the verify —
   the gate runs first.
@@ -478,9 +497,12 @@ and publish. The response to a compromised release is in
   (`{ address, confirmed }`), `chain.exportAccount` and `QrExportParams`
   (`acknowledgeUnconfirmed`), Bitcoin signing (the danger row, the
   `bitcoin-unconfirmed-output` finding and `acknowledgeUnconfirmed` on the
-  `hardware.begin` `sign` operation) and Bitcoin history. It is **not** carried
-  by the engine's account tree, asset balances or the accounts a host
-  grants to a dApp or WalletConnect session — the host picks those. Show
+  `hardware.begin` `sign` operation) and Bitcoin history. The engine keeps
+  unconfirmed accounts out of push subscriptions (no gateway watches or
+  learns their addresses) and out of the history's known-address set the
+  `address-poisoning` flag compares against. It is **not** carried by the
+  engine's account tree, asset balances or the accounts a host grants to a
+  dApp or WalletConnect session — the host picks those. Show
   an "unconfirmed — verify on the device" state wherever the host presents
   such an account, do not grant one to a dApp without it, and pass every
   `acknowledgeUnconfirmed` deliberately, never silently.

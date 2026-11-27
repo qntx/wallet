@@ -194,6 +194,8 @@ export function createCardModule(platform: KernelPlatform): CardModule {
               );
         // The module platform is the kernel's own — createCardModule gets it from kernel.ts.
         await verifyFactor(ctx, params.verify, dek, prompt);
+        // The session may have ended while the prompt was up, exactly as in chain.sign.
+        ctx.session.require(session);
         // Same commit point as chain.sign — the marks rise before the first tap.
         if (prepared?.changeMarks !== undefined) {
           const { groupIndex, network, raises } = prepared.changeMarks;

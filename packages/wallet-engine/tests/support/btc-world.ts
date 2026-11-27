@@ -157,6 +157,12 @@ export type BtcWorld = {
   readonly markUsed: (hash: string, txid: string) => void;
   readonly setStatus: (txid: string, s: unknown) => void;
   readonly setIndependentStatus: (txid: string, s: unknown) => void;
+  /** The independent endpoint's `/tx/:txid/hex` — hex string, or an Error for a failed read. */
+  readonly setIndependentHex: (txid: string, s: string | Error) => void;
+  /** The primary's raw bytes for `txid`, hex-encoded — what an honest second endpoint serves. */
+  readonly rawHexOf: (txid: string) => string | undefined;
+  /** Every get path the independent endpoint was asked, in order. */
+  readonly independentRequests: string[];
   /** While on, every `/tx/:txid/status` read fails like a dropped connection. */
   readonly failLookups: (on: boolean) => void;
   /** The chain tip `/blocks/tip/height` serves — 200 puts a height-100 block well past final. */
@@ -318,6 +324,8 @@ export const world = (
   const statuses = new Map<string, unknown>();
   /** A second endpoint's statuses, when `options.independent` asks for one. */
   const independentStatuses = new Map<string, unknown>();
+  /** The second endpoint's `/tx/:txid/hex` answers — hex or an Error; absent means a 404. */
+  const independentHexes = new Map<string, string | Error>();
   /** Txid → scripted `/outspends` answer; unset falls back to "no output spent". */
   const outspends = new Map<string, unknown>();
   /** The chain tip `/blocks/tip/height` serves — an Error makes the read throw. */
@@ -384,6 +392,9 @@ export const world = (
       (utxos.get(ownHash) ?? []).filter((u) => !(u.txid === txid && u.vout === vout)),
     );
   };
+
+  /** Every get path the independent endpoint was asked, in order. */
+  const independentRequests: string[] = [];
 
   const get = (url: string): unknown => {
     requests.push(url);
@@ -489,10 +500,22 @@ export const world = (
     },
   };
 
-  /** The independent endpoint: only /status is asked of it (esploraKnows). */
+  /** The independent endpoint: /status and /hex are the reads cross-checks ask of it. */
   const independentStub = {
     get: async (u: string) => {
       await Promise.resolve();
+      independentRequests.push(u);
+      const hm = /^\/tx\/([0-9a-f]{64})\/hex$/.exec(u);
+      if (hm !== null) {
+        const s = independentHexes.get(hm[1] ?? "");
+        if (s instanceof Error) {
+          throw s;
+        }
+        if (s === undefined) {
+          throw new EsploraError(`esplora ${u}: 404`, false);
+        }
+        return s;
+      }
       const sm = /^\/tx\/([0-9a-f]{64})\/status$/.exec(u);
       if (sm !== null) {
         const s = independentStatuses.get(sm[1] ?? "");
@@ -620,6 +643,14 @@ export const world = (
     setIndependentStatus: (txid: string, s: unknown) => {
       independentStatuses.set(txid, s);
     },
+    setIndependentHex: (txid: string, s: string | Error) => {
+      independentHexes.set(txid, s);
+    },
+    /** The primary's raw bytes for `txid`, hex-encoded — what an honest second endpoint serves. */
+    rawHexOf: (txid: string): string | undefined => {
+      const raw = raws.get(txid);
+      return raw === undefined ? undefined : Buffer.from(raw).toString("hex");
+    },
     failLookups: (on: boolean) => {
       statusFail = on;
     },
@@ -665,6 +696,7 @@ export const world = (
     posts,
     postAttempts,
     requests,
+    independentRequests,
     signedCalls,
     warnings,
     clock,

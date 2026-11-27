@@ -34,7 +34,7 @@ import {
 } from "../chains/bitcoin.ts";
 import type { BtcUtxo, Esplora } from "../chains/bitcoin.ts";
 import type { EngineLogger } from "../events.ts";
-import type { NetworkController } from "../networks/controller.ts";
+import type { NetworkController, Independent } from "../networks/controller.ts";
 import {
   collectChecks,
   exceedsNetworkCap,
@@ -367,6 +367,86 @@ const pathTail = (path: ReadonlyArray<number>): BitcoinPathTail | undefined => {
   return purpose !== undefined && change !== undefined && index !== undefined
     ? { purpose, change, index }
     : undefined;
+};
+
+type BuiltCoin = {
+  readonly txid: string;
+  readonly vout: number;
+  readonly value: number;
+  readonly address: string;
+};
+
+/**
+ * The outpoint the second endpoint's `/tx/:txid/hex` answer carries for `txid:vout`, or `undefined`
+ * when it is not a parseable transaction for that txid — every such answer is a disagreement, never
+ * a downgrade.
+ */
+const outpointOf = (
+  answer: unknown,
+  txid: string,
+  vout: number,
+): { readonly script: Uint8Array | undefined; readonly amount: bigint | undefined } | undefined => {
+  try {
+    if (typeof answer !== "string") {
+      return undefined;
+    }
+    const tx = Transaction.fromRaw(hex.decode(answer), { allowUnknownInputs: true });
+    if (tx.id !== txid) {
+      return undefined;
+    }
+    const found = tx.getOutput(vout);
+    return { script: found.script, amount: found.amount };
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * A change-chain coin past the sealed-mark scan reach is where a hostile primary endpoint plants an
+ * invented input: it answers "used" along the chain, the gap walk follows, and the kernel seals the
+ * coin's index as the new change mark before the signature exists — one nonexistent prevout
+ * ratchets every later scan and the transaction can never confirm. The independent endpoint's copy
+ * of the funding transaction settles it: a definite "unknown" (4xx), an answer that is not a
+ * parseable transaction, or a transaction whose txid or claimed outpoint differs in script or value
+ * refuses the build outright; only a transient read failure downgrades the request to unverified
+ * reads. With no second endpoint configured the primary's word stands — the documented residual.
+ */
+const crossCheckFarChangeCoins = async (
+  coins: ReadonlyArray<BuiltCoin>,
+  built: SpendContext,
+  independent: Independent<Esplora>,
+  flags: Array<RequestCheckCode | undefined>,
+): Promise<void> => {
+  if (independent.kind !== "available") {
+    return;
+  }
+  const reach = changeScanReach(built.mark);
+  const far = coins.filter((coin) => {
+    const tail = pathTail(built.pathOf(coin));
+    return tail !== undefined && tail.change === 1 && tail.index > reach;
+  });
+  for (const coin of far) {
+    let answer: unknown;
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- each far coin settles before the next.
+      answer = await independent.client.get(`/tx/${coin.txid}/hex`);
+    } catch (error) {
+      if (error instanceof EsploraError && !error.transient) {
+        throw new ChainError("invalid-request", "the endpoints disagree on a far change coin");
+      }
+      flags.push("reads-unverified");
+      continue;
+    }
+    const out = outpointOf(answer, coin.txid, coin.vout);
+    if (
+      out === undefined ||
+      out.amount !== BigInt(coin.value) ||
+      out.script === undefined ||
+      hex.encode(out.script) !== hex.encode(built.scriptOf(coin))
+    ) {
+      throw new ChainError("invalid-request", "the endpoints disagree on a far change coin");
+    }
+  }
 };
 
 /**
@@ -751,15 +831,17 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       selected.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
     );
     const selectedUtxos = source.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
-    // Reserve before the first post-selection await: a concurrent prepare must not see them.
+    // Reserve before the first post-selection await: a concurrent prepare must not see them. A
+    // failure anywhere below hands them back before the error propagates.
     for (const key of selectedKeys) {
       reserved.set(key, requestId);
     }
-    // Segwit v0 inputs prove their amounts through the full previous transaction (bip44 carried
-    // it already for selection). Fetch it only for the inputs actually spent and attach it.
-    let psbt = unsigned;
-    if (template === "btc.bip49" || template === "btc.bip84") {
-      try {
+    try {
+      await crossCheckFarChangeCoins(selectedUtxos, built, independent, flags);
+      // Segwit v0 inputs prove their amounts through the full previous transaction (bip44 carried
+      // it already for selection). Fetch it only for the inputs actually spent and attach it.
+      let psbt = unsigned;
+      if (template === "btc.bip49" || template === "btc.bip84") {
         const prevTxs = await fetchRawTxes(es, selectedUtxos);
         const parsed = Transaction.fromPSBT(unsigned);
         for (let i = 0; i < parsed.inputsLength; i++) {
@@ -775,143 +857,141 @@ export const createBitcoinRoute = (): BitcoinRoute => {
           }
         }
         psbt = parsed.toPSBT(0);
-      } catch (error) {
-        for (const key of selectedKeys) {
-          reserved.delete(key);
-        }
-        throw error;
       }
-    }
-    psbt = bindChange(psbt, built, chosen.address);
-    const txP = Transaction.fromPSBT(psbt);
-    /* A change address a never-confirmed entry serves is not own: it decodes as a plain send
-       with the danger warning instead of hiding, and signing demands the acknowledgement. */
-    const changeScript = hex.encode(scriptPubKey(chosen.address, net.params));
-    const own: BitcoinOwn = {
-      change: new Set(built.confirmed ? [changeScript] : []),
-      unusual: new Map<string, string>(),
-      unconfirmed: new Set(built.confirmed ? [] : [changeScript]),
-    };
-    const request = {
-      kind: "bitcoin.psbt" as const,
-      network,
-      account: {
-        kind: "hd" as const,
-        walletId: account.walletId,
-        groupIndex: account.groupIndex,
-      },
-      origin: "internal" as const,
-      psbt,
-      sign: Array.from({ length: txP.inputsLength }, (_, i) => ({ index: i, template })),
-    };
-    const intent = decodeBitcoinPsbt(request, own);
-    const outValues = Array.from({ length: txP.outputsLength }, (_, i) => {
-      const o = txP.getOutput(i);
-      const scriptHex =
-        "script" in o && o.script instanceof Uint8Array ? o.script : new Uint8Array();
-      const address =
-        scriptHex.length > 0 ? Address(net.params).encode(OutScript.decode(scriptHex)) : "";
-      return { address, value: Number(o.amount ?? 0n), own: false };
-    });
-    for (const o of outValues) {
-      if (o.address === chosen.address) {
-        (o as { own: boolean }).own = true;
-      }
-    }
-    const vsize = estimateVsize(
-      Array.from({ length: txP.inputsLength }, () => template),
-      outValues.map((o) => o.address),
-      net.params,
-    );
-    const inTotal = selectedUtxos.reduce((a, u) => a + u.value, 0);
-    const outTotal = outValues.reduce((a, o) => a + o.value, 0);
-    const id0 = newId(ctx.options.random);
-    const tier: "fast" | "normal" | "slow" =
-      fee === "fast" ? "fast" : fee === "slow" ? "slow" : "normal";
-    const record = {
-      inputs: selectedUtxos.map((u) => ({
-        txid: u.txid,
-        vout: u.vout,
-        value: u.value,
-        address: u.address,
-      })),
-      outputs: outValues,
-      vsize,
-      fee: inTotal - outTotal,
-      feeRate: Math.ceil((inTotal - outTotal) / vsize),
-      template,
-      groupIndex: account.groupIndex,
-      tier,
-    };
-    if (independentRate !== undefined) {
-      flags.push(
-        exceedsNetworkCap(BigInt(record.feeRate), BigInt(Math.ceil(independentRate)))
-          ? "fee-above-network"
-          : undefined,
-      );
-    }
-    flags.push(feeReachesAmount(BigInt(record.fee), amount) ? "fee-exceeds-amount" : undefined);
-
-    const submit = async (
-      verify: SendParams["verify"],
-      commit: () => void,
-    ): Promise<TrackedTransaction> => {
-      let tx: TrackedTransaction = {
-        id: id0,
-        family: "bitcoin",
-        network,
-        account: account.walletId,
-        hash: undefined,
-        state: "draft",
-        intent,
-        nonce: 0,
-        btc: record,
-        ...(sparkDeposit === undefined ? {} : { sparkDeposit }),
-        submittedAt: ctx.options.now(),
-        error: undefined,
+      psbt = bindChange(psbt, built, chosen.address);
+      const txP = Transaction.fromPSBT(psbt);
+      /* A change address a never-confirmed entry serves is not own: it decodes as a plain send
+         with the danger warning instead of hiding, and signing demands the acknowledgement. */
+      const changeScript = hex.encode(scriptPubKey(chosen.address, net.params));
+      const own: BitcoinOwn = {
+        change: new Set(built.confirmed ? [changeScript] : []),
+        unusual: new Map<string, string>(),
+        unconfirmed: new Set(built.confirmed ? [] : [changeScript]),
       };
-      tx = await ctx.transition(tx, {});
-      let signed: ReturnType<typeof extractSigned>;
-      try {
-        const result = await apis.sign({
-          request,
-          verify,
-          ...(own.unconfirmed.size > 0 ? { acknowledgeUnconfirmed: true } : {}),
-        });
-        tx = await ctx.transition(tx, { state: "signed" });
-        signed = extractSigned(result);
-        commit();
-      } catch (error) {
-        await failTx(ctx, tx, error);
-        throw error;
+      const request = {
+        kind: "bitcoin.psbt" as const,
+        network,
+        account: {
+          kind: "hd" as const,
+          walletId: account.walletId,
+          groupIndex: account.groupIndex,
+        },
+        origin: "internal" as const,
+        psbt,
+        sign: Array.from({ length: txP.inputsLength }, (_, i) => ({ index: i, template })),
+      };
+      const intent = decodeBitcoinPsbt(request, own);
+      const outValues = Array.from({ length: txP.outputsLength }, (_, i) => {
+        const o = txP.getOutput(i);
+        const scriptHex =
+          "script" in o && o.script instanceof Uint8Array ? o.script : new Uint8Array();
+        const address =
+          scriptHex.length > 0 ? Address(net.params).encode(OutScript.decode(scriptHex)) : "";
+        return { address, value: Number(o.amount ?? 0n), own: false };
+      });
+      for (const o of outValues) {
+        if (o.address === chosen.address) {
+          (o as { own: boolean }).own = true;
+        }
       }
-      return submitSigned(
-        ctx,
-        tx,
-        esploraBroadcast(es, signed, {
-          hold: () => {
-            bitcoinUtxos.lock(selectedUtxos, id0);
-            releaseReservation(requestId);
-          },
-          release: () => {
-            bitcoinUtxos.endTx(id0, "failed");
-          },
-        }),
+      const vsize = estimateVsize(
+        Array.from({ length: txP.inputsLength }, () => template),
+        outValues.map((o) => o.address),
+        net.params,
       );
-    };
+      const inTotal = selectedUtxos.reduce((a, u) => a + u.value, 0);
+      const outTotal = outValues.reduce((a, o) => a + o.value, 0);
+      const id0 = newId(ctx.options.random);
+      const tier: "fast" | "normal" | "slow" =
+        fee === "fast" ? "fast" : fee === "slow" ? "slow" : "normal";
+      const record = {
+        inputs: selectedUtxos.map((u) => ({
+          txid: u.txid,
+          vout: u.vout,
+          value: u.value,
+          address: u.address,
+        })),
+        outputs: outValues,
+        vsize,
+        fee: inTotal - outTotal,
+        feeRate: Math.ceil((inTotal - outTotal) / vsize),
+        template,
+        groupIndex: account.groupIndex,
+        tier,
+      };
+      if (independentRate !== undefined) {
+        flags.push(
+          exceedsNetworkCap(BigInt(record.feeRate), BigInt(Math.ceil(independentRate)))
+            ? "fee-above-network"
+            : undefined,
+        );
+      }
+      flags.push(feeReachesAmount(BigInt(record.fee), amount) ? "fee-exceeds-amount" : undefined);
 
-    return {
-      txId: id0,
-      account,
-      network,
-      intent,
-      checks: collectChecks(flags),
-      staleReason: () => undefined,
-      submit,
-      release: () => {
-        releaseReservation(requestId);
-      },
-    };
+      const submit = async (
+        verify: SendParams["verify"],
+        commit: () => void,
+      ): Promise<TrackedTransaction> => {
+        let tx: TrackedTransaction = {
+          id: id0,
+          family: "bitcoin",
+          network,
+          account: account.walletId,
+          hash: undefined,
+          state: "draft",
+          intent,
+          nonce: 0,
+          btc: record,
+          ...(sparkDeposit === undefined ? {} : { sparkDeposit }),
+          submittedAt: ctx.options.now(),
+          error: undefined,
+        };
+        tx = await ctx.transition(tx, {});
+        let signed: ReturnType<typeof extractSigned>;
+        try {
+          const result = await apis.sign({
+            request,
+            verify,
+            ...(own.unconfirmed.size > 0 ? { acknowledgeUnconfirmed: true } : {}),
+          });
+          tx = await ctx.transition(tx, { state: "signed" });
+          signed = extractSigned(result);
+          commit();
+        } catch (error) {
+          await failTx(ctx, tx, error);
+          throw error;
+        }
+        return submitSigned(
+          ctx,
+          tx,
+          esploraBroadcast(es, signed, {
+            hold: () => {
+              bitcoinUtxos.lock(selectedUtxos, id0);
+              releaseReservation(requestId);
+            },
+            release: () => {
+              bitcoinUtxos.endTx(id0, "failed");
+            },
+          }),
+        );
+      };
+
+      return {
+        txId: id0,
+        account,
+        network,
+        intent,
+        checks: collectChecks(flags),
+        staleReason: () => undefined,
+        submit,
+        release: () => {
+          releaseReservation(requestId);
+        },
+      };
+    } catch (error) {
+      releaseReservation(requestId);
+      throw error;
+    }
   };
 
   /** Esplora `/tx/:txid/status` → terminal state or `undefined` to keep polling. */
@@ -1123,130 +1203,137 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     );
     const extraInputs: ReturnType<typeof bitcoin.toInputs> = [];
     const extraUtxos: typeof spare = [];
-    let outputs: ReadonlyArray<{ readonly address: string; readonly amount: bigint }>;
-    let newFee: number;
-    if (mode === "cancel") {
-      newFee = feeFor(btc.inputs.length, [{ address: changeAddr }]);
-      // A cancel sweeps the inputs back to us; refuse rather than emit a negative or
-      // sub-dust change output.
-      if (inTotal - newFee < dust) {
-        throw new Error("the inputs cannot pay the cancel fee");
+    try {
+      let outputs: ReadonlyArray<{ readonly address: string; readonly amount: bigint }>;
+      let newFee: number;
+      if (mode === "cancel") {
+        newFee = feeFor(btc.inputs.length, [{ address: changeAddr }]);
+        // A cancel sweeps the inputs back to us; refuse rather than emit a negative or
+        // sub-dust change output.
+        if (inTotal - newFee < dust) {
+          throw new Error("the inputs cannot pay the cancel fee");
+        }
+        outputs = [{ address: changeAddr, amount: BigInt(inTotal - newFee) }];
+      } else {
+        for (;;) {
+          const numInputs = btc.inputs.length + extraUtxos.length;
+          const inSum = inTotal + extraUtxos.reduce((a, u) => a + u.value, 0);
+          // Prefer the shape with a change output; a sub-dust remainder folds into the fee.
+          const leftover =
+            inSum - payeeSum - feeFor(numInputs, [...payee, { address: changeAddr }]);
+          if (leftover >= dust) {
+            outputs = [...payee, { address: changeAddr, amount: BigInt(leftover) }];
+            newFee = inSum - payeeSum - leftover;
+            break;
+          }
+          const noChangeFee = feeFor(numInputs, payee);
+          if (inSum - payeeSum - noChangeFee >= 0) {
+            outputs = payee;
+            newFee = inSum - payeeSum;
+            break;
+          }
+          const next = spare[extraUtxos.length];
+          if (next === undefined) {
+            throw new Error("insufficient confirmed utxo to fund the replacement fee");
+          }
+          const key = `${next.txid}:${next.vout}`;
+          extraUtxos.push(next);
+          reserved.set(key, requestId);
+          try {
+            const raws =
+              btc.template === "btc.bip86"
+                ? new Map<string, Uint8Array>()
+                : // oxlint-disable-next-line eslint/no-await-in-loop -- extras join one at a time.
+                  await fetchRawTxes(es, [next]);
+            extraInputs.push(
+              ...bitcoin.toInputs(
+                [{ ...next, status: "confirmed" as const }],
+                built.fp,
+                built.pathOf,
+                built.pubkeyOf,
+                built.scriptOf,
+                btc.template,
+                (u) => raws.get(u.txid),
+              ),
+            );
+          } catch (error) {
+            extraUtxos.pop();
+            reserved.delete(key);
+            throw error;
+          }
+        }
       }
-      outputs = [{ address: changeAddr, amount: BigInt(inTotal - newFee) }];
-    } else {
-      for (;;) {
-        const numInputs = btc.inputs.length + extraUtxos.length;
-        const inSum = inTotal + extraUtxos.reduce((a, u) => a + u.value, 0);
-        // Prefer the shape with a change output; a sub-dust remainder folds into the fee.
-        const leftover = inSum - payeeSum - feeFor(numInputs, [...payee, { address: changeAddr }]);
-        if (leftover >= dust) {
-          outputs = [...payee, { address: changeAddr, amount: BigInt(leftover) }];
-          newFee = inSum - payeeSum - leftover;
-          break;
-        }
-        const noChangeFee = feeFor(numInputs, payee);
-        if (inSum - payeeSum - noChangeFee >= 0) {
-          outputs = payee;
-          newFee = inSum - payeeSum;
-          break;
-        }
-        const next = spare[extraUtxos.length];
-        if (next === undefined) {
-          throw new Error("insufficient confirmed utxo to fund the replacement fee");
-        }
-        const key = `${next.txid}:${next.vout}`;
-        extraUtxos.push(next);
-        reserved.set(key, requestId);
-        try {
-          const raws =
-            btc.template === "btc.bip86"
-              ? new Map<string, Uint8Array>()
-              : // oxlint-disable-next-line eslint/no-await-in-loop -- extras join one at a time.
-                await fetchRawTxes(es, [next]);
-          extraInputs.push(
-            ...bitcoin.toInputs(
-              [{ ...next, status: "confirmed" as const }],
-              built.fp,
-              built.pathOf,
-              built.pubkeyOf,
-              built.scriptOf,
-              btc.template,
-              (u) => raws.get(u.txid),
-            ),
-          );
-        } catch (error) {
-          extraUtxos.pop();
-          reserved.delete(key);
-          throw error;
-        }
-      }
-    }
-    // The replacement spends exactly the original's inputs plus any extras. The scan does not
-    // list them — the unconfirmed original spends them already — so they are rebuilt from the
-    // record, with their previous transactions attached for segwit v0.
-    const prevRaws =
-      btc.template === "btc.bip86"
-        ? new Map<string, Uint8Array>()
-        : await fetchRawTxes(es, btc.inputs);
-    const oldInputs = bitcoin.toInputs(
-      btc.inputs.map((i) => ({ ...i, status: "confirmed" as const, height: 1 })),
-      built.fp,
-      built.pathOf,
-      built.pubkeyOf,
-      built.scriptOf,
-      btc.template,
-      (u) => prevRaws.get(u.txid),
-    );
-    const allInputs = [...oldInputs, ...extraInputs];
-    const { psbt: exact, vsize } = bitcoin.buildExactPsbt(
-      allInputs,
-      outputs,
-      net.params,
-      btc.template,
-    );
-    const psbt = bindChange(exact, built, changeAddr);
-    const record = {
-      inputs: [
-        ...btc.inputs,
-        ...extraUtxos.map((u) => ({
-          txid: u.txid,
-          vout: u.vout,
-          value: u.value,
-          address: u.address,
-        })),
-      ],
-      outputs: outputs.map((o) => ({
-        address: o.address,
-        value: Number(o.amount),
-        own: o.address === changeAddr,
-      })),
-      vsize,
-      fee: newFee,
-      feeRate: Math.ceil(newFee / vsize),
-      template: btc.template,
-      groupIndex: btc.groupIndex,
-      tier: btc.tier,
-    };
-    if (independentRate !== undefined) {
-      flags.push(
-        exceedsNetworkCap(BigInt(record.feeRate), BigInt(Math.ceil(independentRate)))
-          ? "fee-above-network"
-          : undefined,
+      await crossCheckFarChangeCoins([...btc.inputs, ...extraUtxos], built, independent, flags);
+      // The replacement spends exactly the original's inputs plus any extras. The scan does not
+      // list them — the unconfirmed original spends them already — so they are rebuilt from the
+      // record, with their previous transactions attached for segwit v0.
+      const prevRaws =
+        btc.template === "btc.bip86"
+          ? new Map<string, Uint8Array>()
+          : await fetchRawTxes(es, btc.inputs);
+      const oldInputs = bitcoin.toInputs(
+        btc.inputs.map((i) => ({ ...i, status: "confirmed" as const, height: 1 })),
+        built.fp,
+        built.pathOf,
+        built.pubkeyOf,
+        built.scriptOf,
+        btc.template,
+        (u) => prevRaws.get(u.txid),
       );
+      const allInputs = [...oldInputs, ...extraInputs];
+      const { psbt: exact, vsize } = bitcoin.buildExactPsbt(
+        allInputs,
+        outputs,
+        net.params,
+        btc.template,
+      );
+      const psbt = bindChange(exact, built, changeAddr);
+      const record = {
+        inputs: [
+          ...btc.inputs,
+          ...extraUtxos.map((u) => ({
+            txid: u.txid,
+            vout: u.vout,
+            value: u.value,
+            address: u.address,
+          })),
+        ],
+        outputs: outputs.map((o) => ({
+          address: o.address,
+          value: Number(o.amount),
+          own: o.address === changeAddr,
+        })),
+        vsize,
+        fee: newFee,
+        feeRate: Math.ceil(newFee / vsize),
+        template: btc.template,
+        groupIndex: btc.groupIndex,
+        tier: btc.tier,
+      };
+      if (independentRate !== undefined) {
+        flags.push(
+          exceedsNetworkCap(BigInt(record.feeRate), BigInt(Math.ceil(independentRate)))
+            ? "fee-above-network"
+            : undefined,
+        );
+      }
+      return prepareFinish(
+        ctx,
+        built,
+        es,
+        account,
+        old,
+        psbt,
+        record,
+        { replaces: old.id },
+        requestId,
+        extraUtxos.map((u) => `${u.txid}:${u.vout}`),
+        flags,
+      );
+    } catch (error) {
+      releaseReservation(requestId);
+      throw error;
     }
-    return prepareFinish(
-      ctx,
-      built,
-      es,
-      account,
-      old,
-      psbt,
-      record,
-      { replaces: old.id },
-      requestId,
-      extraUtxos.map((u) => `${u.txid}:${u.vout}`),
-      flags,
-    );
   };
 
   const prepareCpfp = async (
@@ -1328,6 +1415,17 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       built.scriptOf,
       btc.template,
       (u) => parentRaws.get(u.txid),
+    );
+    await crossCheckFarChangeCoins(
+      bumpable.map((o) => ({
+        txid: parentTxid,
+        vout: o.vout,
+        value: o.value,
+        address: o.address,
+      })),
+      built,
+      independent,
+      flags,
     );
     const changeAddr = changeAddressOf(
       built.changeChain,

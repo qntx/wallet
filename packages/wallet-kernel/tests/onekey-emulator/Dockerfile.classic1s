@@ -48,11 +48,11 @@ RUN arch="$(dpkg --print-architecture)" && \
     cp -r /usr/local/include/google /usr/include/ && \
     rm /tmp/protoc.zip
 
-# Python packages needed by the build (coin template rendering + nanopb codegen).
-RUN pip install --no-cache-dir \
-        "protobuf==3.19.5" \
-        "nanopb==0.4.5.post1" \
-        "click" "mako" "munch" "typing-extensions"
+# Python packages needed by the build (coin template rendering + nanopb
+# codegen), pinned to the firmware commit's poetry.lock and hash-checked — see
+# requirements-classic1s.txt.
+COPY requirements-classic1s.txt /tmp/requirements-classic1s.txt
+RUN pip install --no-cache-dir --require-hashes -r /tmp/requirements-classic1s.txt
 
 # Optional local source fallback for networks that cannot sustain the GitHub
 # pack download: drop the repo's .git directory at vendor-src/firmware-classic1s

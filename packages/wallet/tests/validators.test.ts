@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { chainAccount } from "../src/protocol/chains.ts";
 import {
   arr,
   bool,
@@ -621,5 +622,74 @@ describe("spark method validators", () => {
       ]),
     );
     expect(fails(receive, { paymentHash: bytes32, operatorPackages: tooMany })).toBe(true);
+  });
+});
+
+describe("hardware op and chain account guards", () => {
+  const signOp = {
+    kind: "sign",
+    request: {
+      kind: "evm.personal-message",
+      network: "eip155:1",
+      account: {
+        kind: "hd",
+        walletId: "ab".repeat(8),
+        groupIndex: 0,
+        template: "evm.bip44",
+      },
+      message: new Uint8Array(4),
+    },
+  };
+
+  it("acknowledgeUnconfirmed accepts only the literal true", () => {
+    /* The flag is the user's answer to a danger prompt — coercible values like "yes" or false
+       must not silently stand in for it. */
+    const { params } = METHODS["hardware.begin"];
+    expect(fails(params, { op: signOp })).toBe(false);
+    expect(fails(params, { op: { ...signOp, acknowledgeUnconfirmed: true } })).toBe(false);
+    expect(fails(params, { op: { ...signOp, acknowledgeUnconfirmed: false } })).toBe(true);
+    expect(fails(params, { op: { ...signOp, acknowledgeUnconfirmed: "yes" } })).toBe(true);
+    expect(fails(params, { op: { ...signOp, acknowledgeUnconfirmed: 1 } })).toBe(true);
+  });
+
+  it("every chain account shape requires a boolean confirmed", () => {
+    /* The kernel seals confirmed only after an on-device verify; a missing or non-boolean flag
+       must not decode as an account at all. */
+    const accounts: Array<Record<string, unknown>> = [
+      {
+        template: "evm.bip44",
+        network: "eip155:1",
+        address: `0x${"ab".repeat(20)}`,
+        confirmed: true,
+      },
+      {
+        template: "solana.bip44-change",
+        network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        address: "A".repeat(44),
+        confirmed: false,
+      },
+      {
+        template: "tron.bip44",
+        network: "tron:mainnet",
+        address: `T${"A".repeat(33)}`,
+        confirmed: true,
+      },
+      {
+        template: "btc.bip84",
+        network: "bip122:000000000019d6689c085ae165831e93",
+        xpub: "x".repeat(111),
+        fingerprint: "73c5da0a",
+        path: "m/84'/0'/0'",
+        confirmed: true,
+        changeMark: 0,
+      },
+    ];
+    for (const account of accounts) {
+      expect(fails(chainAccount, account)).toBe(false);
+      const { confirmed: _confirmed, ...missing } = account;
+      expect(fails(chainAccount, missing)).toBe(true);
+      expect(fails(chainAccount, { ...account, confirmed: "yes" })).toBe(true);
+      expect(fails(chainAccount, { ...account, confirmed: 1 })).toBe(true);
+    }
   });
 });

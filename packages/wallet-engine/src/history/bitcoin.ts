@@ -178,6 +178,8 @@ export type BitcoinHistoryScan = {
    * template order — the local-send membership sets.
    */
   readonly parties: ReadonlyArray<ReadonlySet<string>>;
+  /** Every scanned address an unconfirmed template serves — never a known address. */
+  readonly unconfirmed: ReadonlySet<string>;
   readonly entries: ReadonlyArray<HistoryEntry>;
 };
 
@@ -217,6 +219,7 @@ export const bitcoinHistoryScan = async (
      be a local send's change output, so every scanned address belongs to a party. */
   const confirmed = new Set<string>();
   const parties: Array<Set<string>> = [confirmed];
+  const unconfirmed = new Set<string>();
   for (const [i, addresses] of scanned.entries()) {
     const account = accounts[i];
     if (account === undefined) {
@@ -225,6 +228,9 @@ export const bitcoinHistoryScan = async (
     const party = account.confirmed ? confirmed : new Set<string>();
     for (const a of addresses) {
       party.add(a.address);
+      if (!account.confirmed) {
+        unconfirmed.add(a.address);
+      }
     }
     if (!account.confirmed) {
       parties.push(party);
@@ -263,7 +269,7 @@ export const bitcoinHistoryScan = async (
   entries.sort(
     (a, b) => (b.timestamp ?? Number.MAX_SAFE_INTEGER) - (a.timestamp ?? Number.MAX_SAFE_INTEGER),
   );
-  return { parties, entries };
+  return { parties, unconfirmed, entries };
 };
 
 /**
@@ -274,7 +280,7 @@ export const bitcoinHistoryStream = (
   options: BitcoinHistoryDeps,
   network: string,
   group: { readonly walletId: string; readonly groupIndex: number },
-  onOwn: (parties: ReadonlyArray<ReadonlySet<string>>) => void,
+  onOwn: (parties: ReadonlyArray<ReadonlySet<string>>, unconfirmed: ReadonlySet<string>) => void,
 ): Stream<HistoryEntry> => {
   let scan: Promise<BitcoinHistoryScan> | undefined;
   let done = false;
@@ -285,8 +291,8 @@ export const bitcoinHistoryStream = (
         return { items: [], done: true };
       }
       scan ??= bitcoinHistoryScan(options, network, group);
-      const { parties, entries } = await scan;
-      onOwn(parties);
+      const { parties, unconfirmed, entries } = await scan;
+      onOwn(parties, unconfirmed);
       done = true;
       return { items: entries, done: true };
     },

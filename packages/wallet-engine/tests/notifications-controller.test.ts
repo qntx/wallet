@@ -15,7 +15,8 @@ import { createStore } from "zustand/vanilla";
 import { WalletError } from "@qntx/wallet";
 
 import vectors from "../../../vectors/push.json" with { type: "json" };
-import type { AccountTreeState } from "../src/accounts/controller.ts";
+import type { AccountTreeController, AccountTreeState } from "../src/accounts/controller.ts";
+import { pushAddresses } from "../src/engine.ts";
 import { gatewayFetch, gatewaySession } from "../src/gateway/client.ts";
 import { parseWith } from "../src/gateway/contract/endpoint.ts";
 import { PUSH_ID_DOMAIN, pushAad, pushEventInput } from "../src/gateway/contract/push-message.ts";
@@ -733,5 +734,60 @@ describe("NotificationsController", () => {
     });
     await h.flush();
     expect(h.requests.filter((r) => r.path.endsWith("/transactions"))).toHaveLength(0);
+  });
+});
+
+describe("pushAddresses — the watch set a subscription lists", () => {
+  const groupOf = (index: number) => ({
+    walletId: "w",
+    index,
+    hidden: false,
+    updatedAt: 0,
+  });
+  const treeOf = (
+    groups: ReadonlyArray<{ readonly index: number }>,
+  ): Pick<AccountTreeController, "getState"> => ({
+    getState: () =>
+      ({
+        groups: { w: groups.map((g) => groupOf(g.index)) },
+      }) as unknown as AccountTreeState,
+  });
+
+  it("excludes a group whose entry the device never confirmed", async () => {
+    const seen: number[] = [];
+    const addresses = await pushAddresses(
+      {
+        accounts: treeOf([{ index: 0 }, { index: 1 }]),
+        groupAddresses: async ({ groupIndex }) => {
+          seen.push(groupIndex);
+          return Promise.resolve([
+            {
+              network: "eip155:1",
+              address: `0x${"00".repeat(19)}${groupIndex === 0 ? "aa" : "bb"}`,
+              confirmed: groupIndex === 0,
+            },
+          ]);
+        },
+      },
+      "w",
+      "evm",
+    );
+    expect(seen).toStrictEqual([0, 1]);
+    expect(addresses).toStrictEqual([`0x${"00".repeat(19)}aa`]);
+  });
+
+  it("a wallet whose every group is unconfirmed subscribes nothing", async () => {
+    const addresses = await pushAddresses(
+      {
+        accounts: treeOf([{ index: 0 }]),
+        groupAddresses: async () =>
+          Promise.resolve([
+            { network: "eip155:1", address: `0x${"cc".repeat(20)}`, confirmed: false },
+          ]),
+      },
+      "w",
+      "evm",
+    );
+    expect(addresses).toStrictEqual([]);
   });
 });

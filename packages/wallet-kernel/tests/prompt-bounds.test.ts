@@ -32,8 +32,8 @@ import type { PromptIntent } from "../src/modules/chains/prompt.ts";
 import { devicePromptLine } from "../src/modules/signers/prompt.ts";
 import { sparkPrompt } from "../src/modules/spark/prompt.ts";
 import type { KeystorePrompt } from "../src/platform.ts";
-import { corePrompt, codePoints, PROMPT_BOUNDS, promptFits } from "../src/prompts.ts";
-import type { CorePromptKind } from "../src/prompts.ts";
+import { cardPrompt, corePrompt, codePoints, PROMPT_BOUNDS, promptFits } from "../src/prompts.ts";
+import type { CardPromptKind, CorePromptKind } from "../src/prompts.ts";
 import { createHarness } from "./harness.ts";
 import type { KernelResponse } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
@@ -263,6 +263,25 @@ describe("every fixed prompt the kernel can show fits both platform bounds", () 
     "core prompt %s (%s) fits ios and android",
     (kind, locale) => {
       const prompt = corePrompt(locale, kind);
+      expect(promptFits(prompt, IOS)).toBe(true);
+      expect(promptFits(prompt, ANDROID)).toBe(true);
+    },
+  );
+
+  const cardKinds: ReadonlyArray<CardPromptKind> = [
+    "card-add",
+    "card-change-access",
+    "card-erase",
+    "card-create",
+    "card-transfer",
+    "card-reseal",
+    "card-forget-access",
+  ];
+
+  it.each(cardKinds.flatMap((k) => (["en", "zh-Hans"] as const).map((l) => [k, l] as const)))(
+    "card prompt %s (%s) fits ios and android",
+    (kind, locale) => {
+      const prompt = cardPrompt(locale, kind, ["ABCD-1234"]);
       expect(promptFits(prompt, IOS)).toBe(true);
       expect(promptFits(prompt, ANDROID)).toBe(true);
     },

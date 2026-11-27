@@ -29,7 +29,7 @@ import {
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { SignRequest } from "@qntx/wallet-chains";
+import type { KeyPath, SignRequest } from "@qntx/wallet-chains";
 import {
   bitcoinNetwork,
   decodeBitcoinPsbt,
@@ -49,6 +49,7 @@ import { decodeSolana, normalizeSolana, verifySolanaSignature } from "@qntx/wall
 import { buildTronRawData, verifyTronTransactionSignature } from "@qntx/wallet-chains/tron";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import { KernelError } from "../src/errors.ts";
 import { prepareBitcoin } from "../src/modules/chains/bitcoin.ts";
 import { seedKeys } from "../src/modules/chains/keys.ts";
 import { chainPrompt } from "../src/modules/chains/prompt.ts";
@@ -1707,7 +1708,9 @@ describe("chain.sign", () => {
             ? p2pkh(pub).script
             : p2wpkh(pub).script;
     const childOf = (purpose: number, change: number, index: number): HDKey =>
-      HDKey.fromMasterSeed(seed).derive(`m/${purpose}'/0'/0'/${change}/${index}`);
+      HDKey.fromMasterSeed(seed).derive(
+        `m/${purpose}'/0'/0'/${change}/${index >= HARDENED ? `${index - HARDENED}'` : index}`,
+      );
     const addrOf = (purpose: number, change: number, index: number): string =>
       Address(bitcoinNetwork(BTC_NETWORK).params).encode(
         OutScript.decode(scriptFor(purpose, childOf(purpose, change, index).publicKey!)),
@@ -1826,6 +1829,18 @@ describe("chain.sign", () => {
       } finally {
         keys.wipe();
       }
+    };
+    const warningsOf = (prompt: Awaited<ReturnType<typeof prepare>>["prompt"]) =>
+      prompt.warnings ?? [];
+    /** `material.secp256k1` that answers every path except those in `missing` (device-required). */
+    const unservable = (keys: ReturnType<typeof seedKeys>, missing: ReadonlyArray<KeyPath>) => {
+      const serve = keys.material.secp256k1;
+      return async (path: KeyPath): Promise<Uint8Array> => {
+        if (missing.some((p) => p.length === path.length && p.every((v, i) => v === path[i]))) {
+          throw new KernelError("device-required", "the pin has no such path");
+        }
+        return serve(path);
+      };
     };
 
     it("shows change at an index beyond the scan's reach — with its path — and still signs", async () => {
@@ -2049,6 +2064,58 @@ describe("chain.sign", () => {
         message: "m/84'/0'/0'/1/25",
       });
       expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("an output bound on a hardened index shows as a foreign payee, never the account's own", async () => {
+      /* The derivation path m/84'/0'/0'/1/0' names a hardened leaf — no index of this account —
+         so claiming the fingerprint changes nothing: the output is shown by address alone. */
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: HARDENED }],
+      );
+      expect(prompt.outflows.every((o) => o.ownPath === undefined)).toBe(true);
+      expect(warningsOf(prompt)).toHaveLength(0);
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("an output bound past the two account chains shows as a foreign payee", async () => {
+      // m/84'/0'/0'/2/5 is a real key the seed derives — but no chain this account owns.
+      const { prompt, result } = await prepare(
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 2, index: 5 }],
+      );
+      expect(prompt.outflows.every((o) => o.ownPath === undefined)).toBe(true);
+      expect(warningsOf(prompt)).toHaveLength(0);
+      expect("signedPsbt" in result).toBe(true);
+    });
+
+    it("an output whose path the material cannot serve fails instead of reading as foreign", async () => {
+      /* `device-required` while an output is classified is a real answer — the signer must
+         serve or the request fails; swallowing it as "not own" would show a crafted own-key
+         output as a plain payee. Only the output's path is unservable — the signed input's
+         derivation must resolve or the request fails before classification even runs. */
+      const keys = seedKeys(seed, rng);
+      try {
+        const material = {
+          ...keys.material,
+          secp256k1: unservable(keys, [[84 + HARDENED, HARDENED, HARDENED, 1, 3]]),
+        };
+        const request = asPsbt(
+          normalizeBitcoin({
+            kind: "bitcoin.psbt",
+            origin: "internal",
+            network: BTC_NETWORK,
+            account,
+            psbt: ownPsbt([{ template: "btc.bip84" }], [{ purpose: 84, change: 1, index: 3 }]),
+            sign: [{ index: 0, template: "btc.bip84" }],
+          }),
+        );
+        await expect(prepareBitcoin(request, account, material, () => 0)).rejects.toMatchObject({
+          code: "device-required",
+        });
+      } finally {
+        keys.wipe();
+      }
     });
   });
 });

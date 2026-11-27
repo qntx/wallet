@@ -390,6 +390,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card operations (simulator)", () =>
       second,
       { kind: "add", groups: 3 },
       { codes: [utf8ToBytes("sim code sv")], cards: Array.from({ length: 10 }, () => card) },
+      verifyPasskey(),
     );
     expect(added["walletId"]).toBe(walletId);
     // Both vaults answer the same accounts from the card's public material.
@@ -421,6 +422,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card operations (simulator)", () =>
       second,
       { kind: "add", groups: 1 },
       { codes: [utf8ToBytes("sim code sv")], cards: [card] },
+      verifyPasskey(),
     );
     expect(error).toBe("already-exists");
   });
@@ -507,6 +509,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card operations (simulator)", () =>
       second,
       { kind: "add", groups: 1 },
       { codes: [utf8ToBytes("sim code tp")], cards: Array.from({ length: 10 }, () => card) },
+      verifyPasskey(),
     );
     await driveErr(
       second,
@@ -555,6 +558,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card operations (simulator)", () =>
       probe,
       { kind: "add", groups: 1 },
       { codes: [utf8ToBytes("sim sweep ad")], cards: Array.from({ length: 10 }, () => card) },
+      verifyPasskey(),
     );
     const clean = probe.reader.sent.length - probeSent;
     const fetchSession = probe.reader.sessionLengths.at(-1) ?? 0;
@@ -568,6 +572,7 @@ describe.skipIf(SIM_LAUNCHER === undefined)("card operations (simulator)", () =>
         r,
         { kind: "add", groups: 1 },
         { codes: [utf8ToBytes("sim sweep ad")], cards: Array.from({ length: 20 }, () => card) },
+        verifyPasskey(),
       );
       expect(added["walletId"]).toBe(walletId);
       const total = r.reader.sent.length - sent;

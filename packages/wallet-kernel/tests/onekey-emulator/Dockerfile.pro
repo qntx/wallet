@@ -49,15 +49,10 @@ RUN arch="$(dpkg --print-architecture)" && \
     rm /tmp/protoc.zip
 
 # Python packages needed by the build (SCons driver, pb2py codegen, mako
-# templates, the trezor python package pulled by emu tooling).
-RUN pip install --no-cache-dir \
-        "protobuf==3.19.5" \
-        "scons" \
-        "mako" \
-        "munch" \
-        "click" \
-        "construct" \
-        "typing-extensions"
+# templates, the trezor python package pulled by emu tooling), pinned to the
+# firmware commit's poetry.lock and hash-checked — see requirements-pro.txt.
+COPY requirements-pro.txt /tmp/requirements-pro.txt
+RUN pip install --no-cache-dir --require-hashes -r /tmp/requirements-pro.txt
 
 # Rust toolchain for embed/rust (cargo build, edition 2021 crates).
 # RUSTUP_DIST_SERVER / RUSTUP_UPDATE_ROOT may be pointed at a mirror (e.g.

@@ -4510,6 +4510,10 @@
 			"card-forget-access": (cards) => ({
 				title: "遗忘卡访问码",
 				description: `验证身份以删除卡 ${cards} 已保存的访问码`
+			}),
+			"card-add": () => ({
+				title: "添加卡钱包",
+				description: "验证身份以将卡上的钱包添加到此设备"
 			})
 		},
 		en: {
@@ -4536,6 +4540,10 @@
 			"card-forget-access": (cards) => ({
 				title: "Forget card access code",
 				description: `Verify your identity to delete the saved access code for ${cards}`
+			}),
+			"card-add": () => ({
+				title: "Add card wallet",
+				description: "Verify your identity to add the wallet on a card to this device"
 			})
 		}
 	};
@@ -46930,9 +46938,9 @@ zoo`.split("\n"));
 	var verifyGate = (op) => {
 		switch (op.kind) {
 			case "status":
-			case "add":
 			case "accounts":
 			case "health": return "forbidden";
+			case "add":
 			case "change-access":
 			case "erase":
 			case "create":
@@ -46945,6 +46953,7 @@ zoo`.split("\n"));
 	/** Which prompt kind a verify-bearing op uses. */
 	var promptKind = (op) => {
 		switch (op.kind) {
+			case "add": return "card-add";
 			case "change-access": return "card-change-access";
 			case "erase": return "card-erase";
 			case "transfer": return "card-transfer";
@@ -47090,6 +47099,7 @@ zoo`.split("\n"));
 						rememberGated(ctx, params.op, params.verify.kind);
 						const prompt = params.op.kind === "sign" ? (prepared = await prepareSign(env, params.op, dek)).verifyPrompt : cardPromptFor(platform.keystore, promptKind(params.op), () => promptCards(ctx, params.op));
 						await verifyFactor(ctx, params.verify, dek, prompt);
+						ctx.session.require(session);
 						if ((prepared === null || prepared === void 0 ? void 0 : prepared.changeMarks) !== void 0) {
 							const { groupIndex, network, raises } = prepared.changeMarks;
 							await commitChangeMarks(ctx, dek, prepared.walletId, groupIndex, network, raises);

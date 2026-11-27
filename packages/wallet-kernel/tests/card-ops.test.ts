@@ -272,6 +272,7 @@ describe("card operations (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps },
+      verifyPasskey(),
     );
     expect(result["kind"]).toBe("add");
     await expect(cardWalletIds(r)).resolves.toContain(strField(result, "walletId"));
@@ -284,6 +285,7 @@ describe("card operations (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     const result = await drive(
@@ -308,6 +310,7 @@ describe("card operations (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     const result = await drive(
@@ -325,6 +328,7 @@ describe("card operations (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     const n1 = utf8ToBytes("new code 1234");
@@ -349,6 +353,7 @@ describe("card operations (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     const result = await drive(
@@ -418,6 +423,7 @@ describe("card operations (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+      verifyPasskey(),
     );
     const first = ok(
       await r.h.call(
@@ -446,7 +452,11 @@ describe("card operations (fake card)", () => {
     const r = await rig();
     const card = await loadedCard();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     expect(first.step.kind).toBe("input");
     r.input.push(utf8ToBytes("wrong code"));
@@ -464,6 +474,35 @@ describe("card operations (fake card)", () => {
     }
     expect(step.kind).toBe("done");
     expect(field(step, "result")).toMatchObject({ kind: "add" });
+  });
+
+  it("add without a verify is invalid-input before any input or tap", async () => {
+    const r = await rig();
+    await expect(
+      errCode(r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session)),
+    ).resolves.toBe("invalid-input");
+    expect(r.input.requests).toHaveLength(0);
+    expect(r.reader.prompts).toHaveLength(0);
+  });
+
+  it("add runs exactly one verification, then the normal flow", async () => {
+    const r = await keystoreRig();
+    const card = await loadedCard(CODE, seed2);
+    const prompts = (): unknown[] =>
+      r.fake.calls.flatMap((c) =>
+        c.op === "open" && "prompt" in c && c.prompt !== undefined ? [c.prompt] : [],
+      );
+    const before = prompts().length;
+    const added = await drive(
+      r,
+      { kind: "add", groups: 1 },
+      { codes: [freshCode()], cards: taps(card, 8) },
+      HARDWARE,
+    );
+    expect(added["kind"]).toBe("add");
+    const shown = prompts();
+    expect(shown).toHaveLength(before + 1);
+    expect(field(shown.at(-1), "title")).toBe("Add card wallet");
   });
 
   it("tag loss mid-tap re-yields the step with reason retry", async () => {
@@ -531,7 +570,11 @@ describe("card operations (fake card)", () => {
     const card = createFakeCard({ knobs: { fixedEph: eph } });
     card.load(seed, await accessHash(CODE, card.cardId, quickArgon2id));
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     r.input.push(freshCode());
     ok(await r.h.call("card.step", { opId: first.opId }, r.session));
@@ -550,6 +593,7 @@ describe("card operations (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+      verifyPasskey(),
     );
     card.knobs.statusTries = 5; // tries decrease below the recorded 10
     const first = ok(
@@ -581,6 +625,7 @@ describe("card operations (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     // VERIFY's second write commits the bumped counter, then the card dies mid-response:
@@ -610,6 +655,7 @@ describe("card operations (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     card.tearAt(2); // torn VERIFY — one unaccounted attempt (fails = 1)
@@ -639,6 +685,7 @@ describe("card operations (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     const first = ok(
@@ -675,7 +722,11 @@ describe("card operations (fake card)", () => {
   it("cancel during a held input resolves the step cancelled and cancel returns null", async () => {
     const r = await rig();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     expect(first.step.kind).toBe("input");
     const held = r.h.call("card.step", { opId: first.opId }, r.session); // blocks on secure input
@@ -690,7 +741,11 @@ describe("card operations (fake card)", () => {
   it("the 120 s step timeout interrupts a held input", async () => {
     const r = await rig();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     const held = r.h.call("card.step", { opId: first.opId }, r.session);
     while (!r.input.pending()) {
@@ -707,7 +762,11 @@ describe("card operations (fake card)", () => {
   it("session lock discards the active operation", async () => {
     const r = await rig();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     const held = r.h.call("card.step", { opId: first.opId }, r.session);
     while (!r.input.pending()) {
@@ -720,7 +779,11 @@ describe("card operations (fake card)", () => {
   it("a held secure input answers cancelled and a queued vault.reset follows it", async () => {
     const r = await rig();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     expect(first.step.kind).toBe("input");
     const held = r.h.call("card.step", { opId: first.opId }, r.session); // blocks on secure input
@@ -745,6 +808,7 @@ describe("card operations (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: Array.from({ length: 8 }, () => card) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     const first = ok(
@@ -789,6 +853,7 @@ describe("card operations (fake card)", () => {
         r,
         { kind: "add", groups: 1 },
         { codes: [freshCode()], cards: taps(card, 8) },
+        verifyPasskey(),
       );
       const walletId = strField(added, "walletId");
       const first = ok(
@@ -824,7 +889,11 @@ describe("card operations (fake card)", () => {
     const r = await rig();
     const card = await loadedCard();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     const wrong = utf8ToBytes("wrong code");
     r.input.push(wrong);
@@ -944,6 +1013,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      verifyPasskey(),
     );
     expect(added["kind"]).toBe("add");
     card.received.length = 0;
@@ -951,6 +1021,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 4) },
+      verifyPasskey(),
     );
     expect(error).toBe("already-exists");
     expect(card.received).toStrictEqual([0x20]); // STATUS only — the member gate is before VERIFY
@@ -963,6 +1034,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     // Same identity — same cardId and session key — but a differently-signed cert.
@@ -988,6 +1060,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      verifyPasskey(),
     );
     card.knobs.walletInfoMaster = secp256k1.getPublicKey(new Uint8Array(32).fill(5), true);
     card.received.length = 0;
@@ -1007,6 +1080,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      verifyPasskey(),
     );
     card.knobs.walletInfoMembers = [card.cardId, new Uint8Array(16).fill(4)];
     card.received.length = 0;
@@ -1027,6 +1101,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      verifyPasskey(),
     );
     expect(error).toBe("card-fault");
     expect(card.received.at(-1)).toBe(0x30); // PUBLIC_KEY was the last thing the card saw
@@ -1041,6 +1116,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 4) },
+      verifyPasskey(),
     );
     expect(error).toBe("card-fault");
     expect(card.received).toStrictEqual([0x20]);
@@ -1054,6 +1130,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 4) },
+      verifyPasskey(),
     );
     expect(error).toBe("card-fault");
     expect(card.received).toStrictEqual([0x20]);
@@ -1067,6 +1144,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [utf8ToBytes("a wrong code")], cards: taps(card, 4) },
+      verifyPasskey(),
     );
     expect(error).toBe("card-fault");
     expect(card.received).toStrictEqual([0x20, 0x22]);
@@ -1080,6 +1158,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 4) },
+      verifyPasskey(),
     );
     expect(error).toBe("card-fault");
     expect(card.received).toStrictEqual([0x20, 0x22]);
@@ -1101,6 +1180,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      verifyPasskey(),
     );
     const other = await loadedCard();
     const before = r.reader.sent.length;
@@ -1231,6 +1311,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     // Run 1 — a plain health.
@@ -1277,7 +1358,11 @@ describe("card tap gates and code policy (fake card)", () => {
       const r = await rig();
       const card = await loadedCard();
       const first = ok(
-        await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+        await r.h.call(
+          "card.begin",
+          { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+          r.session,
+        ),
       ) as { opId: string; step: Step };
       expect(first.step.kind).toBe("input");
       const code = freshCode();
@@ -1311,6 +1396,7 @@ describe("card tap gates and code policy (fake card)", () => {
                 r,
                 { kind: "add", groups: 1 },
                 { codes: [freshCode()], cards: taps(card) },
+                verifyPasskey(),
               ),
               "walletId",
             );
@@ -1377,7 +1463,11 @@ describe("card tap gates and code policy (fake card)", () => {
     const r = await rig();
     const card = await loadedCard();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     expect(first.step.kind).toBe("input");
     const pending = r.h.call("card.step", { opId: first.opId }, r.session);
@@ -1391,7 +1481,11 @@ describe("card tap gates and code policy (fake card)", () => {
     const r = await rig();
     const card = await loadedCard();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     const code = freshCode();
     r.input.push(code);
@@ -1415,6 +1509,7 @@ describe("card tap gates and code policy (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     const first = ok(
@@ -1440,7 +1535,11 @@ describe("card tap gates and code policy (fake card)", () => {
     const r = await rig();
     const card = await loadedCard();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     ok(await r.h.call("card.cancel", { opId: first.opId }, r.session));
     const second = ok(await r.h.call("card.begin", { op: { kind: "status" } }, r.session)) as {
@@ -1454,7 +1553,11 @@ describe("card tap gates and code policy (fake card)", () => {
     const r = await rig();
     const card = await loadedCard();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     r.h.advance(100_000); // 100 s passes before the code arrives
     r.input.push(freshCode());
@@ -1475,7 +1578,10 @@ const DEVICE = { kind: "device" } as const;
 type KeystoreRig = Rig & { fake: ReturnType<typeof fakeKeystore> };
 
 /** A React-Native-style kernel: keystore factors plus the card platform. */
-const keystoreRig = async (platform: "ios" | "android" = "ios"): Promise<KeystoreRig> => {
+const keystoreRig = async (
+  platform: "ios" | "android" = "ios",
+  maxSessionMs?: number,
+): Promise<KeystoreRig> => {
   const reader = testCardReader();
   const input = testSecureInput();
   const fake = fakeKeystore("en-US", platform);
@@ -1483,6 +1589,7 @@ const keystoreRig = async (platform: "ios" | "android" = "ios"): Promise<Keystor
     keystore: fake.keystore,
     card: { reader: reader.reader, anchors: [CA1_ANCHOR] },
     secureInput: input.secureInput,
+    ...(maxSessionMs === undefined ? {} : { maxSessionMs }),
   });
   const res = ok(
     await h.call("wallet.importMnemonic", {
@@ -1501,6 +1608,7 @@ describe("card code remember (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     // No hardware factor on this host — a passkey verify cannot carry remember.
@@ -1523,6 +1631,7 @@ describe("card code remember (fake card)", () => {
       k,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card2, 8) },
+      HARDWARE,
     );
     await expect(
       errCode(
@@ -1546,6 +1655,7 @@ describe("card code remember (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      HARDWARE,
     );
     const walletId = strField(added, "walletId");
     // remember on change-access saves the new hash — the next verify-bearing read skips input.
@@ -1621,6 +1731,7 @@ describe("card code remember (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      HARDWARE,
     );
     const walletId = strField(added, "walletId");
     const rotated = await drive(
@@ -1818,6 +1929,7 @@ describe("card op secrecy (fake card)", () => {
         r,
         { kind: "add", groups: 1 },
         { codes: [freshCode(), freshCode()], cards: taps(other, 8) },
+        verifyPasskey(),
       );
       await drive(
         r,
@@ -1902,6 +2014,7 @@ describe("card module mutation coverage (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     const status = ok(await r.h.call("status", null, r.session)) as { wallets: WalletInfo[] };
@@ -1989,7 +2102,11 @@ describe("card module mutation coverage (fake card)", () => {
     });
     const card = await loadedCard();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     r.input.push(freshCode());
     const step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
@@ -2027,7 +2144,11 @@ describe("card module mutation coverage (fake card)", () => {
     const r = await rig(undefined, { argon2id });
     const card = await loadedCard();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     r.input.push(freshCode());
     let step = ok(await r.h.call("card.step", { opId: first.opId }, r.session)) as Step;
@@ -2058,7 +2179,11 @@ describe("card module mutation coverage (fake card)", () => {
     const r = await rig(undefined, { idleMs: 5000 });
     const card = await loadedCard();
     const first = ok(
-      await r.h.call("card.begin", { op: { kind: "add", groups: 1 } }, r.session),
+      await r.h.call(
+        "card.begin",
+        { op: { kind: "add", groups: 1 }, verify: verifyPasskey() },
+        r.session,
+      ),
     ) as { opId: string; step: Step };
     const code = freshCode();
     r.input.push(code);
@@ -2196,6 +2321,7 @@ describe("card genuineness and life gates (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: [wrongCa] },
+      verifyPasskey(),
     );
     expect(error).toBe("card-not-genuine");
     expect(wrongCa.received).toStrictEqual([]); // the OPEN response itself failed the anchor check
@@ -2211,6 +2337,7 @@ describe("card genuineness and life gates (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: [card] },
+      verifyPasskey(),
     );
     expect(error).toBe("card-not-genuine");
     expect(card.received).toStrictEqual([]);
@@ -2224,6 +2351,7 @@ describe("card genuineness and life gates (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      verifyPasskey(),
     );
     expect(added["kind"]).toBe("add");
     // Now a member — its tags are recorded. A card that always presents the same
@@ -2245,6 +2373,7 @@ describe("card genuineness and life gates (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: [card] },
+      verifyPasskey(),
     );
     expect(error).toBe("card-locked");
     expect(card.received).toStrictEqual([0x20]);
@@ -2257,11 +2386,17 @@ describe("card genuineness and life gates (fake card)", () => {
       first,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      verifyPasskey(),
     );
     const walletId = strField(added, "walletId");
     // A second vault adds the same card and then burns one attempt.
     const second = await rig();
-    await drive(second, { kind: "add", groups: 1 }, { codes: [freshCode()], cards: taps(card, 8) });
+    await drive(
+      second,
+      { kind: "add", groups: 1 },
+      { codes: [freshCode()], cards: taps(card, 8) },
+      verifyPasskey(),
+    );
     await driveErr(
       second,
       { kind: "health", walletId },
@@ -2305,7 +2440,12 @@ describe("card sign (fake card)", () => {
 
   const addWallet = async (r: Rig, card: FakeCard): Promise<string> =>
     strField(
-      await drive(r, { kind: "add", groups: 1 }, { codes: [freshCode()], cards: taps(card) }),
+      await drive(
+        r,
+        { kind: "add", groups: 1 },
+        { codes: [freshCode()], cards: taps(card) },
+        "fake" in r ? HARDWARE : verifyPasskey(),
+      ),
       "walletId",
     );
 
@@ -2419,16 +2559,19 @@ describe("card sign (fake card)", () => {
   const bip84ChangePsbt = (
     index: number,
     input?: { readonly change?: number; readonly index?: number },
+    withSeed: Uint8Array = seed,
   ): Uint8Array => {
+    const fp = HDKey.fromMasterSeed(withSeed).fingerprint;
+    const otherSeed = withSeed === seed ? seed2 : seed;
     const inChange = input?.change ?? 0;
     const inIndex = input?.index ?? 0;
-    const inputKey = HDKey.fromMasterSeed(seed).derive(`m/84'/0'/0'/${inChange}/${inIndex}`);
+    const inputKey = HDKey.fromMasterSeed(withSeed).derive(`m/84'/0'/0'/${inChange}/${inIndex}`);
     const inputPub = inputKey.publicKey!;
     const inputSpend = p2wpkh(inputPub);
     const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
     prev.addInput({ txid: hex("1212".repeat(16)), index: 0, sequence: 0xffffffff });
     prev.addOutput({ script: inputSpend.script, amount: 100000n });
-    const outKey = HDKey.fromMasterSeed(seed).derive(`m/84'/0'/0'/1/${index}`);
+    const outKey = HDKey.fromMasterSeed(withSeed).derive(`m/84'/0'/0'/1/${index}`);
     const outPub = outKey.publicKey!;
     const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
     tx.addInput({
@@ -2441,20 +2584,20 @@ describe("card sign (fake card)", () => {
         [
           inputPub,
           {
-            fingerprint: MASTER_FP,
+            fingerprint: fp,
             path: [84 + HARDENED, HARDENED, HARDENED, inChange, inIndex],
           },
         ],
       ],
     });
     tx.addOutput({
-      script: p2wpkh(HDKey.fromMasterSeed(seed2).derive("m/84'/0'/0'/0/0").publicKey!).script,
+      script: p2wpkh(HDKey.fromMasterSeed(otherSeed).derive("m/84'/0'/0'/0/0").publicKey!).script,
       amount: 90000n,
     });
     tx.addOutput({ script: p2wpkh(outPub).script, amount: 1000n });
     tx.updateOutput(tx.outputsLength - 1, {
       bip32Derivation: [
-        [outPub, { fingerprint: MASTER_FP, path: [84 + HARDENED, HARDENED, HARDENED, 1, index] }],
+        [outPub, { fingerprint: fp, path: [84 + HARDENED, HARDENED, HARDENED, 1, index] }],
       ],
     });
     return tx.toPSBT(0);
@@ -2815,6 +2958,107 @@ describe("card sign (fake card)", () => {
     await expect(mark()).resolves.toBe(20);
   });
 
+  it("a session that ends during the sign verify fails locked and commits no marks", async () => {
+    const r = await keystoreRig("ios", 60_000);
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    const mark = async (session: string): Promise<unknown> =>
+      field(
+        ok(
+          await r.h.call(
+            "wallet.accounts",
+            { walletId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+            session,
+          ),
+        ),
+        "changeMark",
+      );
+    await expect(mark(r.session)).resolves.toBe(0);
+    const release = r.fake.hold();
+    const prompted = new Promise<void>((resolve) => {
+      r.fake.watchOpen(resolve);
+    });
+    const pending = r.h.call(
+      "card.begin",
+      {
+        op: {
+          kind: "sign",
+          request: psbtReq(walletId, bip84ChangePsbt(20, undefined, seed2), ["btc.bip84"]),
+        },
+        verify: HARDWARE,
+      },
+      r.session,
+    );
+    await prompted;
+    r.h.advance(60_001);
+    release();
+    const begin = await pending;
+    await expect(errCode(Promise.resolve(begin))).resolves.toBe("locked");
+    const unlocked = ok(await r.h.call("vault.unlock", { factor: DEVICE }));
+    await expect(mark(strField(unlocked, "session"))).resolves.toBe(0);
+  });
+
+  it("a lock and unlock during the sign verify still refuses the dead session token", async () => {
+    /* The op's own `session.current()` would answer the NEW session — only the re-check of the
+       caller's token keeps a verify that outlived its session from staging under the next one. */
+    const r = await keystoreRig("ios", 60_000);
+    const card = await loadedCard(CODE, seed2);
+    const walletId = await addWallet(r, card);
+    const release = r.fake.hold();
+    const prompted = new Promise<void>((resolve) => {
+      r.fake.watchOpen(resolve);
+    });
+    const pending = r.h.call(
+      "card.begin",
+      {
+        op: {
+          kind: "sign",
+          request: psbtReq(walletId, bip84ChangePsbt(20, undefined, seed2), ["btc.bip84"]),
+        },
+        verify: HARDWARE,
+      },
+      r.session,
+    );
+    await prompted;
+    r.h.advance(60_001); // idle deadline — the session ends
+    // The kernel runs one call at a time: the unlock is queued behind begin and lands only
+    // after the held prompt releases — the new session exists before the marks assertion.
+    const unlocking = r.h.call("vault.unlock", { factor: DEVICE });
+    release();
+    const begin = await pending;
+    const unlocked = ok(await unlocking);
+    await expect(errCode(Promise.resolve(begin))).resolves.toBe("locked");
+    // No marks committed under the new session either — the dead token's work never landed.
+    const accounts = ok(
+      await r.h.call(
+        "wallet.accounts",
+        { walletId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+        strField(unlocked, "session"),
+      ),
+    );
+    expect(field(accounts, "changeMark")).toBe(0);
+  });
+
+  it("a session that ends during the add verify fails locked before the op stages", async () => {
+    /* The post-verify session re-check is the only gate between the prompt and the operation
+       itself for ops with no pre-commit work — without it a dead session would still stage
+       the first step. */
+    const r = await keystoreRig("ios", 60_000);
+    const release = r.fake.hold();
+    const prompted = new Promise<void>((resolve) => {
+      r.fake.watchOpen(resolve);
+    });
+    const pending = r.h.call(
+      "card.begin",
+      { op: { kind: "add", groups: 1 }, verify: HARDWARE },
+      r.session,
+    );
+    await prompted;
+    r.h.advance(60_001);
+    release();
+    await expect(errCode(pending)).resolves.toBe("locked");
+  });
+
   it("a small per-tap budget spreads tasks over taps and a lost tag resends only pending work", async () => {
     // OPEN(300) + VERIFY(400) + margin(1000) leaves 550 ms — one ECDSA task (451) per tap.
     const r = await rig(2250);
@@ -2957,6 +3201,7 @@ describe("card sign (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      HARDWARE,
     );
     const walletId = strField(added, "walletId");
     const result = signResult(
@@ -3176,6 +3421,7 @@ describe("card sign (fake card)", () => {
       r,
       { kind: "add", groups: 1 },
       { codes: [freshCode()], cards: taps(card, 8) },
+      HARDWARE,
     );
     const walletId = strField(added, "walletId");
     card.received.length = 0;

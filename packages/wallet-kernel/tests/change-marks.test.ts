@@ -460,6 +460,28 @@ describe("change marks lifecycle", () => {
     await expect(accountMark(h, session, walletId)).resolves.toBe(50);
   });
 
+  it("several hidden change outputs raise the mark to the highest, not the last", async () => {
+    const { h, session, walletId } = await setup();
+    /* The internal input at /1/10 opens the discoverable bound to 30; the two change outputs
+       descend — /1/25 then /1/15 — so a last-write-wins raise would seal 15 and leave a gap:
+       /1/16…25 would classify as spent-without-mark on the next request. */
+    const result = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84", change: 1, index: 10 }],
+        [
+          { purpose: 84, change: 1, index: 25 },
+          { purpose: 84, change: 1, index: 15 },
+        ],
+      ),
+    );
+    expect("err" in result).toBe(false);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(25);
+  });
+
   it("an internal sweep's signed change input raises the mark — no own output needed", async () => {
     const { h, session, walletId } = await setup();
     // External origin: a sweep's /1/500 input proves nothing — the mark stays 0.

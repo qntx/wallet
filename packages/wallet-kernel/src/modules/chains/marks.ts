@@ -74,6 +74,7 @@ export function parseChangeMarksHeader(text: string): ChangeMarksHeader {
   for (let i = 1; i < marks.length; i++) {
     const prev = marks[i - 1];
     const cur = marks[i];
+    // Marks are strictly increasing — an equal pair would seal the same bound under two entries.
     if (prev === undefined || cur === undefined || before(prev, cur) >= 0) {
       throw headerFailure();
     }
@@ -147,6 +148,7 @@ export const commitChangeMarks = async (
   for (const raise of raises) {
     const key = `${groupIndex}/${raise.purpose}/${network}`;
     const held = next.get(key);
+    // A raise only matters when it extends the held bound — an equal index seals nothing new.
     if (raise.index > (held?.index ?? -1)) {
       next.set(key, {
         groupIndex,

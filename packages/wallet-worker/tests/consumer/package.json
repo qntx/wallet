@@ -1,0 +1,22 @@
+{
+  "name": "qntx-consumer-smoke",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@qntx/nostr": "0.16.0",
+    "@qntx/siwx": "0.8.0",
+    "@qntx/spark": "0.5.2",
+    "@qntx/ur": "4.1.0",
+    "@scure/base": "2.4.0",
+    "@scure/bip32": "2.4.0",
+    "@scure/btc-signer": "2.4.1",
+    "@solana/addresses": "8.5.0",
+    "@solana/codecs": "8.5.0",
+    "@solana/transaction-messages": "8.5.0",
+    "@solana/transactions": "8.5.0",
+    "ox": "1.8.12",
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0"
+  }
+}
