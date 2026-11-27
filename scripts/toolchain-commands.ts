@@ -13,6 +13,7 @@ import { parse } from "./shell-words.ts";
 import type { Command, Pipeline } from "./shell-words.ts";
 
 /** A container image pinned by digest. */
+// oxlint-disable-next-line no-inferrable-types -- isolatedDeclarations requires the annotation.
 export const DIGEST_IMAGE: RegExp = /@sha256:[0-9a-f]{64}$/;
 
 /**
