@@ -14,6 +14,7 @@ const PUB = HD.deriveChild(0).deriveChild(0);
 const TO_ADDR = p2wpkh(PUB.publicKey!, NETWORK).address;
 /** The first change index the wallet picks: mark 0 hands out /1/1 — index 0 is never used. */
 const CHANGE_ADDR = p2wpkh(HD.deriveChild(1).deriveChild(1).publicKey!, NETWORK).address;
+const CHANGE_ADDR_2 = p2wpkh(HD.deriveChild(1).deriveChild(2).publicKey!, NETWORK).address;
 const TXID = (n: number) => n.toString(16).padStart(2, "0").repeat(32);
 
 const { script } = p2wpkh(PUB.publicKey!, NETWORK);
@@ -491,6 +492,18 @@ describe("bitcoin rbf", () => {
   });
 
   describe("request-time checks and reservations", () => {
+    const params = {
+      account: {
+        kind: "hd" as const,
+        walletId: "w",
+        groupIndex: 0,
+        template: "btc.bip84" as const,
+      },
+      network: "bip122:000000000019d6689c085ae165831e93",
+      to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+      amount: 10_000n,
+      fee: "slow" as const,
+    };
     const verify = { kind: "password" as const, password: "pw" };
     const independentFees = (fast: number) => ({
       get: async (u: string) =>
@@ -557,6 +570,55 @@ describe("bitcoin rbf", () => {
       const bumped = await prepared.submit(verify, () => undefined);
       const old = btcOf(original);
       expect(btcOf(bumped).fee).toBeGreaterThanOrEqual(old.fee + old.vsize);
+    });
+
+    it("a replacement's fresh change pick stays reserved while the prepare lives", async () => {
+      /* The parent pays everything out — no own change — so the bump takes a fresh change index.
+         While that pick is held a send must step over it; releasing the bump hands the index
+         back out. */
+      const c = ctx();
+      const original = await send(c, 49_400n);
+      expect(btcOf(original).outputs.every((o) => !o.own)).toBe(true);
+      const bump = await route.prepareReplace(c, original, "speed-up", "req-rbf");
+      setUtxos([{ txid: funding(3, 50_000).txid, vout: 0, value: 50_000 }]);
+      const held = await route.prepare(c, params, "req-held");
+      const sent = await held.submit(verify, () => undefined);
+      expect(btcOf(sent).outputs.find((o) => o.own)?.address).toBe(CHANGE_ADDR_2);
+      bump.release();
+      setUtxos([{ txid: funding(4, 50_000).txid, vout: 0, value: 50_000 }]);
+      const freed = await route.prepare(c, params, "req-freed");
+      const sent2 = await freed.submit(verify, () => undefined);
+      expect(btcOf(sent2).outputs.find((o) => o.own)?.address).toBe(CHANGE_ADDR);
+    });
+
+    it("a CPFP child's fresh change pick stays reserved while the prepare lives", async () => {
+      /* A send that runs while the child's pick is held must step over it; releasing the child
+         hands the index back out. */
+      const c = ctx();
+      const parent = await send(c);
+      const child = await route.prepareCpfp(c, parent, 10, "req-cpfp");
+      setUtxos([{ txid: funding(3, 50_000).txid, vout: 0, value: 50_000 }]);
+      const held = await route.prepare(c, params, "req-held");
+      const sent = await held.submit(verify, () => undefined);
+      expect(btcOf(sent).outputs.find((o) => o.own)?.address).toBe(CHANGE_ADDR_2);
+      child.release();
+      setUtxos([{ txid: funding(4, 50_000).txid, vout: 0, value: 50_000 }]);
+      const freed = await route.prepare(c, params, "req-freed");
+      const sent2 = await freed.submit(verify, () => undefined);
+      expect(btcOf(sent2).outputs.find((o) => o.own)?.address).toBe(CHANGE_ADDR);
+    });
+
+    it("a failed CPFP build frees the change index it reserved", async () => {
+      /* A target rate the child's inputs cannot pay makes the exact build throw inside the try,
+         after the change pick is already reserved — the pick must come back for the next send. */
+      const c = ctx();
+      const parent = await send(c);
+      await expect(route.prepareCpfp(c, parent, 1_000_000, "req-cpfp")).rejects.toThrow(
+        "expected non-negative bigint",
+      );
+      const prepared = await route.prepare(c, params, "req-send");
+      const sent = await prepared.submit(verify, () => undefined);
+      expect(btcOf(sent).outputs.find((o) => o.own)?.address).toBe(CHANGE_ADDR);
     });
   });
 

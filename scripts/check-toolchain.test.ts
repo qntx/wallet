@@ -713,6 +713,45 @@ describe("the token rules over parsed commands", () => {
     expect(checkWorkflow(W, job(steps), index)).toHaveLength(1);
   });
 
+  it("resolves a YAML alias used as a step", () => {
+    const source =
+      "x:\n  s: &s\n    run: npm install left-pad\njobs:\n  t:\n    steps:\n      - *s\n";
+    expect(checkWorkflow(W, source, index)).toHaveLength(1);
+  });
+
+  it("counts an alias step's uses: range for the setup-bun mention scan", () => {
+    /* The scan maps every `uses: oven-sh/setup-bun@…` line to a collected step's range —
+       an alias step dropped by stepNodes leaves a valid mention "cannot resolve". */
+    const source =
+      "x:\n  s: &s\n    uses: oven-sh/setup-bun@82e49515820152fd2118e7d3f21c89d120b1c1ee\n    with:\n      bun-version-file: package.json\njobs:\n  t:\n    steps:\n      - *s\n";
+    expect(checkWorkflow(W, source, index)).toStrictEqual([]);
+  });
+
+  it("flags an installer inside a substitution's body", () => {
+    expect(findings('echo "$(npm install left-pad)"')).toHaveLength(1);
+    expect(findings("x=$(bun install) echo done")).toHaveLength(1);
+  });
+
+  it("flags an installer inside a heredoc body fed to a shell", () => {
+    const steps =
+      "      - run: |\n          sh <<'EOF'\n          npm install left-pad\n          EOF\n";
+    expect(checkWorkflow(W, job(steps), index)).toHaveLength(1);
+  });
+
+  it("pins a docker:// uses: to a digest, not a tag", () => {
+    expect(checkWorkflow(W, job("      - uses: docker://alpine:latest\n"), index)).toHaveLength(1);
+    const pinned = `      - uses: docker://alpine@sha256:${DIGEST}\n`;
+    expect(checkWorkflow(W, job(pinned), index)).toStrictEqual([]);
+  });
+
+  it.each([
+    // Not commands and not aliases — npm resolves each to a unique full-name prefix.
+    "npm upda left-pad",
+    "npm install-t left-pad",
+  ])("flags a unique-prefix npm subcommand `%s`", (command) => {
+    expect(findings(command)).toHaveLength(1);
+  });
+
   it("parses a Dockerfile RUN heredoc's body as the script", () => {
     const source = `${FROM}RUN <<EOF\nnpm install left-pad\nEOF\n`;
     expect(checkDockerfile("Dockerfile.x", source, index)).toHaveLength(1);

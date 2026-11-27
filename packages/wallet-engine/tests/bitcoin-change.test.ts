@@ -153,6 +153,15 @@ describe("changeAddressOf", () => {
     const taken = new Set(deep.map((a) => a.address));
     expectUnavailable(() => changeAddressOf(deep, 0, taken));
   });
+
+  // oxlint-disable-next-line vitest/expect-expect -- expectUnavailable wraps the expect calls
+  it("refuses a pick one index past the scan reach, however free it is", () => {
+    const chain = chainOf(Array.from({ length: 60 }, () => false));
+    // Mark 0 covers indexes 1..changeScanReach(0): take them all so the only free index sits
+    // one past the reach — a window even one wider would hand it out.
+    const taken = new Set(chain.slice(1, changeScanReach(0) + 1).map((a) => a.address));
+    expectUnavailable(() => changeAddressOf(chain, 0, taken));
+  });
 });
 
 describe("a send against a primary that claims the whole change chain used", () => {
