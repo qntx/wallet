@@ -35,7 +35,7 @@ import type { PushKeyStore } from "../src/notifications/controller.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import { until, VERIFY } from "./apps-helpers.ts";
 import { cardRig } from "./card-rig.ts";
-import { pairKeystone } from "./keystone-io.ts";
+import { keystoneIo, pairKeystone } from "./keystone-io.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const PASSWORD = "correct horse battery staple";
@@ -365,6 +365,7 @@ describe("createWalletEngine notifications forge", () => {
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         gateway: { url: GATEWAY },
         rpc: { [EVM]: [RPC] },
+        deviceIo: () => keystoneIo(),
         pushKeys: keys,
       });
       await wallet.wallets.importMnemonic({
@@ -389,10 +390,23 @@ describe("createWalletEngine notifications forge", () => {
       expect(puts).toHaveLength(0);
 
       /* The Keystone pinned group 0 of every family — group 1's solana leaf stays on the
-         device. Its solana lane must still subscribe the group it can read. */
+         device. Pairing's claims start unconfirmed, so group 0's leaves earn the flag on the
+         device screen first; its solana lane must then still subscribe the group it can read. */
       const hwId = await pairKeystone(wallet);
       await until(() => (engine.accounts.getState().groups[hwId]?.length ?? 0) === 1);
       engine.accounts.addGroup(hwId);
+      await engine.signers.verifyAddress({
+        walletId: hwId,
+        groupIndex: 0,
+        template: "solana.bip44-change",
+        network: SOL,
+      });
+      await engine.signers.verifyAddress({
+        walletId: hwId,
+        groupIndex: 0,
+        template: "evm.bip44",
+        network: EVM,
+      });
       await engine.notifications.enable(hwId);
       await until(() => puts.some((p) => p.path === "/v1/push/solana/subscription"));
       const group0 = await chains(wallet).account({
