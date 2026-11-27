@@ -34,7 +34,7 @@ import {
 } from "../chains/bitcoin.ts";
 import type { BtcUtxo, Esplora } from "../chains/bitcoin.ts";
 import type { EngineLogger } from "../events.ts";
-import type { NetworkController } from "../networks/controller.ts";
+import type { NetworkController, Independent } from "../networks/controller.ts";
 import {
   collectChecks,
   exceedsNetworkCap,
@@ -367,6 +367,75 @@ const pathTail = (path: ReadonlyArray<number>): BitcoinPathTail | undefined => {
   return purpose !== undefined && change !== undefined && index !== undefined
     ? { purpose, change, index }
     : undefined;
+};
+
+type BuiltCoin = {
+  readonly txid: string;
+  readonly vout: number;
+  readonly value: number;
+  readonly address: string;
+};
+
+/**
+ * A change-chain coin past the sealed-mark scan reach is where a hostile primary endpoint plants an
+ * invented input: it answers "used" along the chain, the gap walk follows, and the kernel seals the
+ * coin's index as the new change mark before the signature exists — one nonexistent prevout
+ * ratchets every later scan and the transaction can never confirm. The independent endpoint's copy
+ * of the funding transaction settles it: a definite "unknown" (4xx) or a raw transaction whose
+ * claimed outpoint differs in script or value refuses the build outright, while a transient failure
+ * or a malformed answer only downgrades the request to unverified reads. With no second endpoint
+ * configured the primary's word stands — the documented residual.
+ */
+const crossCheckFarChangeCoins = async (
+  coins: ReadonlyArray<BuiltCoin>,
+  built: SpendContext,
+  independent: Independent<Esplora>,
+  flags: Array<RequestCheckCode | undefined>,
+): Promise<void> => {
+  if (independent.kind !== "available") {
+    return;
+  }
+  const reach = changeScanReach(built.mark);
+  const far = coins.filter((coin) => {
+    const tail = pathTail(built.pathOf(coin));
+    return tail !== undefined && tail.change === 1 && tail.index > reach;
+  });
+  for (const coin of far) {
+    let answer: unknown;
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- each far coin settles before the next.
+      answer = await independent.client.get(`/tx/${coin.txid}/hex`);
+    } catch (error) {
+      if (error instanceof EsploraError && !error.transient) {
+        throw new ChainError("invalid-request", "the endpoints disagree on a far change coin");
+      }
+      flags.push("reads-unverified");
+      continue;
+    }
+    const out = (() => {
+      try {
+        if (typeof answer !== "string") {
+          return undefined;
+        }
+        const tx = Transaction.fromRaw(hex.decode(answer), { allowUnknownInputs: true });
+        if (tx.id !== coin.txid) {
+          return undefined;
+        }
+        const found = tx.getOutput(coin.vout);
+        return { script: found.script, amount: found.amount };
+      } catch {
+        return undefined;
+      }
+    })();
+    if (
+      out === undefined ||
+      out.amount !== BigInt(coin.value) ||
+      out.script === undefined ||
+      hex.encode(out.script) !== hex.encode(built.scriptOf(coin))
+    ) {
+      throw new ChainError("invalid-request", "the endpoints disagree on a far change coin");
+    }
+  }
 };
 
 /**
@@ -755,6 +824,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     for (const key of selectedKeys) {
       reserved.set(key, requestId);
     }
+    await crossCheckFarChangeCoins(selectedUtxos, built, independent, flags);
     // Segwit v0 inputs prove their amounts through the full previous transaction (bip44 carried
     // it already for selection). Fetch it only for the inputs actually spent and attach it.
     let psbt = unsigned;
@@ -1181,6 +1251,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         }
       }
     }
+    await crossCheckFarChangeCoins([...btc.inputs, ...extraUtxos], built, independent, flags);
     // The replacement spends exactly the original's inputs plus any extras. The scan does not
     // list them — the unconfirmed original spends them already — so they are rebuilt from the
     // record, with their previous transactions attached for segwit v0.
@@ -1328,6 +1399,17 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       built.scriptOf,
       btc.template,
       (u) => parentRaws.get(u.txid),
+    );
+    await crossCheckFarChangeCoins(
+      bumpable.map((o) => ({
+        txid: parentTxid,
+        vout: o.vout,
+        value: o.value,
+        address: o.address,
+      })),
+      built,
+      independent,
+      flags,
     );
     const changeAddr = changeAddressOf(
       built.changeChain,
