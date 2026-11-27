@@ -271,9 +271,9 @@ const psbtFor = (template: "btc.bip84" | "btc.bip86"): Uint8Array => {
 };
 
 /**
- * A bip84 PSBT like {@link psbtFor} on the group's account with a second output bound to its
- * `…/1/3` key — an own key the pin serves but the device never confirmed. Its address is the same
- * every run, so the test can look for it on the review screens.
+ * A bip84 PSBT like {@link psbtFor} on the group's account with a second output bound to its `…/1/3`
+ * key — an own key the pin serves but the device never confirmed. Its address is the same every
+ * run, so the test can look for it on the review screens.
  */
 const psbtWithUnconfirmedOutput = (group: number): Uint8Array => {
   const pub = pubAt(`m/84'/0'/${group}'/0/0`);
