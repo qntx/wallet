@@ -283,32 +283,42 @@ Summary, per platform — details in the sections below:
   (`CHANGE_MARKS_KIND`/`commitChangeMarks`/`marksHooks` in
   `packages/wallet-kernel/src/modules/chains/marks.ts`). Only
   `origin: "internal"` requests — the ones the engine built — raise it,
-  before signing, to the highest hidden change index and the highest
-  same-purpose change index among the signed inputs
-  (`requestChangeMark` in `packages/wallet-chains/src/bitcoin/own.ts`); an
-  external request may hide change inside the current window but commits
-  no raise at all, so no outside caller can ratchet the mark (and the scan
-  cost behind it) by getting signatures it never broadcasts. An own-key output is
+  before signing, to the highest change index they hide; signed inputs
+  never raise it for any origin, so neither an invented nor a real coin
+  far out on the change chain moves the mark. An external request may
+  hide change inside the current window but commits no raise at all, so
+  no outside caller can ratchet the mark (and the scan cost behind it) by
+  getting signatures it never broadcasts. An own-key output is
   hidden only on the change chain, under a purpose a signed input shares,
   at an index at most `BITCOIN_GAP_LIMIT` (20) past that mark and below
   `BITCOIN_SCAN_LIMIT` (`isDiscoverableChange`). The engine scans the
   change chain out to `changeScanReach(mark)` — every hidden index is
-  re-discoverable — and `changeAddressOf`
-  (`packages/wallet-engine/src/transactions/bitcoin.ts`) deliberately
-  reuses the bound index when the first free one lies outside it. Every
+  re-discoverable. `changeAddressOf`
+  (`packages/wallet-engine/src/transactions/bitcoin.ts`) places the change
+  of the engine's own sends at the lowest index above the sealed mark that
+  no in-flight request reserved and no tracked transaction used, and
+  refuses the send once the window to `changeScanReach(mark)` holds none;
+  it never reads an endpoint's "used" answers. Every
   other own-key output is shown as a send to the user's own address at its
   unusual path, with a warning that the wallet may not display those
   funds. **Residuals:** a fully compromised runtime can claim `internal`
-  and raise the mark with self-built inputs — coins stay on the user's
-  keys; same class as hiding a balance in its own UI. A change chain whose
-  used addresses walk the gap scan to `BITCOIN_SCAN_LIMIT` (2000) makes
-  that template's scan fail (`scanChainWithHistory` in
-  `packages/wallet-engine/src/chains/bitcoin-scan.ts`) — a cap on scan
-  work, reachable only with that many used addresses. The mark is not in
-  the backup (entropy only): a seed-only restore starts it at 0, so
-  change parked beyond the plain gap scan by signed-but-unbroadcast
-  transactions is invisible to the fresh device; the same seed on two
-  devices carries two independent marks.
+  and hide change up to the window's edge, raising the mark by up to
+  `BITCOIN_GAP_LIMIT` per signature — coins stay on the user's keys and
+  inside the scan; same class as hiding a balance in its own UI. A change
+  chain whose used addresses walk the gap scan to `BITCOIN_SCAN_LIMIT`
+  (2000) makes that template's scan fail (`scanChainWithHistory` in
+  `packages/wallet-engine/src/chains/bitcoin-scan.ts`), and a mark at the
+  limit leaves no change index: sends with change from that template are
+  refused rather than reusing an address. The mark is not in the backup
+  (entropy only): a seed-only restore starts it at 0, and the same seed on
+  two devices carries two independent marks, so such a device places
+  change on indexes the seed already used — address reuse that costs
+  privacy, never visibility. Each internal send that is signed but never
+  confirms consumes one change index; twenty in a row leave a 20-address
+  gap that this device's scan (which follows the mark) still crosses but
+  a gap-limit-20 wallet restored from the seed — this one included —
+  stops at, until it scans with a larger gap. Every such index costs a
+  user-approved signature.
 - **Can** craft deceptive requests. Solana named accounts loaded through
   address lookup tables cannot be verified on-device — there are no state
   proofs for table contents — so a prompt that would name one is handled
@@ -386,18 +396,15 @@ and the kernel cannot tell the two apart.
   second endpoint where one exists (nonce, blockhash, Solana lookup
   tables); the relay switches providers only when the submission provably
   never arrived.
-- **Can**, as the only Bitcoin endpoint, ratchet the sealed change mark
-  through the wallet's own send: answering "used" along the change chain
-  out to an invented coin and getting the user to spend it makes the kernel
-  seal that coin's index before the broadcast fails, so every later scan of
-  that template walks the change chain to `changeScanReach(mark)` — up to
-  `BITCOIN_SCAN_LIMIT` (2000) addresses, against an honest endpoint too.
-  The same endpoint can already lie about balances; nothing becomes
-  undiscoverable and the hidden-change bound is unchanged. With a second
-  endpoint configured the engine first reads any change coin beyond the
-  sealed reach there and refuses the build when it does not serve that
-  outpoint (`crossCheckFarChangeCoins` in
-  `packages/wallet-engine/src/transactions/bitcoin.ts`).
+- **Cannot** move the sealed change mark beyond the wallet's own sends.
+  The change index ignores the endpoint's "used" answers and signed inputs
+  never raise the mark, so a lying Bitcoin endpoint — the only one or not
+  — advances it by at most one index per send the user signs. It can
+  invent coins (the send then fails to broadcast), hide real ones, or
+  answer "used" for every scanned address until the scan fails at
+  `BITCOIN_SCAN_LIMIT`: each costs availability, not funds or the
+  change-discovery bound. The second endpoint is never asked about the
+  coins a send spends.
 - **Privacy:** the gateway sees a fresh client id per session and per
   scope (one per chain family plus `service`), and each scope's requests
   name only that scope's data. What links scopes is the network layer —
@@ -472,9 +479,14 @@ Protocol library versions are pinned exactly and recorded in the kernel
 manifest; backend `abiVersion` is checked at kernel start (AGENTS.md
 invariants). The release-path controls are defined in the repository —
 tag-only OIDC publishing in `.github/workflows/publish-npm.yml`, the environment and tag
-rulesets in `.github/rulesets/` — but they are settings the repository
-owner must apply; until they are applied, any repository writer can tag
-and publish. The response to a compromised release is in
+rulesets in `.github/rulesets/` — and applied as repository and npm
+settings; `.github/rulesets/README.md` records them and what a single
+admin can still do alone. Third-party npm
+versions are adopted only once seven days old: `bunfig.toml`
+`minimumReleaseAge` for bun, and the consumer smoke's npm lockfile is
+regenerated by `packages/wallet-worker/scripts/consumer-lock.ts` with
+npm's `--min-release-age` under the same `minimumReleaseAgeExcludes`
+pins. The response to a compromised release is in
 `docs/incident-response.md`. There is no runtime update channel.
 
 ## Deployment rules for hosts
@@ -499,8 +511,15 @@ and publish. The response to a compromised release is in
   `bitcoin-unconfirmed-output` finding and `acknowledgeUnconfirmed` on the
   `hardware.begin` `sign` operation) and Bitcoin history. The engine keeps
   unconfirmed accounts out of push subscriptions (no gateway watches or
-  learns their addresses) and out of the history's known-address set the
-  `address-poisoning` flag compares against. It is **not** carried by the
+  learns their addresses) and out of the history addresses that vouch for
+  themselves: an unconfirmed own address is not exempt from the
+  `address-poisoning` flag, but it stays a reference, so a counterparty
+  imitating it is flagged like one imitating a confirmed address
+  (`assessRecipients` in `packages/wallet-engine/src/requests/risk.ts`). A
+  successful `engine.signers.verifyAddress` takes effect at once —
+  `SignersState.confirmations` moves, history reloads its loaded groups
+  and push reconciles; a confirmation made outside the engine's signers
+  controller is seen at the next reload or unlock. It is **not** carried by the
   engine's account tree, asset balances or the accounts a host grants to a
   dApp or WalletConnect session — the host picks those. Show
   an "unconfirmed — verify on the device" state wherever the host presents
