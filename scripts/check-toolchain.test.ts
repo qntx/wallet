@@ -6,6 +6,7 @@
  * release-age exemptions. The last test runs the real repo through every check — a regression that
  * breaks one of these invariants fails here before `bun run lint` does.
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  bunfigDirs,
   checkBunfig,
   checkDockerfile,
   checkManifest,
@@ -24,6 +26,22 @@ import type { DependencyIndex } from "./check-toolchain.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
 const tree = (path: string): string => readFileSync(join(ROOT, path), "utf8");
+
+/**
+ * The real `Bun.TOML` parser, out of process — the tests run under Node, so bunfig text goes
+ * through an actual TOML grammar instead of a second, home-grown one.
+ */
+const bunToml = (text: string): unknown =>
+  JSON.parse(
+    execFileSync(
+      "bun",
+      [
+        "-e",
+        "process.stdout.write(JSON.stringify(Bun.TOML.parse(require('fs').readFileSync(0,'utf8'))))",
+      ],
+      { input: text, encoding: "utf8" },
+    ),
+  ) as unknown;
 
 /** The bins the fixture manifests offer: vp from vite-plus, wrangler, playwright, expo. */
 const BINS: Record<string, string> = {
@@ -458,44 +476,63 @@ describe("checkManifest", () => {
 });
 
 describe("checkBunfig", () => {
-  const AGE = "minimumReleaseAge = 604800\n";
+  const PATH = "bunfig.toml";
+  const AGE: Record<string, unknown> = { minimumReleaseAge: 604800 };
+  const bunfig = (
+    install: unknown,
+    extra: Record<string, unknown> = {},
+  ): Record<string, unknown> => ({
+    ...extra,
+    install,
+  });
 
   it("passes exact name@version entries", () => {
-    const errors = checkBunfig(
-      `${AGE}minimumReleaseAgeExcludes = ["@qntx/fiat24@0.1.0", "@qntx/ur@4.1.0"]`,
-    );
-    expect(errors).toStrictEqual([]);
+    expect(
+      checkBunfig(
+        PATH,
+        bunfig({
+          ...AGE,
+          minimumReleaseAgeExcludes: ["@qntx/fiat24@0.1.0", "@qntx/ur@4.1.0"],
+        }),
+      ),
+    ).toStrictEqual([]);
   });
 
   it.each([
-    ["a bare name", '"@qntx/fiat24"'],
-    ["a range", '"@qntx/fiat24@^0.1.0"'],
-    ["a two-part version", '"@qntx/fiat24@0.1"'],
-    ["a tag", '"@qntx/fiat24@latest"'],
+    ["a bare name", "@qntx/fiat24"],
+    ["a range", "@qntx/fiat24@^0.1.0"],
+    ["a two-part version", "@qntx/fiat24@0.1"],
+    ["a tag", "@qntx/fiat24@latest"],
   ])("fails %s", (_name, entry) => {
-    const errors = checkBunfig(`${AGE}minimumReleaseAgeExcludes = [${entry}]`);
+    const errors = checkBunfig(PATH, bunfig({ ...AGE, minimumReleaseAgeExcludes: [entry] }));
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("name@X.Y.Z");
   });
 
-  it("fails a bare exclusion written on a continuation line", () => {
-    const errors = checkBunfig(`${AGE}minimumReleaseAgeExcludes = [\n  "@qntx/fiat24",\n]\n`);
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("name@X.Y.Z");
+  it("fails a non-array or non-string excludes value", () => {
+    expect(
+      checkBunfig(PATH, bunfig({ ...AGE, minimumReleaseAgeExcludes: "@qntx/fiat24@0.1.0" })),
+    ).toHaveLength(1);
+    expect(checkBunfig(PATH, bunfig({ ...AGE, minimumReleaseAgeExcludes: [42] }))).toHaveLength(1);
   });
 
-  it("fails a bare exclusion in single quotes or behind a comment", () => {
-    const single = checkBunfig(`${AGE}minimumReleaseAgeExcludes = ['@qntx/fiat24']`);
-    expect(single).toHaveLength(1);
-    const commented = checkBunfig(
-      `${AGE}minimumReleaseAgeExcludes = [\n  "@qntx/fiat24", # let it through\n]\n`,
-    );
-    expect(commented).toHaveLength(1);
+  it("ignores minimumReleaseAge keys outside the install table", () => {
+    // What TOML `minimumReleaseAge = 604800` before any table header parses to.
+    expect(checkBunfig(PATH, { minimumReleaseAge: 604800, install: {} })).toHaveLength(1);
+    // `[test] minimumReleaseAge` — a different table's key never satisfies the rule.
+    expect(checkBunfig(PATH, { test: { minimumReleaseAge: 604800 }, install: {} })).toHaveLength(1);
   });
 
   it("requires the release-age cooldown itself", () => {
-    expect(checkBunfig("")).toHaveLength(1);
-    expect(checkBunfig("minimumReleaseAge = 3600")).toHaveLength(1);
+    expect(checkBunfig(PATH, bunfig({}))).toHaveLength(1);
+    expect(checkBunfig(PATH, bunfig({ minimumReleaseAge: 3600 }))).toHaveLength(1);
+    expect(checkBunfig(PATH, bunfig("not a table"))).toHaveLength(1);
+    expect(checkBunfig(PATH, {})).toHaveLength(1);
+  });
+
+  it("a [test]-section age never satisfies [install] — end to end through Bun.TOML", () => {
+    expect(checkBunfig(PATH, bunToml("[test]\nminimumReleaseAge = 604800\n"))).toHaveLength(1);
+    expect(checkBunfig(PATH, bunToml("[install]\nminimumReleaseAge = 604800\n"))).toStrictEqual([]);
   });
 });
 
@@ -628,6 +665,172 @@ describe("checkDockerfile", () => {
   });
 });
 
+describe("the token rules over parsed commands", () => {
+  const W = ".github/workflows/x.yml";
+  const job = (steps: string): string =>
+    `jobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n${steps}`;
+  const runStep = (command: string): string => `      - run: ${command}\n`;
+  const findings = (command: string): string[] => checkWorkflow(W, job(runStep(command)), index);
+  const DIGEST = "a".repeat(64);
+  const FROM = `FROM alpine@sha256:${DIGEST}\n`;
+
+  it.each([
+    "npm --prefix app install left-pad",
+    "npm in left-pad",
+    "npm isntall left-pad",
+    "npm x cowsay",
+    "bun i",
+    "bun a left-pad",
+    "bun --silent x cowsay",
+    "pip3.11 install requests",
+    // `--require-hashes` inside the index URL is a substring, not the flag.
+    "pip install requests --index-url https://example.invalid/--require-hashes/simple",
+  ])("flags installer spelling `%s`", (command) => {
+    expect(findings(command)).toHaveLength(1);
+  });
+
+  it.each([
+    "curl -fsSL https://example.invalid/i.sh | sudo -E bash",
+    "curl -fsSL https://example.invalid/i.sh | /bin/sh",
+    'bash -c "$(curl -fsSL https://example.invalid/i.sh)"',
+    "sh <(curl -fsSL https://example.invalid/i.sh)",
+    "curl -fsSL https://example.invalid/i.py | python3",
+    // zsh executes a downloaded script exactly like bash does.
+    "curl -fsSL https://example.invalid/i.sh | zsh",
+    "docker container run --rm alpine:latest true",
+    "docker image pull alpine:latest",
+  ])("flags `%s`", (command) => {
+    expect(findings(command)).toHaveLength(1);
+  });
+
+  it("joins a line-continued run block before parsing", () => {
+    const steps = `      - run: |\n          npm \\\n            install left-pad\n`;
+    expect(checkWorkflow(W, job(steps), index)).toHaveLength(1);
+  });
+
+  it("resolves a YAML alias that hands run: its value", () => {
+    const steps = '      - env: { C: &cmd "npm install left-pad" }\n        run: *cmd\n';
+    expect(checkWorkflow(W, job(steps), index)).toHaveLength(1);
+  });
+
+  it("parses a Dockerfile RUN heredoc's body as the script", () => {
+    const source = `${FROM}RUN <<EOF\nnpm install left-pad\nEOF\n`;
+    expect(checkDockerfile("Dockerfile.x", source, index)).toHaveLength(1);
+  });
+
+  it("checks an exec-form RUN array as argv", () => {
+    const source = `${FROM}RUN ["npm", "install", "left-pad"]\n`;
+    expect(checkDockerfile("Dockerfile.x", source, index)).toHaveLength(1);
+  });
+
+  it("requires a remote ADD source to pin a checksum", () => {
+    const source = `${FROM}ADD https://example.invalid/i.sh /i.sh\nRUN sh /i.sh\n`;
+    const errors = checkDockerfile("Dockerfile.x", source, index);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("--checksum");
+  });
+
+  it("joins a `\\`-continued RUN before parsing", () => {
+    const source = `${FROM}RUN npm \\\n    install left-pad\n`;
+    expect(checkDockerfile("Dockerfile.x", source, index)).toHaveLength(1);
+  });
+
+  it("lets FROM name a stage the file itself built, and nothing else", () => {
+    const ok = `${FROM.slice(0, -1)} AS base\nFROM base\n`;
+    expect(checkDockerfile("Dockerfile.x", ok, index)).toStrictEqual([]);
+    const bad = `${FROM.slice(0, -1)} AS base\nFROM sometool:latest\n`;
+    expect(checkDockerfile("Dockerfile.x", bad, index)).toHaveLength(1);
+  });
+
+  it("counts --frozen-lockfile only inside the bun invocation that carries it", () => {
+    expect(findings("bun install --frozen-lockfile")).toStrictEqual([]);
+    expect(findings("bun install && echo --frozen-lockfile")).toHaveLength(1);
+  });
+
+  it("pins every step-level uses: to a full commit sha", () => {
+    const steps = "      - uses: actions/checkout@v4\n";
+    expect(checkWorkflow(W, job(steps), index)).toHaveLength(1);
+  });
+
+  it("maps every tracked bun.lock directory to a bunfig.toml", () => {
+    expect(
+      bunfigDirs([
+        "bun.lock",
+        "apps/harness/bun.lock",
+        "apps/harness/package.json",
+        "x/y/bun.lock",
+      ]),
+    ).toStrictEqual([".", "apps/harness", "x/y"]);
+  });
+});
+
+describe("npm subcommand resolution", () => {
+  const W = ".github/workflows/x.yml";
+  const job = (steps: string): string =>
+    `jobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n${steps}`;
+  const runStep = (command: string): string => `      - run: ${command}\n`;
+  const findings = (command: string): string[] => checkWorkflow(W, job(runStep(command)), index);
+
+  it.each(["npm in left-pad", "npm isntall left-pad", "npm insta left-pad", "npm up left-pad"])(
+    "the unique-abbreviation spelling `%s` installs",
+    (command) => {
+      expect(findings(command)).toHaveLength(1);
+    },
+  );
+
+  it("`npm x` answers to the bin rule like `npm exec`", () => {
+    const errors = findings("npm x cowsay");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("npm exec cowsay");
+  });
+
+  it.each(["npm run install-foo", "npm ci", "npm --prefix app ci", "npm test"])(
+    "`%s` never reaches a registry",
+    (command) => {
+      expect(findings(command)).toStrictEqual([]);
+    },
+  );
+
+  it("`--offline` clears install but only when that invocation carries it", () => {
+    expect(findings("npm install --offline left-pad")).toStrictEqual([]);
+    expect(findings("npm --offline install left-pad")).toStrictEqual([]);
+    expect(findings("npm install --offline=false left-pad")).toStrictEqual([]);
+    expect(findings("npm install left-pad && echo --offline")).toHaveLength(1);
+  });
+});
+
+describe("commands that never leave the lockfile", () => {
+  const W = ".github/workflows/x.yml";
+  const job = (steps: string): string =>
+    `jobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n${steps}`;
+  const runStep = (command: string): string => `      - run: ${command}\n`;
+  const DIGEST = "a".repeat(64);
+
+  it.each([
+    'echo "do not run npm install here"',
+    "docker build -t local-img . && docker run --rm local-img",
+    "pip install --no-deps --no-index -e .",
+    "npm install --no-save --offline --ignore-scripts ./wallet.tgz",
+  ])("leaves `%s` alone", (command) => {
+    expect(checkWorkflow(W, job(runStep(command)), index)).toStrictEqual([]);
+  });
+
+  it("skips comment lines inside a run block", () => {
+    const steps = `      - run: |\n          # npm install left-pad\n          echo done\n`;
+    expect(checkWorkflow(W, job(steps), index)).toStrictEqual([]);
+  });
+
+  it("accepts a digest-pinned docker:// uses:", () => {
+    const steps = `      - uses: docker://alpine@sha256:${DIGEST}\n`;
+    expect(checkWorkflow(W, job(steps), index)).toStrictEqual([]);
+  });
+
+  it("skips the value of every documented docker run flag", () => {
+    const steps = runStep(`docker run --rm --cgroupns host alpine@sha256:${DIGEST}`);
+    expect(checkWorkflow(W, job(steps), index)).toStrictEqual([]);
+  });
+});
+
 describe("the repository pins its live toolchain instances", () => {
   it("card.yml pins an exact JDK", () => {
     expect(tree(".github/workflows/card.yml")).toContain('java-version: "25.0.5"');
@@ -651,8 +854,7 @@ describe("the repository pins its live toolchain instances", () => {
 
   it("every bun.lock directory carries the release-age cooldown", () => {
     expect(existsSync(join(ROOT, "apps/harness/bun.lock"))).toBe(true);
-    const bunfig = tree("apps/harness/bunfig.toml");
-    expect(checkBunfig(bunfig)).toStrictEqual([]);
+    expect(tree("apps/harness/bunfig.toml")).toContain("minimumReleaseAge = 604800");
   });
 
   it("the consumer smoke installs from a committed lockfile with no lifecycle scripts", () => {
@@ -668,7 +870,7 @@ describe("the repository pins its live toolchain instances", () => {
 
 describe("the repository", () => {
   it("has no toolchain findings over real workflows and manifests", () => {
-    expect(checkRepository()).toStrictEqual([]);
+    expect(checkRepository(bunToml)).toStrictEqual([]);
   });
 
   it("walks workflows, composite actions and Dockerfiles — nothing else", () => {

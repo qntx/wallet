@@ -9,33 +9,57 @@
  * `actions/setup-node` step pins an exact `X.Y.Z` so the npm it bundles is stable, and the other
  * toolchain actions pin an exact version input (`actions/setup-java` `java-version` X.Y.Z(+B),
  * `foundry-rs/foundry-toolchain` `version` vX.Y.Z — its default is the floating `stable`). Every
- * `uses:` reference — job-level reusable calls included — pins a full commit sha. Every `run:`
- * command, composite-action step, Dockerfile `RUN` and manifest script that invokes `bunx`/`bun
- * x`/`npx`/`npm exec` names a bin provided by a dependency declared in the root manifest or the
- * step's working-directory manifest — an undeclared name would resolve against the registry instead
- * of the lockfile. The same commands must not reach a registry at all: `curl`/`wget` piped to a
- * shell, `npm install|i|add` (`npm ci` is fine), `bun add`, `bun install` without
- * `--frozen-lockfile`, `pnpm dlx`/`yarn dlx`/`pnpx`, `pip install` without `--require-hashes`, and
- * `docker run|create|pull` of an image that is neither digest-pinned nor built by the workflow's
- * own `docker/build-push-action` step. `container.image` and `services.*.image` pin `@sha256:`
- * digests, and a Dockerfile `FROM` is a `@sha256:` image or a prior build stage. `bunfig.toml`'s
- * `minimumReleaseAgeExcludes` entries must be exact `name@X.Y.Z` pins — a bare name exempts every
- * future release of that package from the 7-day cooldown, not just the one the PR meant to land
- * early — and every directory that keeps a `bun.lock` carries a `bunfig.toml` with
- * `minimumReleaseAge >= 604800`.
+ * `uses:` reference — job-level reusable calls included — pins a full commit sha (a step-level
+ * `docker://image@sha256:` satisfies it). Command text — `run:` steps (after YAML decoding and
+ * alias resolution), composite-action steps, Dockerfile `RUN` bodies and manifest scripts — is
+ * parsed by the POSIX-shell lexer in `shell-words.ts` into pipelines of argv tokens, so quoting,
+ * `\\`-continuations, comments, `$(…)`/backtick/process substitutions and heredocs cannot hide a
+ * command; `sh -c`, `eval` and heredoc bodies fed to a shell recurse as scripts. Over the
+ * normalized commands: `bunx`/`bun x`/`npx`/`npm exec`/`npm x` names a bin provided by a dependency
+ * declared in the root manifest or the step's working-directory manifest — an undeclared name would
+ * resolve against the registry instead of the lockfile — and nothing may reach a registry at all:
+ * `curl`/`wget` piped to an interpreter (or substituted into one's argv), `npm
+ * install|install-test|update` after npm's own alias-and-abbreviation dereference (`npm ci` is
+ * fine, `--offline` clears install), `bun add|update|create`, `bun install` without
+ * `--frozen-lockfile` in that same invocation, `pnpm dlx`/`yarn dlx`/`pnpx`, `pip install` without
+ * a `--require-hashes` or `--no-index` token, and `docker run|create|pull` (the `container run` /
+ * `image pull` spellings included) of an image that is neither digest-pinned nor built by the
+ * file's own `docker/build-push-action` steps or `docker build -t` commands. `container.image` and
+ * `services.*.image` pin `@sha256:` digests, and a Dockerfile `FROM` is a `@sha256:` image or a
+ * prior build stage. `bunfig.toml`'s `[install]` table — the parsed document, not the text — sets
+ * `minimumReleaseAge >= 604800` and its `minimumReleaseAgeExcludes` entries must be exact
+ * `name@X.Y.Z` pins — a bare name exempts every future release of that package from the 7-day
+ * cooldown, not just the one the PR meant to land early — and every directory that keeps a
+ * `bun.lock` carries a `bunfig.toml` meeting that bar.
  *
  * Deliberately not covered: the internals of script files a `run:` command or manifest script
  * invokes (a `bun scripts/x.ts` is checked for its own command words, not the files it runs); tools
  * the runner image itself provides (docker, buildx, jq, apt); `apt-get` and `rustup
- * --default-toolchain stable` inside the emulator Dockerfiles; the Gradle wrapper; and a `curl -o`
- * that only downloads a file a following sha256 check verifies. Exit 1 with one line per finding.
+ * --default-toolchain stable` inside the emulator Dockerfiles; the Gradle wrapper; a `curl -o` that
+ * only downloads a file a following sha256 check verifies; heredoc bodies fed to a non-shell
+ * interpreter (`python <<EOF` is checked as `python`, not as Python source); and a Dockerfile
+ * `RUN`'s `# escape=` parser directive (backslash continuations are assumed). Exit 1 with one line
+ * per finding.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { isMap, isNode, isScalar, isSeq, parseDocument } from "yaml";
+import { isAlias, isMap, isNode, isScalar, isSeq, parseDocument } from "yaml";
+
+import { parse } from "./shell-words.ts";
+import type { Command } from "./shell-words.ts";
+import {
+  checkCommand,
+  checkCommands,
+  collectBuildTags,
+  DIGEST_IMAGE,
+  squeezeExpressions,
+} from "./toolchain-commands.ts";
+import type { DependencyIndex } from "./toolchain-commands.ts";
+
+export type { DependencyIndex } from "./toolchain-commands.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
 const BUN_ACTION = "oven-sh/setup-bun@";
@@ -54,8 +78,6 @@ const EXACT_JAVA = /^\d+\.\d+\.\d+(\+\d+)?$/;
 const EXACT_FOUNDRY = /^v\d+\.\d+\.\d+$/;
 /** A `uses:` reference's ref: a full commit sha, or a `./` local path (checked separately). */
 const PINNED_REF = /@[0-9a-f]{40}$/;
-/** A container image pinned by digest. */
-const DIGEST_IMAGE = /@sha256:[0-9a-f]{64}$/;
 /** Every directory under bunfig needs at least this release age — the 7-day cooldown. */
 const MIN_RELEASE_AGE = 604800;
 const REUSABLE = /^[^/\s]+\/[^/\s]+\/\.github\/workflows\/[^/\s]+\.ya?ml@/;
@@ -70,17 +92,6 @@ const isRecord = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const asRecord = (value: unknown): JsonObject => (isRecord(value) ? value : {});
-
-/**
- * The dependency surface a command may resolve bins against: `dirs` are the manifest directories in
- * scope — the step's working-directory and the repo root. `bin` returns the declared dependency
- * whose package provides the bin name; `declared` answers whether the name is a dependency at all.
- * Injected so tests run on fixtures; the CLI resolves against node_modules.
- */
-export type DependencyIndex = {
-  readonly bin: (name: string, dirs: ReadonlyArray<string>) => string | undefined;
-  readonly declared: (name: string, dirs: ReadonlyArray<string>) => boolean;
-};
 
 /** The names a dependency's `bin` field offers: a string bin takes the unscoped package name. */
 const binNames = (pkg: string, field: unknown): ReadonlyArray<string> =>
@@ -139,249 +150,6 @@ const stepDirs = (root: string, workingDirectory: string | undefined): string[] 
   return dir === root ? [root] : [dir, root];
 };
 
-/** One `bunx`/`bun x`/`npx`/`npm exec` call site inside a command string. */
-type ToolCall = { readonly tool: string; readonly offset: number };
-
-/** A tool word may sit at the start or right after a separator — quotes included (`sh -c "…"`). */
-const WORD_BOUNDARY = `${String.raw`(?:^|[\s;&|(`}\`${String.raw`"'])`}`;
-
-const TOOL_CALL = new RegExp(
-  WORD_BOUNDARY + String.raw`(bunx|bun[\s]+x|npx|npm[\s]+exec)[\s]+`,
-  "g",
-);
-
-const toolCalls = (command: string): ToolCall[] =>
-  [...command.matchAll(TOOL_CALL)].map((match) => ({
-    tool: match[1] ?? "",
-    offset: (match.index ?? 0) + match[0].length,
-  }));
-
-/** The rest of the pipeline segment starting at `offset` — where a command's flags live. */
-const segmentAt = (command: string, offset: number): string =>
-  command.slice(offset).split(/&&|\|\||[;|\n]/)[0] ?? "";
-
-/**
- * One installer invocation inside a command string: the tool word and its first argument, e.g.
- * `npm` + `install`, `bun` + `add`, `pip` + `install`. `pnpx` is a tool of its own.
- */
-const INSTALLER_CALL = new RegExp(
-  `${
-    WORD_BOUNDARY + String.raw`(npm|bun|pnpm|yarn|pnpx|pip3?)[\s]+([^\s;&|(`
-  }\`${String.raw`"']+)`}`,
-  "g",
-);
-
-/** `curl`/`wget` whose output is piped into a shell — code straight off the network, executed. */
-const DOWNLOAD_PIPE = new RegExp(
-  WORD_BOUNDARY + String.raw`(?:curl|wget)\b[^|\n]*\|\s*(?:sudo[\s]+|env[\s]+)?(?:sh|bash|zsh)\b`,
-);
-
-/**
- * `docker run|create|pull <image>`: the image is the first bare token once flags — and the values
- * of the flags that take one — are skipped. Boolean-only flags are not listed: an unlisted `--flag
- * value` pair is treated as two tokens, so the value becomes the would-be image and the rule stays
- * on the safe side.
- */
-const DOCKER_CALL = new RegExp(WORD_BOUNDARY + String.raw`docker[\s]+(run|create|pull)\b`, "g");
-const DOCKER_VALUE_FLAGS = new Set([
-  "-p",
-  "--publish",
-  "-e",
-  "--env",
-  "--env-file",
-  "-v",
-  "--volume",
-  "--mount",
-  "--tmpfs",
-  "--name",
-  "--hostname",
-  "--network",
-  "--network-alias",
-  "--link",
-  "--ip",
-  "--ip6",
-  "--dns",
-  "--dns-search",
-  "--dns-opt",
-  "--add-host",
-  "-w",
-  "--workdir",
-  "-u",
-  "--user",
-  "--group-add",
-  "--entrypoint",
-  "--platform",
-  "--pull",
-  "--restart",
-  "--stop-signal",
-  "--stop-timeout",
-  "--device",
-  "--cap-add",
-  "--cap-drop",
-  "--security-opt",
-  "--label",
-  "-l",
-  "--log-driver",
-  "--log-opt",
-  "--health-cmd",
-  "--health-interval",
-  "--health-timeout",
-  "--health-retries",
-  "--health-start-period",
-  "--ulimit",
-  "--sysctl",
-  "--shm-size",
-  "-m",
-  "--memory",
-  "--memory-swap",
-  "--memory-reservation",
-  "--kernel-memory",
-  "--cpus",
-  "--cpu-shares",
-  "--cpu-period",
-  "--cpu-quota",
-  "--cpu-rt-period",
-  "--cpu-rt-runtime",
-  "--cpuset-cpus",
-  "--cpuset-mems",
-  "--pids-limit",
-  "--blkio-weight",
-  "-a",
-  "--attach",
-  "--detach-keys",
-  "--cidfile",
-  "--expose",
-  "--ipc",
-  "--isolation",
-  "--pid",
-  "--userns",
-  "--uts",
-  "--volume-driver",
-  "--volumes-from",
-  "--storage-opt",
-  "--runtime",
-  "--gpus",
-  "--oom-score-adj",
-  "--swappiness",
-  "--init-path",
-  "--mac-address",
-]);
-
-/**
- * `${{ … }}` expressions may contain spaces, which would split an image reference like
- * `onekey-emu-${{ matrix.model }}` across tokens — collapse them so both sides compare equal.
- */
-const squeezeExpressions = (text: string): string =>
-  text.replaceAll(/\$\{\{[^}]*\}\}/g, (m) => m.replaceAll(/\s+/g, ""));
-
-/** The image token of a `docker run|create|pull` segment, once flags and their values are gone. */
-const dockerImage = (segment: string): string | undefined => {
-  const tokens = segment.split(/\s+/).filter((t) => t !== "");
-  // The segment starts right after the subcommand (run/create/pull); flags come first.
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i] ?? "";
-    if (token.startsWith("-")) {
-      if (!token.includes("=") && DOCKER_VALUE_FLAGS.has(token)) {
-        i += 1;
-      }
-      continue;
-    }
-    return token;
-  }
-  return undefined;
-};
-
-/**
- * The command rules shared by `run:` steps, manifest scripts and Dockerfile `RUN` bodies: bin
- * runners resolve only against declared dependencies; installers that would reach a registry
- * outside a lockfile are findings; a downloader piped to a shell is a finding; and a `docker`
- * command may only reference digest-pinned images or images the file itself built.
- */
-const checkCommand = (
-  at: string,
-  command: string,
-  dirs: ReadonlyArray<string>,
-  index: DependencyIndex,
-  builtImages: ReadonlySet<string> = new Set(),
-): string[] => {
-  const errors: string[] = [];
-  for (const call of toolCalls(command)) {
-    const segment = segmentAt(command, call.offset);
-    const tokens = segment.split(/\s+/).filter((token) => token !== "");
-    let explicit = false;
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i] ?? "";
-      if (token === "--") {
-        continue;
-      }
-      if (token === "-p" || token === "--package") {
-        const pkg = tokens[i + 1] ?? "";
-        i += 1;
-        explicit = true;
-        if (!index.declared(pkg, dirs)) {
-          errors.push(`${at}: ${call.tool} -p ${pkg} names no declared dependency`);
-        }
-        continue;
-      }
-      if (token.startsWith("--package=")) {
-        const pkg = token.slice("--package=".length);
-        explicit = true;
-        if (!index.declared(pkg, dirs)) {
-          errors.push(`${at}: ${call.tool} --package=${pkg} names no declared dependency`);
-        }
-        continue;
-      }
-      if (token.startsWith("-")) {
-        continue;
-      }
-      // With -p the named package serves the bin; without it the declared deps must.
-      if (!explicit && index.bin(token, dirs) === undefined) {
-        errors.push(
-          `${at}: ${call.tool} ${token} resolves no bin of a dependency declared in ${dirs
-            .map((d) => `${d}/package.json`)
-            .join(" or ")}`,
-        );
-      }
-      break;
-    }
-  }
-  if (DOWNLOAD_PIPE.test(command)) {
-    errors.push(`${at}: a curl/wget download must not be piped to a shell`);
-  }
-  for (const match of command.matchAll(INSTALLER_CALL)) {
-    const [, tool = "", sub = ""] = match;
-    const where = `${at}:`;
-    if (tool === "npm" && (sub === "install" || sub === "i" || sub === "add")) {
-      errors.push(`${where} npm ${sub} resolves outside a committed lockfile — use npm ci`);
-    } else if (tool === "bun" && sub === "add") {
-      errors.push(`${where} bun add resolves outside the lockfile`);
-    } else if (tool === "bun" && sub === "install") {
-      const segment = segmentAt(command, (match.index ?? 0) + match[0].length);
-      if (!segment.includes("--frozen-lockfile")) {
-        errors.push(`${where} bun install must pass --frozen-lockfile`);
-      }
-    } else if (tool === "pnpx" || ((tool === "pnpm" || tool === "yarn") && sub === "dlx")) {
-      errors.push(`${where} ${tool} ${sub} runs registry code without a lockfile`);
-    } else if ((tool === "pip" || tool === "pip3") && sub === "install") {
-      const segment = segmentAt(command, (match.index ?? 0) + match[0].length);
-      if (!segment.includes("--require-hashes")) {
-        errors.push(`${where} pip install must pass --require-hashes`);
-      }
-    }
-  }
-  for (const match of command.matchAll(DOCKER_CALL)) {
-    const image = dockerImage(
-      squeezeExpressions(segmentAt(command, (match.index ?? 0) + match[0].length)),
-    );
-    if (image !== undefined && !DIGEST_IMAGE.test(image) && !builtImages.has(image)) {
-      errors.push(
-        `${at}: docker ${match[1] ?? ""} ${image} is neither digest-pinned nor built by this file`,
-      );
-    }
-  }
-  return errors;
-};
-
 /**
  * A yaml scalar's text — strings, numbers and booleans only (a plain `String(value)` on a node
  * would stringify `[object Object]`).
@@ -397,43 +165,31 @@ const scalarText = (node: unknown): string | undefined => {
 };
 
 /** A job's `needs`, whatever shape it took — scalar, list, or map. */
-const needsOf = (job: unknown): ReadonlyArray<string> => {
-  if (!isMap(job)) {
-    return [];
-  }
-  const needs: unknown = job.get("needs", true);
-  const scalar = scalarText(needs);
-  if (scalar !== undefined) {
-    return [scalar];
-  }
+const needsItems = (needs: unknown): ReadonlyArray<unknown> => {
   if (isSeq(needs)) {
-    return needs.items.flatMap((n) => {
-      const text = scalarText(n);
-      return text === undefined ? [] : [text];
-    });
+    return needs.items;
   }
   if (isMap(needs)) {
-    return needs.items.flatMap((p) => {
-      const text = scalarText(p.key);
-      return text === undefined ? [] : [text];
-    });
+    return needs.items.map((p) => p.key);
   }
-  return [];
+  return needs === undefined ? [] : [needs];
 };
 
 /** The step maps of a parsed workflow or composite action, with their source ranges. */
 const stepNodes = (document: ReturnType<typeof parseDocument>): ReadonlyArray<unknown> => {
+  const resolved = (node: unknown): unknown => (isAlias(node) ? node.resolve(document) : node);
   const steps: unknown[] = [];
-  const jobs: unknown = document.get("jobs", true);
+  const jobs: unknown = resolved(document.get("jobs", true));
   if (isMap(jobs)) {
     for (const pair of jobs.items) {
-      const job = pair.value;
+      const job = resolved(pair.value);
       if (isMap(job)) {
-        const seq = job.get("steps", true);
+        const seq = resolved(job.get("steps", true));
         if (isSeq(seq)) {
           for (const step of seq.items) {
-            if (isMap(step)) {
-              steps.push(step);
+            const item = resolved(step);
+            if (isMap(item)) {
+              steps.push(item);
             }
           }
         }
@@ -441,51 +197,19 @@ const stepNodes = (document: ReturnType<typeof parseDocument>): ReadonlyArray<un
     }
   }
   // A composite action carries its steps under runs.steps instead.
-  const runs: unknown = document.get("runs", true);
+  const runs: unknown = resolved(document.get("runs", true));
   if (isMap(runs)) {
-    const seq = runs.get("steps", true);
+    const seq = resolved(runs.get("steps", true));
     if (isSeq(seq)) {
       for (const step of seq.items) {
-        if (isMap(step)) {
-          steps.push(step);
+        const item = resolved(step);
+        if (isMap(item)) {
+          steps.push(item);
         }
       }
     }
   }
   return steps;
-};
-
-const scalarAt = (map: unknown, key: string): string | undefined =>
-  isMap(map) ? scalarText(map.get(key, true)) : undefined;
-
-/** Walk nested yaml maps — `scalarPath(job, "defaults", "run", "working-directory")`. */
-const scalarPath = (map: unknown, ...keys: string[]): string | undefined => {
-  let node: unknown = map;
-  for (const key of keys) {
-    if (!isMap(node)) {
-      return undefined;
-    }
-    node = node.get(key, true);
-  }
-  return scalarText(node);
-};
-
-const recordOf = (map: unknown, key: string): JsonObject => {
-  if (!isMap(map)) {
-    return {};
-  }
-  const node = map.get(key, true);
-  if (!isMap(node)) {
-    return {};
-  }
-  const record: JsonObject = {};
-  for (const pair of node.items) {
-    if (isScalar(pair.key)) {
-      const { value } = pair;
-      record[String(pair.key.value)] = isScalar(value) ? value.value : undefined;
-    }
-  }
-  return record;
 };
 
 /** The offset of a yaml node, for line numbers in findings. */
@@ -517,26 +241,6 @@ const splitTagValue = (text: string): string[] =>
     .map((t) => t.trim())
     .filter((t) => t !== "");
 
-/** The `tags:` values a `docker/build-push-action` step builds — scalar, list or multiline. */
-const buildPushTags = (step: unknown): ReadonlyArray<string> => {
-  if (!isMap(step)) {
-    return [];
-  }
-  const node = step.get("with", true);
-  if (!isMap(node)) {
-    return [];
-  }
-  const tags = node.get("tags", true);
-  if (isSeq(tags)) {
-    return tags.items.flatMap((item) => {
-      const text = scalarText(item);
-      return text === undefined ? [] : splitTagValue(text);
-    });
-  }
-  const text = scalarText(tags);
-  return text === undefined ? [] : splitTagValue(text);
-};
-
 /**
  * The version-input rules every toolchain action step shares: `input` is the `with:` key that must
  * exist and match `pattern` exactly.
@@ -552,13 +256,16 @@ const TOOLCHAIN_INPUTS: ReadonlyArray<{
 
 /**
  * Workflow and composite-action rules over the parsed document: every `uses:` pins a full commit
- * sha (or names a `./` local action); setup-bun steps read the version from the root manifest and
- * never pin their own; setup-node and the other toolchain actions pin exact versions; a `run:`
- * command follows the shared command rules; job `container`/`services` images pin digests and
- * `docker` commands may only reference digest-pinned or workflow-built images; a non-allow-listed
- * reusable workflow waits on `toolchain` and is handed the resolved Bun version, which the file
- * must produce in a `toolchain` job. A stray `oven-sh/setup-bun@` mention outside a `uses:` step is
- * still a finding — the raw-source pass covers what parsing drops (comments, malformed steps).
+ * sha (or names a `./` local action or a `docker://` image digest); setup-bun steps read the
+ * version from the root manifest and never pin their own; setup-node and the other toolchain
+ * actions pin exact versions; a `run:` command follows the shared command rules — after YAML
+ * decoding, so a `\`-continued literal block or a `#` comment line behaves like bash and an alias
+ * node resolves like any anchor (one that does not is a finding); job `container`/`services` images
+ * pin digests and `docker` commands may only reference digest-pinned or workflow-built images —
+ * `docker build -t` inside a `run:` counts too; a non-allow-listed reusable workflow waits on
+ * `toolchain` and is handed the resolved Bun version, which the file must produce in a `toolchain`
+ * job. A stray `oven-sh/setup-bun@` mention outside a `uses:` step is still a finding — the
+ * raw-source pass covers what parsing drops (comments, malformed steps).
  */
 export function checkWorkflow(path: string, source: string, index: DependencyIndex): string[] {
   const errors: string[] = [];
@@ -567,6 +274,69 @@ export function checkWorkflow(path: string, source: string, index: DependencyInd
   if (document.errors.length > 0) {
     return [`${path}: workflow does not parse — ${document.errors[0]?.message ?? ""}`];
   }
+
+  /** A YAML alias resolves to its anchored node; an alias that does not is a finding. */
+  const resolve = (node: unknown, atText: string): unknown => {
+    if (!isAlias(node)) {
+      return node;
+    }
+    const target = node.resolve(document);
+    if (!isNode(target)) {
+      errors.push(`${atText}: a YAML alias does not resolve`);
+      return undefined;
+    }
+    return target;
+  };
+  const scalarAt = (map: unknown, key: string, atText: string): string | undefined =>
+    isMap(map) ? scalarText(resolve(map.get(key, true), atText)) : undefined;
+  const scalarPath = (map: unknown, atText: string, ...keys: string[]): string | undefined => {
+    let node: unknown = map;
+    for (const key of keys) {
+      if (!isMap(node)) {
+        return undefined;
+      }
+      node = resolve(node.get(key, true), atText);
+    }
+    return scalarText(node);
+  };
+  const recordOf = (map: unknown, key: string, atText: string): JsonObject => {
+    const node = isMap(map) ? resolve(map.get(key, true), atText) : undefined;
+    if (!isMap(node)) {
+      return {};
+    }
+    const record: JsonObject = {};
+    for (const pair of node.items) {
+      if (isScalar(pair.key)) {
+        record[String(pair.key.value)] = scalarText(resolve(pair.value, atText));
+      }
+    }
+    return record;
+  };
+  const needsOf = (job: unknown, atText: string): ReadonlyArray<string> => {
+    if (!isMap(job)) {
+      return [];
+    }
+    return needsItems(resolve(job.get("needs", true), atText)).flatMap((n) => {
+      const text = scalarText(resolve(n, atText));
+      return text === undefined ? [] : [text];
+    });
+  };
+  const buildPushTags = (step: unknown, atText: string): ReadonlyArray<string> => {
+    const node = isMap(step) ? resolve(step.get("with", true), atText) : undefined;
+    if (!isMap(node)) {
+      return [];
+    }
+    const tags = resolve(node.get("tags", true), atText);
+    if (isSeq(tags)) {
+      return tags.items.flatMap((item) => {
+        const text = scalarText(resolve(item, atText));
+        return text === undefined ? [] : splitTagValue(text);
+      });
+    }
+    const text = scalarText(tags);
+    return text === undefined ? [] : splitTagValue(text);
+  };
+
   const jobs: unknown = document.get("jobs", true);
 
   // Every setup-bun mention in the raw source must sit on a `uses:` line inside a real step.
@@ -595,42 +365,59 @@ export function checkWorkflow(path: string, source: string, index: DependencyInd
     }
   }
 
-  // Images a `docker run|create|pull` may reference without a digest: this file's own builds.
+  // Images a `docker run|create|pull` may reference without a digest: this file's own builds —
+  // build-push-action tags and `docker build -t` invocations in `run:` steps alike.
   const builtImages = new Set(
-    allSteps.flatMap((step) =>
-      scalarAt(step, "uses")?.startsWith(BUILD_PUSH_ACTION) === true ? buildPushTags(step) : [],
-    ),
+    allSteps.flatMap((step) => {
+      const stepAt = at(offsetOf(step));
+      return scalarAt(step, "uses", stepAt)?.startsWith(BUILD_PUSH_ACTION) === true
+        ? buildPushTags(step, stepAt)
+        : [];
+    }),
   );
+  for (const step of allSteps) {
+    const run = scalarAt(step, "run", at(offsetOf(step)));
+    if (run !== undefined) {
+      for (const tag of collectBuildTags(parse(run))) {
+        builtImages.add(tag);
+      }
+    }
+  }
 
   /** The rules a single step answers to, in a job or a composite action alike. */
   const checkStep = (step: unknown, jobDir: string | undefined): void => {
-    const stepUses = scalarAt(step, "uses");
     const stepOffset = offsetOf(step);
-    if (stepUses !== undefined && !stepUses.startsWith("./") && !PINNED_REF.test(stepUses)) {
-      errors.push(`${at(stepOffset)}: uses: ${stepUses} must pin a full commit sha`);
+    const stepAt = at(stepOffset);
+    const stepUses = scalarAt(step, "uses", stepAt);
+    if (stepUses !== undefined && stepUses.startsWith("docker://")) {
+      if (!DIGEST_IMAGE.test(stepUses)) {
+        errors.push(`${stepAt}: a docker:// uses: must pin a @sha256: digest`);
+      }
+    } else if (stepUses !== undefined && !stepUses.startsWith("./") && !PINNED_REF.test(stepUses)) {
+      errors.push(`${stepAt}: uses: ${stepUses} must pin a full commit sha`);
     }
     if (stepUses !== undefined && stepUses.startsWith(BUN_ACTION)) {
-      const withBlock = recordOf(step, "with");
+      const withBlock = recordOf(step, "with", stepAt);
       if ("bun-version" in withBlock) {
         errors.push(
-          `${at(stepOffset)}: setup-bun must not set bun-version — the version comes from ${VERSION_FILE}`,
+          `${stepAt}: setup-bun must not set bun-version — the version comes from ${VERSION_FILE}`,
         );
       }
       if (withBlock["bun-version-file"] !== VERSION_FILE) {
-        errors.push(`${at(stepOffset)}: setup-bun must set bun-version-file: ${VERSION_FILE}`);
+        errors.push(`${stepAt}: setup-bun must set bun-version-file: ${VERSION_FILE}`);
       }
     }
     if (stepUses !== undefined && stepUses.startsWith(NODE_ACTION)) {
-      const withBlock = recordOf(step, "with");
+      const withBlock = recordOf(step, "with", stepAt);
       if ("node-version-file" in withBlock) {
-        errors.push(`${at(stepOffset)}: setup-node must not set node-version-file`);
+        errors.push(`${stepAt}: setup-node must not set node-version-file`);
       }
       if (
         typeof withBlock["node-version"] !== "string" ||
         !EXACT_NODE.test(withBlock["node-version"])
       ) {
         errors.push(
-          `${at(stepOffset)}: setup-node must pin an exact node-version X.Y.Z, got ${JSON.stringify(
+          `${stepAt}: setup-node must pin an exact node-version X.Y.Z, got ${JSON.stringify(
             withBlock["node-version"],
           )}`,
         );
@@ -640,21 +427,19 @@ export function checkWorkflow(path: string, source: string, index: DependencyInd
       if (stepUses === undefined || !stepUses.startsWith(action)) {
         continue;
       }
-      const value = recordOf(step, "with")[input];
+      const value = recordOf(step, "with", stepAt)[input];
       if (typeof value !== "string" || !pattern.test(value)) {
         errors.push(
-          `${at(stepOffset)}: ${action.slice(0, -1)} must pin an exact ${input}, got ${JSON.stringify(
+          `${stepAt}: ${action.slice(0, -1)} must pin an exact ${input}, got ${JSON.stringify(
             value,
           )}`,
         );
       }
     }
-    const run = scalarAt(step, "run");
+    const run = scalarAt(step, "run", stepAt);
     if (run !== undefined) {
-      const stepDir = scalarAt(step, "working-directory") ?? jobDir;
-      errors.push(
-        ...checkCommand(at(stepOffset), run, stepDirs(ROOT, stepDir), index, builtImages),
-      );
+      const stepDir = scalarAt(step, "working-directory", stepAt) ?? jobDir;
+      errors.push(...checkCommand(stepAt, run, stepDirs(ROOT, stepDir), index, builtImages));
     }
   };
 
@@ -666,56 +451,58 @@ export function checkWorkflow(path: string, source: string, index: DependencyInd
       if (!isMap(job)) {
         continue;
       }
+      const jobAt = at(offsetOf(job));
       const jobName = isScalar(pair.key) ? String(pair.key.value) : "?";
       if (jobName === "toolchain") {
         toolchains.push(job);
       }
-      const uses = scalarAt(job, "uses");
+      const uses = scalarAt(job, "uses", jobAt);
       if (uses !== undefined) {
         if (!uses.startsWith("./") && !PINNED_REF.test(uses)) {
-          errors.push(
-            `${at(offsetOf(job))}: a reusable workflow must pin a full commit sha, got ${uses}`,
-          );
+          errors.push(`${jobAt}: a reusable workflow must pin a full commit sha, got ${uses}`);
         }
         if (REUSABLE.test(uses)) {
           const target = uses.slice(0, uses.indexOf("@"));
           if (!NO_BUN_REUSABLE.has(target)) {
             needsToolchainJob = true;
-            if (!needsOf(job).includes("toolchain")) {
+            if (!needsOf(job, jobAt).includes("toolchain")) {
               errors.push(
-                `${at(offsetOf(job))}: a reusable workflow must wait on the toolchain job (needs: toolchain)`,
+                `${jobAt}: a reusable workflow must wait on the toolchain job (needs: toolchain)`,
               );
             }
-            if (scalarAt(job.get("with", true), "bun-version") !== NEEDS_TOOLCHAIN) {
+            if (recordOf(job, "with", jobAt)["bun-version"] !== NEEDS_TOOLCHAIN) {
               errors.push(
-                `${at(offsetOf(job))}: a reusable workflow must be handed ` +
+                `${jobAt}: a reusable workflow must be handed ` +
                   `with: bun-version: ${NEEDS_TOOLCHAIN}`,
               );
             }
           }
         }
       }
-      const image = scalarPath(job, "container", "image") ?? scalarAt(job, "container");
+      const image =
+        scalarPath(job, jobAt, "container", "image") ?? scalarAt(job, "container", jobAt);
       if (image !== undefined && !DIGEST_IMAGE.test(image)) {
-        errors.push(`${at(offsetOf(job))}: the container image must pin a @sha256: digest`);
+        errors.push(`${jobAt}: the container image must pin a @sha256: digest`);
       }
       const services = job.get("services", true);
       if (isMap(services)) {
         for (const service of services.items) {
-          const serviceImage = isMap(service.value) ? scalarAt(service.value, "image") : undefined;
+          const serviceAt = at(offsetOf(service.value));
+          const serviceImage = isMap(service.value)
+            ? scalarAt(service.value, "image", serviceAt)
+            : undefined;
           if (serviceImage !== undefined && !DIGEST_IMAGE.test(serviceImage)) {
-            errors.push(
-              `${at(offsetOf(service.value))}: a service image must pin a @sha256: digest`,
-            );
+            errors.push(`${serviceAt}: a service image must pin a @sha256: digest`);
           }
         }
       }
-      const jobDir = scalarPath(job, "defaults", "run", "working-directory");
+      const jobDir = scalarPath(job, jobAt, "defaults", "run", "working-directory");
       const steps = job.get("steps", true);
       if (isSeq(steps)) {
         for (const step of steps.items) {
-          if (isMap(step)) {
-            checkStep(step, jobDir);
+          const item = resolve(step, at(offsetOf(step)));
+          if (isMap(item)) {
+            checkStep(item, jobDir);
           }
         }
       }
@@ -728,8 +515,9 @@ export function checkWorkflow(path: string, source: string, index: DependencyInd
     const steps = runs.get("steps", true);
     if (isSeq(steps)) {
       for (const step of steps.items) {
-        if (isMap(step)) {
-          checkStep(step, undefined);
+        const item = resolve(step, at(offsetOf(step)));
+        if (isMap(item)) {
+          checkStep(item, undefined);
         }
       }
     }
@@ -739,19 +527,21 @@ export function checkWorkflow(path: string, source: string, index: DependencyInd
     errors.push(`${path}: a reusable workflow needs a toolchain job producing the Bun version`);
   }
   for (const toolchain of toolchains) {
-    const outputs = recordOf(toolchain, "outputs");
-    if (outputs["bun-version"] !== STEPS_BUN) {
+    const toolchainAt = at(offsetOf(toolchain));
+    if (recordOf(toolchain, "outputs", toolchainAt)["bun-version"] !== STEPS_BUN) {
       errors.push(`${path}: the toolchain job must output bun-version: ${STEPS_BUN}`);
     }
     const steps = isMap(toolchain) ? toolchain.get("steps", true) : undefined;
     const hasBunStep =
       isSeq(steps) &&
-      steps.items.some(
-        (step) =>
-          isMap(step) &&
-          scalarAt(step, "id") === "bun" &&
-          scalarAt(step, "uses")?.startsWith(BUN_ACTION) === true,
-      );
+      steps.items.some((step) => {
+        const item = resolve(step, toolchainAt);
+        return (
+          isMap(item) &&
+          scalarAt(item, "id", toolchainAt) === "bun" &&
+          scalarAt(item, "uses", toolchainAt)?.startsWith(BUN_ACTION) === true
+        );
+      });
     if (!hasBunStep) {
       errors.push(`${path}: the toolchain job must carry an id: bun setup-bun step`);
     }
@@ -799,124 +589,204 @@ export function checkManifest(
   }
   const dir = join(ROOT, path.slice(0, path.lastIndexOf("/")) || ".");
   const dirs = dir === ROOT ? [ROOT] : [dir, ROOT];
+  const scripts = Object.values(asRecord(manifest["scripts"])).flatMap((script) =>
+    typeof script === "string" ? [script] : [],
+  );
+  // `docker build -t` anywhere in the manifest counts as built for every script in it.
+  const builtImages = new Set(scripts.flatMap((script) => collectBuildTags(parse(script))));
   for (const [name, script] of Object.entries(asRecord(manifest["scripts"]))) {
     if (typeof script === "string") {
-      errors.push(...checkCommand(`${path} scripts.${name}`, script, dirs, index));
+      errors.push(...checkCommand(`${path} scripts.${name}`, script, dirs, index, builtImages));
     }
   }
   return errors;
 }
 
-/** A TOML line with its `#`-comment removed — comments never start inside a string. */
-const stripComment = (line: string): string => {
-  let quote = "";
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i] ?? "";
-    if (quote === "") {
-      if (c === '"' || c === "'") {
-        quote = c;
-      } else if (c === "#") {
-        return line.slice(0, i);
+/**
+ * `install` must be a table holding `minimumReleaseAge >= 604800` (the 7-day cooldown) and an
+ * optional `minimumReleaseAgeExcludes` array whose every entry is an exact `name@X.Y.Z` pin — a
+ * bare name exempts every later release of that package from the cooldown forever, not just the
+ * version the PR needed early. Keys outside `[install]` never count; neither do values hiding in
+ * strings. `config` is the PARSED document — the caller's TOML parse failure is itself a finding.
+ */
+export function checkBunfig(path: string, config: unknown): string[] {
+  const errors: string[] = [];
+  const install = isRecord(config) ? config["install"] : undefined;
+  if (!isRecord(install)) {
+    errors.push(`${path}: minimumReleaseAge must be set to at least ${MIN_RELEASE_AGE}`);
+    return errors;
+  }
+  const age = install["minimumReleaseAge"];
+  if (typeof age !== "number") {
+    errors.push(`${path}: minimumReleaseAge must be set to at least ${MIN_RELEASE_AGE}`);
+  } else if (age < MIN_RELEASE_AGE) {
+    errors.push(`${path}: minimumReleaseAge ${age} is below the ${MIN_RELEASE_AGE} cooldown`);
+  }
+  const excludes = install["minimumReleaseAgeExcludes"];
+  if (excludes !== undefined) {
+    if (Array.isArray(excludes)) {
+      for (const entry of excludes) {
+        if (typeof entry !== "string" || !EXACT_PIN.test(entry)) {
+          errors.push(
+            `${path}: minimumReleaseAgeExcludes entry ${JSON.stringify(
+              entry,
+            )} must be an exact name@X.Y.Z pin`,
+          );
+        }
       }
-    } else if (c === quote && (quote !== '"' || line[i - 1] !== "\\")) {
-      quote = "";
+    } else {
+      errors.push(`${path}: minimumReleaseAgeExcludes must be an array of exact name@X.Y.Z pins`);
     }
   }
-  return line;
+  return errors;
+}
+
+/** An `ADD`/`COPY` source that reaches the network — an URL or a git remote. */
+const REMOTE_SOURCE = /^(?:https?:\/\/|git@|git:\/\/|ssh:\/\/|[^/\s]+\.git(?:[#?]|$))/i;
+
+/** The heredoc delimiters a Dockerfile instruction line declares (`<<EOF`, `<<-'X'`). */
+const heredocDelims = (text: string): string[] =>
+  [...text.matchAll(/<<-?\s*['"]?([A-Za-z0-9_.-]+)['"]?/g)]
+    .map((m) => m[1] ?? "")
+    .filter((d) => d !== "");
+
+/**
+ * The script a Dockerfile `RUN` actually executes: a `<<EOF` body on the instruction's following
+ * lines IS the script (fed to the shell by the builder), so the `<<` markers and the delimiter
+ * lines come out and the bodies stay inline with the header's remaining words.
+ */
+const runScript = (text: string): string => {
+  const nl = text.indexOf("\n");
+  const header = nl === -1 ? text : text.slice(0, nl);
+  const delimiters = heredocDelims(header);
+  if (nl === -1 || delimiters.length === 0) {
+    return text;
+  }
+  const cleaned = header.replaceAll(/<<-?\s*['"]?[A-Za-z0-9_.-]+['"]?/g, " ");
+  const body = text
+    .slice(nl + 1)
+    .split("\n")
+    .filter((line) => !delimiters.includes(line.replace(/^\t+/, "")));
+  return `${cleaned}\n${body.join("\n")}`;
 };
 
 /**
- * `minimumReleaseAgeExcludes` entries must be exact `name@X.Y.Z` pins: a bare name exempts every
- * later release of that package from the 7-day cooldown forever, not just the version the PR needed
- * early. The array may span lines and quote either way. `minimumReleaseAge` itself must be present
- * and at least a week.
- */
-export function checkBunfig(source: string): string[] {
-  const errors: string[] = [];
-  const text = source.split("\n").map(stripComment).join("\n");
-  const age = /minimumReleaseAge\s*=\s*(\d+)/.exec(text);
-  if (age === null) {
-    errors.push(`bunfig.toml: minimumReleaseAge must be set to at least ${MIN_RELEASE_AGE}`);
-  } else if (Number(age[1]) < MIN_RELEASE_AGE) {
-    errors.push(
-      `bunfig.toml: minimumReleaseAge ${age[1] ?? ""} is below the ${MIN_RELEASE_AGE} cooldown`,
-    );
-  }
-  const excludes = /minimumReleaseAgeExcludes\s*=\s*\[/.exec(text);
-  if (excludes !== null) {
-    const arrayText = text.slice(excludes.index + excludes[0].length);
-    const end = arrayText.indexOf("]");
-    const body = end === -1 ? arrayText : arrayText.slice(0, end);
-    for (const match of body.matchAll(/"([^"]*)"|'([^']*)'/g)) {
-      const entry = match[1] ?? match[2] ?? "";
-      if (!EXACT_PIN.test(entry)) {
-        errors.push(
-          `bunfig.toml: minimumReleaseAgeExcludes entry ${JSON.stringify(entry)} must be an exact name@X.Y.Z pin`,
-        );
-      }
-    }
-  }
-  return errors;
-}
-
-/**
- * Dockerfile rules: `RUN` bodies answer to the shared command rules, and `FROM` references a
- * digest-pinned image or a stage the file itself built. `\`-continuations join before parsing.
+ * Dockerfile rules: `RUN` bodies answer to the shared command rules — exec-form JSON arrays are
+ * argv, shell form is a script, `\`-continuations join first, `RUN <<EOF` bodies are the script,
+ * `RUN --mount=`-style flags are skipped, and `#` comment lines are skipped outside heredoc bodies
+ * — and `FROM` references a digest-pinned image or a stage the file itself built. A remote `ADD`
+ * source (`http(s)://` or git) must pin `--checksum=sha256:<64 hex>` — nothing else in the build
+ * gets to fetch code the lockfile never saw.
  */
 export function checkDockerfile(path: string, source: string, index: DependencyIndex): string[] {
   const errors: string[] = [];
-  const logical: string[] = [];
-  let pending = "";
-  for (const raw of source.split("\n")) {
-    const line = raw.trimEnd();
-    if (line.endsWith("\\")) {
-      pending += `${line.slice(0, -1)} `;
+  // Instruction lines: `\`-continuations join; `#` comment lines drop; a RUN heredoc's body
+  // rides along raw inside the instruction's text.
+  const instructions: Array<{
+    readonly name: string;
+    readonly args: string;
+    readonly line: number;
+  }> = [];
+  const lines = source.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const first = lines[i] ?? "";
+    const start = i + 1;
+    if (first.trim() === "" || first.trimStart().startsWith("#")) {
       continue;
     }
-    logical.push(pending + line);
-    pending = "";
+    let text = first;
+    while (text.trimEnd().endsWith("\\") && i + 1 < lines.length) {
+      i += 1;
+      text = `${text.trimEnd().slice(0, -1)} ${lines[i] ?? ""}`;
+    }
+    const match = /^\s*([A-Za-z]+)[ \t]+(.*)$/s.exec(text);
+    if (match === null) {
+      continue;
+    }
+    let args = match[2] ?? "";
+    for (const delimiter of heredocDelims(args)) {
+      while (i + 1 < lines.length) {
+        i += 1;
+        const line = lines[i] ?? "";
+        args += `\n${line}`;
+        if (line.replace(/^\t+/, "") === delimiter) {
+          break;
+        }
+      }
+    }
+    instructions.push({ name: (match[1] ?? "").toUpperCase(), args, line: start });
   }
-  if (pending !== "") {
-    logical.push(pending);
-  }
+
   const stages = new Set<string>();
-  for (const [i, line] of logical.entries()) {
-    const at = `${path}:${i + 1}`;
-    const from = /^\s*FROM\s+(.+)$/i.exec(line);
-    if (from !== null) {
-      const tokens = (from[1] ?? "").split(/\s+/).filter((t) => t !== "" && !t.startsWith("--"));
+  const builtImages = new Set<string>();
+  // `docker build -t` anywhere in the file counts as built — collect before checking runs.
+  for (const { name, args } of instructions) {
+    if (name === "RUN" && !args.trimStart().startsWith("[")) {
+      const body = runScript(args.replace(/^\s*(?:--[a-z-]+=\S+[ \t]+)+/, ""));
+      for (const tag of collectBuildTags(parse(body))) {
+        builtImages.add(tag);
+      }
+    }
+  }
+  for (const { name, args, line } of instructions) {
+    const at = `${path}:${line}`;
+    if (name === "FROM") {
+      const tokens = args.split(/\s+/).filter((t) => t !== "" && !t.startsWith("--"));
       const image = tokens[0] ?? "";
       const stageIndex = tokens.findIndex((t) => /^as$/i.test(t));
       if (!DIGEST_IMAGE.test(image) && !stages.has(image.toLowerCase())) {
         errors.push(`${at}: FROM ${image} must pin a @sha256: digest or name a prior stage`);
       }
       if (stageIndex > 0) {
-        const name = tokens[stageIndex + 1];
-        if (name !== undefined) {
-          stages.add(name.toLowerCase());
+        const stage = tokens[stageIndex + 1];
+        if (stage !== undefined) {
+          stages.add(stage.toLowerCase());
         }
       }
       continue;
     }
-    const run = /^\s*RUN\s+(.+)$/i.exec(line);
-    if (run !== null) {
-      errors.push(...checkCommand(at, run[1] ?? "", [ROOT], index));
+    if (name === "ADD") {
+      const tokens = args.split(/\s+/).filter((t) => t !== "");
+      const flags = tokens.filter((t) => t.startsWith("--"));
+      const positionals = tokens.filter((t) => !t.startsWith("--"));
+      const remote = positionals.slice(0, -1).some((src) => REMOTE_SOURCE.test(src));
+      if (remote && !flags.some((f) => /^--checksum=sha256:[0-9a-f]{64}$/i.test(f))) {
+        errors.push(`${at}: ADD of a remote source must pin --checksum=sha256:<digest>`);
+      }
+      continue;
+    }
+    if (name === "RUN") {
+      const trimmed = args.trimStart();
+      if (trimmed.startsWith("[")) {
+        // Exec form: the JSON array IS the argv — no shell text to parse.
+        try {
+          const argv: unknown = JSON.parse(trimmed);
+          if (Array.isArray(argv) && argv.every((a) => typeof a === "string")) {
+            const command: Command = {
+              argv,
+              substitutions: [],
+              heredocs: [],
+            };
+            errors.push(...checkCommands(at, [[command]], [ROOT], index, builtImages));
+          } else {
+            errors.push(...checkCommand(at, trimmed, [ROOT], index, builtImages));
+          }
+        } catch {
+          errors.push(...checkCommand(at, trimmed, [ROOT], index, builtImages));
+        }
+        continue;
+      }
+      const body = runScript(trimmed.replace(/^(?:--[a-z-]+=\S+[ \t]+)+/, ""));
+      errors.push(...checkCommand(at, body, [ROOT], index, builtImages));
     }
   }
   return errors;
 }
 
-/** Immediate subdirectories of `dir` (`packages/*`, `apps/*`). */
-const subDirs = (dir: string): string[] =>
-  readdirSync(join(ROOT, dir), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => `${dir}/${entry.name}`);
-
-/** Immediate subdirectories of `dir` that hold a package.json (`packages/*`, `apps/*`). */
-const manifestPaths = (dir: string): string[] =>
-  subDirs(dir)
-    .map((entry) => `${entry}/package.json`)
-    .filter((path) => existsSync(join(ROOT, path)));
+/** A file the repository walk checks for its extension or name. */
+const WORKFLOW_FILE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
+const ACTION_FILE = /(?:^|\/)action\.ya?ml$/;
+const DOCKERFILE_FILE = /(?:^|\/)Dockerfile[^/]*$/;
 
 /** The tracked files the checks walk — workflows, composite actions, Dockerfiles. */
 const trackedFiles = (): string[] =>
@@ -924,16 +794,24 @@ const trackedFiles = (): string[] =>
     .split("\n")
     .filter((path) => path !== "");
 
-const WORKFLOW_FILE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
-const ACTION_FILE = /(?:^|\/)action\.ya?ml$/;
-const DOCKERFILE_FILE = /(?:^|\/)Dockerfile[^/]*$/;
-
 /** The tracked paths the repository walk checks — workflows, composite actions, Dockerfiles. */
 export const checkedFiles = (paths: ReadonlyArray<string>): string[] =>
   paths.filter((p) => WORKFLOW_FILE.test(p) || ACTION_FILE.test(p) || DOCKERFILE_FILE.test(p));
 
-/** Every check over the real tree: workflows, composite actions, Dockerfiles, manifests, bunfig. */
-export const checkRepository = (): string[] => {
+/** The directories holding a tracked `bun.lock` — each owes a `bunfig.toml` cooldown. */
+export const bunfigDirs = (paths: ReadonlyArray<string>): string[] => [
+  ...new Set(
+    paths
+      .filter((p) => p === "bun.lock" || p.endsWith("/bun.lock"))
+      .map((p) => p.slice(0, p.length - "bun.lock".length).replace(/\/$/, "") || "."),
+  ),
+];
+
+/**
+ * Every check over the real tree: workflows, composite actions, Dockerfiles, manifests, bunfig.
+ * `parseToml` is the caller's real TOML parser — `Bun.TOML.parse` under the CLI.
+ */
+export const checkRepository = (parseToml: (text: string) => unknown): string[] => {
   const index = liveIndex(ROOT);
   const errors: string[] = [];
   const tracked = trackedFiles();
@@ -943,29 +821,33 @@ export const checkRepository = (): string[] => {
   for (const path of checkedFiles(tracked).filter((p) => DOCKERFILE_FILE.test(p))) {
     errors.push(...checkDockerfile(path, readFileSync(join(ROOT, path), "utf8"), index));
   }
-  const paths = ["package.json", ...manifestPaths("packages"), ...manifestPaths("apps")];
-  for (const path of paths) {
+  for (const path of tracked.filter((p) => p === "package.json" || p.endsWith("/package.json"))) {
     const pkg: unknown = JSON.parse(readFileSync(join(ROOT, path), "utf8"));
     errors.push(...checkManifest(path, pkg, path === "package.json", index));
   }
-  for (const dir of [".", ...subDirs("packages"), ...subDirs("apps")]) {
-    if (!existsSync(join(ROOT, dir, "bun.lock"))) {
-      continue;
-    }
-    const bunfig = join(ROOT, dir, "bunfig.toml");
+  for (const dir of bunfigDirs(tracked)) {
+    const bunfigPath = dir === "." ? "bunfig.toml" : `${dir}/bunfig.toml`;
+    const bunfig = join(ROOT, bunfigPath);
     if (!existsSync(bunfig)) {
-      errors.push(
-        `${dir}/bunfig.toml: a directory with bun.lock must pin the release-age cooldown`,
-      );
+      errors.push(`${bunfigPath}: a directory with bun.lock must pin the release-age cooldown`);
       continue;
     }
-    errors.push(...checkBunfig(readFileSync(bunfig, "utf8")));
+    try {
+      errors.push(...checkBunfig(bunfigPath, parseToml(readFileSync(bunfig, "utf8"))));
+    } catch (error) {
+      errors.push(
+        `${bunfigPath}: does not parse — ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
   return errors;
 };
 
+/** The CLI runs under Bun; tests inject their own TOML parser, so `Bun` is only referenced here. */
+declare const Bun: { readonly TOML: { readonly parse: (text: string) => unknown } };
+
 if (import.meta.main) {
-  const errors = checkRepository();
+  const errors = checkRepository(Bun.TOML.parse);
   for (const error of errors) {
     console.error(`check-toolchain: ${error}`);
   }
