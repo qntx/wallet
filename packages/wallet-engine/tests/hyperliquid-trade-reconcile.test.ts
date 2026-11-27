@@ -73,8 +73,11 @@ type Posted = { readonly endpoint: "info" | "exchange"; readonly body: Record<st
 
 const manualTimer = () => {
   const queue: Array<{ at: number; fn: () => unknown; cancelled: boolean }> = [];
+  /* Anchor to the real clock at construction — the kernel validates `expiresAfter` against its
+     own wall clock inside a 15 s window, and module-load `NOW` falls behind it as earlier tests
+     consume real time. */
   const timers = {
-    time: NOW,
+    time: Date.now(),
     now: () => timers.time,
     setTimer: (ms: number, fn: () => unknown) => {
       const entry = { at: timers.time + ms, fn, cancelled: false };
