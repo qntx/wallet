@@ -219,6 +219,28 @@ describe("a change coin past the sealed-mark reach", () => {
     expect(w.independentRequests.filter((u) => u.endsWith("/hex"))).not.toStrictEqual([]);
   }, 120_000);
 
+  it("frees the refused coin so a retry under an honest endpoint selects it", async () => {
+    const w = world({ independent: true });
+    usedUpTo(w, FAR);
+    const coin = w.fundChange(FAR, 9, 200_000);
+    const booted = await w.boot();
+    // The independent's 404 refuses this prepare; the coin must not stay reserved under req-far.
+    await expect(
+      booted.ctl.prepareSend(
+        { account: { ...ACCOUNT }, network: NET, to: RECIP, amount: 10_000n, fee: "slow" },
+        "req-far",
+      ),
+    ).rejects.toMatchObject({ code: "invalid-request" });
+    w.setIndependentHex(coin.txid, fundingHex(w, coin.txid));
+    const tx = await w.send(booted, 10_000n, "req-retry");
+    expect(tx.state).not.toBe("failed");
+    const psbt = Transaction.fromPSBT(psbtOf(w.signedCalls));
+    const inputTxids = Array.from({ length: psbt.inputsLength }, (_, i) =>
+      Buffer.from(psbt.getInput(i).txid as Uint8Array).toString("hex"),
+    );
+    expect(inputTxids).toContain(coin.txid);
+  }, 120_000);
+
   it("is refused when the second endpoint's outpoint disagrees with the claim", async () => {
     const w = world({ independent: true });
     usedUpTo(w, FAR);
