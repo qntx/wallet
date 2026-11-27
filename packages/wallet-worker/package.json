@@ -54,7 +54,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p src/browser/tsconfig.json && tsc --noEmit -p src/worker/tsconfig.json && tsc --noEmit -p tests/browser/page/tsconfig.json && tsc --noEmit -p tests/web/tsconfig.json",
     "check:pkg": "bun run build && bun ../../scripts/check-api.ts . && publint && attw --pack . --profile esm-only",
     "pack:local": "bun run build && bun pm pack",
-    "test:consumer": "bun scripts/consumer-smoke.ts"
+    "test:consumer": "bun scripts/consumer-smoke.ts",
+    "consumer:lock": "bun scripts/consumer-lock.ts"
   },
   "dependencies": {
     "@noble/hashes": "2.4.0",
