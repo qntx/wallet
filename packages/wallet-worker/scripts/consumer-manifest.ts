@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 const ROOT = new URL("../../..", import.meta.url).pathname;
 
-export const CONSUMER = join(ROOT, "packages/wallet-worker/tests/consumer");
+export const CONSUMER: string = join(ROOT, "packages/wallet-worker/tests/consumer");
 
 const FIRST_PARTY = new Set(["@qntx/wallet-chains", "@qntx/wallet", "@qntx/wallet-worker"]);
 

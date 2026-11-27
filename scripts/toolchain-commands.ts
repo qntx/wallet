@@ -13,7 +13,7 @@ import { parse } from "./shell-words.ts";
 import type { Command, Pipeline } from "./shell-words.ts";
 
 /** A container image pinned by digest. */
-export const DIGEST_IMAGE = /@sha256:[0-9a-f]{64}$/;
+export const DIGEST_IMAGE: RegExp = /@sha256:[0-9a-f]{64}$/;
 
 /**
  * The dependency facts a command resolves bins and packages against: `bin` maps an executable name
