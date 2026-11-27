@@ -352,7 +352,12 @@ describe("checkWorkflow setup-node", () => {
 describe("checkManifest", () => {
   it("passes a root manifest with a bun packageManager pin", () => {
     expect(
-      checkManifest("package.json", { packageManager: "bun@1.4.4" }, true, index),
+      checkManifest(
+        "package.json",
+        { packageManager: "bun@1.4.4", scripts: { test: "vp test" } },
+        true,
+        index,
+      ),
     ).toStrictEqual([]);
   });
 
@@ -362,7 +367,12 @@ describe("checkManifest", () => {
     ["a range", { packageManager: "bun@^1.4.4" }],
     ["two-part", { packageManager: "bun@1.4" }],
   ])("fails a root manifest whose packageManager is %s", (_name, manifest) => {
-    const errors = checkManifest("package.json", manifest, true, index);
+    const errors = checkManifest(
+      "package.json",
+      { ...manifest, scripts: { test: "vp test" } },
+      true,
+      index,
+    );
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("packageManager");
   });
@@ -373,8 +383,44 @@ describe("checkManifest", () => {
     };
     expect(checkManifest("packages/wallet/package.json", pkg, false, index)).toHaveLength(1);
     expect(
-      checkManifest("package.json", { ...pkg, packageManager: "bun@1.4.4" }, true, index),
+      checkManifest(
+        "package.json",
+        { ...pkg, packageManager: "bun@1.4.4", scripts: { test: "vp test" } },
+        true,
+        index,
+      ),
     ).toHaveLength(1);
+  });
+
+  it("requires the root test script to run the root suite outside vp run", () => {
+    expect(
+      checkManifest(
+        "package.json",
+        {
+          packageManager: "bun@1.4.4",
+          scripts: { test: "vp run --concurrency-limit 1 -r test && vp test" },
+        },
+        true,
+        index,
+      ),
+    ).toStrictEqual([]);
+    expect(
+      checkManifest(
+        "package.json",
+        { packageManager: "bun@1.4.4", scripts: { test: "vp run --concurrency-limit 1 -r test" } },
+        true,
+        index,
+      ),
+    ).toHaveLength(1);
+    // The rule only applies to the root manifest.
+    expect(
+      checkManifest(
+        "packages/wallet/package.json",
+        { scripts: { test: "vp run --concurrency-limit 1 -r test" } },
+        false,
+        index,
+      ),
+    ).toStrictEqual([]);
   });
 
   it("checks manifest scripts like run commands", () => {

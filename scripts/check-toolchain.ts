@@ -494,6 +494,16 @@ export function checkManifest(
       `${path}: packageManager must be "bun@<X.Y.Z>", got ${JSON.stringify(manifest["packageManager"])}`,
     );
   }
+  if (root) {
+    // The root manifest is no workspace package, so `vp run -r test` never reaches it: scripts.test
+    // must run the root suite (scripts/**/*.test.ts — every gate script's tests) itself, in a
+    // segment that is not part of a `vp run` call.
+    const test = asRecord(manifest["scripts"])["test"];
+    const outside = typeof test === "string" ? test.replaceAll(/vp run[^&;]*/g, "") : "";
+    if (!/\bvp test\b/.test(outside)) {
+      errors.push(`${path}: scripts.test must run the root suite with a bare vp test`);
+    }
+  }
   const dir = join(ROOT, path.slice(0, path.lastIndexOf("/")) || ".");
   const dirs = dir === ROOT ? [ROOT] : [dir, ROOT];
   for (const [name, script] of Object.entries(asRecord(manifest["scripts"]))) {
