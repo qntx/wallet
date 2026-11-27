@@ -1437,6 +1437,7 @@ export type HistoryControllerOptions = {
             readonly network: string;
         }) => Promise<{
             readonly address: string;
+            readonly confirmed: boolean;
         } | {
             readonly xpub: string;
             readonly changeMark: number;
