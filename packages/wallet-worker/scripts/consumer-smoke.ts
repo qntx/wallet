@@ -39,12 +39,27 @@ const pack = (pkg: string, dest: string): string => {
 const FIRST_PARTY = new Set(["@qntx/wallet-chains", "@qntx/wallet", "@qntx/wallet-worker"]);
 const CONSUMER = join(ROOT, "packages/wallet-worker/tests/consumer");
 
-const manifest = (path: string): Record<string, unknown> =>
-  JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-const entriesOf = (value: unknown): Array<[string, string]> =>
-  Object.entries(typeof value === "object" && value !== null ? value : {}) as Array<
-    [string, string]
-  >;
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null;
+
+const manifest = (path: string): Record<string, unknown> => {
+  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+  if (!isRecord(parsed)) {
+    throw new Error(`${path} did not parse to an object`);
+  }
+  return parsed;
+};
+const entriesOf = (value: unknown): Array<[string, string]> => {
+  const out: Array<[string, string]> = [];
+  if (isRecord(value)) {
+    for (const [name, spec] of Object.entries(value)) {
+      if (typeof spec === "string") {
+        out.push([name, spec]);
+      }
+    }
+  }
+  return out;
+};
 
 // The scaffold's third-party dependencies are a pure function of the three
 // manifests: the union of their dependencies plus @qntx/wallet's non-first-party
@@ -55,17 +70,23 @@ const expectedDependencies = (): Record<string, string> => {
     for (const [name, spec] of entriesOf(
       manifest(join(ROOT, "packages", pkg.slice(6), "package.json"))["dependencies"],
     )) {
-      if (!FIRST_PARTY.has(name)) deps[name] = spec;
+      if (!FIRST_PARTY.has(name)) {
+        deps[name] = spec;
+      }
     }
   }
   for (const [name, spec] of entriesOf(
     manifest(join(ROOT, "packages/wallet/package.json"))["peerDependencies"],
   )) {
-    if (!FIRST_PARTY.has(name)) deps[name] = spec.replace(/^~/, "");
+    if (!FIRST_PARTY.has(name)) {
+      deps[name] = spec.replace(/^~/, "");
+    }
   }
   const root = manifest(join(ROOT, "package.json"));
   for (const [name, spec] of entriesOf(root["devDependencies"])) {
-    if (name === "vite") deps[name] = spec;
+    if (name === "vite") {
+      deps[name] = spec;
+    }
   }
   return Object.fromEntries(Object.entries(deps).sort(([a], [b]) => a.localeCompare(b)));
 };
@@ -80,7 +101,7 @@ if (JSON.stringify(committed) !== JSON.stringify(expected)) {
       `Expected dependencies:\n${JSON.stringify(expected, null, 2)}\n` +
       "Regenerate both files: cd packages/wallet-worker/tests/consumer && " +
       "npm install --package-lock-only --ignore-scripts " +
-      "--before=<ISO date at which every pinned version exists>",
+      "--before=<ISO date 7 days ago> # honour the registry cooldown",
   );
 }
 
@@ -201,7 +222,6 @@ const fail = (msg: string): never => {
   throw new Error(`CONSUMER SMOKE FAILED: ${msg}`);
 };
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage();
