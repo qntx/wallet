@@ -103,6 +103,8 @@ type Rig = {
   session: string;
   reader: ReturnType<typeof testCardReader>;
   input: ReturnType<typeof testSecureInput>;
+  /** The verify the rig's wallet factor accepts — passkey bytes or a hardware assertion. */
+  verify: () => unknown;
 };
 
 const rig = async (keystore?: ReturnType<typeof fakeKeystore>): Promise<Rig> => {
@@ -127,7 +129,13 @@ const rig = async (keystore?: ReturnType<typeof fakeKeystore>): Promise<Rig> => 
           factor: { kind: "device" },
         })),
   );
-  return { h, session: strField(res, "session"), reader, input };
+  return {
+    h,
+    session: strField(res, "session"),
+    reader,
+    input,
+    verify: keystore === undefined ? verifyPasskey : () => ({ kind: "hardware" }),
+  };
 };
 
 const vaultWalletId = async (r: Rig): Promise<string> => {
@@ -224,7 +232,12 @@ const drive = async (
 
 const addWallet = async (r: Rig, card: FakeCard): Promise<string> =>
   strField(
-    await drive(r, { kind: "add", groups: 1 }, { codes: [CODE], choices: [card], deck: [card] }),
+    await drive(
+      r,
+      { kind: "add", groups: 1 },
+      { codes: [CODE], choices: [card], deck: [card] },
+      r.verify(),
+    ),
     "walletId",
   );
 
@@ -521,6 +534,7 @@ const OP_CASES: ReadonlyArray<{ name: string; build: OpBuild }> = [
       op: { kind: "add", groups: 1 },
       codes: [CODE],
       cards: [await memberCard()],
+      verify: verifyPasskey,
     }),
   },
   {

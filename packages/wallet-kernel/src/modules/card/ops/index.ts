@@ -148,10 +148,10 @@ export const checkOperation = (ctx: KernelContext, op: CardOperation): void => {
 export const verifyGate = (op: CardOperation): "required" | "forbidden" => {
   switch (op.kind) {
     case "status":
-    case "add":
     case "accounts":
     case "health":
       return "forbidden";
+    case "add":
     case "change-access":
     case "erase":
     case "create":
@@ -167,6 +167,7 @@ export const verifyGate = (op: CardOperation): "required" | "forbidden" => {
 export const promptKind = (
   op: CardOperation,
 ):
+  | "card-add"
   | "card-change-access"
   | "card-erase"
   | "card-create"
@@ -174,6 +175,8 @@ export const promptKind = (
   | "card-reseal"
   | "card-forget-access" => {
   switch (op.kind) {
+    case "add":
+      return "card-add";
     case "change-access":
       return "card-change-access";
     case "erase":

@@ -125,6 +125,7 @@ export function corePrompt(locale: PromptLocale, kind: CorePromptKind): Keystore
 
 /** Verification kinds for card operations — the card namespace of `corePrompt`. */
 export type CardPromptKind =
+  | "card-add"
   | "card-change-access"
   | "card-erase"
   | "card-create"
@@ -160,6 +161,10 @@ const CARD: Readonly<
       title: "遗忘卡访问码",
       description: `验证身份以删除卡 ${cards} 已保存的访问码`,
     }),
+    "card-add": () => ({
+      title: "添加卡钱包",
+      description: "验证身份以将卡上的钱包添加到此设备",
+    }),
   },
   en: {
     "card-change-access": (cards) => ({
@@ -185,6 +190,10 @@ const CARD: Readonly<
     "card-forget-access": (cards) => ({
       title: "Forget card access code",
       description: `Verify your identity to delete the saved access code for ${cards}`,
+    }),
+    "card-add": () => ({
+      title: "Add card wallet",
+      description: "Verify your identity to add the wallet on a card to this device",
     }),
   },
 };
