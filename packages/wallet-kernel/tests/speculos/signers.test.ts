@@ -270,6 +270,47 @@ const psbtFor = (template: "btc.bip84" | "btc.bip86"): Uint8Array => {
   return tx.toPSBT(0);
 };
 
+/**
+ * A bip84 PSBT like {@link psbtFor} with a second output bound to `m/84'/0'/0'/1/3` — an own key the
+ * pin serves but the device never confirmed. Its address is the same every run, so the test can
+ * look for it on the review screens.
+ */
+const psbtWithUnconfirmedOutput = (): Uint8Array => {
+  const pub = pubAt("m/84'/0'/0'/0/0");
+  const spend = p2wpkh(pub);
+  const prev = new Transaction({
+    version: 2,
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+    disableScriptCheck: true,
+  });
+  prev.addInput({ txid: "12".repeat(32), index: 0 });
+  prev.addOutput({ script: spend.script, amount: 100_000n });
+  const outPub = pubAt("m/84'/0'/0'/1/3");
+  const path0 = [84 + 0x80000000, 0x80000000, 0x80000000, 0, 0];
+  const path13 = [84 + 0x80000000, 0x80000000, 0x80000000, 1, 3];
+  const tx = new Transaction({
+    version: 2,
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+    disableScriptCheck: true,
+  });
+  tx.addInput({
+    txid: prev.id,
+    index: 0,
+    sequence: 0xfffffffd,
+    witnessUtxo: { script: spend.script, amount: 100_000n },
+    nonWitnessUtxo: prev.toBytes(true, false),
+    bip32Derivation: [[pub, { fingerprint: root.fingerprint, path: path0 }]],
+  });
+  tx.addOutputAddress(EXT_ADDR, 89_000n);
+  tx.addOutput({ script: p2wpkh(outPub).script, amount: 1000n });
+  tx.updateOutput(tx.outputsLength - 1, {
+    bip32Derivation: [[outPub, { fingerprint: root.fingerprint, path: path13 }]],
+  });
+  return tx.toPSBT(0);
+};
+
 /** Tron oracle: the chain's address is the keccak tail of the uncompressed key, base58'd. */
 const MSG_PREFIX = utf8ToBytes("Bitcoin Signed Message:\n");
 const varint = (n: number): Uint8Array => {
@@ -763,6 +804,53 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
       tx.finalize();
       expect(tx.extract().length).toBeGreaterThan(0);
     }
+  }, 300_000);
+
+  it("shows an unconfirmed-served output's address — the device never hides it as change", async () => {
+    /* A second pairing of the same device pins the same fingerprint but confirms nothing: an
+       output bound to its /1/3 key decodes as a plain send. The kernel strips that output's
+       wallet derivation for the device, so the review must display its address like any other
+       payee — app-bitcoin-new hides outputs still carrying the wallet's change derivation. */
+    const paired = ok(
+      await runOp(
+        h,
+        session,
+        "bitcoin",
+        { op: { kind: "pair", device: "ledger" }, verify: { kind: "hardware" } },
+        screen("bitcoin"),
+        undefined,
+      ),
+    );
+    const unconfirmedId = strField(field(donePayload(paired), "wallet"), "walletId");
+    const done = ok(
+      await runOp(
+        h,
+        session,
+        "bitcoin",
+        {
+          op: {
+            kind: "sign",
+            request: {
+              kind: "bitcoin.psbt",
+              origin: "internal",
+              network: BTC_NETWORK,
+              account: { kind: "hd", walletId: unconfirmedId, groupIndex: 0 },
+              psbt: psbtWithUnconfirmedOutput(),
+              sign: [{ index: 0, template: "btc.bip84" }],
+            },
+            acknowledgeUnconfirmed: true,
+          },
+          verify: { kind: "hardware" },
+        },
+        screen("bitcoin"),
+        "approve",
+      ),
+    );
+    expect(bytesField(signResult(done), "signedPsbt")).toBeInstanceOf(Uint8Array);
+    const shown = p2wpkh(pubAt("m/84'/0'/0'/1/3"), btcParams).address;
+    // The review chunks the address with spaces — compare without them.
+    const flat = screen("bitcoin").texts.map((text) => text.replaceAll(" ", ""));
+    expect(flat.some((text) => text.includes(shown))).toBe(true);
   }, 300_000);
 
   it("signs a legacy bitcoin message", async () => {
