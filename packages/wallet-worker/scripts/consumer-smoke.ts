@@ -39,8 +39,7 @@ const pack = (pkg: string, dest: string): string => {
 const FIRST_PARTY = new Set(["@qntx/wallet-chains", "@qntx/wallet", "@qntx/wallet-worker"]);
 const CONSUMER = join(ROOT, "packages/wallet-worker/tests/consumer");
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null;
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
 const manifest = (path: string): Record<string, unknown> => {
   const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
@@ -88,7 +87,7 @@ const expectedDependencies = (): Record<string, string> => {
       deps[name] = spec;
     }
   }
-  return Object.fromEntries(Object.entries(deps).sort(([a], [b]) => a.localeCompare(b)));
+  return Object.fromEntries(Object.entries(deps).toSorted(([a], [b]) => a.localeCompare(b)));
 };
 
 const expected = expectedDependencies();

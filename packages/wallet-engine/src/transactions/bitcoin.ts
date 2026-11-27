@@ -382,10 +382,9 @@ type BuiltCoin = {
  * coin's index as the new change mark before the signature exists — one nonexistent prevout
  * ratchets every later scan and the transaction can never confirm. The independent endpoint's copy
  * of the funding transaction settles it: a definite "unknown" (4xx), an answer that is not a
- * parseable transaction, or a transaction whose txid or claimed outpoint differs in script or
- * value refuses the build outright; only a transient read failure downgrades the request to
- * unverified reads. With no second endpoint configured the primary's word stands — the documented
- * residual.
+ * parseable transaction, or a transaction whose txid or claimed outpoint differs in script or value
+ * refuses the build outright; only a transient read failure downgrades the request to unverified
+ * reads. With no second endpoint configured the primary's word stands — the documented residual.
  */
 /**
  * The outpoint the second endpoint's `/tx/:txid/hex` answer carries for `txid:vout`, or `undefined`
@@ -396,9 +395,7 @@ const outpointOf = (
   answer: unknown,
   txid: string,
   vout: number,
-):
-  | { readonly script: Uint8Array | undefined; readonly amount: bigint | undefined }
-  | undefined => {
+): { readonly script: Uint8Array | undefined; readonly amount: bigint | undefined } | undefined => {
   try {
     if (typeof answer !== "string") {
       return undefined;
@@ -1222,7 +1219,8 @@ export const createBitcoinRoute = (): BitcoinRoute => {
           const numInputs = btc.inputs.length + extraUtxos.length;
           const inSum = inTotal + extraUtxos.reduce((a, u) => a + u.value, 0);
           // Prefer the shape with a change output; a sub-dust remainder folds into the fee.
-          const leftover = inSum - payeeSum - feeFor(numInputs, [...payee, { address: changeAddr }]);
+          const leftover =
+            inSum - payeeSum - feeFor(numInputs, [...payee, { address: changeAddr }]);
           if (leftover >= dust) {
             outputs = [...payee, { address: changeAddr, amount: BigInt(leftover) }];
             newFee = inSum - payeeSum - leftover;
