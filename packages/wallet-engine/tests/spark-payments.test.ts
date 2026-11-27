@@ -1180,6 +1180,7 @@ describe("Spark payment records in history", () => {
         store: spark.store,
       },
       sparkNetwork: "regtest",
+      signers: { store: createStore(() => ({ active: null, confirmations: 0 })) },
       transactions: { store: createStore(() => ({ txs: {} })) },
       addressBook: { store: createStore(() => ({ entries: {} })) },
       gateway: undefined,

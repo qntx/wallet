@@ -276,6 +276,47 @@ describe("the signers controller", () => {
     ).rejects.toMatchObject({ code: "not-found" });
   });
 
+  it("verifyAddress bumps confirmations only on a completed device verify", async () => {
+    const { wallet, walletId } = await nodeWallet();
+    const signers = controller(wallet, { deviceIo: keystoneIo() });
+    expect(signers.getState().confirmations).toBe(0);
+
+    // A verify that never reaches the device bumps nothing.
+    await expect(
+      signers.verifyAddress({
+        walletId,
+        groupIndex: 0,
+        template: "evm.bip44",
+        network: "eip155:42161",
+      }),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    await expect(
+      signers.verifyAddress({
+        walletId: "no-such-wallet",
+        groupIndex: 0,
+        template: "evm.bip44",
+        network: "eip155:42161",
+      }),
+    ).rejects.toMatchObject({ code: "not-found" });
+    expect(signers.getState().confirmations).toBe(0);
+
+    const hwId = await pairKeystone(wallet);
+    await signers.verifyAddress({
+      walletId: hwId,
+      groupIndex: 0,
+      template: "evm.bip44",
+      network: "eip155:42161",
+    });
+    expect(signers.getState().confirmations).toBe(1);
+    await signers.verifyAddress({
+      walletId: hwId,
+      groupIndex: 0,
+      template: "solana.bip44-change",
+      network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    });
+    expect(signers.getState().confirmations).toBe(2);
+  });
+
   it("fetchAccounts drives one accounts op and re-checks the family", async () => {
     const { wallet } = await nodeWallet();
     const hwId = await pairKeystone(wallet);

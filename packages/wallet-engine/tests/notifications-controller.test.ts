@@ -26,6 +26,7 @@ import type { PushFamily } from "../src/gateway/contract/push.ts";
 import type { NetworkControllerState } from "../src/networks/controller.ts";
 import { NotificationsController } from "../src/notifications/controller.ts";
 import type { NotificationEvent, PushKeyStore } from "../src/notifications/controller.ts";
+import type { SignersState } from "../src/signers/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { TransactionControllerState } from "../src/transactions/controller.ts";
 
@@ -122,6 +123,7 @@ const harness = (options: Options = {}) => {
   const accountsStore = createStore<AccountTreeState>(() => tree);
   const networksStore = createStore<NetworkControllerState>(() => ({ customRpc: {} }));
   const txStore = createStore<TransactionControllerState>(() => ({ txs: {} }));
+  const signersStore = createStore<SignersState>(() => ({ active: null, confirmations: 0 }));
   // oxlint-disable-next-line typescript/require-await -- the fetch signature requires a promise
   const gatewayFetchImpl: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -219,6 +221,7 @@ const harness = (options: Options = {}) => {
       store: networksStore,
     },
     transactions: { store: txStore },
+    signers: { store: signersStore },
     addresses: async (walletId, family) =>
       typeof options.addresses === "function"
         ? options.addresses(walletId, family)
@@ -248,6 +251,7 @@ const harness = (options: Options = {}) => {
     timers,
     flush,
     txStore,
+    signersStore,
     setNow: (t: number) => {
       now = t;
     },
@@ -789,5 +793,48 @@ describe("pushAddresses — the watch set a subscription lists", () => {
       "evm",
     );
     expect(addresses).toStrictEqual([]);
+  });
+});
+
+describe("a device confirmation re-runs the reconcile", () => {
+  it("the subscription PUT lands only after the signers store's confirmations moves", async () => {
+    const confirmed = { current: false };
+    const h = harness({
+      // The real pushAddresses over a one-group tree whose evm leaf flips confirmed on verify.
+      addresses: async (walletId, family) =>
+        pushAddresses(
+          {
+            accounts: {
+              getState: () =>
+                ({
+                  groups: {
+                    w1: [{ walletId: "w1", index: 0, hidden: false, updatedAt: 0 }],
+                  },
+                }) as unknown as AccountTreeState,
+            },
+            groupAddresses: async () =>
+              Promise.resolve([{ network: EVM, address: ADDRESS, confirmed: confirmed.current }]),
+          },
+          walletId,
+          family,
+        ),
+    });
+    await h.controller.init();
+    await h.controller.enable("w1");
+    await h.controller.setToken("apns", TOKEN);
+    await h.flush();
+    // Unconfirmed material is never subscribed — no PUT.
+    expect(puts(h)).toHaveLength(0);
+
+    confirmed.current = true;
+    await h.flush();
+    // The account answer flipping alone re-subscribes nothing — nothing re-ran the reconcile.
+    expect(puts(h)).toHaveLength(0);
+
+    h.signersStore.setState((s) => ({ confirmations: s.confirmations + 1 }));
+    await h.flush();
+    const [put] = puts(h);
+    expect((put?.body as { addresses: string[] } | undefined)?.addresses).toStrictEqual([ADDRESS]);
+    h.controller.lock();
   });
 });

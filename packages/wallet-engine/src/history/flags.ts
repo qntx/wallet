@@ -58,13 +58,18 @@ export const tronTokenFlags = (
 
 /**
  * True when some counterparty looks like an address the wallet already knows — the request
- * pipeline's own `address-poisoning` rule, reused rather than reimplemented.
+ * pipeline's own `address-poisoning` rule, reused rather than reimplemented. `known` is the exempt
+ * set, `references` the lookalike corpus — an unconfirmed own address sits only in the second: it
+ * never vouches for the counterparty wearing it, but its lookalikes keep the flag.
  */
 export const lookalike = (
   family: string,
   counterparties: ReadonlyArray<string>,
   known: ReadonlyArray<string>,
+  references: ReadonlyArray<string>,
 ): boolean =>
   counterparties.some((counterparty) =>
-    assessRecipients(family, [counterparty], known).some((f) => f.code === "address-poisoning"),
+    assessRecipients(family, [counterparty], known, references).some(
+      (f) => f.code === "address-poisoning",
+    ),
   );

@@ -646,6 +646,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
     spark: controller,
     sparkNetwork: options.sparkNetwork,
+    signers,
     transactions,
     addressBook,
     gateway:
@@ -945,6 +946,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     accounts,
     networks,
     transactions,
+    signers,
     addresses: async (walletId, family) =>
       pushAddresses({ accounts, groupAddresses }, walletId, family),
     reconcile: async (event) => {

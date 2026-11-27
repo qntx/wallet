@@ -96,6 +96,20 @@ describe("assessRecipients", () => {
     expect(assessRecipients("evm", [], [KNOWN])).toStrictEqual([]);
   });
 
+  it("a reference-only address anchors the lookalike check without vouching for itself", () => {
+    // The candidate equal to a reference is not exempt — it still earns first-recipient.
+    expect(assessRecipients("evm", [KNOWN], [], [KNOWN]).map((f) => f.code)).toStrictEqual([
+      "first-recipient",
+    ]);
+    // Its lookalike still flags — the reference feeds the comparison set.
+    expect(assessRecipients("evm", [LOOKALIKE], [], [KNOWN]).map((f) => f.code)).toStrictEqual([
+      "address-poisoning",
+      "first-recipient",
+    ]);
+    // The same candidate in the exempt set vouches for itself — skipped entirely.
+    expect(assessRecipients("evm", [KNOWN], [KNOWN], [KNOWN])).toStrictEqual([]);
+  });
+
   it("never compares Fiat24 recipients by their edges — the ids are small integers", () => {
     expect(
       assessRecipients("evm", ["fiat24:account:21234"], ["fiat24:account:11234"]).map(

@@ -29,6 +29,7 @@ const stream = (id: string, pages: Page[], calls?: { count: number }): Stream<It
 const item = (key: number, id?: string): Item => ({ id: id ?? `i${key}`, key });
 
 const NO_KNOWN = { evm: [], solana: [], bitcoin: [], tron: [], spark: [] } as const;
+const NO_KNOWN_SETS = { exempt: NO_KNOWN, references: NO_KNOWN } as const;
 
 const entry = (over: Partial<HistoryEntry> & Pick<HistoryEntry, "id">): HistoryEntry => ({
   family: "evm",
@@ -174,7 +175,7 @@ describe("compose", () => {
         localTxId: "tx-1",
       }),
     ];
-    const entries = compose(emitted, local, NO_KNOWN, true);
+    const entries = compose(emitted, local, NO_KNOWN_SETS, true);
     expect(entries).toHaveLength(1);
     expect(entries[0]?.localTxId).toBe("tx-1");
     expect(entries[0]?.origin).toBe("chain");
@@ -183,9 +184,9 @@ describe("compose", () => {
   it("hides local-only entries older than the emitted window until the merge is done", () => {
     const emitted = [entry({ id: "a", timestamp: 100 })];
     const local = [entry({ id: "b", timestamp: 50, origin: "local", verified: false })];
-    const open = compose(emitted, local, NO_KNOWN, false);
+    const open = compose(emitted, local, NO_KNOWN_SETS, false);
     expect(open.map((e) => e.id)).toStrictEqual(["a"]);
-    const closed = compose(emitted, local, NO_KNOWN, true);
+    const closed = compose(emitted, local, NO_KNOWN_SETS, true);
     expect(closed.map((e) => e.id)).toStrictEqual(["a", "b"]);
   });
 
@@ -195,7 +196,7 @@ describe("compose", () => {
       entry({ id: "b", timestamp: 50, origin: "local", verified: false, status: "pending" }),
       entry({ id: "c", timestamp: 200, origin: "local", verified: false, status: "pending" }),
     ];
-    const entries = compose(emitted, local, NO_KNOWN, false);
+    const entries = compose(emitted, local, NO_KNOWN_SETS, false);
     expect(entries.map((e) => e.id)).toStrictEqual(["c", "a", "b"]);
   });
 
@@ -211,7 +212,7 @@ describe("compose", () => {
         counterparties: ["0x1111111111111111111111111111111111111111"],
       }),
     ];
-    const entries = compose(emitted, [], known, true);
+    const entries = compose(emitted, [], { exempt: known, references: known }, true);
     expect(entries.find((e) => e.id === "poison")?.flags).toContain("lookalike-counterparty");
     expect(entries.find((e) => e.id === "clean")?.flags).toStrictEqual([]);
   });

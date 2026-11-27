@@ -429,6 +429,106 @@ describe("createWalletEngine notifications forge", () => {
     }
   });
 
+  it("an unconfirmed entry is not subscribed until its on-device verification", async () => {
+    const puts: Array<{ path: string; addresses: ReadonlyArray<string> }> = [];
+
+    // oxlint-disable-next-line typescript/require-await -- the fetch signature requires a promise
+    const fetchStub: typeof globalThis.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method ?? "GET";
+      const path = url.slice(GATEWAY.length);
+      if (method === "GET" && path === "/v1/push") {
+        return Response.json({ platforms: ["apns"], families: ["evm"] });
+      }
+      if (method === "GET" && path === "/v1/networks") {
+        return Response.json({ networks: [EVM] });
+      }
+      if (method === "PUT" && path === "/v1/push/evm/subscription") {
+        const auth = new Headers(init?.headers).get("authorization") ?? "";
+        const secret = base64urlnopad.decode(auth.replace(/^Bearer /, ""));
+        const body = JSON.parse(String(init?.body)) as { addresses: string[]; networks: string[] };
+        puts.push({ path, addresses: body.addresses });
+        return Response.json({
+          id: subscriptionIdOf(secret),
+          networks: body.networks,
+          expiresAt: Date.now() + 30 * 86_400_000,
+        });
+      }
+      if (method === "DELETE" && path === "/v1/push/evm/subscription") {
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({ error: "unsupported" }, { status: 404 });
+    };
+
+    const wallet = await createNodeWallet({
+      verifyEvent,
+      passkey: {
+        rpId: "qntx.test",
+        rpName: "qntx",
+        walletSalt: "qntx/wallet",
+        backupSalt: "qntx/backup",
+        vaultSalt: "qntx/vault",
+      },
+      autoLock: { platform: "web", idleMinutes: 15 },
+      authenticator: createSoftwarePasskey(randomBytes(32)),
+      kernelUrl: KERNEL_URL,
+    });
+    try {
+      const engine = createWalletEngine({
+        publicStore: createMemoryPublicStore(),
+        verifyEvent,
+        weblnAlias: "test",
+        lightningMaxFee: () => 0,
+        wallet,
+        sparkNetwork: "regtest",
+        fetch: fetchStub,
+        random: (n) => randomBytes(n),
+        now: () => Date.now(),
+        logger: { warn: () => undefined },
+        showCallsStatus: () => undefined,
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        gateway: { url: GATEWAY },
+        rpc: { [EVM]: [RPC] },
+        deviceIo: () => keystoneIo(),
+      });
+      await wallet.wallets.importMnemonic({
+        mnemonic: MNEMONIC,
+        factor: { kind: "password", password: PASSWORD },
+      });
+      /* The Keystone's group-0 leaf starts `confirmed: false` — pairing never showed it on the
+         device — so the subscription watches nothing and PUTs nothing. */
+      const hwId = await pairKeystone(wallet);
+      await until(() => (engine.accounts.getState().groups[hwId]?.length ?? 0) === 1);
+      await engine.notifications.setToken("apns", "device-token");
+      await engine.notifications.enable(hwId);
+      await sleep(300);
+      expect(puts).toHaveLength(0);
+
+      /* The on-device verify bumps `signers.confirmations`, which re-runs the reconcile — the
+         now-confirmed leaf earns its subscription. */
+      await engine.signers.verifyAddress({
+        walletId: hwId,
+        groupIndex: 0,
+        template: "evm.bip44",
+        network: EVM,
+      });
+      await until(() => puts.length > 0);
+      const account = await chains(wallet).account({
+        walletId: hwId,
+        groupIndex: 0,
+        template: "evm.bip44",
+        network: EVM,
+      });
+      if (!("address" in account)) {
+        throw new Error("expected an evm account");
+      }
+      expect(puts.at(-1)?.addresses).toStrictEqual([account.address]);
+      expect(engine.notifications.getState().wallets[hwId]?.families["evm"]).toBe("active");
+    } finally {
+      await wallet.vault.lock();
+    }
+  });
+
   it("a card family's group past the registered set does not blind the registered ones", async () => {
     const SOL = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
     const puts: Array<{ path: string; addresses: ReadonlyArray<string> }> = [];

@@ -692,7 +692,7 @@ describe("evm lookalike counterparties", () => {
         flags: [],
       },
     ];
-    const merged = compose(entries, [], known, true);
+    const merged = compose(entries, [], { exempt: known, references: known }, true);
     expect(merged.find((e) => e.id === "eip155:999:0x58fa")?.flags).toContain(
       "lookalike-counterparty",
     );

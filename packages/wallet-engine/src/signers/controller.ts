@@ -32,6 +32,11 @@ export type SignerActivity = {
 export type SignersState = {
   // oxlint-disable-next-line typescript/no-restricted-types -- spec shape: no activity → null
   readonly active: SignerActivity | null;
+  /**
+   * On-device address confirmations completed this session — views that leave unconfirmed material
+   * out (history's exempt set, push subscriptions) re-derive when it moves.
+   */
+  readonly confirmations: number;
 };
 
 export type SignerFamily = "evm" | "solana" | "bitcoin" | "tron";
@@ -71,7 +76,7 @@ export class SignersController extends Controller<SignersState> {
   private activeTask: { readonly cancel: () => Promise<void> } | undefined;
 
   constructor(options: SignersControllerOptions) {
-    super({ name: "signers", defaultState: () => ({ active: null }) });
+    super({ name: "signers", defaultState: () => ({ active: null, confirmations: 0 }) });
     this.options = options;
   }
 
@@ -152,6 +157,9 @@ export class SignersController extends Controller<SignersState> {
     if (result.kind !== "verify-address") {
       throw new WalletError("integrity", "device answered a different operation");
     }
+    // The entry's `confirmed` flips inside the account material this call just produced — every
+    // view that leaves unconfirmed material out re-derives on this bump.
+    this.update((s) => ({ ...s, confirmations: s.confirmations + 1 }));
     return { address: result.address, method: result.method };
   }
 

@@ -1052,12 +1052,8 @@ describe("tron history flags", () => {
       flags: [],
     };
     const known = ["TSu7zzzzzzzzzzzzzzzzzzzzzzzzzzK98A"];
-    const merged = compose(
-      [entry],
-      [],
-      { evm: [], solana: [], bitcoin: [], tron: known, spark: [] },
-      true,
-    );
+    const sets = { evm: [], solana: [], bitcoin: [], tron: known, spark: [] };
+    const merged = compose([entry], [], { exempt: sets, references: sets }, true);
     expect(merged[0]?.flags).toContain("lookalike-counterparty");
   });
 });

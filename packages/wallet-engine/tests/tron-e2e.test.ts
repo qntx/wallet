@@ -18,6 +18,7 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { TronWeb } from "tronweb";
 import { beforeAll, describe, expect, it } from "vite-plus/test";
+import { createStore } from "zustand/vanilla";
 
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
@@ -852,6 +853,7 @@ describe.runIf(RUN)("tron e2e: TRE devnet", () => {
           store: { getState: () => ({ accounts: {} }), subscribe: () => () => {} },
         },
         sparkNetwork: "regtest",
+        signers: { store: createStore(() => ({ active: null, confirmations: 0 })) },
         transactions: { store: transactions.store },
         addressBook: { store: { getState: () => ({ entries: {} }), subscribe: () => () => {} } },
         gateway: undefined,
