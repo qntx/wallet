@@ -1,6 +1,6 @@
 {
   "name": "@qntx/wallet-native",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Native kernel runtime host for the qntx wallet — CBOR transport, KernelHost adapter and createNativeWallet",
   "license": "MIT OR Apache-2.0",
   "author": "QuantX <x@qntx.org>",
@@ -64,7 +64,7 @@
     "@qntx/spark": "0.5.2",
     "@qntx/spark-native": "0.5.2",
     "@qntx/tsconfig": "1.0.1",
-    "@qntx/wallet-engine": "0.13.0",
+    "@qntx/wallet-engine": "0.14.0",
     "@scure/base": "2.4.0",
     "nitrogen": "0.37.1",
     "publint": "0.3.25",
@@ -73,8 +73,8 @@
   "peerDependencies": {
     "@qntx/nostr-native": "0.16.0",
     "@qntx/spark-native": "0.5.2",
-    "@qntx/wallet": "0.13.0",
-    "@qntx/wallet-engine": "0.13.0",
+    "@qntx/wallet": "0.14.0",
+    "@qntx/wallet-engine": "0.14.0",
     "react-native": "~0.88.0",
     "react-native-nitro-modules": "~0.37.1"
   },
