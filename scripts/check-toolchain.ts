@@ -510,6 +510,13 @@ const lineAt = (source: string, offset: number | undefined): string => {
   return `:${line}`;
 };
 
+/** One `tags:` entry may still carry a comma- or newline-separated list. */
+const splitTagValue = (text: string): string[] =>
+  squeezeExpressions(text)
+    .split(/[\n,]/)
+    .map((t) => t.trim())
+    .filter((t) => t !== "");
+
 /** The `tags:` values a `docker/build-push-action` step builds — scalar, list or multiline. */
 const buildPushTags = (step: unknown): ReadonlyArray<string> => {
   if (!isMap(step)) {
@@ -520,19 +527,14 @@ const buildPushTags = (step: unknown): ReadonlyArray<string> => {
     return [];
   }
   const tags = node.get("tags", true);
-  const split = (text: string): string[] =>
-    squeezeExpressions(text)
-      .split(/[\n,]/)
-      .map((t) => t.trim())
-      .filter((t) => t !== "");
   if (isSeq(tags)) {
     return tags.items.flatMap((item) => {
       const text = scalarText(item);
-      return text === undefined ? [] : split(text);
+      return text === undefined ? [] : splitTagValue(text);
     });
   }
   const text = scalarText(tags);
-  return text === undefined ? [] : split(text);
+  return text === undefined ? [] : splitTagValue(text);
 };
 
 /**

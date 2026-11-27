@@ -560,8 +560,10 @@ describe("checkCommand installer and image rules", () => {
     const source =
       "jobs:\n  t:\n    steps:\n" +
       "      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc\n" +
-      "        with:\n          tags: onekey-emu-${{ matrix.model }}\n" +
-      "      - run: docker run -d --name emu -p 54935:54935/udp onekey-emu-${{ matrix.model }}\n";
+      "        with:\n          tags: onekey-emu-$" +
+      "{{ matrix.model }}\n" +
+      "      - run: docker run -d --name emu -p 54935:54935/udp onekey-emu-$" +
+      "{{ matrix.model }}\n";
     expect(checkWorkflow(".github/workflows/x.yml", source, index)).toStrictEqual([]);
   });
 
