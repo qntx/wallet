@@ -75,7 +75,7 @@
     },
     "packages/wallet": {
       "name": "@qntx/wallet",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "dependencies": {
         "@scure/base": "2.4.0",
       },
@@ -85,7 +85,7 @@
         "@qntx/spark": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
         "@qntx/ur": "4.1.0",
-        "@qntx/wallet-chains": "0.13.0",
+        "@qntx/wallet-chains": "0.14.0",
         "@scure/bip32": "2.4.0",
         "@scure/bip39": "2.4.0",
         "@scure/btc-signer": "2.4.1",
@@ -99,7 +99,7 @@
         "@qntx/nostr": "~0.16.0",
         "@qntx/spark": "~0.5.2",
         "@qntx/ur": "4.1.0",
-        "@qntx/wallet-chains": "0.13.0",
+        "@qntx/wallet-chains": "0.14.0",
       },
       "optionalPeers": [
         "@qntx/nostr",
@@ -110,7 +110,7 @@
     },
     "packages/wallet-chains": {
       "name": "@qntx/wallet-chains",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "dependencies": {
         "@noble/curves": "2.4.0",
         "@noble/hashes": "2.4.0",
@@ -148,7 +148,7 @@
     },
     "packages/wallet-engine": {
       "name": "@qntx/wallet-engine",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "dependencies": {
         "@nktkas/hyperliquid": "0.33.3",
         "@noble/ciphers": "2.4.0",
@@ -186,9 +186,9 @@
         "@qntx/spark": "0.5.2",
         "@qntx/spark-wasm": "0.5.2",
         "@qntx/ur": "4.1.0",
-        "@qntx/wallet": "0.13.0",
-        "@qntx/wallet-chains": "0.13.0",
-        "@qntx/wallet-worker": "0.13.0",
+        "@qntx/wallet": "0.14.0",
+        "@qntx/wallet-chains": "0.14.0",
+        "@qntx/wallet-worker": "0.14.0",
         "@reown/walletkit": "1.6.0",
         "@scure/bip32": "2.4.0",
         "@scure/bip39": "2.4.0",
@@ -212,8 +212,8 @@
       "peerDependencies": {
         "@qntx/nostr": "~0.16.0",
         "@qntx/spark": "~0.5.2",
-        "@qntx/wallet": "0.13.0",
-        "@qntx/wallet-chains": "0.13.0",
+        "@qntx/wallet": "0.14.0",
+        "@qntx/wallet-chains": "0.14.0",
         "@reown/walletkit": "1.6.0",
         "@walletconnect/core": "2.25.0",
         "@walletconnect/types": "2.25.0",
@@ -228,7 +228,7 @@
     },
     "packages/wallet-kernel": {
       "name": "@qntx/wallet-kernel",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "dependencies": {
         "@blockchaincommons/dcbor": "1.0.0-beta.5",
         "@noble/ciphers": "2.4.0",
@@ -238,8 +238,8 @@
         "@qntx/siwx": "0.8.0",
         "@qntx/spark": "0.5.2",
         "@qntx/ur": "4.1.0",
-        "@qntx/wallet": "0.13.0",
-        "@qntx/wallet-chains": "0.13.0",
+        "@qntx/wallet": "0.14.0",
+        "@qntx/wallet-chains": "0.14.0",
         "@scure/base": "2.4.0",
         "@scure/bip32": "2.4.0",
         "@scure/bip39": "2.4.0",
@@ -265,7 +265,7 @@
     },
     "packages/wallet-native": {
       "name": "@qntx/wallet-native",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "dependencies": {
         "cborg": "6.1.5",
       },
@@ -276,7 +276,7 @@
         "@qntx/spark": "0.5.2",
         "@qntx/spark-native": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
-        "@qntx/wallet-engine": "0.13.0",
+        "@qntx/wallet-engine": "0.14.0",
         "@scure/base": "2.4.0",
         "nitrogen": "0.37.1",
         "publint": "0.3.25",
@@ -285,8 +285,8 @@
       "peerDependencies": {
         "@qntx/nostr-native": "0.16.0",
         "@qntx/spark-native": "0.5.2",
-        "@qntx/wallet": "0.13.0",
-        "@qntx/wallet-engine": "0.13.0",
+        "@qntx/wallet": "0.14.0",
+        "@qntx/wallet-engine": "0.14.0",
         "react-native": "~0.88.0",
         "react-native-nitro-modules": "~0.37.1",
       },
@@ -296,7 +296,7 @@
     },
     "packages/wallet-worker": {
       "name": "@qntx/wallet-worker",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "dependencies": {
         "@noble/hashes": "2.4.0",
         "@scure/base": "2.4.0",
@@ -309,8 +309,8 @@
         "@qntx/spark": "0.5.2",
         "@qntx/spark-wasm": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
-        "@qntx/wallet": "0.13.0",
-        "@qntx/wallet-kernel": "0.13.0",
+        "@qntx/wallet": "0.14.0",
+        "@qntx/wallet-kernel": "0.14.0",
         "@scure/base": "2.4.0",
         "@scure/btc-signer": "2.4.1",
         "@types/node": "26.6.6",
@@ -320,7 +320,7 @@
         "vite-plus": "1.4.0",
       },
       "peerDependencies": {
-        "@qntx/wallet": "0.13.0",
+        "@qntx/wallet": "0.14.0",
       },
     },
   },
