@@ -38,8 +38,8 @@ environment's reviewers — but that rule is a repository setting the owner appl
 3. Decide the user-facing action (none / update / stop using a feature / move funds) before
    anything is published. Moving funds is advised only when keys may be known to someone else.
 4. Fix in the advisory's private fork with a regression test; release through the normal tag path
-   (`publish-npm.yml` — tag-only OIDC, no publish tokens; two reviewers once the `npm` environment
-   ruleset is applied). No out-of-band publish, ever.
+   (`publish-npm.yml` — tag-only OIDC, no publish tokens; a reviewer's approval once the `npm`
+   environment is applied). No out-of-band publish, ever.
 5. Publish the advisory with a CVE request once a fixed version is on npm and the host contacts
    have shipped or have a date; credit the reporter unless they declined.
 6. Write the post-incident note in the advisory: timeline, root cause, why tests missed it, what

@@ -369,8 +369,8 @@ staging zone, create its RISK KV namespace, and update `env.staging.account_id` 
 `wrangler.jsonc`.
 
 Both environments accept deployments from `main` only.
-`.github/rulesets/apply.sh <reviewer> <reviewer> [...]` creates them with those rules (two or more
-reviewers, self-review prevented) and fails while a repository or organization secret named
+`.github/rulesets/apply.sh <reviewer> [<reviewer>...]` creates them with those rules (self-review
+prevented when there are two or more reviewers) and fails while a repository or organization secret named
 `CLOUDFLARE_API_TOKEN` exists. Each environment's `CLOUDFLARE_API_TOKEN` is an **environment**
 secret — an account token with **Account › Workers Scripts › Edit** on that environment's account
 and **Zone › Workers Routes › Edit** on its zone (custom domains are created through the zone's

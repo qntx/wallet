@@ -16,15 +16,15 @@ A `vX.Y.Z` tag on a reviewed `main` commit runs `.github/workflows/publish-npm.y
 3. `publish`, in the environment `npm`: download the tarball and `npm publish --provenance`. This is
    the only job with `id-token: write`.
 
-| Guarantee                                                          | Enforced by                                                                                                           |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| npm accepts a publish only from `publish-npm.yml` in `qntx/wallet` | npm Trusted Publisher: repository + workflow filename                                                                 |
-| …and only from a job running in the environment `npm`              | npm Trusted Publisher: **Environment name `npm`** (the OIDC `environment` claim)                                      |
-| A job enters `npm` only from a `v*.*.*` tag, never from a branch   | GitHub environment `npm`: deployment policy = tag `v*.*.*` only                                                       |
-| Two people release: someone other than the tagger approves         | GitHub environment `npm`: 2+ required reviewers, prevent self-review, no admin bypass — not against one admin (below) |
-| Only admins create, move or delete release tags                    | Ruleset `release tags` (`release-tags.json`)                                                                          |
-| The tagged commit is on `main` and passed CI                       | `verify` while the tagged commit's `publish-npm.yml` is unmodified; otherwise only the `npm` reviewers (see below)    |
-| No long-lived token can publish around the workflow                | npm package setting: require 2FA and disallow tokens                                                                  |
+| Guarantee                                                          | Enforced by                                                                                                        |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| npm accepts a publish only from `publish-npm.yml` in `qntx/wallet` | npm Trusted Publisher: repository + workflow filename                                                              |
+| …and only from a job running in the environment `npm`              | npm Trusted Publisher: **Environment name `npm`** (the OIDC `environment` claim)                                   |
+| A job enters `npm` only from a `v*.*.*` tag, never from a branch   | GitHub environment `npm`: deployment policy = tag `v*.*.*` only                                                    |
+| A release is approved after the tag, before any token exists       | GitHub environment `npm`: required reviewer, no admin bypass; a second person only with 2+ reviewers (below)       |
+| Only admins create, move or delete release tags                    | Ruleset `release tags` (`release-tags.json`)                                                                       |
+| The tagged commit is on `main` and passed CI                       | `verify` while the tagged commit's `publish-npm.yml` is unmodified; otherwise only the `npm` reviewers (see below) |
+| No long-lived token can publish around the workflow                | npm package setting: require 2FA and disallow tokens                                                               |
 
 Without the environment on the Trusted Publisher, a branch copy of `publish-npm.yml` that drops
 `environment:` and `verify` gets an OIDC token npm accepts: the Trusted Publisher has no branch or
@@ -78,10 +78,10 @@ Every release then also needs a maintainer to approve the staged version on npmj
 
 ## GitHub
 
-Run as a repository admin, with two or more reviewer logins:
+Run as a repository admin, with the reviewer logins:
 
 ```bash
-.github/rulesets/apply.sh <reviewer-login> <reviewer-login>
+.github/rulesets/apply.sh <reviewer-login> [<reviewer-login>...]
 ```
 
 It creates or updates the rulesets `main` and `release tags`, and configures the environments:
@@ -89,8 +89,8 @@ It creates or updates the rulesets `main` and `release tags`, and configures the
 | Environment  | Reviewers        | Prevent self-review | Deployment policy (the only one) |
 | ------------ | ---------------- | ------------------- | -------------------------------- |
 | `staging`    | none             | —                   | branch `main`                    |
-| `production` | the given logins | yes                 | branch `main`                    |
-| `npm`        | the given logins | yes                 | tag `v*.*.*`                     |
+| `production` | the given logins | with 2+ logins      | branch `main`                    |
+| `npm`        | the given logins | with 2+ logins      | tag `v*.*.*`                     |
 
 Any other deployment policy an environment already has is deleted. Then, by hand (the REST API
 cannot set it), for `production` and `npm`: Settings → Environments → clear **Allow administrators
@@ -105,6 +105,25 @@ gh api repos/qntx/wallet/environments/npm \
 gh api repos/qntx/wallet/environments/npm/deployment-branch-policies --jq '.branch_policies[] | {type, name}'
 ```
 
-Expected for `npm`: `can_admins_bypass: false`, one `required_reviewers` rule with
-`prevent_self_review: true` and two or more reviewers, `custom_branch_policies: true`, and exactly
-one policy `{type: "tag", name: "v*.*.*"}`.
+Expected for `npm`: `can_admins_bypass: false`, one `required_reviewers` rule listing the given
+logins (`prevent_self_review: true` when there are two or more), `custom_branch_policies: true`,
+and exactly one policy `{type: "tag", name: "v*.*.*"}`.
+
+### Single maintainer
+
+The repository is run by one maintainer today, and the committed settings say so: `main.json`
+requires a pull request and the status checks but no approving review (nobody else could give
+one), and `apply.sh` with one login lets that reviewer approve their own deployment. What this
+keeps and what it gives up:
+
+- Kept: nothing reaches `main` without a pull request and green checks; release tags are
+  admin-only; a publish job starts only from a `v*.*.*` tag and waits for an explicit approval in
+  the `npm` environment; npm accepts only that job's OIDC token; no long-lived token can publish.
+  A leaked `contents: write` token or a non-admin writer still cannot publish.
+- Given up: a second person. Whoever controls the maintainer's GitHub account can merge, tag and
+  approve. The account's own 2FA is the control; stage-only publishing (above) adds an npm 2FA
+  approval on top and is the next step if that is not enough.
+
+When a second maintainer joins: set `required_approving_review_count` to 1 with
+`require_code_owner_review` and `require_last_push_approval` in `main.json`, and rerun `apply.sh`
+with both logins.

@@ -1512,7 +1512,7 @@ Gateway (operators):
   service and `docker run` images without a digest, a non-exact `setup-java` or
   `foundry-toolchain` version, a multi-line `minimumReleaseAgeExcludes` entry that is not an exact
   pin, and a `bun.lock` with no `bunfig.toml` cooldown beside it; its header lists what it does
-  not cover. CI pins Temurin 25.0.5+8 and Foundry v1.10.0, the OneKey emulator images install
+  not cover. CI pins Temurin 25.0.5 and Foundry v1.10.0, the OneKey emulator images install
   hash-pinned Python requirements, `apps/harness` gets the 7-day cooldown, and the Browser
   workflow's consumer smoke installs its third-party closure from a committed
   `package-lock.json` with lifecycle scripts disabled. `bun run test` now also runs the root

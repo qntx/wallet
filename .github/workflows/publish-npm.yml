@@ -5,8 +5,8 @@
 # triggered it, so a branch carrying an edited copy of this file runs that copy. What stops a
 # branch run is enforced outside the file (.github/rulesets/README.md): every npm Trusted
 # Publisher names this file AND the environment `npm`, so npm accepts only an OIDC token minted for
-# a job in that environment, and the `npm` environment admits only `v*.*.*` tags and needs two
-# reviewers. The `publish` job is that job, so the environment is on the job that holds
+# a job in that environment, and the `npm` environment admits only `v*.*.*` tags and needs a
+# reviewer's approval. The `publish` job is that job, so the environment is on the job that holds
 # `id-token: write`; the tag-only `if`s and `verify` keep a faithful copy of this file from
 # publishing anything but a reviewed main commit.
 #
