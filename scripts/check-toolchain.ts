@@ -10,26 +10,25 @@
  * toolchain actions pin an exact version input (`actions/setup-java` `java-version` X.Y.Z(+B),
  * `foundry-rs/foundry-toolchain` `version` vX.Y.Z — its default is the floating `stable`). Every
  * `uses:` reference — job-level reusable calls included — pins a full commit sha. Every `run:`
- * command, composite-action step, Dockerfile `RUN` and manifest script that invokes
- * `bunx`/`bun x`/`npx`/`npm exec` names a bin provided by a dependency declared in the root
- * manifest or the step's working-directory manifest — an undeclared name would resolve against
- * the registry instead of the lockfile. The same commands must not reach a registry at all:
- * `curl`/`wget` piped to a shell, `npm install|i|add` (`npm ci` is fine), `bun add`, `bun install`
- * without `--frozen-lockfile`, `pnpm dlx`/`yarn dlx`/`pnpx`, `pip install` without
- * `--require-hashes`, and `docker run|create|pull` of an image that is neither digest-pinned nor
- * built by the workflow's own `docker/build-push-action` step. `container.image` and
- * `services.*.image` pin `@sha256:` digests, and a Dockerfile `FROM` is a `@sha256:` image or a
- * prior build stage. `bunfig.toml`'s `minimumReleaseAgeExcludes` entries must be exact
- * `name@X.Y.Z` pins — a bare name exempts every future release of that package from the 7-day
- * cooldown, not just the one the PR meant to land early — and every directory that keeps a
- * `bun.lock` carries a `bunfig.toml` with `minimumReleaseAge >= 604800`.
+ * command, composite-action step, Dockerfile `RUN` and manifest script that invokes `bunx`/`bun
+ * x`/`npx`/`npm exec` names a bin provided by a dependency declared in the root manifest or the
+ * step's working-directory manifest — an undeclared name would resolve against the registry instead
+ * of the lockfile. The same commands must not reach a registry at all: `curl`/`wget` piped to a
+ * shell, `npm install|i|add` (`npm ci` is fine), `bun add`, `bun install` without
+ * `--frozen-lockfile`, `pnpm dlx`/`yarn dlx`/`pnpx`, `pip install` without `--require-hashes`, and
+ * `docker run|create|pull` of an image that is neither digest-pinned nor built by the workflow's
+ * own `docker/build-push-action` step. `container.image` and `services.*.image` pin `@sha256:`
+ * digests, and a Dockerfile `FROM` is a `@sha256:` image or a prior build stage. `bunfig.toml`'s
+ * `minimumReleaseAgeExcludes` entries must be exact `name@X.Y.Z` pins — a bare name exempts every
+ * future release of that package from the 7-day cooldown, not just the one the PR meant to land
+ * early — and every directory that keeps a `bun.lock` carries a `bunfig.toml` with
+ * `minimumReleaseAge >= 604800`.
  *
  * Deliberately not covered: the internals of script files a `run:` command or manifest script
- * invokes (a `bun scripts/x.ts` is checked for its own command words, not the files it runs);
- * tools the runner image itself provides (docker, buildx, jq, apt); `apt-get` and
- * `rustup --default-toolchain stable` inside the emulator Dockerfiles; the Gradle wrapper; and a
- * `curl -o` that only downloads a file a following sha256 check verifies. Exit 1 with one line
- * per finding.
+ * invokes (a `bun scripts/x.ts` is checked for its own command words, not the files it runs); tools
+ * the runner image itself provides (docker, buildx, jq, apt); `apt-get` and `rustup
+ * --default-toolchain stable` inside the emulator Dockerfiles; the Gradle wrapper; and a `curl -o`
+ * that only downloads a file a following sha256 check verifies. Exit 1 with one line per finding.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -49,9 +48,9 @@ const PACKAGE_MANAGER = /^bun@\d+\.\d+\.\d+$/;
 /** `name@X.Y.Z`, scoped names allowed — no ranges, no bare names, no tags. */
 const EXACT_PIN = /^(@[A-Za-z0-9._-]+\/)?[A-Za-z0-9._-]+@\d+\.\d+\.\d+$/;
 const EXACT_NODE = /^\d+\.\d+\.\d+$/;
-/** setup-java `java-version`: a full `X.Y.Z` release with an optional `+B` build suffix. */
+/** Setup-java `java-version`: a full `X.Y.Z` release with an optional `+B` build suffix. */
 const EXACT_JAVA = /^\d+\.\d+\.\d+(\+\d+)?$/;
-/** foundry-toolchain `version`: a full `vX.Y.Z` release tag. */
+/** Foundry-toolchain `version`: a full `vX.Y.Z` release tag. */
 const EXACT_FOUNDRY = /^v\d+\.\d+\.\d+$/;
 /** A `uses:` reference's ref: a full commit sha, or a `./` local path (checked separately). */
 const PINNED_REF = /@[0-9a-f]{40}$/;
@@ -144,7 +143,7 @@ const stepDirs = (root: string, workingDirectory: string | undefined): string[] 
 type ToolCall = { readonly tool: string; readonly offset: number };
 
 /** A tool word may sit at the start or right after a separator — quotes included (`sh -c "…"`). */
-const WORD_BOUNDARY = String.raw`(?:^|[\s;&|(` + "`" + String.raw`"'])`;
+const WORD_BOUNDARY = `${String.raw`(?:^|[\s;&|(`}\`${String.raw`"'])`}`;
 
 const TOOL_CALL = new RegExp(
   WORD_BOUNDARY + String.raw`(bunx|bun[\s]+x|npx|npm[\s]+exec)[\s]+`,
@@ -166,7 +165,9 @@ const segmentAt = (command: string, offset: number): string =>
  * `npm` + `install`, `bun` + `add`, `pip` + `install`. `pnpx` is a tool of its own.
  */
 const INSTALLER_CALL = new RegExp(
-  WORD_BOUNDARY + String.raw`(npm|bun|pnpm|yarn|pnpx|pip3?)[\s]+([^\s;&|(` + "`" + String.raw`"']+)`,
+  `${
+    WORD_BOUNDARY + String.raw`(npm|bun|pnpm|yarn|pnpx|pip3?)[\s]+([^\s;&|(`
+  }\`${String.raw`"']+)`}`,
   "g",
 );
 
@@ -177,9 +178,9 @@ const DOWNLOAD_PIPE = new RegExp(
 
 /**
  * `docker run|create|pull <image>`: the image is the first bare token once flags — and the values
- * of the flags that take one — are skipped. Boolean-only flags are not listed: an unlisted
- * `--flag value` pair is treated as two tokens, so the value becomes the would-be image and the
- * rule stays on the safe side.
+ * of the flags that take one — are skipped. Boolean-only flags are not listed: an unlisted `--flag
+ * value` pair is treated as two tokens, so the value becomes the would-be image and the rule stays
+ * on the safe side.
  */
 const DOCKER_CALL = new RegExp(WORD_BOUNDARY + String.raw`docker[\s]+(run|create|pull)\b`, "g");
 const DOCKER_VALUE_FLAGS = new Set([
@@ -271,7 +272,7 @@ const DOCKER_VALUE_FLAGS = new Set([
  * `onekey-emu-${{ matrix.model }}` across tokens — collapse them so both sides compare equal.
  */
 const squeezeExpressions = (text: string): string =>
-  text.replace(/\$\{\{[^}]*\}\}/g, (m) => m.replace(/\s+/g, ""));
+  text.replaceAll(/\$\{\{[^}]*\}\}/g, (m) => m.replaceAll(/\s+/g, ""));
 
 /** The image token of a `docker run|create|pull` segment, once flags and their values are gone. */
 const dockerImage = (segment: string): string | undefined => {
@@ -535,8 +536,8 @@ const buildPushTags = (step: unknown): ReadonlyArray<string> => {
 };
 
 /**
- * The version-input rules every toolchain action step shares: `input` is the `with:` key that
- * must exist and match `pattern` exactly.
+ * The version-input rules every toolchain action step shares: `input` is the `with:` key that must
+ * exist and match `pattern` exactly.
  */
 const TOOLCHAIN_INPUTS: ReadonlyArray<{
   readonly action: string;
@@ -554,8 +555,8 @@ const TOOLCHAIN_INPUTS: ReadonlyArray<{
  * command follows the shared command rules; job `container`/`services` images pin digests and
  * `docker` commands may only reference digest-pinned or workflow-built images; a non-allow-listed
  * reusable workflow waits on `toolchain` and is handed the resolved Bun version, which the file
- * must produce in a `toolchain` job. A stray `oven-sh/setup-bun@` mention outside a `uses:` step
- * is still a finding — the raw-source pass covers what parsing drops (comments, malformed steps).
+ * must produce in a `toolchain` job. A stray `oven-sh/setup-bun@` mention outside a `uses:` step is
+ * still a finding — the raw-source pass covers what parsing drops (comments, malformed steps).
  */
 export function checkWorkflow(path: string, source: string, index: DependencyIndex): string[] {
   const errors: string[] = [];
@@ -614,9 +615,7 @@ export function checkWorkflow(path: string, source: string, index: DependencyInd
         );
       }
       if (withBlock["bun-version-file"] !== VERSION_FILE) {
-        errors.push(
-          `${at(stepOffset)}: setup-bun must set bun-version-file: ${VERSION_FILE}`,
-        );
+        errors.push(`${at(stepOffset)}: setup-bun must set bun-version-file: ${VERSION_FILE}`);
       }
     }
     if (stepUses !== undefined && stepUses.startsWith(NODE_ACTION)) {
@@ -701,9 +700,7 @@ export function checkWorkflow(path: string, source: string, index: DependencyInd
       const services = job.get("services", true);
       if (isMap(services)) {
         for (const service of services.items) {
-          const serviceImage = isMap(service.value)
-            ? scalarAt(service.value, "image")
-            : undefined;
+          const serviceImage = isMap(service.value) ? scalarAt(service.value, "image") : undefined;
           if (serviceImage !== undefined && !DIGEST_IMAGE.test(serviceImage)) {
             errors.push(
               `${at(offsetOf(service.value))}: a service image must pin a @sha256: digest`,
@@ -792,7 +789,7 @@ export function checkManifest(
     // The root manifest is no workspace package, so `vp run -r test` never reaches it: scripts.test
     // must run the root suite (scripts/**/*.test.ts — every gate script's tests) itself, in a
     // segment that is not part of a `vp run` call.
-    const test = asRecord(manifest["scripts"])["test"];
+    const { test } = asRecord(manifest["scripts"]);
     const outside = typeof test === "string" ? test.replaceAll(/vp run[^&;]*/g, "") : "";
     if (!/\bvp test\b/.test(outside)) {
       errors.push(`${path}: scripts.test must run the root suite with a bare vp test`);
@@ -834,10 +831,7 @@ const stripComment = (line: string): string => {
  */
 export function checkBunfig(source: string): string[] {
   const errors: string[] = [];
-  const text = source
-    .split("\n")
-    .map(stripComment)
-    .join("\n");
+  const text = source.split("\n").map(stripComment).join("\n");
   const age = /minimumReleaseAge\s*=\s*(\d+)/.exec(text);
   if (age === null) {
     errors.push(`bunfig.toml: minimumReleaseAge must be set to at least ${MIN_RELEASE_AGE}`);
@@ -867,11 +861,7 @@ export function checkBunfig(source: string): string[] {
  * Dockerfile rules: `RUN` bodies answer to the shared command rules, and `FROM` references a
  * digest-pinned image or a stage the file itself built. `\`-continuations join before parsing.
  */
-export function checkDockerfile(
-  path: string,
-  source: string,
-  index: DependencyIndex,
-): string[] {
+export function checkDockerfile(path: string, source: string, index: DependencyIndex): string[] {
   const errors: string[] = [];
   const logical: string[] = [];
   let pending = "";
@@ -892,9 +882,7 @@ export function checkDockerfile(
     const at = `${path}:${i + 1}`;
     const from = /^\s*FROM\s+(.+)$/i.exec(line);
     if (from !== null) {
-      const tokens = (from[1] ?? "")
-        .split(/\s+/)
-        .filter((t) => t !== "" && !t.startsWith("--"));
+      const tokens = (from[1] ?? "").split(/\s+/).filter((t) => t !== "" && !t.startsWith("--"));
       const image = tokens[0] ?? "";
       const stageIndex = tokens.findIndex((t) => /^as$/i.test(t));
       if (!DIGEST_IMAGE.test(image) && !stages.has(image.toLowerCase())) {
@@ -938,15 +926,19 @@ const WORKFLOW_FILE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 const ACTION_FILE = /(?:^|\/)action\.ya?ml$/;
 const DOCKERFILE_FILE = /(?:^|\/)Dockerfile[^/]*$/;
 
+/** The tracked paths the repository walk checks — workflows, composite actions, Dockerfiles. */
+export const checkedFiles = (paths: ReadonlyArray<string>): string[] =>
+  paths.filter((p) => WORKFLOW_FILE.test(p) || ACTION_FILE.test(p) || DOCKERFILE_FILE.test(p));
+
 /** Every check over the real tree: workflows, composite actions, Dockerfiles, manifests, bunfig. */
 export const checkRepository = (): string[] => {
   const index = liveIndex(ROOT);
   const errors: string[] = [];
   const tracked = trackedFiles();
-  for (const path of tracked.filter((p) => WORKFLOW_FILE.test(p) || ACTION_FILE.test(p))) {
+  for (const path of checkedFiles(tracked).filter((p) => !DOCKERFILE_FILE.test(p))) {
     errors.push(...checkWorkflow(path, readFileSync(join(ROOT, path), "utf8"), index));
   }
-  for (const path of tracked.filter((p) => DOCKERFILE_FILE.test(p))) {
+  for (const path of checkedFiles(tracked).filter((p) => DOCKERFILE_FILE.test(p))) {
     errors.push(...checkDockerfile(path, readFileSync(join(ROOT, path), "utf8"), index));
   }
   const paths = ["package.json", ...manifestPaths("packages"), ...manifestPaths("apps")];
@@ -960,7 +952,9 @@ export const checkRepository = (): string[] => {
     }
     const bunfig = join(ROOT, dir, "bunfig.toml");
     if (!existsSync(bunfig)) {
-      errors.push(`${dir}/bunfig.toml: a directory with bun.lock must pin the release-age cooldown`);
+      errors.push(
+        `${dir}/bunfig.toml: a directory with bun.lock must pin the release-age cooldown`,
+      );
       continue;
     }
     errors.push(...checkBunfig(readFileSync(bunfig, "utf8")));

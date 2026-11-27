@@ -17,6 +17,7 @@ import {
   checkDockerfile,
   checkManifest,
   checkRepository,
+  checkedFiles,
   checkWorkflow,
 } from "./check-toolchain.ts";
 import type { DependencyIndex } from "./check-toolchain.ts";
@@ -478,9 +479,7 @@ describe("checkBunfig", () => {
   });
 
   it("fails a bare exclusion written on a continuation line", () => {
-    const errors = checkBunfig(
-      `${AGE}minimumReleaseAgeExcludes = [\n  "@qntx/fiat24",\n]\n`,
-    );
+    const errors = checkBunfig(`${AGE}minimumReleaseAgeExcludes = [\n  "@qntx/fiat24",\n]\n`);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("name@X.Y.Z");
   });
@@ -583,9 +582,9 @@ describe("checkCommand installer and image rules", () => {
     const step =
       "      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c\n" +
       '        with:\n          distribution: temurin\n          java-version: "25"\n';
-    expect(
-      checkWorkflow(".github/workflows/x.yml", stepsJob(step), index).length,
-    ).toBeGreaterThan(0);
+    expect(checkWorkflow(".github/workflows/x.yml", stepsJob(step), index).length).toBeGreaterThan(
+      0,
+    );
     const exact = step.replace('java-version: "25"', 'java-version: "25.0.5+8"');
     expect(checkWorkflow(".github/workflows/x.yml", stepsJob(exact), index)).toStrictEqual([]);
   });
@@ -593,9 +592,9 @@ describe("checkCommand installer and image rules", () => {
   it("fails a foundry-toolchain step with no or floating version", () => {
     const base =
       "      - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf\n";
-    expect(
-      checkWorkflow(".github/workflows/x.yml", stepsJob(base), index).length,
-    ).toBeGreaterThan(0);
+    expect(checkWorkflow(".github/workflows/x.yml", stepsJob(base), index).length).toBeGreaterThan(
+      0,
+    );
     const stable = `${base}        with:\n          version: stable\n`;
     expect(
       checkWorkflow(".github/workflows/x.yml", stepsJob(stable), index).length,
@@ -618,7 +617,7 @@ describe("checkDockerfile", () => {
     expect(checkDockerfile("Dockerfile.x", source, index)).toStrictEqual([]);
   });
 
-  it("fails an undigested FROM and joins \\-continued RUN bodies", () => {
+  it(String.raw`fails an undigested FROM and joins \-continued RUN bodies`, () => {
     const source = 'FROM node:latest\nRUN pip install --no-cache-dir \\\n    "scons"\n';
     const errors = checkDockerfile("Dockerfile.x", source, index);
     expect(errors).toHaveLength(2);
@@ -642,10 +641,7 @@ describe("the repository pins its live toolchain instances", () => {
       expect(dockerfile).toContain(`--require-hashes -r /tmp/requirements-${model}.txt`);
       expect(
         existsSync(
-          join(
-            ROOT,
-            `packages/wallet-kernel/tests/onekey-emulator/requirements-${model}.txt`,
-          ),
+          join(ROOT, `packages/wallet-kernel/tests/onekey-emulator/requirements-${model}.txt`),
         ),
       ).toBe(true);
     }
@@ -658,9 +654,9 @@ describe("the repository pins its live toolchain instances", () => {
   });
 
   it("the consumer smoke installs from a committed lockfile with no lifecycle scripts", () => {
-    expect(
-      existsSync(join(ROOT, "packages/wallet-worker/tests/consumer/package-lock.json")),
-    ).toBe(true);
+    expect(existsSync(join(ROOT, "packages/wallet-worker/tests/consumer/package-lock.json"))).toBe(
+      true,
+    );
     const smoke = tree("packages/wallet-worker/scripts/consumer-smoke.ts");
     expect(smoke).toContain("ci");
     expect(smoke).toContain("--ignore-scripts");
@@ -671,5 +667,25 @@ describe("the repository pins its live toolchain instances", () => {
 describe("the repository", () => {
   it("has no toolchain findings over real workflows and manifests", () => {
     expect(checkRepository()).toStrictEqual([]);
+  });
+
+  it("walks workflows, composite actions and Dockerfiles — nothing else", () => {
+    /* The discovery filter is the only place composite actions enter the walk; losing it would
+       leave action.yml files unchecked even though checkWorkflow handles them. */
+    expect(
+      checkedFiles([
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yaml",
+        ".github/actions/setup/action.yml",
+        "packages/x/Dockerfile.web",
+        "scripts/check-toolchain.ts",
+        "packages/x/action-plan.txt",
+      ]),
+    ).toStrictEqual([
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yaml",
+      ".github/actions/setup/action.yml",
+      "packages/x/Dockerfile.web",
+    ]);
   });
 });
