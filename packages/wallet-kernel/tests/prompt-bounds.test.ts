@@ -218,6 +218,22 @@ describe("boundChainPrompt", () => {
     expect(lines.at(-1)).toBe(CATALOGS.en.moreLines(wide.outflows.length + 2 - lines.length));
   });
 
+  it("a title bound of exactly the blind title's width still carries the warnings", () => {
+    /* `>` not `>=`: a bound that fits the blind title to the code point is a dialog that can
+       still show every lead row under it — only one less must refuse. */
+    const bound = { ...IOS, title: codePoints(CATALOGS.en.blindTitle) };
+    const { prompt, oversize } = boundChainPrompt("en", batch(20), bound);
+    expect(oversize).toBe(true);
+    expect(prompt.title).toBe(CATALOGS.en.blindTitle);
+  });
+
+  it("a title bound one code point under the blind title refuses the dialog", () => {
+    const bound = { ...IOS, title: codePoints(CATALOGS.en.blindTitle) - 1 };
+    expect(() => boundChainPrompt("en", batch(20), bound)).toThrow(
+      "the prompt's warnings do not fit the dialog",
+    );
+  });
+
   it("a single over-long first line is replaced by the count line alone", () => {
     const giant: PromptIntent = {
       ...transfer,
@@ -286,6 +302,17 @@ describe("every fixed prompt the kernel can show fits both platform bounds", () 
       expect(promptFits(prompt, ANDROID)).toBe(true);
     },
   );
+
+  it("card-add carries its exact identity-verification wording in both locales", () => {
+    expect(cardPrompt("zh-Hans", "card-add", ["ABCD-1234"])).toStrictEqual({
+      title: "添加卡钱包",
+      description: "验证身份以将卡上的钱包添加到此设备",
+    });
+    expect(cardPrompt("en", "card-add", ["ABCD-1234"])).toStrictEqual({
+      title: "Add card wallet",
+      description: "Verify your identity to add the wallet on a card to this device",
+    });
+  });
 
   const sparkKinds: ReadonlyArray<SparkApprovalSummary> = [
     {
