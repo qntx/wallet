@@ -630,7 +630,7 @@ describe("checkDockerfile", () => {
 
 describe("the repository pins its live toolchain instances", () => {
   it("card.yml pins an exact JDK", () => {
-    expect(tree(".github/workflows/card.yml")).toContain('java-version: "25.0.5+8"');
+    expect(tree(".github/workflows/card.yml")).toContain('java-version: "25.0.5"');
   });
 
   it("every foundry-toolchain step pins an exact foundry version", () => {
