@@ -8,6 +8,7 @@ import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import { independentTrusted } from "../networks/controller.ts";
+import type { SignersController } from "../signers/controller.ts";
 import type { SparkController } from "../spark/controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
@@ -74,6 +75,8 @@ export type HistoryControllerOptions = {
   };
   readonly spark: Pick<SparkController, "history" | "store">;
   readonly sparkNetwork: SparkNetwork;
+  /** A confirmation bump reloads every loaded group — its fresh `own` re-derives the known sets. */
+  readonly signers: Pick<SignersController, "store">;
   readonly transactions: Pick<TransactionController, "store">;
   readonly addressBook: Pick<AddressBookController, "store">;
   readonly gateway: { readonly url: string; readonly fetch: typeof globalThis.fetch } | undefined;
@@ -96,7 +99,7 @@ const changeSchema = z.looseObject({
 
 const entrySchema = z.looseObject({
   id: z.string(),
-  family: z.enum(["evm", "solana", "bitcoin", "spark"]),
+  family: z.enum(["evm", "solana", "bitcoin", "tron", "spark"]),
   network: z.string(),
   hash: z.string(),
   direction: z.enum(["in", "out", "self", "mixed"]),
@@ -153,6 +156,16 @@ const groupKey = (group: HistoryGroup): string => `${group.walletId}:${group.gro
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+const familyList = (
+  sets: Record<HistoryEntry["family"], Set<string>>,
+): Record<HistoryEntry["family"], string[]> => ({
+  evm: [...sets["evm"]],
+  solana: [...sets["solana"]],
+  bitcoin: [...sets["bitcoin"]],
+  tron: [...sets["tron"]],
+  spark: [...sets["spark"]],
+});
 
 type GroupRuntime = {
   /** The group this runtime serves — recompositions look it up here, not by re-parsing the key. */
@@ -213,6 +226,11 @@ export class HistoryController extends Controller<HistoryState> {
       this.options.spark.store.subscribe((next, previous) => {
         if (sparkRecordsChanged(next, previous)) {
           recompose();
+        }
+      }),
+      this.options.signers.store.subscribe((next, previous) => {
+        if (next.confirmations !== previous.confirmations) {
+          void this.reloadLoaded();
         }
       }),
     ];
@@ -291,9 +309,25 @@ export class HistoryController extends Controller<HistoryState> {
     ];
   }
 
-  /** Book entries + recipients of live tracked sends + the group's own addresses — never history. */
-  private known(own: GroupAddresses): Record<HistoryEntry["family"], ReadonlyArray<string>> {
-    const by: Record<HistoryEntry["family"], Set<string>> = {
+  /**
+   * The two roles of the known set, per family — never history. `exempt`: book entries, recipients
+   * of live tracked sends and the group's confirmed own addresses — a counterparty in there vouches
+   * for itself. `references`: `exempt` plus every own address a device-unconfirmed entry serves —
+   * unconfirmed material never vouches (a lookalike wearing it keeps its flag) but stays a
+   * lookalike reference, so a counterparty imitating it keeps its poisoning flag too.
+   */
+  private known(own: GroupAddresses): {
+    readonly exempt: Record<HistoryEntry["family"], ReadonlyArray<string>>;
+    readonly references: Record<HistoryEntry["family"], ReadonlyArray<string>>;
+  } {
+    const exempt: Record<HistoryEntry["family"], Set<string>> = {
+      evm: new Set(),
+      solana: new Set(),
+      bitcoin: new Set(),
+      tron: new Set(),
+      spark: new Set(),
+    };
+    const references: Record<HistoryEntry["family"], Set<string>> = {
       evm: new Set(),
       solana: new Set(),
       bitcoin: new Set(),
@@ -302,41 +336,39 @@ export class HistoryController extends Controller<HistoryState> {
     };
     for (const record of Object.values(this.options.addressBook.store.getState().entries)) {
       if (!isTombstone(record)) {
-        by[record.family].add(record.address);
+        exempt[record.family].add(record.address);
+        references[record.family].add(record.address);
       }
     }
     for (const tx of Object.values(this.options.transactions.store.getState().txs)) {
       if (RECIPIENT_STATES.has(tx.state)) {
         for (const flow of tx.intent?.outflows ?? []) {
-          by[tx.family].add(flow.to);
+          exempt[tx.family].add(flow.to);
+          references[tx.family].add(flow.to);
         }
       }
     }
-    // An address a device-unconfirmed entry serves never enters the known set — it was never
-    // seen on a trusted screen, so a lookalike wearing it must keep its poisoning flag.
-    if (own.evm !== undefined && !own.unconfirmed.has(own.evm)) {
-      by["evm"].add(own.evm);
+    const ownAddress = (family: HistoryEntry["family"], address: string): void => {
+      references[family].add(address);
+      if (!own.unconfirmed.has(address)) {
+        exempt[family].add(address);
+      }
+    };
+    if (own.evm !== undefined) {
+      ownAddress("evm", own.evm);
     }
-    if (own.solana !== undefined && !own.unconfirmed.has(own.solana)) {
-      by["solana"].add(own.solana);
+    if (own.solana !== undefined) {
+      ownAddress("solana", own.solana);
     }
-    if (own.tron !== undefined && !own.unconfirmed.has(own.tron)) {
-      by["tron"].add(own.tron);
+    if (own.tron !== undefined) {
+      ownAddress("tron", own.tron);
     }
     for (const party of own.bitcoin) {
       for (const address of party) {
-        if (!own.unconfirmed.has(address)) {
-          by["bitcoin"].add(address);
-        }
+        ownAddress("bitcoin", address);
       }
     }
-    return {
-      evm: [...by["evm"]],
-      solana: [...by["solana"]],
-      bitcoin: [...by["bitcoin"]],
-      tron: [...by["tron"]],
-      spark: [...by["spark"]],
-    };
+    return { exempt: familyList(exempt), references: familyList(references) };
   }
 
   private entries(runtime: GroupRuntime, group: HistoryGroup): ReadonlyArray<HistoryEntry> {
@@ -348,7 +380,7 @@ export class HistoryController extends Controller<HistoryState> {
     );
   }
 
-  /** Re-derive every loaded group's view — local sends and the known set move under it. */
+  /** Re-derive every loaded group's view — local sends and the known sets move under it. */
   private recomposeAll(): void {
     const { groups } = this.getState();
     for (const [key, runtime] of this.runtimes) {
@@ -361,6 +393,25 @@ export class HistoryController extends Controller<HistoryState> {
         entries: this.entries(runtime, runtime.group),
       });
     }
+  }
+
+  /**
+   * A signer confirmation changed which own addresses are exempt — reload every loaded group so its
+   * fresh `own` re-derives the known sets. `load` reports its own failures; a leftover rejection
+   * must never surface unhandled.
+   */
+  private async reloadLoaded(): Promise<void> {
+    const { groups } = this.getState();
+    const loads = [...this.runtimes.entries()]
+      .filter(([key]) => groups[key] !== undefined)
+      .map(async ([, runtime]) => {
+        try {
+          await this.load(runtime.group);
+        } catch {
+          // load reports its own failures — nothing else to do here.
+        }
+      });
+    await Promise.all(loads);
   }
 
   private async readPersisted(key: string): Promise<ReadonlyArray<HistoryEntry>> {
@@ -556,8 +607,14 @@ export class HistoryController extends Controller<HistoryState> {
           stale: cached.length > 0,
         });
       }
+      /* Every load resolves `own` into a fresh GroupAddresses — an entry confirmed since the last
+         load re-enters the exempt set, and `own.bitcoin` never accumulates duplicate parties across
+         loads. The runtime adopts it once this load's first page settles (success or failure);
+         until then a mid-load recompose keeps computing against the previous own, and a
+         `resolveOwn` failure keeps it entirely. */
+      const nextOwn: GroupAddresses = { bitcoin: [], unconfirmed: new Set() };
       try {
-        await this.resolveOwn(group, runtime.own);
+        await this.resolveOwn(group, nextOwn);
       } catch (error) {
         runtime.errors["accounts"] = errorMessage(error);
         if (alive()) {
@@ -574,7 +631,7 @@ export class HistoryController extends Controller<HistoryState> {
       runtime.truncated.clear();
       runtime.unsupported.clear();
       runtime.merge = new OrderedMerge(
-        this.streams(group, runtime.own, persisted, runtime),
+        this.streams(group, nextOwn, persisted, runtime),
         (entry) => entry.timestamp ?? Number.MAX_SAFE_INTEGER,
         (entry) => entry.id,
         (id, error) => {
@@ -589,6 +646,7 @@ export class HistoryController extends Controller<HistoryState> {
         if (!alive()) {
           return;
         }
+        runtime.own = nextOwn;
         runtime.emitted = [...page.items];
         runtime.mergeDone = page.done;
         this.writeGroup(key, {
@@ -604,6 +662,7 @@ export class HistoryController extends Controller<HistoryState> {
       } catch (error) {
         this.options.logger.warn(`history load ${key} failed`, error);
         if (alive()) {
+          runtime.own = nextOwn;
           this.writeGroup(key, {
             status: "ready",
             entries: this.entries(runtime, group),

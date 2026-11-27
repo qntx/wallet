@@ -478,13 +478,21 @@ const looksLike = (a: string, b: string): boolean =>
 /**
  * Findings for every recipient of one request, deduplicated, `danger` first. Recipients come from
  * {@link recipientOf}: a Fiat24 flow's recipient is the account or payee it names.
+ *
+ * `known` is the exempt set — a recipient in it vouches for itself and is skipped outright.
+ * `references` (default `known`) only feeds `address-poisoning`: the candidate is compared against
+ * `known ∪ references` (`looksLike` already requires the addresses to differ). The split lets an
+ * address be a lookalike reference without vouching for itself — an own address a device never
+ * confirmed stays protected while never exempting the counterparty wearing it.
  */
 export function assessRecipients(
   family: string,
   recipients: ReadonlyArray<string>,
   known: ReadonlyArray<string>,
+  references: ReadonlyArray<string> = known,
 ): ReadonlyArray<RiskFinding> {
   const knownSet = new Set(known.map((a) => comparable(family, a)));
+  const referenceSet = new Set([...knownSet, ...references.map((a) => comparable(family, a))]);
   const found = new Map<RiskFinding["code"], RiskFinding>();
   for (const recipient of recipients) {
     const candidate = comparable(family, recipient);
@@ -492,7 +500,7 @@ export function assessRecipients(
       continue;
     }
     found.set("first-recipient", { code: "first-recipient", level: "warning" });
-    if ([...knownSet].some((k) => looksLike(candidate, k))) {
+    if ([...referenceSet].some((r) => looksLike(candidate, r))) {
       found.set("address-poisoning", { code: "address-poisoning", level: "danger" });
     }
   }

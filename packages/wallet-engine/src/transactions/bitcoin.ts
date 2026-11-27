@@ -8,13 +8,8 @@ import {
   decodeBitcoinPsbt,
   bitcoinNetwork,
   bitcoinPubkeyFromXpub,
-  requestChangeMark,
 } from "@qntx/wallet-chains/bitcoin";
-import type {
-  BitcoinAccountTemplate,
-  BitcoinOwn,
-  BitcoinPathTail,
-} from "@qntx/wallet-chains/bitcoin";
+import type { BitcoinAccountTemplate, BitcoinOwn } from "@qntx/wallet-chains/bitcoin";
 
 import {
   BitcoinScanStore,
@@ -34,7 +29,7 @@ import {
 } from "../chains/bitcoin.ts";
 import type { BtcUtxo, Esplora } from "../chains/bitcoin.ts";
 import type { EngineLogger } from "../events.ts";
-import type { NetworkController, Independent } from "../networks/controller.ts";
+import type { NetworkController } from "../networks/controller.ts";
 import {
   collectChecks,
   exceedsNetworkCap,
@@ -82,7 +77,7 @@ type SpendContext = {
   readonly mark: number;
   /** Whether the serving entry was ever matched by an on-device verify-address. */
   readonly confirmed: boolean;
-  /** The template's own change chain scan — the change index is picked after selection. */
+  /** The template's own change chain scan — the pool the change pick draws from. */
   readonly changeChain: ReadonlyArray<ScanAddress>;
   /** The scan's account outputs — confirmed, or the wallet's own unconfirmed change. */
   readonly candidates: ReadonlyArray<BtcUtxo>;
@@ -358,117 +353,25 @@ const accountContext = async (
   };
 };
 
-/** The `change`/`index` tail of an account path — `undefined` when the path is not a leaf. */
-const pathTail = (path: ReadonlyArray<number>): BitcoinPathTail | undefined => {
-  if (path.length !== 5) {
-    return undefined;
-  }
-  const [purpose, change, index] = [path[0], path[3], path[4]];
-  return purpose !== undefined && change !== undefined && index !== undefined
-    ? { purpose, change, index }
-    : undefined;
-};
-
-type BuiltCoin = {
-  readonly txid: string;
-  readonly vout: number;
-  readonly value: number;
-  readonly address: string;
-};
-
 /**
- * The outpoint the second endpoint's `/tx/:txid/hex` answer carries for `txid:vout`, or `undefined`
- * when it is not a parseable transaction for that txid — every such answer is a disagreement, never
- * a downgrade.
- */
-const outpointOf = (
-  answer: unknown,
-  txid: string,
-  vout: number,
-): { readonly script: Uint8Array | undefined; readonly amount: bigint | undefined } | undefined => {
-  try {
-    if (typeof answer !== "string") {
-      return undefined;
-    }
-    const tx = Transaction.fromRaw(hex.decode(answer), { allowUnknownInputs: true });
-    if (tx.id !== txid) {
-      return undefined;
-    }
-    const found = tx.getOutput(vout);
-    return { script: found.script, amount: found.amount };
-  } catch {
-    return undefined;
-  }
-};
-
-/**
- * A change-chain coin past the sealed-mark scan reach is where a hostile primary endpoint plants an
- * invented input: it answers "used" along the chain, the gap walk follows, and the kernel seals the
- * coin's index as the new change mark before the signature exists — one nonexistent prevout
- * ratchets every later scan and the transaction can never confirm. The independent endpoint's copy
- * of the funding transaction settles it: a definite "unknown" (4xx), an answer that is not a
- * parseable transaction, or a transaction whose txid or claimed outpoint differs in script or value
- * refuses the build outright; only a transient read failure downgrades the request to unverified
- * reads. With no second endpoint configured the primary's word stands — the documented residual.
- */
-const crossCheckFarChangeCoins = async (
-  coins: ReadonlyArray<BuiltCoin>,
-  built: SpendContext,
-  independent: Independent<Esplora>,
-  flags: Array<RequestCheckCode | undefined>,
-): Promise<void> => {
-  if (independent.kind !== "available") {
-    return;
-  }
-  const reach = changeScanReach(built.mark);
-  const far = coins.filter((coin) => {
-    const tail = pathTail(built.pathOf(coin));
-    return tail !== undefined && tail.change === 1 && tail.index > reach;
-  });
-  for (const coin of far) {
-    let answer: unknown;
-    try {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- each far coin settles before the next.
-      answer = await independent.client.get(`/tx/${coin.txid}/hex`);
-    } catch (error) {
-      if (error instanceof EsploraError && !error.transient) {
-        throw new ChainError("invalid-request", "the endpoints disagree on a far change coin");
-      }
-      flags.push("reads-unverified");
-      continue;
-    }
-    const out = outpointOf(answer, coin.txid, coin.vout);
-    if (
-      out === undefined ||
-      out.amount !== BigInt(coin.value) ||
-      out.script === undefined ||
-      hex.encode(out.script) !== hex.encode(built.scriptOf(coin))
-    ) {
-      throw new ChainError("invalid-request", "the endpoints disagree on a far change coin");
-    }
-  }
-};
-
-/**
- * The change address of a build, chosen after the inputs are known: `c` the first unused index on
- * the template's own change chain — or, when `c` already lies past the bound the kernel's
- * discoverability rule allows (the sealed mark raised by the selected inputs' change indices, plus
- * the gap limit), the bound itself: a deliberate address reuse that keeps the change inside the
- * window the wallet scans. `tails` come from the build's own inputs — all one template's, so all
- * one purpose.
+ * The change address of a build: the first entry of the scanned change chain inside the window the
+ * kernel's sealed mark opens — `mark < index <= changeScanReach(mark)` — whose address this wallet
+ * has not already used for change (`taken`). The pick never reads the endpoint's "used" answers: a
+ * lying endpoint can then move the sealed mark by at most one index per real signed send — every
+ * step a user approved — and a burned index (signed, never confirmed) is never handed out again.
+ * Throws `invalid-request` once the scan window is exhausted.
  */
 export const changeAddressOf = (
   changeChain: ReadonlyArray<ScanAddress>,
-  tails: ReadonlyArray<BitcoinPathTail>,
-  stored: number,
+  mark: number,
+  taken: ReadonlySet<string>,
 ): ScanAddress => {
-  const purpose = tails.find((t) => t.change === 1)?.purpose ?? tails[0]?.purpose ?? 0;
-  const bound = changeScanReach(requestChangeMark(stored, purpose, tails, "internal"));
-  const firstUnused = changeChain.find((a) => !a.used);
-  const index = firstUnused !== undefined && firstUnused.index <= bound ? firstUnused.index : bound;
-  const found = changeChain.find((a) => a.index === index);
+  const reach = changeScanReach(mark);
+  const found = changeChain.find(
+    (a) => a.index > mark && a.index <= reach && !taken.has(a.address),
+  );
   if (found === undefined) {
-    throw new Error("no change address inside the gap window");
+    throw new ChainError("invalid-request", "no unused change address inside the scan window");
   }
   return found;
 };
@@ -593,16 +496,39 @@ export const createBitcoinRoute = (): BitcoinRoute => {
    * persistent lock (keyed by tx id) is written only once a broadcast succeeds.
    */
   const reserved = new Map<string, string>();
+  /**
+   * Change addresses picked by a request that has not been broadcast yet (request id → address).
+   * Same lifetime and memory-only rule as `reserved`: the pick is exclusive until the request
+   * releases or its broadcast holds.
+   */
+  const reservedChange = new Map<string, string>();
   const isHeld = (key: string): boolean => {
     const [txid = "", vout = "0"] = key.split(":");
     return reserved.has(key) || bitcoinUtxos.isLocked({ txid, vout: Number(vout) });
   };
   const releaseReservation = (requestId: string): void => {
+    reservedChange.delete(requestId);
     for (const [key, holder] of reserved) {
       if (holder === requestId) {
         reserved.delete(key);
       }
     }
+  };
+  /**
+   * The change addresses this wallet itself already used — every in-flight pick plus every own
+   * output the tracked transactions carry, whatever their state. The endpoint's "used" answers
+   * never feed this set.
+   */
+  const changeTaken = (ctx: RouteContext): Set<string> => {
+    const taken = new Set<string>(reservedChange.values());
+    for (const tx of Object.values(ctx.txs())) {
+      for (const output of tx.btc?.outputs ?? []) {
+        if (output.own) {
+          taken.add(output.address);
+        }
+      }
+    }
+    return taken;
   };
   /** Transactions the primary endpoint does not know: since when, and the next rebroadcast. */
   const unseen = new Map<string, { since: number; attempt: number; next: number }>();
@@ -765,10 +691,6 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       template,
       template === "btc.bip44" ? rawTxOf : undefined,
     );
-    const firstUnused = built.changeChain.find((a) => !a.used);
-    if (firstUnused === undefined) {
-      throw new Error("no unused change address");
-    }
     const quotes = await feeTiers(es);
     const quote =
       quotes.find(
@@ -798,46 +720,31 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         flags.push("reads-unverified");
       }
     }
-    // Selection and reservation run with no await between them, so concurrent prepares cannot
-    // pick the same output. Coin selection sees the change script type, not its index, so a probe
-    // build on the first unused change address fixes the input set; the change index is then
-    // picked inside the window the wallet can discover and the psbt rebuilt only if it moved.
+    // The change pick, the selection and both reservations run with no await between them, so
+    // concurrent prepares can take neither the same output nor the same change index. The change
+    // index does not depend on the selected inputs, so the psbt builds once with it. A failure
+    // anywhere below hands the reservations back before the error propagates.
     const free = inputs.filter((i) => !isHeld(`${String(i.txid ?? "")}:${String(i.index ?? 0)}`));
     const utxoPolicy = named === undefined ? "default" : "all";
-    const probe = bitcoin.buildPsbt(
-      free,
-      to,
-      amount,
-      BigInt(rate),
-      firstUnused.address,
-      net.params,
-      utxoPolicy,
-    );
-    const probeKeys = new Set(
-      probe.inputs.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
-    );
-    const tails = source
-      .filter((u) => probeKeys.has(`${u.txid}:${u.vout}`))
-      .flatMap((u) => {
-        const tail = pathTail(built.pathOf(u));
-        return tail === undefined ? [] : [tail];
-      });
-    const chosen = changeAddressOf(built.changeChain, tails, built.mark);
-    const { psbt: unsigned, inputs: selected } =
-      chosen.index === firstUnused.index
-        ? probe
-        : bitcoin.buildPsbt(free, to, amount, BigInt(rate), chosen.address, net.params, utxoPolicy);
-    const selectedKeys = new Set(
-      selected.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
-    );
-    const selectedUtxos = source.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
-    // Reserve before the first post-selection await: a concurrent prepare must not see them. A
-    // failure anywhere below hands them back before the error propagates.
-    for (const key of selectedKeys) {
-      reserved.set(key, requestId);
-    }
+    const chosen = changeAddressOf(built.changeChain, built.mark, changeTaken(ctx));
+    reservedChange.set(requestId, chosen.address);
     try {
-      await crossCheckFarChangeCoins(selectedUtxos, built, independent, flags);
+      const { psbt: unsigned, inputs: selected } = bitcoin.buildPsbt(
+        free,
+        to,
+        amount,
+        BigInt(rate),
+        chosen.address,
+        net.params,
+        utxoPolicy,
+      );
+      const selectedKeys = new Set(
+        selected.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
+      );
+      const selectedUtxos = source.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
+      for (const key of selectedKeys) {
+        reserved.set(key, requestId);
+      }
       // Segwit v0 inputs prove their amounts through the full previous transaction (bip44 carried
       // it already for selection). Fetch it only for the inputs actually spent and attach it.
       let psbt = unsigned;
@@ -1177,17 +1084,14 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       return Math.max(btc.fee + vsize, Math.ceil(vsize * rate));
     };
     // The replacement pays its change back to the parent's own output, or — a parent with none —
-    // to a fresh pick inside the window the parent's inputs prove discoverable.
+    // to a fresh pick under the change rule, held for the request's life like the extra inputs it
+    // may join; the parent's own address needs no reservation — reusing it is the point.
+    const parentChange = btc.outputs.find((o) => o.own)?.address;
     const changeAddr =
-      btc.outputs.find((o) => o.own)?.address ??
-      changeAddressOf(
-        built.changeChain,
-        btc.inputs.flatMap((i) => {
-          const tail = pathTail(built.pathOf(i));
-          return tail === undefined ? [] : [tail];
-        }),
-        built.mark,
-      ).address;
+      parentChange ?? changeAddressOf(built.changeChain, built.mark, changeTaken(ctx)).address;
+    if (parentChange === undefined) {
+      reservedChange.set(requestId, changeAddr);
+    }
     const inTotal = btc.inputs.reduce((a, i) => a + i.value, 0);
     const dust = 546;
     const payee = btc.outputs
@@ -1258,12 +1162,10 @@ export const createBitcoinRoute = (): BitcoinRoute => {
             );
           } catch (error) {
             extraUtxos.pop();
-            reserved.delete(key);
             throw error;
           }
         }
       }
-      await crossCheckFarChangeCoins([...btc.inputs, ...extraUtxos], built, independent, flags);
       // The replacement spends exactly the original's inputs plus any extras. The scan does not
       // list them — the unconfirmed original spends them already — so they are rebuilt from the
       // record, with their previous transactions attached for segwit v0.
@@ -1416,72 +1318,62 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       btc.template,
       (u) => parentRaws.get(u.txid),
     );
-    await crossCheckFarChangeCoins(
-      bumpable.map((o) => ({
-        txid: parentTxid,
-        vout: o.vout,
-        value: o.value,
-        address: o.address,
-      })),
-      built,
-      independent,
-      flags,
-    );
-    const changeAddr = changeAddressOf(
-      built.changeChain,
-      bumpable.flatMap((o) => {
-        const tail = pathTail(built.pathOf(o));
-        return tail === undefined ? [] : [tail];
-      }),
-      built.mark,
-    ).address;
-    const net = bitcoinNetwork(old.network);
-    const inTotal = bumpable.reduce((a, o) => a + o.value, 0);
-    const probe = bitcoin.buildExactPsbt(
-      childInputs,
-      [{ address: changeAddr, amount: BigInt(inTotal) }],
-      net.params,
-      btc.template,
-    );
-    const childFee = Math.max(
-      Math.ceil(targetRate * (btc.vsize + probe.vsize)) - btc.fee,
-      probe.vsize,
-    );
-    const { psbt: exact, vsize } = bitcoin.buildExactPsbt(
-      childInputs,
-      [{ address: changeAddr, amount: BigInt(inTotal - childFee) }],
-      net.params,
-      btc.template,
-    );
-    const psbt = bindChange(exact, built, changeAddr);
-    const record = {
-      inputs: bumpable.map((o) => ({
-        txid: old.hash ?? "",
-        vout: o.vout,
-        value: o.value,
-        address: o.address,
-      })),
-      outputs: [{ address: changeAddr, value: inTotal - childFee, own: true }],
-      vsize,
-      fee: childFee,
-      feeRate: Math.ceil(childFee / vsize),
-      template: btc.template,
-      groupIndex: btc.groupIndex,
-      tier: btc.tier,
-    };
-    return prepareFinish(
-      ctx,
-      built,
-      es,
-      account,
-      old,
-      psbt,
-      record,
-      { parentId: old.id },
-      requestId,
-      parentKeys,
-      flags,
-    );
+    const changeAddr = changeAddressOf(built.changeChain, built.mark, changeTaken(ctx)).address;
+    // The pick is reserved before the build below: a failure hands it back like the held
+    // outpoints `prepareFinish` releases on the outer callers' behalf.
+    reservedChange.set(requestId, changeAddr);
+    try {
+      const net = bitcoinNetwork(old.network);
+      const inTotal = bumpable.reduce((a, o) => a + o.value, 0);
+      const probe = bitcoin.buildExactPsbt(
+        childInputs,
+        [{ address: changeAddr, amount: BigInt(inTotal) }],
+        net.params,
+        btc.template,
+      );
+      const childFee = Math.max(
+        Math.ceil(targetRate * (btc.vsize + probe.vsize)) - btc.fee,
+        probe.vsize,
+      );
+      const { psbt: exact, vsize } = bitcoin.buildExactPsbt(
+        childInputs,
+        [{ address: changeAddr, amount: BigInt(inTotal - childFee) }],
+        net.params,
+        btc.template,
+      );
+      const psbt = bindChange(exact, built, changeAddr);
+      const record = {
+        inputs: bumpable.map((o) => ({
+          txid: old.hash ?? "",
+          vout: o.vout,
+          value: o.value,
+          address: o.address,
+        })),
+        outputs: [{ address: changeAddr, value: inTotal - childFee, own: true }],
+        vsize,
+        fee: childFee,
+        feeRate: Math.ceil(childFee / vsize),
+        template: btc.template,
+        groupIndex: btc.groupIndex,
+        tier: btc.tier,
+      };
+      return prepareFinish(
+        ctx,
+        built,
+        es,
+        account,
+        old,
+        psbt,
+        record,
+        { parentId: old.id },
+        requestId,
+        parentKeys,
+        flags,
+      );
+    } catch (error) {
+      releaseReservation(requestId);
+      throw error;
+    }
   };
 
   /**
@@ -1586,6 +1478,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     },
     lock: () => {
       reserved.clear();
+      reservedChange.clear();
       bitcoinUtxos.lockStore();
       bitcoinFrozen.lockStore();
     },

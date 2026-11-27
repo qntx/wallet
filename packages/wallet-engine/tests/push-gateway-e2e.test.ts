@@ -34,6 +34,7 @@ import type { NetworkControllerState } from "../src/networks/controller.ts";
 import { NotificationsController } from "../src/notifications/controller.ts";
 import type { NotificationEvent } from "../src/notifications/controller.ts";
 import { openPush } from "../src/push/index.ts";
+import type { SignersState } from "../src/signers/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { TransactionControllerState } from "../src/transactions/controller.ts";
 import { nodeSql } from "./push-sql.ts";
@@ -280,6 +281,7 @@ describe("push engine end to end", () => {
       accounts: { getState: accountsStore.getState, store: accountsStore },
       networks: { enabled: (f) => (f === "evm" ? [EVM] : []), store: networksStore },
       transactions: { store: txStore },
+      signers: { store: miniStore<SignersState>({ active: null, confirmations: 0 }) },
       addresses: async () => Promise.resolve([ADDRESS]),
       reconcile: async (event) => {
         reconciled.push(event);

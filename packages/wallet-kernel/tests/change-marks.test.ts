@@ -430,7 +430,7 @@ describe("change marks lifecycle", () => {
     await expect(accountMark(h, session, walletId)).resolves.toBe(40);
   });
 
-  it("an internal change input raises the mark; an external input never does", async () => {
+  it("a signed change input never raises the mark — not even for an internal request", async () => {
     const { h, session, walletId } = await setup();
     // External origin: the dusted /1/30 input cannot raise the bound — /1/50 stays shown.
     const external = await sign(
@@ -445,7 +445,8 @@ describe("change marks lifecycle", () => {
     );
     expect("err" in external).toBe(false);
     await expect(accountMark(h, session, walletId)).resolves.toBe(0);
-    // Internal origin: the same input raises the bound past 30, /1/50 is hidden, mark lands at 50.
+    /* Internal origin: the input is just a path the PSBT names — the bound stays at mark 0,
+       /1/50 shows as an unusual own output and the mark seals nothing. */
     const internal = await sign(
       h,
       session,
@@ -457,32 +458,71 @@ describe("change marks lifecycle", () => {
       ),
     );
     expect("err" in internal).toBe(false);
-    await expect(accountMark(h, session, walletId)).resolves.toBe(50);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
+  });
+
+  it("a far change input seals only the hidden output — never the input's own index", async () => {
+    const { h, session, walletId } = await setup();
+    /* The request really does sign a /1/1979 spend — real or invented, the PSBT names it the
+       same way. Only the change output the wallet itself hid is sealed: mark 1, not 1979. */
+    const signed = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }, { template: "btc.bip84", change: 1, index: 1979 }],
+        [{ purpose: 84, change: 1, index: 1 }],
+      ),
+    );
+    expect("err" in signed).toBe(false);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(1);
+  });
+
+  it("three internal sends with change at mark + 1 seal the marks 1, 2, 3", async () => {
+    const { h, session, walletId } = await setup();
+    const marks: number[] = [];
+    for (let index = 1; index <= 3; index += 1) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- each send seals before the next reads it
+      const signed = await sign(
+        h,
+        session,
+        psbtRequest(
+          walletId,
+          "internal",
+          [{ template: "btc.bip84" }],
+          [{ purpose: 84, change: 1, index }],
+        ),
+      );
+      expect("err" in signed).toBe(false);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- reads the mark the send above sealed
+      marks.push(await accountMark(h, session, walletId));
+    }
+    expect(marks).toStrictEqual([1, 2, 3]);
   });
 
   it("several hidden change outputs raise the mark to the highest, not the last", async () => {
     const { h, session, walletId } = await setup();
-    /* The internal input at /1/10 opens the discoverable bound to 30; the two change outputs
-       descend — /1/25 then /1/15 — so a last-write-wins raise would seal 15 and leave a gap:
-       /1/16…25 would classify as spent-without-mark on the next request. */
+    /* The outputs descend — /1/18 then /1/12 — so a last-write-wins raise would seal 12 and
+       leave the higher hidden indexes committed-but-unmarked on the next request. */
     const result = await sign(
       h,
       session,
       psbtRequest(
         walletId,
         "internal",
-        [{ template: "btc.bip84", change: 1, index: 10 }],
+        [{ template: "btc.bip84" }],
         [
-          { purpose: 84, change: 1, index: 25 },
-          { purpose: 84, change: 1, index: 15 },
+          { purpose: 84, change: 1, index: 18 },
+          { purpose: 84, change: 1, index: 12 },
         ],
       ),
     );
     expect("err" in result).toBe(false);
-    await expect(accountMark(h, session, walletId)).resolves.toBe(25);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(18);
   });
 
-  it("an internal sweep's signed change input raises the mark — no own output needed", async () => {
+  it("a sweep's signed change input seals nothing — only hidden outputs do", async () => {
     const { h, session, walletId } = await setup();
     // External origin: a sweep's /1/500 input proves nothing — the mark stays 0.
     const external = await sign(
@@ -492,15 +532,15 @@ describe("change marks lifecycle", () => {
     );
     expect("err" in external).toBe(false);
     await expect(accountMark(h, session, walletId)).resolves.toBe(0);
-    // Internal origin: the same sweep commits 500 even though nothing was hidden — the wallet
-    // really did spend that change index, so the bound must cover it next time.
+    /* Internal origin: the same sweep seals nothing either. Signed inputs never raise the
+       mark — a signed spend of a far index is exactly what a hostile endpoint would claim. */
     const internal = await sign(
       h,
       session,
       psbtRequest(walletId, "internal", [{ template: "btc.bip84", change: 1, index: 500 }], []),
     );
     expect("err" in internal).toBe(false);
-    await expect(accountMark(h, session, walletId)).resolves.toBe(500);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
   });
 
   it("an external sign hides change inside the window but never raises the mark", async () => {
@@ -777,17 +817,14 @@ describe("change marks lifecycle", () => {
     );
     expect("err" in first).toBe(false);
     expect(commits).toHaveLength(1);
-    // A /1/5 change input under a mark of 20 proves nothing new — no record write, mark stays 20.
+    // A hidden /1/10 under a mark of 20 proves nothing new — no record write, mark stays 20.
     const lower = await sign(
       h,
       session,
       psbtRequest(
         walletId,
         "internal",
-        [
-          { template: "btc.bip84", index: 1 },
-          { template: "btc.bip84", change: 1, index: 5 },
-        ],
+        [{ template: "btc.bip84", index: 1 }],
         [{ purpose: 84, change: 1, index: 10 }],
       ),
     );
@@ -837,7 +874,7 @@ describe("change marks lifecycle", () => {
     await expect(accountMark(h, session, walletId)).resolves.toBe(20);
   });
 
-  it("a raise of exactly the stored index plus one still commits", async () => {
+  it("a hidden output at the stored index plus one still commits", async () => {
     const { h, session, walletId } = await setup();
     const first = await sign(
       h,
@@ -850,18 +887,77 @@ describe("change marks lifecycle", () => {
       ),
     );
     expect("err" in first).toBe(false);
-    // Spending the very next change index raises the mark by exactly one — an off-by-one in the
-    // raise check would leave it at 20 and hide /1/21 change from the wallet's own scan reach.
+    // Hiding /1/21 — inside the reach mark 20 opens — raises the mark by exactly one: an
+    // off-by-one in the raise check would leave it at 20 and strand the index outside reach.
     const next = await sign(
       h,
       session,
-      psbtRequest(walletId, "internal", [{ template: "btc.bip84", change: 1, index: 21 }], []),
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 21 }],
+      ),
     );
     expect("err" in next).toBe(false);
     await expect(accountMark(h, session, walletId)).resolves.toBe(21);
   });
 
-  it("two signed change inputs of one purpose raise the mark to the deeper index", async () => {
+  it("a hidden output equal to the stored mark commits nothing", async () => {
+    /* The wallet reuses /1/20 — inside the window either way — but the mark already covers it:
+       a >= raise check would rewrite the same index; the strict increase must leave the vault
+       untouched. */
+    const commits: string[] = [];
+    const { h, session, walletId } = await setup({
+      wrapStore: recordMarksCommit(commits),
+    });
+    const first = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
+    );
+    expect("err" in first).toBe(false);
+    expect(commits).toHaveLength(1);
+    const again = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
+      ),
+    );
+    expect("err" in again).toBe(false);
+    expect(commits).toHaveLength(1);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(20);
+  });
+
+  it("a change output one index past the window is shown and seals nothing", async () => {
+    /* /1/21 lies outside mark-0's reach — the prompt shows it as an unusual own output and no
+       mark commit happens: hiding would claim a scan the wallet cannot do. */
+    const { h, session, walletId } = await setup();
+    const signed = await sign(
+      h,
+      session,
+      psbtRequest(
+        walletId,
+        "internal",
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 21 }],
+      ),
+    );
+    expect("err" in signed).toBe(false);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
+    await expect(marksRecord(h, walletId)).resolves.toBeUndefined();
+  });
+
+  it("two signed change inputs of one purpose seal nothing — inputs never raise the mark", async () => {
     const { h, session, walletId } = await setup();
     const signed = await sign(
       h,
@@ -877,7 +973,8 @@ describe("change marks lifecycle", () => {
       ),
     );
     expect("err" in signed).toBe(false);
-    await expect(accountMark(h, session, walletId)).resolves.toBe(7);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(0);
+    await expect(marksRecord(h, walletId)).resolves.toBeUndefined();
   });
 
   it("two hidden change outputs of one purpose raise the mark to the deeper index", async () => {
@@ -974,8 +1071,8 @@ describe("change marks lifecycle", () => {
       psbtRequest(
         walletId,
         "internal",
-        [{ template: "btc.bip84", change: 1, index: 20 }],
-        [],
+        [{ template: "btc.bip84" }],
+        [{ purpose: 84, change: 1, index: 20 }],
         0,
         TESTNET,
       ),

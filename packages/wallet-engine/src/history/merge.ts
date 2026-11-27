@@ -136,13 +136,18 @@ export class OrderedMerge<T> {
  * The emitted chain/provider entries merged with the group's local tracked sends: a local entry
  * whose id a source also produced folds into the source entry (plus `localTxId`); a local-only
  * entry shows while it is pending, once the merge drained, or while it is newer than the oldest
- * emitted entry. `lookalike-counterparty` is (re)computed here — the known set moves with the
- * address book and tracked sends, and history counterparties never feed it.
+ * emitted entry. `lookalike-counterparty` is (re)computed here — the known sets move with the
+ * address book and tracked sends, and history counterparties never feed them.
  */
 export const compose = (
   emitted: ReadonlyArray<HistoryEntry>,
   locals: ReadonlyArray<HistoryEntry>,
-  known: Readonly<Record<HistoryEntry["family"], ReadonlyArray<string>>>,
+  known: {
+    /** Addresses that vouch for themselves — a counterparty in here is never flagged. */
+    readonly exempt: Readonly<Record<HistoryEntry["family"], ReadonlyArray<string>>>;
+    /** The lookalike corpus — `exempt` plus every own address a device-unconfirmed entry serves. */
+    readonly references: Readonly<Record<HistoryEntry["family"], ReadonlyArray<string>>>;
+  },
   mergeDone: boolean,
 ): ReadonlyArray<HistoryEntry> => {
   const byId = new Map(emitted.map((entry) => [entry.id, entry]));
@@ -174,7 +179,12 @@ export const compose = (
   for (const entry of merged.values()) {
     if (
       !entry.flags.includes("lookalike-counterparty") &&
-      lookalike(entry.family, entry.counterparties, known[entry.family] ?? [])
+      lookalike(
+        entry.family,
+        entry.counterparties,
+        known.exempt[entry.family] ?? [],
+        known.references[entry.family] ?? [],
+      )
     ) {
       entries.push({
         ...entry,

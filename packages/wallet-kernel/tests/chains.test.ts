@@ -1928,13 +1928,20 @@ describe("chain.sign", () => {
       expect("signedPsbt" in result).toBe(true);
     });
 
-    it("an internal request's signed far change input raises the hidden-change bound", async () => {
+    it("an internal request's signed far change input raises the bound no more than an external one", async () => {
+      /* Signed inputs are just paths the PSBT names — they feed neither origin's mark. The
+         /1/30 input is inert, so /1/50 shows as an unusual own output exactly as it would for
+         an external request. */
       const { prompt, result } = await prepare(
         [{ template: "btc.bip84" }, { template: "btc.bip84", change: 1, index: 30 }],
         [{ purpose: 84, change: 1, index: 50 }],
       );
-      expect(prompt.outflows.filter((o) => o.ownPath !== undefined)).toHaveLength(0);
-      expect(prompt.warnings?.filter((w) => w.kind === "unusual-own-output")).toHaveLength(0);
+      const flow = prompt.outflows.find((o) => o.ownPath !== undefined);
+      expect(flow?.ownPath).toBe("m/84'/0'/0'/1/50");
+      expect(prompt.warnings).toContainEqual({
+        kind: "unusual-own-output",
+        message: "m/84'/0'/0'/1/50",
+      });
       expect("signedPsbt" in result).toBe(true);
     });
 
@@ -1985,15 +1992,16 @@ describe("chain.sign", () => {
       expect("signedPsbt" in result).toBe(true);
     });
 
-    it("an internal request's own far input cannot hide an output past the scan limit", async () => {
-      // Even a legitimate raise — an internal request really does spend /1/2147483600 — can
-      // never hide an output at or past index 2000: the wallet provably cannot scan there.
+    it("a sealed mark reaching the scan limit hides the last index and never the one past it", async () => {
+      // Mark 1979 opens the window to 1999 exactly — /1/1999 hides, /1/2000 never can: the
+      // wallet provably cannot scan there, whatever a request claims.
       const { prompt, result } = await prepare(
-        [{ template: "btc.bip84" }, { template: "btc.bip84", change: 1, index: 2_147_483_600 }],
+        [{ template: "btc.bip84" }],
         [
           { purpose: 84, change: 1, index: 1999 },
           { purpose: 84, change: 1, index: 2000 },
         ],
+        { storedMark: () => 1979 },
       );
       expect(prompt.outflows.filter((o) => o.ownPath !== undefined)).toHaveLength(1);
       const flow = prompt.outflows.find((o) => o.ownPath !== undefined);

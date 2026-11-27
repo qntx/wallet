@@ -3052,3 +3052,95 @@ export const historyAccount: HistoryControllerOptions["chains"]["account"] = asy
   return { xpub: "xpub…", changeMark: 0, confirmed: false };
 };
 ```
+
+## 36. Change from the sealed mark, immediate confirmations and lookalike references
+
+The engine places Bitcoin change from the kernel-sealed mark alone, and a device confirmation now
+takes effect without a relock. The host-visible changes:
+
+1. **`requestChangeMark` is removed** from `@qntx/wallet-chains/bitcoin`. Signed inputs never raise
+   the change mark — for either origin — so the hidden-change window of §34 is always
+   `isDiscoverableChange(output, signed, mark)` with the sealed `mark` itself (`hidesAsChange` in
+   the snippet). An `internal` request raises the mark only to the highest change index it hides.
+2. **The engine's change index no longer follows the endpoint.** A send, a CPFP child or a
+   replacement without a change output of its own pays change to the lowest change index above the
+   sealed mark that no in-flight request reserved and no tracked transaction used. A replacement
+   still pays back to its parent's change address. When no such index is left inside
+   `changeScanReach(mark)` the send refuses with `ChainError` `invalid-request` ("no unused change
+   address inside the scan window", `changeWindowExhausted` in the snippet) instead of reusing an
+   address. After a seed-only restore the mark starts at 0, so change lands on indexes the seed
+   already used — expect address reuse there, never hidden funds.
+3. **The far-coin cross-check of §35.13 is gone.** A spend of a change coin past the sealed reach
+   is built like any other: the second endpoint is never asked about it, never refuses it and
+   never learns its txid. Drop any handling of "the endpoints disagree on a far change coin".
+4. **`SignersState.confirmations`** counts the on-device address checks `signers.verifyAddress`
+   completed this session. The engine's history reloads its loaded groups and its push
+   subscriptions reconcile when it moves — §35.12's "until `verify-address` confirms it" now means
+   immediately. Subscribe to it to refresh your own "unconfirmed" badges (`onConfirmation`).
+5. **Host-wired `HistoryControllerOptions` and `NotificationsControllerOptions` require
+   `signers: Pick<SignersController, "store">`** (`wiredSigners`). `createWalletEngine` wires it.
+6. **An unconfirmed own address is a lookalike reference.** History flags `lookalike-counterparty`
+   for a counterparty imitating an unconfirmed own address exactly as for a confirmed one; the
+   unconfirmed address itself is still not exempt, so it is flagged when it imitates a contact or
+   another known address. Push still never subscribes unconfirmed accounts.
+
+[`tests/migration/change-from-mark.ts`](tests/migration/change-from-mark.ts):
+
+```ts
+import { ChainError } from "@qntx/wallet-chains";
+import { isDiscoverableChange } from "@qntx/wallet-chains/bitcoin";
+import type { BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
+import type {
+  HistoryControllerOptions,
+  NotificationsControllerOptions,
+  SignersController,
+  SignersState,
+} from "@qntx/wallet-engine";
+
+/**
+ * Change from the sealed mark and immediate confirmations (section 36): `requestChangeMark` is gone
+ * — the hidden-change window is the sealed mark alone; a send whose change window is exhausted
+ * refuses with `invalid-request`; `SignersState.confirmations` counts completed on-device checks,
+ * and host-wired history and notifications controllers take the signers store. Compiled only.
+ */
+
+/**
+ * Where requestChangeMark(stored, …) was called: the sealed mark is the bound, inputs never widen
+ * it.
+ */
+export function hidesAsChange(
+  output: BitcoinPathTail,
+  signed: ReadonlyArray<BitcoinPathTail>,
+  mark: number,
+): boolean {
+  return isDiscoverableChange(output, signed, mark);
+}
+
+/** The exhausted change window: no change index is left above the sealed mark inside the scan. */
+export function changeWindowExhausted(error: unknown): boolean {
+  return (
+    error instanceof ChainError &&
+    error.code === "invalid-request" &&
+    error.message === "no unused change address inside the scan window"
+  );
+}
+
+/** Re-render whatever shows "unconfirmed" when a device confirmation completes. */
+export function onConfirmation(
+  signers: Pick<SignersController, "store">,
+  render: () => void,
+): () => void {
+  return signers.store.subscribe((next: SignersState, previous: SignersState) => {
+    if (next.confirmations !== previous.confirmations) {
+      render();
+    }
+  });
+}
+
+/** Host-wired controllers hand over the signers store next to the other stores they read. */
+export function wiredSigners(
+  signers: Pick<SignersController, "store">,
+): Pick<HistoryControllerOptions, "signers"> & Pick<NotificationsControllerOptions, "signers"> {
+  return { signers };
+}
+```

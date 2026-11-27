@@ -8,12 +8,20 @@
  * any .js/.wasm request answered with the SPA fallback's text/html is the bundler-entry bug.
  */
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { chromium } from "@playwright/test";
 import { build, preview } from "vite";
+
+import {
+  CONSUMER,
+  entriesOf,
+  expectedDependencies,
+  isRecord,
+  manifest,
+} from "./consumer-manifest.ts";
 
 const ROOT = new URL("../../..", import.meta.url).pathname;
 const CSP =
@@ -36,60 +44,6 @@ const pack = (pkg: string, dest: string): string => {
   return join(dest, name);
 };
 
-const FIRST_PARTY = new Set(["@qntx/wallet-chains", "@qntx/wallet", "@qntx/wallet-worker"]);
-const CONSUMER = join(ROOT, "packages/wallet-worker/tests/consumer");
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
-
-const manifest = (path: string): Record<string, unknown> => {
-  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-  if (!isRecord(parsed)) {
-    throw new Error(`${path} did not parse to an object`);
-  }
-  return parsed;
-};
-const entriesOf = (value: unknown): Array<[string, string]> => {
-  const out: Array<[string, string]> = [];
-  if (isRecord(value)) {
-    for (const [name, spec] of Object.entries(value)) {
-      if (typeof spec === "string") {
-        out.push([name, spec]);
-      }
-    }
-  }
-  return out;
-};
-
-// The scaffold's third-party dependencies are a pure function of the three
-// manifests: the union of their dependencies plus @qntx/wallet's non-first-party
-// peers (npm does not auto-install tarball peers) plus the repo's vite.
-const expectedDependencies = (): Record<string, string> => {
-  const deps: Record<string, string> = {};
-  for (const pkg of FIRST_PARTY) {
-    for (const [name, spec] of entriesOf(
-      manifest(join(ROOT, "packages", pkg.slice(6), "package.json"))["dependencies"],
-    )) {
-      if (!FIRST_PARTY.has(name)) {
-        deps[name] = spec;
-      }
-    }
-  }
-  for (const [name, spec] of entriesOf(
-    manifest(join(ROOT, "packages/wallet/package.json"))["peerDependencies"],
-  )) {
-    if (!FIRST_PARTY.has(name)) {
-      deps[name] = spec.replace(/^~/, "");
-    }
-  }
-  const root = manifest(join(ROOT, "package.json"));
-  for (const [name, spec] of entriesOf(root["devDependencies"])) {
-    if (name === "vite") {
-      deps[name] = spec;
-    }
-  }
-  return Object.fromEntries(Object.entries(deps).toSorted(([a], [b]) => a.localeCompare(b)));
-};
-
 const expected = expectedDependencies();
 const committed = Object.fromEntries(
   entriesOf(manifest(join(CONSUMER, "package.json"))["dependencies"]),
@@ -98,9 +52,7 @@ if (JSON.stringify(committed) !== JSON.stringify(expected)) {
   throw new Error(
     "tests/consumer/package.json drifted from the workspace manifests.\n" +
       `Expected dependencies:\n${JSON.stringify(expected, null, 2)}\n` +
-      "Regenerate both files: cd packages/wallet-worker/tests/consumer && " +
-      "npm install --package-lock-only --ignore-scripts " +
-      "--before=<ISO date 7 days ago> # honour the registry cooldown",
+      "Regenerate both files: bun run --cwd packages/wallet-worker consumer:lock",
   );
 }
 

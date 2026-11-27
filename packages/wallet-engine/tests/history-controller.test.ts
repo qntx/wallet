@@ -3,10 +3,19 @@
  * persists a bounded cache, isolates groups, survives a source error, pages with loadMore and
  * clears on lock.
  */
+import { HDKey } from "@scure/bip32";
+import { NETWORK, p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
+import { createStore } from "zustand/vanilla";
+import type { StoreApi } from "zustand/vanilla";
 
+import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
+import { tronAddressFromHex, tronAddressToHex } from "@qntx/wallet-chains/tron";
+
+import { scripthash } from "../src/chains/bitcoin-scan.ts";
 import { HistoryController } from "../src/history/controller.ts";
 import type { HistoryState } from "../src/history/controller.ts";
+import type { SignersState } from "../src/signers/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
 
@@ -17,11 +26,68 @@ const OTHER = "0xfa5180956e87bff2d1fce8423d2e755846ac3b24";
 const LOOKALIKE = `0xfa51${"0".repeat(32)}3b24`;
 // Same first/last four characters as OWNER2 — a lookalike of the second group's address.
 const LOOKALIKE2 = `0x70a6${"0".repeat(32)}df8b`;
+// Same first/last four hex characters as OWNER — a book contact the own address imitates.
+const LOOKALIKE_OWNER = `0xd8da${"0".repeat(32)}6045`;
 const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+const TRON_NET = "tron:728126428";
+const BTC_NET = "bip122:000000000019d6689c085ae165831e93";
+const TRON_OWNER = tronAddressFromHex(`41${"2".repeat(40)}`);
 const GROUP = { walletId: "w", groupIndex: 0 } as const;
 const GROUP2 = { walletId: "w", groupIndex: 1 } as const;
 
 const hash = (byte: string) => `0x${byte.repeat(32)}`;
+
+/** The first/last four characters of `address` kept, middle zeroed — the lookalike shape. */
+const lookalikeOf = (address: string): string => {
+  const prefix = address.toLowerCase().startsWith("0x") ? 2 : 0;
+  const middle = Math.max(0, address.length - prefix - 8);
+  return `${address.slice(0, prefix + 4)}${"0".repeat(middle)}${address.slice(-4)}`;
+};
+
+const BTC_ROOT = HDKey.fromMasterSeed(new Uint8Array(64).fill(3));
+const BTC_ACCOUNTS: Record<BitcoinAccountTemplate, HDKey> = {
+  "btc.bip44": BTC_ROOT.derive("m/44'/0'/0'"),
+  "btc.bip49": BTC_ROOT.derive("m/49'/0'/0'"),
+  "btc.bip84": BTC_ROOT.derive("m/84'/0'/0'"),
+  "btc.bip86": BTC_ROOT.derive("m/86'/0'/0'"),
+};
+
+const btcAddress = (template: BitcoinAccountTemplate, chain: 0 | 1, index: number): string => {
+  const pub = BTC_ACCOUNTS[template].derive(`m/${chain}/${index}`).publicKey;
+  if (pub === null) {
+    throw new Error("no public key");
+  }
+  const address =
+    template === "btc.bip44"
+      ? p2pkh(pub, NETWORK).address
+      : template === "btc.bip49"
+        ? p2sh(p2wpkh(pub, NETWORK), NETWORK).address
+        : template === "btc.bip84"
+          ? p2wpkh(pub, NETWORK).address
+          : p2tr(pub.subarray(1), undefined, NETWORK).address;
+  if (address === undefined) {
+    throw new Error("could not encode the derived address");
+  }
+  return address;
+};
+
+/**
+ * Esplora fake: every derived address scans empty except `funded` scripthashes, which answer the
+ * given `/txs` page. Same shape as the history-bitcoin rig's fake.
+ */
+const esploraOf = (funded: ReadonlyMap<string, ReadonlyArray<unknown>>) => ({
+  get: async (path: string): Promise<unknown> => {
+    const txs = /^\/scripthash\/([0-9a-f]+)\/txs$/.exec(path);
+    if (txs !== null) {
+      return Promise.resolve(funded.get(txs[1] ?? "") ?? []);
+    }
+    const utxo = /^\/scripthash\/([0-9a-f]+)\/utxo$/.exec(path);
+    if (utxo !== null) {
+      return Promise.resolve([]);
+    }
+    return Promise.reject(new Error(`unmocked ${path}`));
+  },
+});
 
 const item = (h: string, block: number, timestamp: number, amount = "700") => ({
   hash: h,
@@ -54,6 +120,7 @@ const receipt = (block: number) => ({
 
 type Rig = {
   readonly controller: HistoryController;
+  readonly signersStore: StoreApi<SignersState>;
   readonly store: EngineStore;
   readonly requests: Array<Record<string, unknown>>;
   readonly setTxs: (txs: Record<string, unknown>) => void;
@@ -80,6 +147,24 @@ const make = (options: {
   readonly failAccounts?: boolean;
   /** Groups whose `chains.account` entry reports `confirmed: false` — a key never device-shown. */
   readonly unconfirmedGroups?: ReadonlyArray<number>;
+  /** Templates whose `chains.account` entry reports `confirmed: false` — same, per family. */
+  readonly unconfirmedTemplates?: ReadonlyArray<string>;
+  /** Mutable `confirmed` — read on every `chains.account` call; a verification flips it. */
+  readonly confirmed?: { current: boolean };
+  /** Enables the tron indexer feed; `transactions`/`trc20` rows answer the matching feed path. */
+  readonly tronData?: {
+    readonly transactions?: ReadonlyArray<unknown>;
+    readonly trc20?: ReadonlyArray<unknown>;
+  };
+  /** Enables the bitcoin stream: account answers real xpubs, esplora serves the scripted pages. */
+  readonly bitcoin?: {
+    readonly account?: (params: {
+      template: string;
+      groupIndex: number;
+      network: string;
+    }) => Promise<unknown>;
+    readonly esplora?: { readonly get: (path: string) => Promise<unknown> };
+  };
   /** Gateway requests carrying one of these `address`es hang until `respond()`. */
   readonly deferredAddresses?: ReadonlyArray<string>;
 }): Rig => {
@@ -89,6 +174,7 @@ const make = (options: {
   const waiters: Array<() => void> = [];
   let txs = options.txs ?? {};
   const bookEntries = options.book ?? {};
+  const signersStore = createStore<SignersState>(() => ({ active: null, confirmations: 0 }));
   const txStore = {
     getState: () => ({ txs }),
     setState: (next: { txs: Record<string, unknown> }) => {
@@ -144,7 +230,11 @@ const make = (options: {
           ? ["eip155:1"]
           : family === "solana" && options.solana === true
             ? [SOL_NET]
-            : [],
+            : family === "tron" && options.tronData !== undefined
+              ? [TRON_NET]
+              : family === "bitcoin" && options.bitcoin !== undefined
+                ? [BTC_NET]
+                : [],
       client: () => client,
       gatewayFirst: () => options.evmIndependent !== "not-needed",
       independentClient: () =>
@@ -154,33 +244,57 @@ const make = (options: {
       independentSolanaRpc: () => options.solanaIndependent ?? { kind: "unavailable" },
       independentEsplora: () => ({ kind: "unavailable" }),
       solanaRpc: () => solanaRpc,
-      esplora: () => ({ get: async () => Promise.reject(new Error("unmocked")) }),
+      tronApi: () => ({ post: async () => Promise.reject(new Error("tron node down")) }),
+      independentTronApi: () => ({ kind: "unavailable" }),
+      esplora: () =>
+        options.bitcoin?.esplora ?? { get: async () => Promise.reject(new Error("unmocked")) },
     },
     chains: {
-      account: async (params: { template: string; groupIndex: number }) =>
-        options.failAccounts === true
-          ? Promise.reject(new Error("chains.account down"))
-          : Promise.resolve(
-              params.template === "evm.bip44"
-                ? {
-                    address: params.groupIndex === 0 ? OWNER : OWNER2,
-                    confirmed: !options.unconfirmedGroups?.includes(params.groupIndex),
-                  }
-                : params.template === "solana.bip44-change"
-                  ? { address: "SolOwner111111111111111111111111111111111", confirmed: true }
-                  : { xpub: "xpub", changeMark: 0, confirmed: true },
-            ),
+      account: async (params: { template: string; groupIndex: number; network: string }) => {
+        if (options.failAccounts === true) {
+          return Promise.reject(new Error("chains.account down"));
+        }
+        if (params.template.startsWith("btc.") && options.bitcoin?.account !== undefined) {
+          return options.bitcoin.account(params);
+        }
+        const confirmed =
+          options.confirmed?.current ??
+          !(
+            options.unconfirmedGroups?.includes(params.groupIndex) === true ||
+            options.unconfirmedTemplates?.includes(params.template) === true
+          );
+        return Promise.resolve(
+          params.template === "evm.bip44"
+            ? {
+                address: params.groupIndex === 0 ? OWNER : OWNER2,
+                confirmed,
+              }
+            : params.template === "solana.bip44-change"
+              ? { address: "SolOwner111111111111111111111111111111111", confirmed }
+              : params.template === "tron.bip44"
+                ? { address: TRON_OWNER, confirmed }
+                : { xpub: "xpub", changeMark: 0, confirmed },
+        );
+      },
     },
     spark: {
       history: async () => Promise.resolve({ items: [], nextOffset: undefined }),
       store: { getState: () => ({ accounts: {} }), subscribe: () => () => {} },
     },
     sparkNetwork: "regtest",
+    signers: { store: signersStore },
     transactions: { store: txStore },
     addressBook: { store: bookStore },
     gateway: {
       url: "https://gateway.test",
-      fetch: (async (_input: unknown, init?: { body?: string }) => {
+      fetch: (async (input: unknown, init?: { body?: string }) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes("/v1/tron/")) {
+          const data = url.endsWith("/v1/accounts/transactions")
+            ? (options.tronData?.transactions ?? [])
+            : (options.tronData?.trc20 ?? []);
+          return Promise.resolve(Response.json({ success: true, data, meta: {} }));
+        }
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         requests.push(body);
         const page: Record<string, unknown> = {
@@ -211,6 +325,7 @@ const make = (options: {
   } as never);
   return {
     controller,
+    signersStore,
     store,
     requests,
     setTxs: (next) => {
@@ -260,6 +375,9 @@ const until = async (controller: HistoryController, key: string, status: "loadin
       }
     });
   });
+
+const flagsOf = (controller: HistoryController, key = "w:0", index = 0): ReadonlyArray<string> =>
+  controller.getState().groups[key]?.entries[index]?.flags ?? [];
 
 const tracked = (over: {
   readonly id: string;
@@ -742,7 +860,7 @@ describe("HistoryController", () => {
     controller.lock();
   });
 
-  it("a lookalike of an unconfirmed group's address is not flagged — the known set skips it", async () => {
+  it("flags a lookalike of an unconfirmed group's address — unconfirmed own stays a reference", async () => {
     const { controller } = make({
       unconfirmedGroups: [1],
       page: {
@@ -771,10 +889,304 @@ describe("HistoryController", () => {
     });
     await controller.init();
     await controller.load(GROUP2);
-    // The group's own key was never confirmed on the device: it is not a known address, so a
-    // counterparty resembling it earns no poisoning flag on its account.
+    // The group's own key was never confirmed on the device: it never vouches for itself, but it
+    // still anchors the lookalike check — the impersonating counterparty keeps its poisoning flag.
     const flags = controller.getState().groups["w:1"]?.entries[0]?.flags;
-    expect(flags).not.toContain("lookalike-counterparty");
+    expect(flags).toContain("lookalike-counterparty");
+    controller.lock();
+  });
+});
+
+describe("device-unconfirmed own addresses — the known set's two roles", () => {
+  /**
+   * A persisted-cache row carrying the given counterparty. On a single-address family the only way
+   * an own address can sit in an entry's counterparty list is verbatim through a cache hit the
+   * re-listed transaction re-emits.
+   */
+  const seedEntry = async (
+    store: EngineStore,
+    key: string,
+    entry: Record<string, unknown>,
+  ): Promise<void> => {
+    await store.collection("history").put(
+      key,
+      new TextEncoder().encode(
+        JSON.stringify({
+          entries: [
+            {
+              direction: "in",
+              changes: [],
+              status: "confirmed",
+              timestamp: 5_000_000,
+              verified: true,
+              origin: "provider",
+              flags: [],
+              ...entry,
+            },
+          ],
+        }),
+      ),
+    );
+  };
+
+  it("evm: an unconfirmed own address as counterparty is flagged until confirmation reloads", async () => {
+    const h = hash("bb");
+    const page = { items: [item(h, 100, 5_000_000)], cursor: null };
+    const store = createMemoryEngineStore();
+    // The counterparty is the group's OWN evm address U — re-emitted verbatim via the cache hit.
+    await seedEntry(store, "w:0", {
+      id: `eip155:1:${h}`,
+      family: "evm",
+      network: "eip155:1",
+      hash: h,
+      block: 100,
+      counterparties: [OWNER],
+    });
+    const confirmed = { current: false };
+    const { controller, signersStore } = make({
+      store,
+      confirmed,
+      book: {
+        e1: {
+          id: "e1",
+          name: "mate",
+          family: "evm",
+          address: LOOKALIKE_OWNER,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      },
+      pages: [page, page, page],
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    // U was never confirmed on the device: it vouches for nothing — it imitates the book
+    // contact, so the entry keeps the poisoning flag.
+    expect(flagsOf(controller)).toContain("lookalike-counterparty");
+
+    confirmed.current = true;
+    signersStore.setState((s) => ({ confirmations: s.confirmations + 1 }));
+    // The bump reloads the loaded group without an explicit load(): the fresh own exempts U.
+    await until(controller, "w:0", "ready");
+    expect(flagsOf(controller)).not.toContain("lookalike-counterparty");
+
+    // An explicit reload recomputes against the fresh own the same way.
+    await controller.load(GROUP);
+    expect(flagsOf(controller)).not.toContain("lookalike-counterparty");
+    controller.lock();
+  });
+
+  const SOLANA_OWNER = "SolOwner111111111111111111111111111111111";
+  const solanaAnswers: Record<string, unknown> = {
+    getTokenAccountsByOwner: { value: [] },
+    getSignaturesForAddress: [
+      { signature: "solsig", slot: 1, blockTime: 1_700_000_000, err: null },
+    ],
+    getTransaction: {
+      slot: 1,
+      blockTime: 1_700_000_000,
+      meta: {
+        err: null,
+        fee: 5000,
+        preBalances: [1_000_000, 0],
+        postBalances: [995_000, 100],
+        preTokenBalances: [],
+        postTokenBalances: [],
+        innerInstructions: [],
+      },
+      transaction: {
+        message: {
+          accountKeys: [{ pubkey: lookalikeOf(SOLANA_OWNER) }, { pubkey: SOLANA_OWNER }],
+          instructions: [
+            {
+              program: "system",
+              programId: "11111111111111111111111111111111",
+              parsed: {
+                type: "transfer",
+                info: {
+                  source: lookalikeOf(SOLANA_OWNER),
+                  destination: SOLANA_OWNER,
+                  lamports: 100,
+                },
+              },
+            },
+          ],
+        },
+      },
+    },
+  };
+  const solanaRpc = {
+    call: async (method: string): Promise<unknown> =>
+      method in solanaAnswers
+        ? Promise.resolve(solanaAnswers[method])
+        : Promise.reject(new Error(`unmocked ${method}`)),
+  };
+  const solanaLookalikeFlags = async (unconfirmed: boolean): Promise<ReadonlyArray<string>> => {
+    const { controller } = make({
+      solana: true,
+      solanaRpc,
+      unconfirmedTemplates: unconfirmed ? ["solana.bip44-change"] : [],
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    const flags = entriesOf(controller).find((e) => e.family === "solana")?.flags ?? [];
+    controller.lock();
+    return flags;
+  };
+
+  it("solana: a lookalike of the own address is flagged both unconfirmed and confirmed", async () => {
+    await expect(solanaLookalikeFlags(true)).resolves.toContain("lookalike-counterparty");
+    await expect(solanaLookalikeFlags(false)).resolves.toContain("lookalike-counterparty");
+  });
+
+  const tronRow = (txid: string) => ({
+    txID: txid,
+    block_timestamp: 5_000_000,
+    raw_data: {
+      contract: [
+        {
+          type: "TransferContract",
+          parameter: {
+            value: {
+              owner_address: `41${"3".repeat(40)}`,
+              to_address: tronAddressToHex(TRON_OWNER),
+              amount: 5,
+            },
+          },
+        },
+      ],
+    },
+  });
+  const tronFlags = async (
+    txid: string,
+    counterparty: string,
+    unconfirmed: boolean,
+    book?: Record<string, unknown>,
+  ): Promise<ReadonlyArray<string>> => {
+    const store = createMemoryEngineStore();
+    await seedEntry(store, "w:0", {
+      id: `${TRON_NET}:${txid}`,
+      family: "tron",
+      network: TRON_NET,
+      hash: txid,
+      counterparties: [counterparty],
+    });
+    const { controller } = make({
+      store,
+      tronData: { transactions: [tronRow(txid)] },
+      unconfirmedTemplates: unconfirmed ? ["tron.bip44"] : [],
+      ...(book === undefined ? {} : { book }),
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    const flags = flagsOf(controller);
+    controller.lock();
+    return flags;
+  };
+
+  it("tron: a lookalike of the own address is flagged both unconfirmed and confirmed", async () => {
+    const txid = "ab".repeat(32);
+    const lookalike = lookalikeOf(TRON_OWNER);
+    await expect(tronFlags(txid, lookalike, true)).resolves.toContain("lookalike-counterparty");
+    await expect(tronFlags(txid, lookalike, false)).resolves.toContain("lookalike-counterparty");
+  });
+
+  it("tron: the unconfirmed own address as counterparty is flagged until confirmed", async () => {
+    const txid = "cd".repeat(32);
+    const book = {
+      e1: {
+        id: "e1",
+        name: "mate",
+        family: "tron",
+        address: lookalikeOf(TRON_OWNER),
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    };
+    await expect(tronFlags(txid, TRON_OWNER, true, book)).resolves.toContain(
+      "lookalike-counterparty",
+    );
+    await expect(tronFlags(txid, TRON_OWNER, false, book)).resolves.toStrictEqual([]);
+  });
+
+  const btcTx = (txid: string, from: string, to: string) => ({
+    txid,
+    fee: 1000,
+    vin: [{ prevout: { scriptpubkey_address: from, scriptpubkey: "", value: 10_000 } }],
+    vout: [{ scriptpubkey_address: to, scriptpubkey: "", value: 9000 }],
+    status: { confirmed: true, block_height: 800_000, block_time: 1_700_000_000 },
+  });
+  const btcAccountFor =
+    (confirmed: Map<BitcoinAccountTemplate, boolean>) =>
+    async (params: { template: string; groupIndex: number; network: string }): Promise<unknown> =>
+      Promise.resolve({
+        xpub: BTC_ACCOUNTS[params.template as BitcoinAccountTemplate].publicExtendedKey,
+        changeMark: 0,
+        confirmed: confirmed.get(params.template as BitcoinAccountTemplate) ?? true,
+      });
+
+  it("bitcoin: a lookalike of an unconfirmed template's address is flagged either way", async () => {
+    const U = btcAddress("btc.bip86", 0, 0);
+    const confirmed = new Map<BitcoinAccountTemplate, boolean>([["btc.bip86", false]]);
+    const { controller } = make({
+      bitcoin: {
+        account: btcAccountFor(confirmed),
+        esplora: esploraOf(
+          new Map([[scripthash(U, NETWORK), [btcTx("cc".repeat(32), lookalikeOf(U), U)]]]),
+        ),
+      },
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    const entry = entriesOf(controller).find((e) => e.family === "bitcoin");
+    expect(entry?.counterparties).toStrictEqual([lookalikeOf(U)]);
+    expect(entry?.flags).toContain("lookalike-counterparty");
+
+    // The template confirmed: the same address is still a lookalike reference.
+    confirmed.set("btc.bip86", true);
+    await controller.load(GROUP);
+    expect(flagsOf(controller)).toContain("lookalike-counterparty");
+    controller.lock();
+  });
+
+  it("bitcoin: the unconfirmed template's address as counterparty is flagged until confirmed", async () => {
+    const U = btcAddress("btc.bip86", 0, 0);
+    const C = btcAddress("btc.bip84", 0, 0);
+    // The flow runs unconfirmed party → confirmed party: the confirmed side owns the entry and
+    // the unconfirmed address lands in its counterparties.
+    const tx = btcTx("dd".repeat(32), U, C);
+    const confirmed = new Map<BitcoinAccountTemplate, boolean>([["btc.bip86", false]]);
+    const { controller } = make({
+      bitcoin: {
+        account: btcAccountFor(confirmed),
+        esplora: esploraOf(
+          new Map([
+            [scripthash(U, NETWORK), [tx]],
+            [scripthash(C, NETWORK), [tx]],
+          ]),
+        ),
+      },
+      book: {
+        e1: {
+          id: "e1",
+          name: "mate",
+          family: "bitcoin",
+          address: lookalikeOf(U),
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      },
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    const entry = entriesOf(controller).find((e) => e.family === "bitcoin");
+    expect(entry?.counterparties).toStrictEqual([U]);
+    expect(entry?.flags).toContain("lookalike-counterparty");
+
+    // Confirmed, the address vouches for itself — the flow reads self and flags nothing.
+    confirmed.set("btc.bip86", true);
+    await controller.load(GROUP);
+    expect(entriesOf(controller).find((e) => e.family === "bitcoin")?.flags).toStrictEqual([]);
     controller.lock();
   });
 });

@@ -40,7 +40,9 @@ export type ChangeMarksHeader = {
 };
 
 const before = (a: ChangeMark, b: ChangeMark): number =>
-  a.groupIndex - b.groupIndex || a.purpose - b.purpose || (a.network < b.network ? -1 : 1);
+  a.groupIndex - b.groupIndex ||
+  a.purpose - b.purpose ||
+  (a.network < b.network ? -1 : a.network > b.network ? 1 : 0);
 
 export function parseChangeMarksHeader(text: string): ChangeMarksHeader {
   const object = headerObject(text);

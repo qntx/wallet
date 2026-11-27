@@ -37,6 +37,7 @@ import {
 import type { PushFamily, PushPlatform } from "../gateway/contract/push.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import { openPush, PUSH_KEYS_MAX } from "../push/index.ts";
+import type { SignersController } from "../signers/controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineCollection, EngineStore } from "../store/port.ts";
 import type { TransactionController } from "../transactions/controller.ts";
@@ -107,6 +108,11 @@ export type NotificationsControllerOptions = {
   readonly accounts: Pick<AccountTreeController, "getState" | "store">;
   readonly networks: Pick<NetworkController, "enabled" | "store">;
   readonly transactions: Pick<TransactionController, "store">;
+  /**
+   * A completed on-device confirmation re-runs the reconcile — `pushAddresses` now reports the
+   * entry confirmed, and its lane earns the subscription it was refused.
+   */
+  readonly signers: Pick<SignersController, "store">;
   readonly addresses: (walletId: string, family: PushFamily) => Promise<ReadonlyArray<string>>;
   /** Best-effort refresh of whatever the hint touches — history reloads, an assets refresh. */
   readonly reconcile: (event: NotificationEvent) => Promise<void>;
@@ -290,6 +296,11 @@ export class NotificationsController extends Controller<NotificationsState> {
       }),
       this.options.transactions.store.subscribe(() => {
         this.scanOutgoing();
+      }),
+      this.options.signers.store.subscribe((next, previous) => {
+        if (next.confirmations !== previous.confirmations) {
+          this.trigger();
+        }
       }),
     ];
     this.scanOutgoing();

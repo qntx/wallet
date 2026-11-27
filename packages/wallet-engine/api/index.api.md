@@ -1446,6 +1446,7 @@ export type HistoryControllerOptions = {
     };
     readonly spark: Pick<SparkController, "history" | "store">;
     readonly sparkNetwork: SparkNetwork_2;
+    readonly signers: Pick<SignersController, "store">;
     readonly transactions: Pick<TransactionController, "store">;
     readonly addressBook: Pick<AddressBookController, "store">;
     readonly gateway: {
@@ -2033,6 +2034,7 @@ export type NotificationsControllerOptions = {
     readonly accounts: Pick<AccountTreeController, "getState" | "store">;
     readonly networks: Pick<NetworkController, "enabled" | "store">;
     readonly transactions: Pick<TransactionController, "store">;
+    readonly signers: Pick<SignersController, "store">;
     readonly addresses: (walletId: string, family: PushFamily) => Promise<ReadonlyArray<string>>;
     readonly reconcile: (event: NotificationEvent) => Promise<void>;
 };
@@ -2786,6 +2788,7 @@ type SignersControllerOptions = {
 // @public (undocumented)
 export type SignersState = {
     readonly active: SignerActivity | null;
+    readonly confirmations: number;
 };
 
 // @public

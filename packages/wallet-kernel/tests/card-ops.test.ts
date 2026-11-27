@@ -3059,6 +3059,65 @@ describe("card sign (fake card)", () => {
     await expect(errCode(pending)).resolves.toBe("locked");
   });
 
+  it("a session that ends inside the verify's counter-reset is refused before the op stages", async () => {
+    /* verifyFactor checks `dek.wiped` after the prompt, then a successful password verify clears
+       the failed-attempt counter with an `await updateAnchor` — the last await before the op's
+       own session re-check. A session that ends inside that write is caught only by the re-check:
+       without it the dead session's op would stage its first step. */
+    const r = await rig(undefined, { idleMs: 60_000 });
+    ok(
+      await r.h.call(
+        "vault.addFactor",
+        {
+          verify: verifyPasskey(),
+          factor: { kind: "password", password: utf8ToBytes("counter-reset probe phrase") },
+        },
+        r.session,
+      ),
+    );
+    // One failed attempt, so the success below owes the counter-reset CAS.
+    await expect(
+      errCode(
+        r.h.call(
+          "card.begin",
+          {
+            op: { kind: "add", groups: 1 },
+            verify: { kind: "password", password: utf8ToBytes("not the password") },
+          },
+          r.session,
+        ),
+      ),
+    ).resolves.toBe("wrong-password");
+    // The counter-reset's anchor CAS is where the deadline fires — inside the gap.
+    const { replace } = r.h.anchor;
+    let armed = true;
+    Reflect.set(
+      r.h.anchor,
+      "replace",
+      async (next: Uint8Array, expected: Uint8Array | undefined): Promise<boolean> => {
+        if (armed) {
+          armed = false;
+          r.h.advance(60_001);
+        }
+        return replace(next, expected);
+      },
+    );
+    await expect(
+      errCode(
+        r.h.call(
+          "card.begin",
+          {
+            op: { kind: "add", groups: 1 },
+            verify: { kind: "password", password: utf8ToBytes("counter-reset probe phrase") },
+          },
+          r.session,
+        ),
+      ),
+    ).resolves.toBe("locked");
+    // Nothing staged under the dead session either — the op never asked for the access code.
+    expect(r.input.requests).toStrictEqual([]);
+  });
+
   it("a small per-tap budget spreads tasks over taps and a lost tag resends only pending work", async () => {
     // OPEN(300) + VERIFY(400) + margin(1000) leaves 550 ms — one ECDSA task (451) per tap.
     const r = await rig(2250);

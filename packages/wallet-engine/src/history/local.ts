@@ -17,9 +17,9 @@ export type GroupAddresses = {
   readonly bitcoin: Array<Set<string>>;
   /**
    * The own addresses a device-unconfirmed entry serves — material the device never confirmed
-   * on-screen. They stay own for local-send membership (a send to one is still not self), but the
-   * known set must not vouch for them: a lookalike counterparty wearing such an address keeps its
-   * poisoning flag.
+   * on-screen. They stay own for local-send membership (a send to one is still not self), and they
+   * stay lookalike references so a counterparty imitating one keeps its poisoning flag — but they
+   * never vouch for themselves: the exempt set takes only confirmed material.
    */
   readonly unconfirmed: Set<string>;
 };

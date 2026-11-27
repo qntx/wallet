@@ -564,9 +564,6 @@ type ProgramAuthority = {
 };
 
 // @public
-export const requestChangeMark: (stored: number, purpose: number, signed: ReadonlyArray<BitcoinPathTail>, origin: BitcoinRequestOrigin) => number;
-
-// @public
 type SafeTransaction = {
     readonly safe: string;
     readonly nonce: string;
