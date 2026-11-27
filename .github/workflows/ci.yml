@@ -75,6 +75,8 @@ jobs:
         with:
           bun-version-file: package.json
       - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+        with:
+          version: v1.10.0
       - run: bun install --frozen-lockfile
       - run: bunx vp run @qntx/wallet-engine#build
       - run: |
@@ -139,6 +141,8 @@ jobs:
         with:
           bun-version-file: package.json
       - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+        with:
+          version: v1.10.0
       - run: bun install --frozen-lockfile
       - run: bunx vp run @qntx/wallet-chains#build && bunx vp run @qntx/wallet-engine#build
       - run: |
