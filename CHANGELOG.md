@@ -134,7 +134,11 @@ Signing and requests:
   caller passes `"external"`, and a request without it is refused. The engine's own change
   selection obeys the same rule: change lands on the spending template's own chain at
   `min(first unused, mark + BITCOIN_GAP_LIMIT)` — `btc.bip44`/`btc.bip49` sends no longer migrate
-  change to native segwit. (MIGRATION §34, §35)
+  change to native segwit. A send, replacement or CPFP that would spend a change coin past
+  `changeScanReach(mark)` first reads that coin's transaction on the second endpoint and refuses
+  (`invalid-request`) when that endpoint does not serve it or serves a different output; a failed
+  read only adds `reads-unverified`, and with a single endpoint the primary's answer stands
+  (SECURITY.md). (MIGRATION §34, §35)
 - `@qntx/wallet-engine`: `TransactionController.nextReceiveAddress` returns
   `{ address, confirmed }` instead of the address string. (MIGRATION §35)
 - Kernel prompts render every warning row before the detail rows, and a bounded prompt drops only
@@ -889,7 +893,10 @@ Gateway (operators):
   `@qntx/wallet/card`: `card(wallet).start(op, verify)` returns a `CardTask` (`observe`, `cancel`,
   `result`); operations `status`, `add`, `accounts`, `health`, `change-access`, `erase`,
   `create` (card-generated, or moving a vault wallet onto the cards), `transfer`, `reseal`,
-  `sign` and `forget-access`. Kernel protocol `card.begin` / `card.step` / `card.cancel`
+  `sign` and `forget-access`. Every operation but `status`, `accounts` and `health` requires a
+  `verify` factor, and those three refuse one (`invalid-input`) — `add` included, since it adopts a
+  card's whole wallet as confirmed own material, like a hardware `pair`. Kernel protocol
+  `card.begin` / `card.step` / `card.cancel`
   (`CARD_METHODS`); the host only starts, observes and cancels — APDUs flow between the kernel
   runtime and the native reader, the kernel collects the access code from `SecureInput`, and the
   NFC sheet's text is the kernel's decoded prompt of the request (for a blind request, the blind
@@ -1180,11 +1187,12 @@ Gateway (operators):
   `hardware.begin` `sign` operation refuses it with `approval-required` unless
   `acknowledgeUnconfirmed: true` is passed — the engine's signing path passes it once the
   `bitcoin-unconfirmed-output` danger finding was acknowledged at `approve`. Bitcoin history reads
-  a transfer to an unconfirmed account as a send, never `self`; a host-wired
-  `HistoryControllerOptions.chains.account` answers the xpub variant with `changeMark` and
-  `confirmed`. A hostile transport at first fetch can therefore pin foreign receive keys only as
-  visibly unconfirmed ones; a counterfeit device confirms its own keys and is not detectable
-  host-side. (MIGRATION §34, §35)
+  a transfer to an unconfirmed account as a send, never `self`; an unconfirmed account is not
+  subscribed for push and its addresses never count as known for the `address-poisoning` flag. A
+  host-wired `HistoryControllerOptions.chains.account` answers the xpub variant with `changeMark`
+  and `confirmed`, and the address variant with `confirmed`. A hostile transport at first fetch
+  can therefore pin foreign receive keys only as visibly unconfirmed ones; a counterfeit device
+  confirms its own keys and is not detectable host-side. (MIGRATION §34, §35)
 - Hardware prompts lead with the device line — `clear` (check the request on the device) or
   `blind` — ahead of the chain prompt's rows, its room reserved by the prompt bound. For Ledger the
   kernel strips the wallet's own BIP-32 derivations from every PSBT output the prompt shows:
@@ -1788,21 +1796,6 @@ Gateway (operators):
 - `@qntx/wallet-chains`: hidden or reordering characters in a typed-data type name, field name,
   field type or `primaryType` make the document blind (`message-bytes`), like the same characters
   in a value.
-- `@qntx/wallet-kernel`: card `add` requires a `verify` factor (`invalid-input` without one), like
-  hardware `pair` — it adopts a card's whole wallet as confirmed own material, and before it a
-  holder of an unlocked phone and their own genuine card could plant that wallet presence-free.
-  `card.begin` re-checks the session after every verification, before change marks commit or the
-  first tap. (MIGRATION §30)
-- `@qntx/wallet-engine`: a hostile Esplora endpoint could seal a far change mark through the
-  wallet's own send — claim the change chain used out to an invented coin near
-  `BITCOIN_SCAN_LIMIT` and have the user spend it, leaving every later scan of that template
-  walking ~2000 change addresses. A send, replacement or CPFP that would spend a change coin past
-  the sealed scan reach now reads that coin's transaction on the second endpoint first and
-  refuses (`invalid-request`) when that endpoint does not serve it; with a single endpoint the
-  ratchet remains a documented residual (SECURITY.md). (MIGRATION §35)
-- `@qntx/wallet-engine`: accounts whose serving entry is unconfirmed are no longer subscribed for
-  push notifications and no longer count as known addresses for the history's
-  `address-poisoning` flag. (MIGRATION §35)
 
 ## [0.13.0] - 2026-11-09
 
