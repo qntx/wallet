@@ -30,6 +30,7 @@ import { accessHash } from "../src/modules/card/protocol/access.ts";
 import { shortId } from "../src/modules/card/protocol/identity.ts";
 import { encodeCardWalletBody, encodeCardWalletHeader } from "../src/modules/card/record.ts";
 import type { CardWalletBody, CardWalletHeader } from "../src/modules/card/record.ts";
+import { CHANGE_MARKS_KIND, encodeChangeMarksHeader } from "../src/modules/chains/marks.ts";
 import type { Argon2id } from "../src/platform.ts";
 import { wipe } from "../src/secret/secret.ts";
 import type { Secret } from "../src/secret/secret.ts";
@@ -240,6 +241,64 @@ describe("card operations (fake card)", () => {
     expect(c1.every((b) => b === 0)).toBe(true);
     expect(c2.every((b) => b === 0)).toBe(true);
   });
+
+  it("create keeps the source wallet's change-marks record — the walletId never changed", async () => {
+    /* The card import moves the software secret onto the card under the same walletId — every
+       address and change index is unchanged — so the sealed marks stay valid: a "card-import"
+       removal stages no record op for them, unlike "delete". */
+    const BTC = "bip122:000000000019d6689c085ae165831e93";
+    const r = await rig();
+    const source = await vaultWalletId(r);
+    // The software wallet's sealed mark after thirty internal sends.
+    const image = await r.h.store.load();
+    const factor = image.factors.find((f) => f.kind === "passkey");
+    if (factor === undefined) {
+      throw new Error("missing passkey factor");
+    }
+    const kek = passkeyKek(new Uint8Array(32).fill(1), CREDENTIAL_ID);
+    const dek = unwrapDek(kek, factor);
+    wipe(kek);
+    const sealer = { random: (n: number) => new Uint8Array(n).fill(3), now: () => 0 } as never;
+    const record = sealRecord(
+      sealer,
+      dek,
+      CHANGE_MARKS_KIND,
+      source,
+      encodeChangeMarksHeader({
+        walletId: source,
+        marks: [{ groupIndex: 0, purpose: 84, network: BTC, index: 30 }],
+      }),
+      new Uint8Array([1]),
+    );
+    await r.h.store.commit(withManifest(sealer, image, [{ op: "put-record", record }], dek));
+    dek.wipe();
+    await r.h.settle();
+    const mark = async (): Promise<unknown> =>
+      field(
+        ok(
+          await r.h.call(
+            "wallet.accounts",
+            { walletId: source, groupIndex: 0, template: "btc.bip84", network: BTC },
+            r.session,
+          ),
+        ),
+        "changeMark",
+      );
+    await expect(mark()).resolves.toBe(30);
+
+    const card = createFakeCard();
+    const result = await drive(
+      r,
+      { kind: "create", cards: 1, source: { kind: "wallet", walletId: source } },
+      { codes: [freshCode(), freshCode()], cards: Array.from({ length: 10 }, () => card) },
+      verifyPasskey(),
+    );
+    // Same walletId (same master key, same addresses) — now card custody, marks intact.
+    expect(strField(result, "walletId")).toBe(source);
+    await expect(mark()).resolves.toBe(30);
+    const { records } = await r.h.store.load();
+    expect(records.some((rec) => rec.kind === CHANGE_MARKS_KIND && rec.id === source)).toBe(true);
+  }, 120_000);
 
   it("create registers every public key in one member tap", async () => {
     // Regression: under Hermes a per-iteration `tap.update` closure captured the last path, so

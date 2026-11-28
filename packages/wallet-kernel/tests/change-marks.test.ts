@@ -874,6 +874,49 @@ describe("change marks lifecycle", () => {
     await expect(accountMark(h, session, walletId)).resolves.toBe(20);
   });
 
+  it("marks committed out of key order seal in canonical order and re-read under every key", async () => {
+    /* Each sign commits only its own (group, network) raises — entries land in the record in
+       whatever order commits happened. The header stores them canonically sorted and every key
+       reads its own mark back. */
+    const { h, session, walletId } = await setup();
+    const dek = await sessionDek(h);
+    try {
+      const commit = async (groupIndex: number, purpose: number, index: number) => {
+        const image = await h.store.load();
+        await commitChangeMarks(
+          {
+            platform: sealer,
+            image,
+            commit: async (ops) => {
+              await h.store.commit(withManifest(sealer, image, ops, dek));
+            },
+          },
+          dek,
+          walletId,
+          groupIndex,
+          BTC_NETWORK,
+          [{ purpose, index }],
+        );
+      };
+      await commit(0, 84, 20);
+      await commit(0, 49, 7);
+      await commit(1, 84, 3);
+    } finally {
+      dek.wipe();
+    }
+    await h.settle();
+    const record = await marksRecord(h, walletId);
+    expect(record).toBeDefined();
+    expect(parseChangeMarksHeader(record!.header).marks).toStrictEqual([
+      { groupIndex: 0, purpose: 49, network: BTC_NETWORK, index: 7 },
+      { groupIndex: 0, purpose: 84, network: BTC_NETWORK, index: 20 },
+      { groupIndex: 1, purpose: 84, network: BTC_NETWORK, index: 3 },
+    ]);
+    await expect(accountMark(h, session, walletId, { template: "btc.bip49" })).resolves.toBe(7);
+    await expect(accountMark(h, session, walletId)).resolves.toBe(20);
+    await expect(accountMark(h, session, walletId, { groupIndex: 1 })).resolves.toBe(3);
+  });
+
   it("a hidden output at the stored index plus one still commits", async () => {
     const { h, session, walletId } = await setup();
     const first = await sign(

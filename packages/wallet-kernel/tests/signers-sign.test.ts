@@ -788,6 +788,76 @@ describe("hardware sign byte-identical to local signing", () => {
     expect(hiddenChangeOf(lastStage(device))).toHaveLength(0);
   });
 
+  it("an unconfirmed entry's discoverable change still raises the mark once signed", async () => {
+    /* Fresh pairing leaves account 0 unconfirmed, so the change output is never hidden — but the
+       signed bytes still pay an address the wallet must scan: the internal request's raise
+       commits at begin like a confirmed entry's would. An external origin's identical output
+       raises nothing, and neither does an unconfirmed output one index past the window. */
+    const { h, session, hwId, device } = await boot();
+    const account = { kind: "hd", walletId: hwId, groupIndex: 0 };
+    const mark = async (): Promise<ProtocolValue> =>
+      field(
+        ok(
+          await h.call(
+            "wallet.accounts",
+            { walletId: hwId, groupIndex: 0, template: "btc.bip84", network: BTC_NETWORK },
+            session,
+          ),
+        ),
+        "changeMark",
+      );
+    const psbtRequest = (origin: "internal" | "external", psbt: Uint8Array) =>
+      normalizeBitcoin({
+        kind: "bitcoin.psbt",
+        origin,
+        network: BTC_NETWORK,
+        account,
+        psbt,
+        sign: [{ index: 0, template: "btc.bip84" }],
+      });
+    const sign = async (request: unknown): Promise<void> => {
+      const begin = ok(
+        await h.call(
+          "hardware.begin",
+          {
+            op: { kind: "sign", request, acknowledgeUnconfirmed: true },
+            verify: PASSKEY(),
+          },
+          session,
+        ),
+      );
+      await stepToDone(h, session, strField(begin, "opId"), field(begin, "step"));
+    };
+
+    // One index past the mark-0 window: shown as a plain send and discoverable nowhere — the
+    // raise never runs.
+    await sign(psbtRequest("internal", psbtWithChange(21)));
+    await expect(mark()).resolves.toBe(0);
+    // External origin: inside the window but an outside caller commits nothing.
+    await sign(psbtRequest("external", psbtWithChange(3)));
+    await expect(mark()).resolves.toBe(0);
+    // Internal origin: the raise commits at begin — before the device signs — and the output
+    // still never lands in the stage's hidden change set.
+    const begin = ok(
+      await h.call(
+        "hardware.begin",
+        {
+          op: {
+            kind: "sign",
+            request: psbtRequest("internal", psbtWithChange(3)),
+            acknowledgeUnconfirmed: true,
+          },
+          verify: PASSKEY(),
+        },
+        session,
+      ),
+    );
+    await expect(mark()).resolves.toBe(3);
+    const done = await stepToDone(h, session, strField(begin, "opId"), field(begin, "step"));
+    expect(strField(done, "kind")).toBe("done");
+    expect(hiddenChangeOf(lastStage(device))).toHaveLength(0);
+  });
+
   it("an accounts gap re-fetch after verify-address keeps the confirmed seal", async () => {
     /* The merge re-seals the record — dropping the confirmed list there would silently un-verify
        every entry a matched on-device address check already sealed. */
