@@ -3065,11 +3065,10 @@ takes effect without a relock. The host-visible changes:
 2. **The engine's change index no longer follows the endpoint.** A send, a CPFP child or a
    replacement without a change output of its own pays change to the lowest change index above the
    sealed mark that no in-flight request reserved and no tracked transaction used. A replacement
-   still pays back to its parent's change address. When no such index is left inside
-   `changeScanReach(mark)` the send refuses with `ChainError` `invalid-request` ("no unused change
-   address inside the scan window", `changeWindowExhausted` in the snippet) instead of reusing an
-   address. After a seed-only restore the mark starts at 0, so change lands on indexes the seed
-   already used — expect address reuse there, never hidden funds.
+   still pays back to its parent's change address. When no such index is left the pick reuses the
+   address at the reach (§37). After a seed-only restore the mark starts at 0, so change lands on
+   indexes the seed already used — expect address reuse there, never hidden funds (a mark
+   0.14.0 ratcheted is kept, though — §37.6).
 3. **The far-coin cross-check of §35.13 is gone.** A spend of a change coin past the sealed reach
    is built like any other: the second endpoint is never asked about it, never refuses it and
    never learns its txid. Drop any handling of "the endpoints disagree on a far change coin".
@@ -3081,13 +3080,13 @@ takes effect without a relock. The host-visible changes:
    `signers: Pick<SignersController, "store">`** (`wiredSigners`). `createWalletEngine` wires it.
 6. **An unconfirmed own address is a lookalike reference.** History flags `lookalike-counterparty`
    for a counterparty imitating an unconfirmed own address exactly as for a confirmed one; the
-   unconfirmed address itself is still not exempt, so it is flagged when it imitates a contact or
+   unconfirmed address itself is still not exempt — not even as the recipient of a tracked send
+   (§37) — so it is flagged when it imitates a contact or
    another known address. Push still never subscribes unconfirmed accounts.
 
 [`tests/migration/change-from-mark.ts`](tests/migration/change-from-mark.ts):
 
 ```ts
-import { ChainError } from "@qntx/wallet-chains";
 import { isDiscoverableChange } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
 import type {
@@ -3099,9 +3098,9 @@ import type {
 
 /**
  * Change from the sealed mark and immediate confirmations (section 36): `requestChangeMark` is gone
- * — the hidden-change window is the sealed mark alone; a send whose change window is exhausted
- * refuses with `invalid-request`; `SignersState.confirmations` counts completed on-device checks,
- * and host-wired history and notifications controllers take the signers store. Compiled only.
+ * — the hidden-change window is the sealed mark alone; `SignersState.confirmations` counts
+ * completed on-device checks, and host-wired history and notifications controllers take the signers
+ * store. Compiled only.
  */
 
 /**
@@ -3114,15 +3113,6 @@ export function hidesAsChange(
   mark: number,
 ): boolean {
   return isDiscoverableChange(output, signed, mark);
-}
-
-/** The exhausted change window: no change index is left above the sealed mark inside the scan. */
-export function changeWindowExhausted(error: unknown): boolean {
-  return (
-    error instanceof ChainError &&
-    error.code === "invalid-request" &&
-    error.message === "no unused change address inside the scan window"
-  );
 }
 
 /** Re-render whatever shows "unconfirmed" when a device confirmation completes. */
@@ -3144,3 +3134,29 @@ export function wiredSigners(
   return { signers };
 }
 ```
+
+## 37. The change pick never refuses
+
+For a host upgrading from 0.14.0:
+
+1. **No Bitcoin send, sweep, speed-up, cancel or CPFP is refused for want of a change address.** The
+   exhausted-window `invalid-request` §36 described never ships, so there is no new error to handle:
+   0.14.0 reused an address, and this release reuses the address at the window's end when the window
+   is full.
+2. **A sign attempt that fails before the factor verifies consumes no change index.** A cancelled
+   prompt, a wrong password or a pre-verify refusal leaves `draft`/`rejected` rows whose own output
+   does not count as taken — either its bytes never existed, or the mark had already sealed past
+   that index when the marks committed.
+3. **An internal send from a device-unconfirmed entry raises the sealed mark to its change index.**
+   Display is unchanged — a plain send with a danger row behind `acknowledgeUnconfirmed` — and an
+   upgraded unconfirmed account whose tracked change already fills the window reuses the window's
+   last address once, after which the mark follows.
+4. **Importing a software wallet onto a card keeps its change marks.** `wallet.delete` still drops
+   them — a re-added wallet starts at mark 0 and walks forward past its own tracked change, reusing
+   at most one address per full window.
+5. **The change of an unconfirmed entry is no longer exempt from `first-recipient`/
+   `address-poisoning` as a tracked recipient.**
+6. **A mark 0.14.0 ratcheted stays.** Its endpoint could walk the mark one gap limit per send; the
+   mark is kept, so change keeps landing at mark + 1 and beyond — past a seed-only restore's
+   gap-limit-20 scan. Such coins stay visible on this device and to a restore that scans with a gap
+   of at least mark + 20; a default restore does not show them, and no command lowers a mark.
