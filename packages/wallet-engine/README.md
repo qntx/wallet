@@ -540,8 +540,16 @@ restrictions; the gateway answer only decides what the UI offers.
   the cloid corrects to `resting` immediately, a `fills` frame carrying it triggers an
   immediate `orderStatus` check (a fill alone cannot prove a full fill). Locking the vault
   drops the pending set.
-- `trade.modify`/`batchModify`/`cancel`/`cancelByCloid`/`cancelAll`/`twapCancel`/`setLeverage`/
-  `adjustMargin`/`close` round out the action set.
+- `trade.modify`/`batchModify` keep the original order's cloid on the replacement. A cloid `oid`
+  is carried directly; a numeric `oid` costs one `orderStatus` read, and an order that is unknown
+  or no longer open is refused with `invalid-input` before anything is signed. A `batchModify`
+  whose POST or response is lost stays `unknown` with its cloid and is not reconciled by cloid:
+  until the modify lands, the original order still rests under that cloid, so `orderStatus` would
+  be a false proof. After a modify, Hyperliquid's `orderStatus` by cloid keeps answering the
+  original, canceled order, while `openOrders` rows, live frames and `cancelByCloid` follow the
+  replacement — look a modified order up by its new oid or in `openOrders`. `cancel`/
+  `cancelByCloid`/`cancelAll`/`twapCancel`/`setLeverage`/`adjustMargin`/`close` round out the
+  action set.
 
 ### Live views
 
@@ -580,8 +588,14 @@ approval. There is no default fee, the attached rate is never above the approved
 
 ### Scope
 
-Sub-accounts, vaults and referral codes are out of scope for this phase: the kernel's agent
-signature allow-list covers only the owner account's actions.
+Not offered: `always_place` modifies (a failed cancel must not create duplicate exposure), cancel
+`fast` (no current effect and trigger-cancel restrictions), builder `s` (would pay an address the
+approval never showed), vaults/sub-accounts (metering and prompts cover the owner account only),
+`twapOrder` and trailing stops (priceless or unbounded notional cannot be metered),
+`scheduleCancel` (spans assets outside the allow-list), `noop` (not a metered trading action),
+`reserveRequestWeight` (an unmetered value transfer), `sendAsset` (no trading-UI need), HIP-3
+DEXes, unified-account abstraction, HyperEVM transfers (arbitrary calldata), referral codes, and
+staking, outcome, multi-sig or deployment actions (outside the trading UI and not metered).
 
 ### Security
 

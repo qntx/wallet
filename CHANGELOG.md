@@ -11,6 +11,12 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Fixed
 
+- `@qntx/wallet-engine/apps/hyperliquid`: `modify` and `batchModify` carry the original order's
+  cloid onto the replacement (numeric oids cost one `orderStatus` read; an unknown or non-open
+  order is refused `invalid-input` before signing). After a modify, `orderStatus` by cloid still
+  answers the original canceled order; use the replacement's new oid or `openOrders` instead. A
+  lost or unreadable `batchModify` now stays `unknown` with its cloid without cloid
+  reconciliation, since the original order still rests under that cloid until the modify lands.
 - `@qntx/wallet-engine/apps/hyperliquid`: an `/exchange` rejection "User or API Wallet 0x<X> does
   not exist" latches the agent as rejected only when X is the agent itself; any other X (the
   signature recovered to another address) is a plain `rejected` and the agent keeps trading.

@@ -84,7 +84,7 @@ export const deepFreeze = <T>(value: T): T => {
 const cloidOf = (random: (length: number) => Uint8Array): string =>
   `0x${Array.from(random(16), (b) => b.toString(16).padStart(2, "0")).join("")}`;
 
-const isCloid = (value: string): boolean => /^0x[0-9a-f]{32}$/.test(value);
+export const isCloid = (value: string): boolean => /^0x[0-9a-f]{32}$/.test(value);
 
 const flip = (side: OrderSide): OrderSide => (side === "buy" ? "sell" : "buy");
 
@@ -112,10 +112,12 @@ export type HyperliquidActions = {
   readonly resolve: (coin: string) => Promise<HyperliquidAsset>;
   readonly place: (params: HyperliquidOrderParams) => Promise<HyperliquidPlacedAction>;
   readonly modify: (
-    params: { readonly oid: number | string } & HyperliquidModifyParams,
+    params: { readonly oid: number | string; readonly cloid?: string } & HyperliquidModifyParams,
   ) => Promise<HyperliquidL1Action>;
   readonly batchModify: (
-    modifies: ReadonlyArray<{ readonly oid: number | string } & HyperliquidModifyParams>,
+    modifies: ReadonlyArray<
+      { readonly oid: number | string; readonly cloid?: string } & HyperliquidModifyParams
+    >,
   ) => Promise<HyperliquidL1Action>;
   readonly cancel: (
     cancels: ReadonlyArray<{ readonly coin: string; readonly oid: number }>,
@@ -293,10 +295,19 @@ export function createHyperliquidActions(options: {
     };
   };
 
-  /** Like {@link buildOrder} for modify/batchModify: the same wire order, no fresh cloid. */
+  /**
+   * Like {@link buildOrder} for modify/batchModify: the same wire order, carrying the resolved
+   * cloid.
+   */
   const buildModifiedOrder = async (
-    params: HyperliquidModifyParams,
+    params: HyperliquidModifyParams & { readonly oid: number | string; readonly cloid?: string },
   ): Promise<HyperliquidL1Order> => {
+    if (
+      (typeof params.oid === "string" && !isCloid(params.oid)) ||
+      (params.cloid !== undefined && !isCloid(params.cloid))
+    ) {
+      throw new HyperliquidError("invalid-input", "not a cloid");
+    }
     const asset = await resolve(params.coin);
     const size = roundSize(params.size, asset.szDecimals);
     const { p, t } = await orderType(params.coin, params.order, params.side, asset);
@@ -308,6 +319,7 @@ export function createHyperliquidActions(options: {
       size,
       reduceOnly: params.reduceOnly === true,
       type: t,
+      ...(params.cloid === undefined ? {} : { cloid: params.cloid }),
     });
   };
 

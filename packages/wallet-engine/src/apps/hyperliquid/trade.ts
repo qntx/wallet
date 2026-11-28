@@ -1,6 +1,6 @@
 import { parseDecimal } from "../spi.ts";
 import type { HyperliquidAccount } from "./account.ts";
-import { deepFreeze } from "./actions.ts";
+import { deepFreeze, isCloid } from "./actions.ts";
 import type {
   HyperliquidActions,
   HyperliquidModifyParams,
@@ -90,6 +90,30 @@ export type HyperliquidTrade = {
   };
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+/** The original order's cloid for a numeric modify oid, or an invalid-input refusal before signing. */
+const openOrderCloid = (result: unknown, oid: number): string | undefined => {
+  const detail =
+    isRecord(result) && result["status"] === "order" && isRecord(result["order"])
+      ? result["order"]
+      : undefined;
+  const order = detail !== undefined && isRecord(detail["order"]) ? detail["order"] : undefined;
+  if (detail?.["status"] !== "open" || order === undefined) {
+    throw new HyperliquidError("invalid-input", `order ${oid} is not open`);
+  }
+  const { cloid } = order;
+  if (typeof cloid !== "string") {
+    return undefined;
+  }
+  const lowered = cloid.toLowerCase();
+  if (!isCloid(lowered)) {
+    throw new HyperliquidError("invalid-input", `order ${oid} has a malformed cloid`);
+  }
+  return lowered;
+};
+
 export function createHyperliquidTrade(options: {
   readonly actions: HyperliquidActions;
   readonly exchange: HyperliquidExchange;
@@ -122,12 +146,39 @@ export function createHyperliquidTrade(options: {
     };
   };
 
+  const resolveCloid = async (
+    group: HyperliquidGroup,
+    oid: number | string,
+  ): Promise<string | undefined> => {
+    if (typeof oid === "string") {
+      return oid;
+    }
+    const { owner } = options.registry.require(group);
+    return openOrderCloid(await options.account.orderStatus({ user: owner, oid }), oid);
+  };
+
+  const resolvedModify = async <T extends { readonly oid: number | string }>(
+    group: HyperliquidGroup,
+    params: T,
+  ): Promise<T & { readonly cloid?: string }> => {
+    const cloid = await resolveCloid(group, params.oid);
+    return cloid === undefined ? params : { ...params, cloid };
+  };
+
   return {
     place,
     modify: async (group, params) =>
-      options.exchange.action(group, await options.actions.modify(params)),
+      options.exchange.action(
+        group,
+        await options.actions.modify(await resolvedModify(group, params)),
+      ),
     batchModify: async (group, modifies) =>
-      options.exchange.order(group, await options.actions.batchModify(modifies)),
+      options.exchange.order(
+        group,
+        await options.actions.batchModify(
+          await Promise.all(modifies.map(async (params) => resolvedModify(group, params))),
+        ),
+      ),
     cancel: async (group, cancels) =>
       options.exchange.cancel(group, await options.actions.cancel(cancels)),
     cancelByCloid: async (group, cancels) =>

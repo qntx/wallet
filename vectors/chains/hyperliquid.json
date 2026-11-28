@@ -2894,6 +2894,322 @@
       "signature": "0x5c245230578fe1aef5ca5a7da95aaaaa2ffe0ab3f08c59219da8cd8e6c62964046e7cb62c539138e1d052a4f943f60a3e1df9fab96cf081da1b54d3ead9a3a3f1c"
     },
     {
+      "name": "modify with cloid",
+      "action": {
+        "type": "modify",
+        "oid": 5000000003,
+        "order": {
+          "a": 1,
+          "b": true,
+          "p": "1600",
+          "s": "0.25",
+          "r": true,
+          "t": {
+            "limit": {
+              "tif": "Gtc"
+            }
+          },
+          "c": "0x00000000000000000000000000000002"
+        }
+      },
+      "nonce": 1677777606048,
+      "network": "Mainnet",
+      "connectionId": "0xb1344bcad5d7fee2990a5616835a304a263cbf6f68219ed0e34100a94f6e25d4",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Agent": [
+            {
+              "name": "source",
+              "type": "string"
+            },
+            {
+              "name": "connectionId",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Agent",
+        "domain": {
+          "name": "Exchange",
+          "version": "1",
+          "chainId": 1337,
+          "verifyingContract": "0x0000000000000000000000000000000000000000"
+        },
+        "message": {
+          "source": "a",
+          "connectionId": "0xb1344bcad5d7fee2990a5616835a304a263cbf6f68219ed0e34100a94f6e25d4"
+        }
+      },
+      "digest": "0x8a32fc876d7ea02094ac471bde513e453b34b863c264e0e72008027b4b20deae",
+      "privateKey": "0x822e9959e022b78423eb653a62ea0020cd283e71a2a8133a6ff2aeffaf373cff",
+      "signature": "0x0e95b5cb09d269331c0c4b67b1364201303b81c257dc0fa99cb5efecdefe093b4e653cddf43115ed324d42aca4f1c2f3a32aa95875d001a6c5b4bf3f3788af831b"
+    },
+    {
+      "name": "modify with cloid (testnet)",
+      "action": {
+        "type": "modify",
+        "oid": 5000000003,
+        "order": {
+          "a": 1,
+          "b": true,
+          "p": "1600",
+          "s": "0.25",
+          "r": true,
+          "t": {
+            "limit": {
+              "tif": "Gtc"
+            }
+          },
+          "c": "0x00000000000000000000000000000002"
+        }
+      },
+      "nonce": 1677777606048,
+      "network": "Testnet",
+      "connectionId": "0xb1344bcad5d7fee2990a5616835a304a263cbf6f68219ed0e34100a94f6e25d4",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Agent": [
+            {
+              "name": "source",
+              "type": "string"
+            },
+            {
+              "name": "connectionId",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Agent",
+        "domain": {
+          "name": "Exchange",
+          "version": "1",
+          "chainId": 1337,
+          "verifyingContract": "0x0000000000000000000000000000000000000000"
+        },
+        "message": {
+          "source": "b",
+          "connectionId": "0xb1344bcad5d7fee2990a5616835a304a263cbf6f68219ed0e34100a94f6e25d4"
+        }
+      },
+      "digest": "0xa913cf23eb5ad0c36b4e531cf5b4880e4058eeb69f633c1734a991d570439f59",
+      "privateKey": "0x822e9959e022b78423eb653a62ea0020cd283e71a2a8133a6ff2aeffaf373cff",
+      "signature": "0x87c475bdc03f84109e042ebeabcaa9838ae1dd5f1a5579b05a1b1fbc765b44ae5cde0ee7c1da0db579bf0761b3084c0dd19f4add13ed0409622d2938667105bf1b"
+    },
+    {
+      "name": "batchModify with cloid",
+      "action": {
+        "type": "batchModify",
+        "modifies": [
+          {
+            "oid": 5000000004,
+            "order": {
+              "a": 0,
+              "b": true,
+              "p": "30000",
+              "s": "0.1",
+              "r": false,
+              "t": {
+                "limit": {
+                  "tif": "Alo"
+                }
+              },
+              "c": "0x00000000000000000000000000000003"
+            }
+          },
+          {
+            "oid": "0x00000000000000000000000000000004",
+            "order": {
+              "a": 1,
+              "b": false,
+              "p": "1600",
+              "s": "0.25",
+              "r": false,
+              "t": {
+                "limit": {
+                  "tif": "Ioc"
+                }
+              },
+              "c": "0x00000000000000000000000000000004"
+            }
+          }
+        ]
+      },
+      "nonce": 1677777606049,
+      "network": "Mainnet",
+      "connectionId": "0xcd28339c45ac36f8e4dd88d358d4c733a5acab85372e8f2e8b507a36a03184d0",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Agent": [
+            {
+              "name": "source",
+              "type": "string"
+            },
+            {
+              "name": "connectionId",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Agent",
+        "domain": {
+          "name": "Exchange",
+          "version": "1",
+          "chainId": 1337,
+          "verifyingContract": "0x0000000000000000000000000000000000000000"
+        },
+        "message": {
+          "source": "a",
+          "connectionId": "0xcd28339c45ac36f8e4dd88d358d4c733a5acab85372e8f2e8b507a36a03184d0"
+        }
+      },
+      "digest": "0x6478b1466d66d7957e196404340c8e449b699e5d87c833ae2e89d8daaf90967d",
+      "privateKey": "0x822e9959e022b78423eb653a62ea0020cd283e71a2a8133a6ff2aeffaf373cff",
+      "signature": "0x39a099bf2213d75f3fe22708222e24f68a997671e62a555680a840d4b69802146e8933c34ce0f4fc8f4b638404d3c9de88f1f73ae545a6777cf690770e7b64991c"
+    },
+    {
+      "name": "batchModify with cloid (testnet)",
+      "action": {
+        "type": "batchModify",
+        "modifies": [
+          {
+            "oid": 5000000004,
+            "order": {
+              "a": 0,
+              "b": true,
+              "p": "30000",
+              "s": "0.1",
+              "r": false,
+              "t": {
+                "limit": {
+                  "tif": "Alo"
+                }
+              },
+              "c": "0x00000000000000000000000000000003"
+            }
+          },
+          {
+            "oid": "0x00000000000000000000000000000004",
+            "order": {
+              "a": 1,
+              "b": false,
+              "p": "1600",
+              "s": "0.25",
+              "r": false,
+              "t": {
+                "limit": {
+                  "tif": "Ioc"
+                }
+              },
+              "c": "0x00000000000000000000000000000004"
+            }
+          }
+        ]
+      },
+      "nonce": 1677777606049,
+      "network": "Testnet",
+      "connectionId": "0xcd28339c45ac36f8e4dd88d358d4c733a5acab85372e8f2e8b507a36a03184d0",
+      "typedData": {
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "Agent": [
+            {
+              "name": "source",
+              "type": "string"
+            },
+            {
+              "name": "connectionId",
+              "type": "bytes32"
+            }
+          ]
+        },
+        "primaryType": "Agent",
+        "domain": {
+          "name": "Exchange",
+          "version": "1",
+          "chainId": 1337,
+          "verifyingContract": "0x0000000000000000000000000000000000000000"
+        },
+        "message": {
+          "source": "b",
+          "connectionId": "0xcd28339c45ac36f8e4dd88d358d4c733a5acab85372e8f2e8b507a36a03184d0"
+        }
+      },
+      "digest": "0x4a0775e7aa8dd27e30c41553d71b620a4415370bd53b6835d16c00b44885eb8d",
+      "privateKey": "0x822e9959e022b78423eb653a62ea0020cd283e71a2a8133a6ff2aeffaf373cff",
+      "signature": "0x6f50fa3431ef224f9fcd738e0825b2240dd2fe6e85fb50de956340295ece81ad68fa0b967566d89163e0f2a88695f725e61a6b5e9d11b8674c7d8be94cc8f3eb1b"
+    },
+    {
       "name": "updateLeverage",
       "action": {
         "type": "updateLeverage",
