@@ -542,10 +542,9 @@ export const createBitcoinRoute = (): BitcoinRoute => {
    * The change addresses this wallet itself already used — every in-flight pick plus every own
    * output a tracked transaction carries whose bytes exist: a `signed` row signed, everything past
    * it broadcast, and `failed`/`dropped`/`replaced` may still surface. A `draft`/`rejected` row's
-   * sign call failed either before the factor verified — no signature exists, so its address may
-   * be handed out again — or after it, when the kernel had already sealed the mark past that
-   * index, so the window no longer contains it. The endpoint's "used" answers never feed this
-   * set.
+   * sign call failed either before the factor verified — no signature exists, so its address may be
+   * handed out again — or after it, when the kernel had already sealed the mark past that index, so
+   * the window no longer contains it. The endpoint's "used" answers never feed this set.
    */
   const changeTaken = (ctx: RouteContext): Set<string> => {
     const taken = new Set<string>(reservedChange.values());
