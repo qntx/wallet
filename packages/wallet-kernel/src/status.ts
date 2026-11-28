@@ -1,6 +1,12 @@
 import { PROTOCOL_VERSION } from "@qntx/wallet/protocol";
 import type { BackupInfo, NullValue } from "@qntx/wallet/protocol";
-import type { FactorInfo, NostrKeyInfo, StatusPayload, WalletInfo } from "@qntx/wallet/types";
+import type {
+  FactorInfo,
+  NostrKeyInfo,
+  StatusPayload,
+  VaultState,
+  WalletInfo,
+} from "@qntx/wallet/types";
 
 import type { KernelContext, VaultHooks } from "./commands/context.ts";
 import { KernelError } from "./errors.ts";
@@ -20,12 +26,12 @@ import {
 } from "./vault/headers.ts";
 import { MANIFEST_HEADER, MANIFEST_ID, MANIFEST_KIND } from "./vault/manifest.ts";
 import { BLIND_SIGNING, POLICY_KIND } from "./vault/policy.ts";
+import { formatReason, VAULT_FORMAT } from "./vault/store.ts";
 import type { StoredRecord, VaultImage } from "./vault/store.ts";
-import { VAULT_FORMAT } from "./vault/store.ts";
 import { factorInfo, walletInfo } from "./vault/vault.ts";
 
 /** The kernel's read on a loaded vault image; `unavailable` never appears here (load threw). */
-export type ImageHealth = "ok" | "corrupted" | "unsupported";
+export type ImageHealth = "ok" | "corrupted" | "unsupported-older" | "unsupported-newer";
 
 function metaHealth(image: VaultImage): ImageHealth | undefined {
   const { meta } = image;
@@ -37,7 +43,7 @@ function metaHealth(image: VaultImage): ImageHealth | undefined {
     return "corrupted";
   }
   if (meta.format !== VAULT_FORMAT) {
-    return "unsupported";
+    return `unsupported-${formatReason(meta.format)}`;
   }
   if (
     !Number.isSafeInteger(meta.revision) ||
@@ -56,9 +62,11 @@ const FACTOR_KINDS = new Set(["device", "hardware", "password", "passkey"]);
  * Snapshot contents for the `status` payload — the record-ownership composition point, and the
  * image's health assessment. The core parses the kinds it owns (entropy, data-key), every record a
  * module claims is re-parsed by that module's `parseHeader`, and each module's own status function
- * is called explicitly. An unclaimed kind or a newer format marks the vault `unsupported` — the
- * data stays untouched and the user must update; a malformed known header marks it `corrupted`.
- * Locked snapshots are display-only data from unauthenticated public headers.
+ * is called explicitly. An unclaimed kind or a foreign format marks the vault unsupported — the
+ * direction comes from `meta.format` alone (content this format does not know can only be a newer
+ * build's), the data stays untouched and unsupported wins over corrupted; a malformed known header
+ * marks it `corrupted`. Locked snapshots are display-only data from unauthenticated public
+ * headers.
  */
 export function statusContents(
   image: VaultImage,
@@ -91,7 +99,7 @@ export function statusContents(
   const owned: StoredRecord[] = [];
   const meta = metaHealth(image);
   let corrupted = meta === "corrupted";
-  let unsupported = meta === "unsupported";
+  let unsupported = meta === "unsupported-older" || meta === "unsupported-newer";
   // Keystore factor kinds are singular: a second row of either means the vault was torn.
   for (const kind of ["device", "hardware"]) {
     if (image.factors.filter((factor) => factor.kind === kind).length > 1) {
@@ -175,6 +183,13 @@ export function statusContents(
   }
   const section = nostr.status(owned.filter((record) => nostr.vault.ownsRecord(record.kind)));
   corrupted = corrupted || section.corrupted;
+  // The direction comes from the persisted format alone: unknown content inside the current format
+  // can only be a newer build's (see formatReason's invariant).
+  const { meta: imageMeta } = image;
+  const reason =
+    imageMeta !== undefined && Number.isSafeInteger(imageMeta.format)
+      ? formatReason(imageMeta.format)
+      : "newer";
   return {
     factors,
     wallets,
@@ -182,8 +197,22 @@ export function statusContents(
     importedKeys,
     backup,
     blindSigning,
-    health: unsupported ? "unsupported" : corrupted ? "corrupted" : "ok",
+    health: unsupported ? `unsupported-${reason}` : corrupted ? "corrupted" : "ok",
   };
+}
+
+/** Health → the vault state the status payload carries. */
+function vaultState(ctx: KernelContext): VaultState {
+  if (ctx.health === "ok") {
+    return { status: ctx.session.status };
+  }
+  if (ctx.health === "unsupported-older" || ctx.health === "unsupported-newer") {
+    return {
+      status: "unsupported",
+      reason: ctx.health === "unsupported-older" ? "older" : "newer",
+    };
+  }
+  return { status: ctx.health };
 }
 
 /** The `status` payload for the current session + image; shared by `status` and `postStatus`. */
@@ -195,7 +224,7 @@ export function statusPayload(ctx: KernelContext, nostr: NostrModule): StatusPay
   );
   return {
     protocol: PROTOCOL_VERSION,
-    vault: ctx.health === "ok" ? ctx.session.status : ctx.health,
+    vault: vaultState(ctx),
     // App lock is the absence of the silent device factor on an established vault.
     appLock: ctx.image.meta !== undefined && !ctx.image.factors.some((f) => f.kind === "device"),
     verification: factors.some(

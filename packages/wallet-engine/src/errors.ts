@@ -1,15 +1,22 @@
+import type { UnsupportedReason } from "@qntx/wallet";
 import { ChainError } from "@qntx/wallet-chains";
 
-export type EngineErrorCode = "closed" | "invalid-input";
+export type EngineErrorCode = "closed" | "invalid-input" | "unsupported";
 
-/** Typed engine errors: store codes are `closed` and `invalid-input`. */
+/**
+ * Typed engine errors: store codes are `closed`, `invalid-input` and `unsupported` (a persisted
+ * format this build cannot read — `reason` is set exactly then: `older` for a pre-1.0 database this
+ * build refuses to wipe, `newer` for one a newer build wrote).
+ */
 export class EngineStoreError extends Error {
   readonly code: EngineErrorCode;
+  readonly reason: UnsupportedReason | undefined;
 
-  constructor(code: EngineErrorCode, message: string) {
+  constructor(code: EngineErrorCode, message: string, reason?: UnsupportedReason) {
     super(message);
     this.name = "EngineStoreError";
     this.code = code;
+    this.reason = reason;
   }
 }
 

@@ -5,6 +5,10 @@
  * of `hmac(sha256, idKey, utf8(collection) ‖ 0x00 ‖ utf8(key))`, so nothing readable on disk
  * reveals collection names or record keys.
  *
+ * Format rule: an existing database at version 1 is `unsupported` with reason `older` — refused,
+ * never wiped; the explicit discard is the host's `indexedDB.deleteDatabase(name)` after user
+ * confirmation. A database newer than version 2 fails `VersionError` → `unsupported`/`newer`.
+ *
  * `records` maps id → nonce‖ciphertext(value) under AAD `record\0${id}`; `index` maps the same id →
  * nonce‖ciphertext(utf8(`${collection}\0${key}`)) under AAD `index\0${id}` and backs `list`. Moving
  * a row to another id fails its MAC, same as a tampered payload, and a record that fails its MAC
@@ -95,13 +99,23 @@ export async function openIndexedDbEngineStore(
   key.fill(0);
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const open = indexedDB.open(options.name, 2);
-    open.addEventListener("upgradeneeded", () => {
-      const { result } = open;
-      for (const storeName of result.objectStoreNames) {
-        result.deleteObjectStore(storeName);
+    open.addEventListener("upgradeneeded", (event) => {
+      if (event.oldVersion === 0) {
+        const { result } = open;
+        result.createObjectStore(RECORDS);
+        result.createObjectStore(INDEX);
+      } else {
+        // An existing older database is refused, never wiped — the explicit discard is the
+        // host's `indexedDB.deleteDatabase(name)` after user confirmation.
+        open.transaction?.abort();
+        reject(
+          new EngineStoreError(
+            "unsupported",
+            "indexeddb: the database was written by an older build",
+            "older",
+          ),
+        );
       }
-      result.createObjectStore(RECORDS);
-      result.createObjectStore(INDEX);
     });
     open.addEventListener("success", () => {
       resolve(open.result);
@@ -109,7 +123,17 @@ export async function openIndexedDbEngineStore(
     open.addEventListener("error", () => {
       sealKey.fill(0);
       idKey.fill(0);
-      reject(new Error("indexeddb open failed", { cause: open.error }));
+      if (open.error instanceof DOMException && open.error.name === "VersionError") {
+        reject(
+          new EngineStoreError(
+            "unsupported",
+            "indexeddb: the database was written by a newer build",
+            "newer",
+          ),
+        );
+      } else {
+        reject(new Error("indexeddb open failed", { cause: open.error }));
+      }
     });
   });
   try {

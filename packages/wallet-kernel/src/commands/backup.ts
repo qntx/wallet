@@ -16,6 +16,7 @@ import { base64urlnopad } from "@scure/base";
 
 import {
   backupEnvelope as backupEnvelopeValidator,
+  backupEnvelopeReason,
   backupHeader as backupHeaderValidator,
   validate,
 } from "@qntx/wallet/protocol";
@@ -33,7 +34,7 @@ import type { VaultWalletInfo } from "@qntx/wallet/types";
 
 import { KEY_FAMILY_BYTE, keyIdOf } from "../derive/key-id.ts";
 import type { KeyFamily } from "../derive/key-id.ts";
-import { KernelError } from "../errors.ts";
+import { KernelError, UnsupportedFormatError } from "../errors.ts";
 import { requirePasskey } from "../platform.ts";
 import type { KernelPlatform, PasskeyResult, SecureInput } from "../platform.ts";
 import {
@@ -137,6 +138,15 @@ function parseEnvelope(text: string): BackupEnvelopeWire {
     value = JSON.parse(text);
   } catch {
     throw new KernelError("integrity", "backup: envelope is not JSON");
+  }
+  const reason = backupEnvelopeReason(value);
+  if (reason !== undefined) {
+    throw new UnsupportedFormatError(
+      reason,
+      reason === "older"
+        ? "backup: the envelope was written by an older build"
+        : "backup: the envelope needs a newer build",
+    );
   }
   const envelope = validate(backupEnvelopeValidator, value);
   if (envelope === undefined) {

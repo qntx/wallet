@@ -1,4 +1,4 @@
-import type { WalletErrorCode } from "@qntx/wallet/types";
+import type { UnsupportedReason, WalletErrorCode } from "@qntx/wallet/types";
 
 export type KernelErrorCode = WalletErrorCode;
 
@@ -31,5 +31,20 @@ export class KernelError extends Error {
     this.retryAt = retryAt;
     this.corrupted = corrupted;
     this.detail = detail;
+  }
+}
+
+/**
+ * A persisted artefact written by a build this one cannot read — the wire code stays `unsupported`;
+ * `reason` carries which side of this build wrote it (`older`: a pre-1.0 format this build has no
+ * reader for; `newer`: a newer build's format).
+ */
+export class UnsupportedFormatError extends KernelError {
+  readonly reason: UnsupportedReason;
+
+  constructor(reason: UnsupportedReason, message: string) {
+    super("unsupported", message);
+    this.name = "UnsupportedFormatError";
+    this.reason = reason;
   }
 }

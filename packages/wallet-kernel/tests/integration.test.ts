@@ -317,7 +317,7 @@ describe("create / import", () => {
   it("creates a passkey wallet matching the vector and opens a session", async () => {
     const h = createHarness();
     await h.settle();
-    expect(field(ok(await h.call("status")), "vault")).toBe("uninitialized");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "uninitialized" });
 
     const { session, walletId } = await createPasskeyWallet(h);
     expect(session).toMatch(/^[0-9a-f]{32}$/);
@@ -327,7 +327,7 @@ describe("create / import", () => {
     expect(npubEncode(publicKey)).toMatch(/^npub1/);
 
     const status = lastStatus(h);
-    expect(status.vault).toBe("unlocked");
+    expect(status.vault.status).toBe("unlocked");
     expect(status.wallets[0]?.walletId).toBe(passkeyVector.vector.walletId);
     expect(status.wallets[0]).toMatchObject({ backup: "passkey" });
     expect(status.nostr.keys[0]?.publicKey).toBe(publicKey);
@@ -520,7 +520,7 @@ describe("wrong passkey errors", () => {
         ),
       ),
     ).toBe("wrong-passkey");
-    expect(lastStatus(h).vault).toBe("unlocked"); // a wrong factor is not corruption
+    expect(lastStatus(h).vault.status).toBe("unlocked"); // a wrong factor is not corruption
   });
 });
 
@@ -561,7 +561,7 @@ describe("nostr record integrity", () => {
         { op: "put-record", record: { kind: NOSTR_KEY_KIND, id: wrongId, header, sealed } },
       ]);
       await h.settle();
-      expect(lastStatus(h).vault).toBe("corrupted");
+      expect(lastStatus(h).vault.status).toBe("corrupted");
       expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
         "integrity",
       );
@@ -595,7 +595,7 @@ describe("mnemonic draft", () => {
     const right = quiz.map((p) => utf8ToBytes(words[p]!));
     const res = ok(await h.call("wallet.confirmMnemonic", { draft, answers: right }));
     expect(strField(res, "session")).toMatch(/^[0-9a-f]{32}$/);
-    expect(lastStatus(h).vault).toBe("unlocked");
+    expect(lastStatus(h).vault.status).toBe("unlocked");
     expect(lastStatus(h).wallets[0]).toMatchObject({ backup: "mnemonic" });
   });
 
@@ -847,7 +847,7 @@ describe("nostr sync key", () => {
     // The idle timer disposes the pooled signer; a sign after re-unlock claims it again.
     h.advance(61_000);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("locked");
+    expect(lastStatus(h).vault.status).toBe("locked");
     expect(errCode(await h.call("nostr.syncSign", { walletId, event: syncEvent() }, session))).toBe(
       "locked",
     );
@@ -976,7 +976,7 @@ describe("factors, lock, reset", () => {
       }),
     );
     const session2 = strField(unlocked, "session");
-    expect(lastStatus(h2).vault).toBe("unlocked");
+    expect(lastStatus(h2).vault.status).toBe("unlocked");
 
     // Removing with password verify works; the last factor cannot be removed.
     expect(
@@ -1094,7 +1094,7 @@ describe("factors, lock, reset", () => {
     await h.settle();
     const { session } = await createPasskeyWallet(h);
     expect(ok(await h.call("vault.reset", null, session))).toBeNull();
-    expect(lastStatus(h).vault).toBe("uninitialized");
+    expect(lastStatus(h).vault.status).toBe("uninitialized");
     expect(lockReasons(h.events)).toContain("user");
   });
 
@@ -1104,7 +1104,7 @@ describe("factors, lock, reset", () => {
     const { session, walletId } = await createPasskeyWallet(h);
     h.advance(61_000);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("locked");
+    expect(lastStatus(h).vault.status).toBe("locked");
     expect(lockReasons(h.events)).toContain("idle");
     expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
       "locked",
@@ -1118,12 +1118,12 @@ describe("factors, lock, reset", () => {
     // Past every web/node idle window — still unlocked, requests still succeed.
     h.advance(1_800_000);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("unlocked");
+    expect(lastStatus(h).vault.status).toBe("unlocked");
     expect(ok(await h.call("status", null, session))).toBeDefined();
     // The session ends only at the max-session deadline.
     h.advance(1_800_001);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("locked");
+    expect(lastStatus(h).vault.status).toBe("locked");
     expect(lockReasons(h.events)).toContain("expired");
   });
 
@@ -1134,7 +1134,7 @@ describe("factors, lock, reset", () => {
     // Lock is host-side now: the worker is terminated and a fresh kernel respawns on the store.
     const h2 = respawn(h);
     await h2.settle();
-    expect(lastStatus(h2).vault).toBe("locked");
+    expect(lastStatus(h2).vault.status).toBe("locked");
     expect(errCode(await h2.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
       "locked",
     );
@@ -1153,7 +1153,7 @@ describe("factors, lock, reset", () => {
     const { session } = await createPasskeyWallet(h);
     expect(ok(await h.call("vault.reset", null, session))).toBeNull();
     await h.settle();
-    expect(field(ok(await h.call("status")), "vault")).toBe("uninitialized");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "uninitialized" });
   });
 
   it("deletes a wallet and its derived keys atomically", async () => {
@@ -1232,7 +1232,7 @@ describe("session expiry and rate limiting", () => {
     const { session, walletId } = await createPasskeyWallet(h);
     h.advance(3_700_000);
     // status does not need a session; the vault field now reports locked.
-    expect(field(ok(await h.call("status")), "vault")).toBe("locked");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "locked" });
     expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
       "locked",
     );
@@ -1247,7 +1247,7 @@ describe("session expiry and rate limiting", () => {
     h.advanceWall(-3_600_000);
     h.advance(61_000);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("locked");
+    expect(lastStatus(h).vault.status).toBe("locked");
     expect(lockReasons(h.events)).toContain("idle");
     expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
       "locked",
@@ -1264,7 +1264,7 @@ describe("session expiry and rate limiting", () => {
     expect("ok" in (await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(true);
     h.advance(61_000);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("locked");
+    expect(lastStatus(h).vault.status).toBe("locked");
     expect(lockReasons(h.events)).toContain("idle");
   });
 });
@@ -1299,7 +1299,7 @@ it("a re-unlock with a wrong factor fails and leaves the live session valid", as
   // Session A is untouched — a sessioned request still succeeds.
   const publicKey = await deriveKey(h, session, walletId);
   expect(publicKey).toMatch(/^[0-9a-f]{64}$/);
-  expect(lastStatus(h).vault).toBe("unlocked");
+  expect(lastStatus(h).vault.status).toBe("unlocked");
 });
 
 describe("presence activity", () => {
@@ -1320,7 +1320,7 @@ describe("presence activity", () => {
     ).toBe(true);
     h.advance(2000);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("locked");
+    expect(lastStatus(h).vault.status).toBe("locked");
     expect(lockReasons(h.events)).toContain("idle");
   });
 
@@ -1335,7 +1335,7 @@ describe("presence activity", () => {
     expect("ok" in (await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(true);
     h.advance(10_000);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("locked");
+    expect(lastStatus(h).vault.status).toBe("locked");
     expect(lockReasons(h.events)).toContain("idle");
   });
 
@@ -1360,7 +1360,7 @@ describe("presence activity", () => {
     expect("ok" in (await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(true);
     h.advance(10_000);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("locked");
+    expect(lastStatus(h).vault.status).toBe("locked");
   });
 
   it("a failed request does not extend the idle deadline", async () => {
@@ -1383,7 +1383,7 @@ describe("presence activity", () => {
     ).toBe("not-found");
     h.advance(2000);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("locked");
+    expect(lastStatus(h).vault.status).toBe("locked");
     expect(lockReasons(h.events)).toContain("idle");
   });
 
@@ -1407,7 +1407,7 @@ describe("presence activity", () => {
     ok(await h.call("nostr.removeKey", { publicKey }, session)); // every request counts
     h.advance(61_000);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("locked");
+    expect(lastStatus(h).vault.status).toBe("locked");
   });
 
   it("max session expires regardless of touches", async () => {
@@ -1421,7 +1421,7 @@ describe("presence activity", () => {
     // t=3.3 h on a 1 h cap: touches keep idle away but the maximum still lands.
     h.advance(400_000);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("locked");
+    expect(lastStatus(h).vault.status).toBe("locked");
     expect(lockReasons(h.events)).toContain("expired");
     expect(errCode(await h.call("session.touch", null, session))).toBe("locked");
   });
@@ -1707,10 +1707,10 @@ describe("integrity", () => {
     const { session } = await createPasskeyWallet(h);
     // A sessionless call on an open, healthy vault is refused before anything is erased.
     expect(errCode(await h.call("vault.reset", null))).toBe("locked");
-    expect(lastStatus(h).vault).toBe("unlocked");
+    expect(lastStatus(h).vault.status).toBe("unlocked");
     // The live session resets.
     expect(ok(await h.call("vault.reset", null, session))).toBeNull();
-    expect(lastStatus(h).vault).toBe("uninitialized");
+    expect(lastStatus(h).vault.status).toBe("uninitialized");
   });
 
   it("a locked vault resets without a session", async () => {
@@ -1719,9 +1719,9 @@ describe("integrity", () => {
     await createPasskeyWallet(h);
     const h2 = createHarness({ store: h.store, anchor: h.anchor });
     await h2.settle();
-    expect(lastStatus(h2).vault).toBe("locked");
+    expect(lastStatus(h2).vault.status).toBe("locked");
     expect(ok(await h2.call("vault.reset"))).toBeNull();
-    expect(lastStatus(h2).vault).toBe("uninitialized");
+    expect(lastStatus(h2).vault.status).toBe("uninitialized");
   });
 
   it("a record that fails authentication at unlock corrupts the vault; reset recovers", async () => {
@@ -1741,7 +1741,7 @@ describe("integrity", () => {
     });
     expect(errCode(res)).toBe("integrity");
     // The DEK opened but a record failed authentication: the vault is corrupted.
-    expect(lastStatus(h).vault).toBe("corrupted");
+    expect(lastStatus(h).vault.status).toBe("corrupted");
     // While corrupted only status and vault.reset are served — no session opens.
     expect(errCode(await h.call("nostr.deriveKey", { walletId: "0f".repeat(8), index: 7 }))).toBe(
       "integrity",
@@ -1754,7 +1754,7 @@ describe("integrity", () => {
       ),
     ).toBe("integrity");
     expect(ok(await h.call("vault.reset"))).toBeNull();
-    expect(lastStatus(h).vault).toBe("uninitialized");
+    expect(lastStatus(h).vault.status).toBe("uninitialized");
     // The corruption latch is gone: an empty vault fails unlock honestly.
     expect(
       errCode(
@@ -1783,7 +1783,7 @@ describe("integrity", () => {
       factor: { kind: "passkey", credentialId: CREDENTIAL_ID, prf: new Uint8Array(PRF_VAULT) },
     });
     expect(errCode(res)).toBe("integrity");
-    expect(lastStatus(h).vault).toBe("corrupted");
+    expect(lastStatus(h).vault.status).toBe("corrupted");
   });
 
   it("a public header that fails to parse corrupts the vault on reload", async () => {
@@ -1796,7 +1796,7 @@ describe("integrity", () => {
     await h.settle();
     // The watch reload parsed the tampered header: corrupted, and the bad row is omitted.
     const status = lastStatus(h);
-    expect(status.vault).toBe("corrupted");
+    expect(status.vault.status).toBe("corrupted");
     expect(status.factors).toHaveLength(0);
     expect(status.wallets).toHaveLength(1);
     expect(
@@ -1807,7 +1807,7 @@ describe("integrity", () => {
       ),
     ).toBe("integrity");
     expect(ok(await h.call("vault.reset"))).toBeNull();
-    expect(lastStatus(h).vault).toBe("uninitialized");
+    expect(lastStatus(h).vault.status).toBe("uninitialized");
   });
 
   it("a stored record of an unknown kind is unsupported — the vault locks and stays untouched", async () => {
@@ -1829,7 +1829,7 @@ describe("integrity", () => {
     ]);
     await h.settle();
     const status = lastStatus(h);
-    expect(status.vault).toBe("unsupported");
+    expect(status.vault).toStrictEqual({ status: "unsupported", reason: "newer" });
     // The unlocked session is invalidated immediately, not at the next timeout.
     expect(lockReasons(h.events)).toContain("invalidated");
     // Everything except status and vault.reset fails closed — the store bytes stay as written.
@@ -1847,7 +1847,7 @@ describe("integrity", () => {
     expect(untouched.records).toHaveLength(before.records.length + 1);
     expect(untouched.records.some((r) => r.kind === "spark-key")).toBe(true);
     expect(ok(await h.call("vault.reset"))).toBeNull();
-    expect(lastStatus(h).vault).toBe("uninitialized");
+    expect(lastStatus(h).vault.status).toBe("uninitialized");
   });
 
   it("a racing establish fails with conflict and writes nothing", async () => {
@@ -1897,7 +1897,7 @@ describe("integrity", () => {
     await h.settle();
     // The enclave did not crash: the startup status event still went out, reporting corrupted.
     expect(h.events.some((e) => e.event === "status")).toBe(true);
-    expect(lastStatus(h).vault).toBe("corrupted");
+    expect(lastStatus(h).vault.status).toBe("corrupted");
     // Every request except status and vault.reset answers integrity.
     expect(
       errCode(
@@ -1909,11 +1909,11 @@ describe("integrity", () => {
     expect(errCode(await h.call("nostr.deriveKey", { walletId: "0f".repeat(8), index: 7 }))).toBe(
       "integrity",
     );
-    expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "corrupted" });
     // vault.reset is the recovery path: its commit re-establishes the store.
     broken = false;
     await h.call("vault.reset");
-    expect(lastStatus(h).vault).toBe("uninitialized");
+    expect(lastStatus(h).vault.status).toBe("uninitialized");
     // Back to honest behavior: unlock on an empty vault is invalid-input, not integrity.
     expect(
       errCode(
@@ -1932,13 +1932,28 @@ describe("vault health", () => {
     // A newer build initialized this vault.
     await h.store.commit([{ op: "init", meta: metaOf({ format: VAULT_FORMAT + 1 }) }]);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("unsupported");
+    expect(lastStatus(h).vault).toStrictEqual({ status: "unsupported", reason: "newer" });
     expect(errCode(await h.call("vault.unlock", { factor: passkeyFactor() }))).toBe("unsupported");
     // Nothing is rewritten and reset still recovers.
     const metaAfter = await storedMeta(h.store);
     expect(metaAfter.format).toBe(VAULT_FORMAT + 1);
     expect(ok(await h.call("vault.reset"))).toBeNull();
-    expect(lastStatus(h).vault).toBe("uninitialized");
+    expect(lastStatus(h).vault.status).toBe("uninitialized");
+  });
+
+  it("an older build's meta format is unsupported with reason older — reset then restore", async () => {
+    const h = createHarness();
+    await h.settle();
+    // A pre-1.0 build initialized this vault; this build has no reader for it.
+    await h.store.commit([{ op: "init", meta: metaOf({ format: VAULT_FORMAT - 1 }) }]);
+    await h.settle();
+    expect(lastStatus(h).vault).toStrictEqual({ status: "unsupported", reason: "older" });
+    expect(errCode(await h.call("vault.unlock", { factor: passkeyFactor() }))).toBe("unsupported");
+    const metaAfter = await storedMeta(h.store);
+    expect(metaAfter.format).toBe(VAULT_FORMAT - 1);
+    // The only exit is the explicit reset: the vault is cleared, never silently wiped.
+    expect(ok(await h.call("vault.reset"))).toBeNull();
+    expect(lastStatus(h).vault.status).toBe("uninitialized");
   });
 
   it("a factor kind this build does not know is unsupported", async () => {
@@ -1957,7 +1972,7 @@ describe("vault health", () => {
       },
     ]);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("unsupported");
+    expect(lastStatus(h).vault).toStrictEqual({ status: "unsupported", reason: "newer" });
     expect(errCode(await h.call("vault.unlock", { factor: passkeyFactor() }))).toBe("unsupported");
   });
 
@@ -1982,7 +1997,7 @@ describe("vault health", () => {
       },
     ]);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("unsupported");
+    expect(lastStatus(h).vault).toStrictEqual({ status: "unsupported", reason: "newer" });
     const stored = await h.store.load();
     expect(stored.factors[0]?.kind).toBe("password");
   });
@@ -2003,14 +2018,14 @@ describe("vault health", () => {
       },
     ]);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("corrupted");
+    expect(lastStatus(h).vault.status).toBe("corrupted");
     // The unlocked session is invalidated immediately — DEK and drafts are wiped.
     expect(lockReasons(h.events)).toContain("invalidated");
     expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
       "integrity",
     );
     expect(ok(await h.call("vault.reset"))).toBeNull();
-    expect(lastStatus(h).vault).toBe("uninitialized");
+    expect(lastStatus(h).vault.status).toBe("uninitialized");
   });
 
   it("a transient load failure is unavailable — retried, never latched", async () => {
@@ -2023,19 +2038,19 @@ describe("vault health", () => {
     broken.current = true;
     await h.store.commit([{ op: "expect-revision", revision: 1 }]);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("unavailable");
+    expect(lastStatus(h).vault.status).toBe("unavailable");
     broken.current = false;
     // The next request retries the load once, recovers, and runs honestly.
     const unlocked = await h.call("vault.unlock", { factor: passkeyFactor() });
     expect("ok" in unlocked).toBe(true);
-    expect(lastStatus(h).vault).toBe("unlocked");
+    expect(lastStatus(h).vault.status).toBe("unlocked");
   });
 
   it("a store that fails to load at startup is unavailable, not corrupted", async () => {
     const broken = { current: true };
     const h = createHarness({ wrapStore: (store) => flakyLoad(store, broken) });
     await h.settle();
-    expect(lastStatus(h).vault).toBe("unavailable");
+    expect(lastStatus(h).vault.status).toBe("unavailable");
     expect(errCode(await h.call("nostr.deriveKey", { walletId: "0f".repeat(8), index: 7 }))).toBe(
       "unavailable",
     );
@@ -2057,7 +2072,7 @@ describe("vault health", () => {
       factor: { kind: "password", password: new Uint8Array(PASSWORD) },
     });
     expect(errCode(res)).toBe("unavailable");
-    expect(lastStatus(h).vault).toBe("unavailable");
+    expect(lastStatus(h).vault.status).toBe("unavailable");
     broken.current = false;
     const retry = await h.call("wallet.importMnemonic", {
       mnemonic: utf8ToBytes(nip06.vectors[0]!.mnemonic),
@@ -2248,10 +2263,10 @@ describe("public-key factor wrapping and DEK rotation", () => {
     const h = createHarness({ store: shared, anchor });
     await h.settle();
     expect(errCode(await h.call("vault.unlock", { factor: passkeyFactor() }))).toBe("integrity");
-    expect(lastStatus(h).vault).toBe("corrupted");
+    expect(lastStatus(h).vault.status).toBe("corrupted");
     // Nothing unlocked: no session, no keys.
     await expect(h.call("status")).resolves.toBeDefined();
-    expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "corrupted" });
   });
 
   it("a planted factor row corrupts a locked vault — the real password cannot unlock", async () => {
@@ -2272,7 +2287,7 @@ describe("public-key factor wrapping and DEK rotation", () => {
     // The password still unwraps the real factor; reconciliation then proves the planted row's
     // binding does not match this vault's DEK.
     expect(errCode(await h.call("vault.unlock", { factor: passwordFactor() }))).toBe("integrity");
-    expect(lastStatus(h).vault).toBe("corrupted");
+    expect(lastStatus(h).vault.status).toBe("corrupted");
     expect(lockReasons(h.events)).toContain("invalidated");
   });
 
@@ -2283,7 +2298,7 @@ describe("public-key factor wrapping and DEK rotation", () => {
     const publicKey = await deriveKey(h, session, walletId);
     await h.store.commit([{ op: "put-factor", factor: plantedFactor() }]);
     await h.settle();
-    expect(lastStatus(h).vault).toBe("corrupted");
+    expect(lastStatus(h).vault.status).toBe("corrupted");
     expect(lockReasons(h.events)).toContain("invalidated");
     expect(
       errCode(
@@ -2500,10 +2515,10 @@ describe("live-state reconciliation across kernels", () => {
     await b.settle();
     // B's session DEK no longer matches the vault keyId: invalidated on the reload.
     expect(lockReasons(b.events)).toContain("invalidated");
-    expect(lastStatus(b).vault).toBe("locked");
+    expect(lastStatus(b).vault.status).toBe("locked");
     expect(errCode(await signWith(b, sessionB, pk))).toBe("locked");
     // A rotated its own session: still unlocked and signing under the new DEK.
-    expect(lastStatus(a).vault).toBe("unlocked");
+    expect(lastStatus(a).vault.status).toBe("unlocked");
     const signed = ok(await signWith(a, sessionA, pk));
     expect(verifyEvent(signed as Event)).toBe(true);
     // The password factor row was re-wrapped under the new DEK: B re-unlocks with it.
@@ -2519,7 +2534,7 @@ describe("live-state reconciliation across kernels", () => {
     const sealed = tamperSealed(record.sealed, record.sealed.length - 1);
     await shared.commit([{ op: "put-record", record: { ...record, sealed } }]);
     await b.settle();
-    expect(lastStatus(b).vault).toBe("corrupted");
+    expect(lastStatus(b).vault.status).toBe("corrupted");
     expect(lockReasons(b.events)).toContain("invalidated");
     expect(errCode(await signWith(b, sessionB, pk))).toBe("integrity");
   });
@@ -2795,7 +2810,7 @@ describe("rotation and the session", () => {
       session,
     );
     expect(errCode(changed)).toBe("locked");
-    expect(lastStatus(h).vault).toBe("locked");
+    expect(lastStatus(h).vault.status).toBe("locked");
     // Nothing landed: the old password still opens the vault, in this kernel and a fresh one.
     ok(await h.call("vault.unlock", { factor: oldPassword() }));
     const fresh = createHarness({ store: h.store, anchor: h.anchor });

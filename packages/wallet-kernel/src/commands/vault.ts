@@ -59,7 +59,13 @@ export async function unlockVault(
   if (ctx.health === "corrupted") {
     throw new KernelError("integrity", "the vault is corrupted");
   }
-  if (ctx.health === "unsupported") {
+  if (ctx.health === "unsupported-older") {
+    throw new KernelError(
+      "unsupported",
+      "the vault was written by an older build: reset it, then restore",
+    );
+  }
+  if (ctx.health === "unsupported-newer") {
     throw new KernelError("unsupported", "the vault needs a newer build");
   }
   const { dek, keyId } = await unlock(ctx.platform, ctx.image, params.factor);

@@ -125,7 +125,8 @@ every card answers `card-not-genuine`** until a later release ships the anchor.
 import { useSyncExternalStore } from "react";
 
 const snapshot = useSyncExternalStore(wallet.subscribe, wallet.getSnapshot);
-// snapshot.vault: "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable"
+// snapshot.vault.status: "uninitialized" | "locked" | "unlocked" | "corrupted" | "unavailable"
+//                     or "unsupported" with a reason of "older" | "newer"
 // snapshot.lockReason: "cold-start" | "user" | "idle" | "background" | "expired" | "crashed" | "invalidated"
 ```
 
@@ -134,7 +135,9 @@ What to do with each vault state:
 - `corrupted` — stored ciphertext or a public header failed authentication. Confirm it is real
   (a reload that keeps reporting `corrupted`), then `wallet.vault.reset()` is the only way
   forward and destroys the vault. Never reset on a single sighting.
-- `unsupported` — the vault was written by a newer build. Update the app; do not reset.
+- `unsupported` — the vault was written by a build this one cannot read; `reason` says which side.
+  `"older"` means a pre-1.0 format: `wallet.vault.reset()`, then restore from the mnemonic, passkey
+  or backup. `"newer"` means a newer build wrote it: update the app; never reset.
 - `unavailable` — the vault store failed transiently. Retry; the kernel retries a load on the
   next request itself.
 

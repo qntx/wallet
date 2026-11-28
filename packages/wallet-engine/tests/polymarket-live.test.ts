@@ -89,7 +89,7 @@ const makeSocket = (): Fake => {
   return fake;
 };
 
-let vaultState = "unlocked";
+let vaultState: "unlocked" | "locked" = "unlocked";
 let walletIds: string[] = ["w"];
 const notifyLock = (): void => {
   vaultState = "locked";
@@ -99,7 +99,7 @@ let walletListener: (() => void) | undefined;
 const walletStub = (): Wallet =>
   ({
     getSnapshot: () => ({
-      vault: vaultState,
+      vault: { status: vaultState },
       wallets: walletIds.map((walletId) => ({ walletId })),
     }),
     subscribe: (listener: () => void) => {

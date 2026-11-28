@@ -27,6 +27,9 @@ export function arr<T>(item: Validator<T>, max: number, min?: number): Validator
 // @public (undocumented)
 type AssertNever<T extends never> = T;
 
+// @public
+export const BACKUP_ENVELOPE_VERSION = 3;
+
 // @public (undocumented)
 export const backupEnvelope: Validator<BackupEnvelopeWire>;
 
@@ -49,11 +52,14 @@ export type BackupEnvelopeFactor = {
 export const backupEnvelopeFactor: Validator<BackupEnvelopeFactor>;
 
 // @public
+export function backupEnvelopeReason(value: unknown): UnsupportedReason | undefined;
+
+// @public
 export const backupEnvelopeText: Validator<string>;
 
 // @public (undocumented)
 export type BackupEnvelopeWire = {
-    readonly version: 3;
+    readonly version: typeof BACKUP_ENVELOPE_VERSION;
     readonly createdAt: number;
     readonly header: string;
     readonly factors: ReadonlyArray<BackupEnvelopeFactor>;
@@ -1522,6 +1528,15 @@ export type UnsignedEventInput = {
     readonly pubkey?: string;
 };
 
+// @public
+type Unsupported = {
+    readonly status: "unsupported";
+    readonly reason: UnsupportedReason;
+};
+
+// @public
+type UnsupportedReason = "older" | "newer";
+
 // @public (undocumented)
 export type UnwrapResult = {
     readonly ok: Rumor;
@@ -1542,7 +1557,9 @@ export class ValidationError extends Error {
 export type Validator<T> = (value: unknown) => T;
 
 // @public
-type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
+type VaultState = {
+    readonly status: "uninitialized" | "locked" | "unlocked" | "corrupted" | "unavailable";
+} | Unsupported;
 
 // @public
 type VaultWalletInfo = {

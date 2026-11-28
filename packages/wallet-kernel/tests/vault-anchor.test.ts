@@ -200,7 +200,7 @@ describe("vault anchor — revision floor", () => {
 
     await restoreImage(h.store, snapshot);
     await h.settle();
-    await expect(vaultHealth(h)).resolves.toBe("corrupted");
+    await expect(vaultHealth(h)).resolves.toStrictEqual({ status: "corrupted" });
     expect(errCode(await goodPassword(h))).toBe("integrity");
   });
 
@@ -212,7 +212,7 @@ describe("vault anchor — revision floor", () => {
 
     await restoreImage(h.store, snapshot);
     await h.settle();
-    await expect(vaultHealth(h)).resolves.toBe("corrupted");
+    await expect(vaultHealth(h)).resolves.toStrictEqual({ status: "corrupted" });
     expect(errCode(await h.call("session.touch", null, session))).toBe("integrity");
   });
 
@@ -229,9 +229,9 @@ describe("vault anchor — revision floor", () => {
 
     const fresh = createHarness({ store: h.store, anchor: h.anchor, seed: 63 });
     await fresh.settle();
-    await expect(vaultHealth(fresh)).resolves.toBe("locked");
+    await expect(vaultHealth(fresh)).resolves.toStrictEqual({ status: "locked" });
     expect(errCode(await goodPassword(fresh))).toBe("integrity");
-    await expect(vaultHealth(fresh)).resolves.toBe("corrupted");
+    await expect(vaultHealth(fresh)).resolves.toStrictEqual({ status: "corrupted" });
   });
 
   it("an inflated revision while locked never raises the anchor", async () => {
@@ -243,7 +243,7 @@ describe("vault anchor — revision floor", () => {
 
     await restoreImage(h.store, { ...image, meta: { ...metaOf(image), revision: 9999 } });
     await h.settle();
-    await expect(vaultHealth(h)).resolves.toBe("locked");
+    await expect(vaultHealth(h)).resolves.toStrictEqual({ status: "locked" });
     await expect(readAnchor(h.anchor)).resolves.toStrictEqual({
       revision: 1,
       failedAttempts: 0,
@@ -312,7 +312,7 @@ describe("vault anchor — reset", () => {
 
     await restoreImage(h.store, snapshot);
     await h.settle();
-    await expect(vaultHealth(h)).resolves.toBe("corrupted");
+    await expect(vaultHealth(h)).resolves.toStrictEqual({ status: "corrupted" });
     expect(errCode(await goodPassword(h))).toBe("integrity");
   });
 
@@ -342,7 +342,7 @@ describe("vault anchor — reset", () => {
     expect(errCode(await h.call("vault.reset", null, session))).toBe("unavailable");
     await h.store.commit([{ op: "expect-revision", revision: 1 }]);
     await h.settle();
-    await expect(vaultHealth(h)).resolves.toBe("corrupted");
+    await expect(vaultHealth(h)).resolves.toStrictEqual({ status: "corrupted" });
 
     ok(await h.call("vault.reset", null));
     await expect(readAnchor(h.anchor)).resolves.toStrictEqual({
@@ -350,7 +350,7 @@ describe("vault anchor — reset", () => {
       failedAttempts: 0,
       lastFailureAt: 0,
     });
-    await expect(vaultHealth(h)).resolves.toBe("uninitialized");
+    await expect(vaultHealth(h)).resolves.toStrictEqual({ status: "uninitialized" });
   });
 });
 
@@ -415,7 +415,7 @@ describe("vault anchor — concurrent kernels", () => {
       }),
     });
     await b.settle();
-    await expect(vaultHealth(b)).resolves.toBe("locked");
+    await expect(vaultHealth(b)).resolves.toStrictEqual({ status: "locked" });
     ok(await goodPassword(b));
   });
 
@@ -442,7 +442,7 @@ describe("vault anchor — concurrent kernels", () => {
       }),
     });
     await b.settle();
-    await expect(vaultHealth(b)).resolves.toBe("locked");
+    await expect(vaultHealth(b)).resolves.toStrictEqual({ status: "locked" });
     ok(await goodPassword(b));
   });
 

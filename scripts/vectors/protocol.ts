@@ -101,7 +101,7 @@ const statusUnlocked = {
   protocol: 3,
   appLock: true,
   verification: "available",
-  vault: "unlocked",
+  vault: { status: "unlocked" },
   factors: [passwordFactorInfo],
   wallets: [walletInfo],
   nostr: { keys: [derivedKey, derivedKey] },
@@ -807,6 +807,15 @@ const accept = [
     name: "response-ok-status",
     check: "response:status",
     message: { v: 3, id: 1, ok: statusUnlocked },
+  },
+  {
+    name: "response-ok-status-unsupported",
+    check: "response:status",
+    message: {
+      v: 3,
+      id: 1,
+      ok: { ...statusUnlocked, vault: { status: "unsupported", reason: "older" } },
+    },
   },
   {
     name: "response-ok-vault.unlock",

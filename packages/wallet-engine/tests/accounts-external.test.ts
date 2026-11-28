@@ -32,7 +32,7 @@ const scriptedWallet = (wallets: ReadonlyArray<WalletInfo>): Wallet =>
   ({
     getSnapshot: () =>
       ({
-        vault: "unlocked",
+        vault: { status: "unlocked" },
         wallets,
         keys: [],
         blindSigning: "disabled",

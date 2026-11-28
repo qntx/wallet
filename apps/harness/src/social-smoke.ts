@@ -36,7 +36,7 @@ const result = (name: string, ok: boolean, detail: string): void => {
 /** Resolve the vault status on a fresh boot — picks create vs unlock phase. */
 export async function smokePhase(): Promise<"create" | "unlock"> {
   const wallet = await createNativeWallet({ verifyEvent, passkey: PASSKEY, autoLock: AUTOLOCK });
-  return wallet.getSnapshot().vault === "uninitialized" ? "create" : "unlock";
+  return wallet.getSnapshot().vault.status === "uninitialized" ? "create" : "unlock";
 }
 
 /** First boot: create the vault, run the ceremony, sign, lock. */
@@ -62,7 +62,7 @@ export async function smokeCreate(): Promise<void> {
   });
   result("create-sign", verifyEvent(event), `wallet=${walletId} pubkey=${key.publicKey}`);
   await wallet.vault.lock();
-  result("lock", wallet.getSnapshot().vault === "locked", "");
+  result("lock", wallet.getSnapshot().vault.status === "locked", "");
 }
 
 /** Relaunch: cancel the first unlock prompt, approve the second, then the guarded prompts. */
@@ -80,14 +80,14 @@ export async function smokeUnlock(): Promise<void> {
       // creates a fresh vault.
       result("factor-invalidated", true, "");
       await wallet.vault.reset();
-      result("recovery-reset", wallet.getSnapshot().vault === "uninitialized", "");
+      result("recovery-reset", wallet.getSnapshot().vault.status === "uninitialized", "");
       return;
     }
     cancelled = error instanceof WalletError && error.code === "cancelled";
   }
   result(
     "unlock-cancelled",
-    cancelled && wallet.getSnapshot().vault === "locked",
+    cancelled && wallet.getSnapshot().vault.status === "locked",
     `outcome=${outcome}`,
   );
 
@@ -96,7 +96,7 @@ export async function smokeUnlock(): Promise<void> {
   const walletId = snapshot.wallets[0]?.walletId;
   result(
     "unlock-persisted",
-    snapshot.vault === "unlocked" && walletId !== undefined,
+    snapshot.vault.status === "unlocked" && walletId !== undefined,
     `wallets=${snapshot.wallets.length}`,
   );
   if (walletId === undefined) {
@@ -188,8 +188,8 @@ export async function smokeUnlock(): Promise<void> {
   const bg = await waitBackgroundLock(wallet);
   result(
     "background-lock",
-    bg.vault === "locked" && bg.lockReason === "background",
-    `vault=${bg.vault} reason=${String(bg.lockReason)}`,
+    bg.vault.status === "locked" && bg.lockReason === "background",
+    `vault=${bg.vault.status} reason=${String(bg.lockReason)}`,
   );
 }
 
@@ -208,7 +208,7 @@ const waitBackgroundLock = async (wallet: Wallet): Promise<WalletSnapshot> => {
     if (
       sawBackground &&
       state === "active" &&
-      snapshot.vault === "locked" &&
+      snapshot.vault.status === "locked" &&
       snapshot.lockReason === "background"
     ) {
       return snapshot;

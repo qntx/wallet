@@ -10,9 +10,10 @@
  *
  * A `versionchange` (another tab opened a newer DB version) closes the connection and drops the
  * cached promise; the next load/commit reopens lazily — which either serves the newer layout or
- * fails `VersionError` → `unsupported`. An open request `blocked` longer than five seconds fails.
+ * fails `VersionError` → `unsupported` with reason `newer` (DB_VERSION is 1, the first schema — no
+ * older vault database exists). An open request `blocked` longer than five seconds fails.
  */
-import { KernelError } from "@qntx/wallet-kernel";
+import { KernelError, UnsupportedFormatError } from "@qntx/wallet-kernel";
 import type {
   RecordStore,
   StoredFactor,
@@ -62,9 +63,9 @@ async function transactionDone(tx: IDBTransaction): Promise<void> {
 }
 
 function openError(error: unknown): Error {
-  // A stored DB whose version is newer than this build's is "unsupported", not corruption.
+  // A stored DB whose version is newer than this build's is "unsupported" — never corruption.
   if (error instanceof DOMException && error.name === "VersionError") {
-    return new KernelError("unsupported", "indexeddb: vault database needs a newer build");
+    return new UnsupportedFormatError("newer", "indexeddb: vault database needs a newer build");
   }
   return error instanceof Error ? error : new Error("indexeddb open failed");
 }

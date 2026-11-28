@@ -765,7 +765,7 @@ describe("change marks lifecycle", () => {
       }),
     );
     const status = ok(await h.call("status", null, session)) as Record<string, ProtocolValue>;
-    expect(status["vault"]).toBe("corrupted");
+    expect(status["vault"]).toStrictEqual({ status: "corrupted" });
   });
 
   it("a wrong marker byte in the sealed body latches the vault corrupted", async () => {
@@ -780,7 +780,7 @@ describe("change marks lifecycle", () => {
       new Uint8Array([0x02]),
     );
     const status = ok(await h.call("status", null, session)) as Record<string, ProtocolValue>;
-    expect(status["vault"]).toBe("corrupted");
+    expect(status["vault"]).toStrictEqual({ status: "corrupted" });
   });
 
   it("a tampered marks header — out of the canonical order — latches corrupted", async () => {
@@ -797,7 +797,7 @@ describe("change marks lifecycle", () => {
       }),
     );
     const status = ok(await h.call("status", null, session)) as Record<string, ProtocolValue>;
-    expect(status["vault"]).toBe("corrupted");
+    expect(status["vault"]).toStrictEqual({ status: "corrupted" });
   });
 
   it("mark lookups are monotone — a lower raise writes nothing", async () => {

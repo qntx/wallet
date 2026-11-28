@@ -5,8 +5,8 @@
 ```ts
 
 import { BackupFactorInput } from '@qntx/wallet';
-import { BackupHeader } from '@qntx/wallet';
 import { BackupInfo } from '@qntx/wallet';
+import { BackupInspection } from '@qntx/wallet';
 import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
 import { BitcoinOwn } from '@qntx/wallet-chains/bitcoin';
 import { BitcoinTemplate } from '@qntx/wallet-chains';
@@ -491,7 +491,7 @@ class BackupController extends Controller<BackupControllerState> {
     list(): Promise<ReadonlyArray<{
         readonly name: string;
         readonly id: string;
-        readonly header: BackupHeader;
+        readonly header: BackupInspection;
     }>>;
     lock(): void;
     restore(options: {

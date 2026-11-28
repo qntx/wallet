@@ -6,14 +6,15 @@
 import { base64urlnopad } from "@scure/base";
 
 import type { BackupHeaderKey, BackupHeaderWire } from "./protocol/index.ts";
-import { backupEnvelope, backupHeader, validate } from "./protocol/index.ts";
+import { backupEnvelope, backupEnvelopeReason, backupHeader, validate } from "./protocol/index.ts";
 import { WalletError } from "./types.ts";
+import type { Unsupported } from "./types.ts";
 
 export type BackupHeaderWallet = BackupHeaderWire["wallets"][number];
 export type { BackupHeaderKey } from "./protocol/index.ts";
 
 export type BackupHeader = {
-  readonly version: 1;
+  readonly status: "ok";
   readonly createdAt: number;
   readonly wallets: ReadonlyArray<BackupHeaderWallet>;
   /** Imported keys carried by the payload; empty when there are none. */
@@ -21,6 +22,13 @@ export type BackupHeader = {
   /** The factor kinds the envelope can be unwrapped with. */
   readonly factorKinds: ReadonlyArray<"passkey" | "password">;
 };
+
+/**
+ * What a backup file's header inspection can report: a readable header, or `unsupported` — the
+ * envelope was written by a build this one cannot read (`older`: restore from the mnemonic;
+ * `newer`: update the app).
+ */
+export type BackupInspection = BackupHeader | Unsupported;
 
 function integrity(msg: string): never {
   throw new WalletError("integrity", `backup: ${msg}`);
@@ -34,12 +42,22 @@ function json(text: string, what: string): unknown {
   }
 }
 
-/** Strictly validates the envelope and returns the header fields — no secrets, no writes. */
-export function parseBackupHeader(envelope: string): BackupHeader {
+/**
+ * Validates the envelope and returns the header fields — no secrets, no writes. An envelope whose
+ * `version` this build does not read returns `{ status: "unsupported", reason }` instead of
+ * throwing (the version is checked right after the JSON parse, before strict validation); anything
+ * malformed still throws `WalletError` integrity.
+ */
+export function parseBackupHeader(envelope: string): BackupInspection {
   if (envelope.length > 4_000_000) {
     integrity("envelope too large");
   }
-  const parsed = validate(backupEnvelope, json(envelope, "envelope"));
+  const value = json(envelope, "envelope");
+  const reason = backupEnvelopeReason(value);
+  if (reason !== undefined) {
+    return { status: "unsupported", reason };
+  }
+  const parsed = validate(backupEnvelope, value);
   if (parsed === undefined) {
     integrity("malformed envelope");
   }
@@ -52,7 +70,7 @@ export function parseBackupHeader(envelope: string): BackupHeader {
     integrity("at most one password factor");
   }
   return {
-    version: 1,
+    status: "ok",
     createdAt: parsed.createdAt,
     wallets: header.wallets,
     keys: header.keys ?? [],

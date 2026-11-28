@@ -204,12 +204,19 @@ export function isProtocolValue(value: unknown): value is ProtocolValue {
 const statusPayload: Validator<StatusPayload> = obj({
   protocol: literal(PROTOCOL_VERSION),
   vault: union(
-    literal("uninitialized"),
-    literal("locked"),
-    literal("unlocked"),
-    literal("corrupted"),
-    literal("unsupported"),
-    literal("unavailable"),
+    obj({
+      status: union(
+        literal("uninitialized"),
+        literal("locked"),
+        literal("unlocked"),
+        literal("corrupted"),
+        literal("unavailable"),
+      ),
+    }),
+    obj({
+      status: literal("unsupported"),
+      reason: union(literal("older"), literal("newer")),
+    }),
   ),
   factors: arr(factorInfo, MAX_SNAPSHOT_ITEMS),
   appLock: bool,
@@ -352,8 +359,10 @@ export type {
 export { CORE_METHODS, walletErrorCode } from "./core.ts";
 export type { MethodSpec } from "./core.ts";
 export {
+  BACKUP_ENVELOPE_VERSION,
   backupEnvelope,
   backupEnvelopeFactor,
+  backupEnvelopeReason,
   backupEnvelopeText,
   backupHeader,
   backupInfo,

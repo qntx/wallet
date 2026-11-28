@@ -1,5 +1,4 @@
-import type { Worker } from "node:worker_threads";
-import { MessageChannel } from "node:worker_threads";
+import { MessageChannel, Worker } from "node:worker_threads";
 
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
@@ -7,15 +6,23 @@ import { describe, expect, it } from "vite-plus/test";
 import { npubEncode, verifyEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
 import type { Wallet } from "@qntx/wallet";
-import { KernelError, createMemoryAnchor, createMemoryStore } from "@qntx/wallet-kernel";
+import {
+  KernelError,
+  VAULT_FORMAT,
+  createMemoryAnchor,
+  createMemoryStore,
+} from "@qntx/wallet-kernel";
 import type { RecordStore, VaultAnchor } from "@qntx/wallet-kernel";
 import { chains } from "@qntx/wallet/chains";
+import { connectKernel } from "@qntx/wallet/host";
+import type { MainPort } from "@qntx/wallet/host";
 import { nostr } from "@qntx/wallet/nostr";
 
 import { createNodeWallet, createSoftwarePasskey } from "../src/node/index.ts";
 import type { NodeWalletOptions } from "../src/node/index.ts";
 import { serveStore } from "../src/node/store-server.ts";
 import { isBrowserWorkerInit, isNodeWorkerData } from "../src/shared.ts";
+import type { NodeWorkerData } from "../src/worker/node-kernel.ts";
 import { createStoreClient } from "../src/worker/store-client.ts";
 
 // The worker is built by the package `test` script (bun build → dist/kernel.node.js).
@@ -90,7 +97,7 @@ describe("node host end to end", () => {
     const created = await wallet.wallets.createWithPasskey({ name: "Node Test Wallet" });
     // Status precedes the response: the snapshot is already current when the call resolves.
     const snapshot = wallet.getSnapshot();
-    expect(snapshot.vault).toBe("unlocked");
+    expect(snapshot.vault.status).toBe("unlocked");
     expect(snapshot.wallets[0]?.walletId).toBe(created.walletId);
     const api = nostr(wallet);
     const key = await api.deriveKey(created.walletId, 0);
@@ -117,13 +124,13 @@ describe("node host end to end", () => {
     await exit; // the wait that remains is for the respawned worker's exit
     expect(workers.length).toBeGreaterThanOrEqual(2);
     const locked = wallet.getSnapshot();
-    expect(locked.vault).toBe("locked");
+    expect(locked.vault.status).toBe("locked");
     expect(locked.wallets[0]?.walletId).toBe(created.walletId);
     expect(locked.nostr.keys[0]?.publicKey).toBe(key.publicKey);
 
     // Unlock with the passkey and sign through the proxy.
     await wallet.vault.unlock({ kind: "passkey" });
-    expect(wallet.getSnapshot().vault).toBe("unlocked");
+    expect(wallet.getSnapshot().vault.status).toBe("unlocked");
     const signer = api.signer(key.ref);
     const event = await signer.signEvent({
       kind: 1,
@@ -176,7 +183,7 @@ describe("node host end to end", () => {
       kind: "password",
       password: "a different long password",
     });
-    expect(wallet.getSnapshot().vault).toBe("unlocked");
+    expect(wallet.getSnapshot().vault.status).toBe("unlocked");
     await wallet.destroy();
   }, 120_000);
 
@@ -250,12 +257,12 @@ describe("node host end to end", () => {
     const passkey = createSoftwarePasskey(hexToBytes("dd".repeat(32)));
     const { wallet, workers } = await nodeWallet(passkey);
     await wallet.wallets.createWithPasskey({ name: "Node Test Wallet" });
-    expect(wallet.getSnapshot().vault).toBe("unlocked");
+    expect(wallet.getSnapshot().vault.status).toBe("unlocked");
 
     // The locked event trails the reset response, so the call resolves instead of
     // dying to failPending — and the pre-response status already set the snapshot.
     await wallet.vault.reset();
-    expect(wallet.getSnapshot().vault).toBe("uninitialized");
+    expect(wallet.getSnapshot().vault.status).toBe("uninitialized");
     await exited(must(workers[0], "spawned worker"));
     expect(workers.length).toBeGreaterThanOrEqual(2);
     await wallet.destroy();
@@ -292,7 +299,7 @@ describe("node host end to end", () => {
     );
     // Rejected in the host: the request never reached the kernel, no respawn happened.
     expect(second.workers).toHaveLength(spawnedAfter);
-    expect(second.wallet.getSnapshot().vault).toBe("uninitialized");
+    expect(second.wallet.getSnapshot().vault.status).toBe("uninitialized");
     await second.wallet.destroy();
   }, 60_000);
 
@@ -312,6 +319,96 @@ describe("node host end to end", () => {
     await expect(attempt).rejects.toSatisfy((e) => walletError(e).code === "invalid-input");
     expect(workers).toHaveLength(0);
   });
+});
+
+describe("unsupported vault format direction", () => {
+  /** The wiring createNodeWallet does — over a caller-seeded store, through internals only. */
+  async function walletOver(store: RecordStore): Promise<Wallet> {
+    const anchor = createMemoryAnchor();
+    const spawn = (): MainPort => {
+      const channel = new MessageChannel();
+      const stopStore = serveStore(store, anchor, channel.port1);
+      const worker = new Worker(KERNEL_URL, {
+        workerData: { idleMinutes: 15, storePort: channel.port2 } satisfies NodeWorkerData,
+        transferList: [channel.port2],
+      });
+      return {
+        post: (message, transfer) => {
+          worker.postMessage(message, transfer);
+        },
+        listen: (handler) => {
+          const listener = (message: unknown) => {
+            handler(message);
+          };
+          worker.on("message", listener);
+          return () => {
+            worker.off("message", listener);
+          };
+        },
+        onExit: (handler) => {
+          const listener = () => {
+            handler("crashed");
+          };
+          worker.once("exit", listener);
+          return () => {
+            worker.off("exit", listener);
+          };
+        },
+        terminate: () => {
+          stopStore();
+          void worker.terminate();
+        },
+      };
+    };
+    return connectKernel({
+      factors: "software",
+      spawn,
+      passkey: PASSKEY_CONFIG,
+      verifyEvent,
+      ceremony: createSoftwarePasskey(SEED),
+      setTimer: (delayMs, fn) => {
+        const timer = setTimeout(fn, delayMs);
+        return () => {
+          clearTimeout(timer);
+        };
+      },
+    });
+  }
+
+  /** A seeded store holding one vault image at the given format. */
+  async function seededStore(format: number): Promise<RecordStore> {
+    const store = createMemoryStore();
+    await store.commit([{ op: "init", meta: { format, revision: 1, keyId: "ab".repeat(16) } }]);
+    return store;
+  }
+
+  it.each([
+    ["an older build's (format 5)", VAULT_FORMAT - 1, "older"],
+    ["a newer build's (format 7)", VAULT_FORMAT + 1, "newer"],
+  ] as const)(
+    "a vault image written by %s reports unsupported with its direction and is never wiped",
+    async (_label, format, reason) => {
+      const store = await seededStore(format);
+      const wallet = await walletOver(store);
+      expect(wallet.getSnapshot().vault).toStrictEqual({ status: "unsupported", reason });
+      await expect(wallet.vault.unlock({ kind: "password", password: "x" })).rejects.toSatisfy(
+        (e) => walletError(e).code === "unsupported",
+      );
+      // The image is left untouched — not silently wiped.
+      const image = await store.load();
+      expect(image.meta?.format).toBe(format);
+      await wallet.destroy();
+    },
+    60_000,
+  );
+
+  it("an older format's only exit is the explicit reset, then a restore", async () => {
+    const wallet = await walletOver(await seededStore(VAULT_FORMAT - 1));
+    expect(wallet.getSnapshot().vault).toStrictEqual({ status: "unsupported", reason: "older" });
+    await wallet.vault.reset();
+    expect(wallet.getSnapshot().vault).toStrictEqual({ status: "uninitialized" });
+    await wallet.destroy();
+  }, 60_000);
 });
 
 describe("worker init validation", () => {

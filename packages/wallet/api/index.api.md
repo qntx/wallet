@@ -45,7 +45,7 @@ export type BackupFactorInput = {
 
 // @public (undocumented)
 export type BackupHeader = {
-    readonly version: 1;
+    readonly status: "ok";
     readonly createdAt: number;
     readonly wallets: ReadonlyArray<BackupHeaderWallet>;
     readonly keys: ReadonlyArray<BackupHeaderKey>;
@@ -81,6 +81,9 @@ export type BackupInfo = {
     readonly factors: ReadonlyArray<"passkey" | "password">;
     readonly createdAt: number;
 };
+
+// @public
+export type BackupInspection = BackupHeader | Unsupported;
 
 // @public (undocumented)
 export type CardInfo = {
@@ -221,7 +224,7 @@ export type NostrKeyRef = {
 };
 
 // @public
-export function parseBackupHeader(envelope: string): BackupHeader;
+export function parseBackupHeader(envelope: string): BackupInspection;
 
 // @public
 export type PasskeyConfig = {
@@ -278,6 +281,15 @@ export type UnlockFactor = {
     readonly password: string;
 };
 
+// @public
+export type Unsupported = {
+    readonly status: "unsupported";
+    readonly reason: UnsupportedReason;
+};
+
+// @public
+export type UnsupportedReason = "older" | "newer";
+
 // @public (undocumented)
 export type VaultApi = {
     readonly unlock: (factor?: UnlockFactor) => Promise<void>;
@@ -291,7 +303,9 @@ export type VaultApi = {
 };
 
 // @public
-export type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
+export type VaultState = {
+    readonly status: "uninitialized" | "locked" | "unlocked" | "corrupted" | "unavailable";
+} | Unsupported;
 
 // @public
 export type VaultWalletInfo = {

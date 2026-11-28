@@ -1048,17 +1048,24 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-DLE6lHmP.mjs
+	// packages/wallet/dist/protocol-Bs44sGJy.mjs
 	init_objectSpread2();
-	/**
-	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
-	* the host-side `parseBackupHeader` share — version 3, bounded fields, `obj` rejects unknown keys.
-	* Cryptographic checks (the payload tag, factor unwrap) stay in the kernel; these rules only shape
-	* the JSON.
-	*/
 	var MAX_FACTOR_CHARS = 512;
 	var MAX_STRING_BYTES = 64e3;
 	var MAX_PAYLOAD_CHARS = 14e5;
+	/**
+	* The unsupported direction of a parsed envelope: `version` is a safe integer other than
+	* BACKUP_ENVELOPE_VERSION — `older` (a pre-1.0 format this build has no reader for) or `newer`
+	* (a newer build wrote it). `undefined` means the version alone does not decide — strict
+	* validation does (a missing or non-integer version stays an integrity failure).
+	*/
+	function backupEnvelopeReason(value) {
+		if (typeof value !== "object" || value === null || Array.isArray(value) || !("version" in value)) return;
+		const { version } = value;
+		if (typeof version !== "number" || !Number.isSafeInteger(version)) return;
+		if (version === 3) return;
+		return version < 3 ? "older" : "newer";
+	}
 	/** One public factor entry — shared by the envelope and the retained `backup-key` header. */
 	var backupEnvelopeFactor = union(obj({
 		kind: literal("passkey"),
@@ -2227,7 +2234,10 @@
 	/** The status payload: core sections plus one object section per protocol module. */
 	var statusPayload$1 = obj({
 		protocol: literal(3),
-		vault: union(literal("uninitialized"), literal("locked"), literal("unlocked"), literal("corrupted"), literal("unsupported"), literal("unavailable")),
+		vault: union(obj({ status: union(literal("uninitialized"), literal("locked"), literal("unlocked"), literal("corrupted"), literal("unavailable")) }), obj({
+			status: literal("unsupported"),
+			reason: union(literal("older"), literal("newer"))
+		})),
 		factors: arr(factorInfo$1, MAX_SNAPSHOT_ITEMS),
 		appLock: bool,
 		verification: union(literal("available"), literal("unavailable")),
@@ -4249,6 +4259,19 @@
 			this.retryAt = retryAt;
 			this.corrupted = corrupted;
 			this.detail = detail;
+		}
+	};
+	/**
+	* A persisted artefact written by a build this one cannot read — the wire code stays
+	* `unsupported`; `reason` carries which side of this build wrote it (`older`: a pre-1.0 format
+	* this build has no reader for; `newer`: a newer build's format).
+	*/
+	var UnsupportedFormatError = class extends KernelError {
+		constructor(reason, message) {
+			super("unsupported", message);
+			_defineProperty(this, "reason", void 0);
+			this.name = "UnsupportedFormatError";
+			this.reason = reason;
 		}
 	};
 	// packages/wallet-kernel/src/platform.ts
@@ -9103,6 +9126,16 @@
 	}
 	/** The card module's wallet record kind — named here so the vault and commands layers know it. */
 	var CARD_WALLET_KIND = "card-wallet";
+	/**
+	* The unsupported direction of a stored vault format: `older` below VAULT_FORMAT, `newer` above.
+	* The invariant that makes the comparison meaningful: pre-1.0, every removal or change of a record
+	* or factor kind, a policy id or a KDF parameter bumps VAULT_FORMAT — so unknown content inside the
+	* current format (a record kind no module owns, an unknown factor kind, an unknown policy id, new
+	* KDF parameters) can only have come from a newer build.
+	*/
+	function formatReason(format) {
+		return format < 6 ? "older" : "newer";
+	}
 	// packages/wallet-kernel/src/vault/vault.ts
 	init_utils$2();
 	init_base();
@@ -34325,7 +34358,8 @@ zoo`.split("\n"));
 	async function unlockVault(ctx, params) {
 		await ctx.reload();
 		if (ctx.health === "corrupted") throw new KernelError("integrity", "the vault is corrupted");
-		if (ctx.health === "unsupported") throw new KernelError("unsupported", "the vault needs a newer build");
+		if (ctx.health === "unsupported-older") throw new KernelError("unsupported", "the vault was written by an older build: reset it, then restore");
+		if (ctx.health === "unsupported-newer") throw new KernelError("unsupported", "the vault needs a newer build");
 		const { dek, keyId } = await unlock(ctx.platform, ctx.image, params.factor);
 		if (ctx.session.unlocked && ctx.session.current().keyId === keyId) {
 			dek.wipe();
@@ -35404,6 +35438,8 @@ zoo`.split("\n"));
 		} catch (_unused2) {
 			throw new KernelError("integrity", "backup: envelope is not JSON");
 		}
+		const reason = backupEnvelopeReason(value);
+		if (reason !== void 0) throw new UnsupportedFormatError(reason, reason === "older" ? "backup: the envelope was written by an older build" : "backup: the envelope needs a newer build");
 		const envelope = validate$5(backupEnvelope, value);
 		if (envelope === void 0) throw new KernelError("integrity", "backup: malformed envelope");
 		if (envelope.factors.filter((f) => f.kind === "password").length > 1) throw new KernelError("integrity", "backup: at most one password factor");
@@ -72111,7 +72147,7 @@ zoo`.split("\n"));
 		const { meta } = image;
 		if (meta === void 0) return image.records.length > 0 || image.factors.length > 0 ? "corrupted" : "ok";
 		if (!Number.isSafeInteger(meta.format)) return "corrupted";
-		if (meta.format !== 6) return "unsupported";
+		if (meta.format !== 6) return `unsupported-${formatReason(meta.format)}`;
 		if (!Number.isSafeInteger(meta.revision) || meta.revision < 1 || typeof meta.keyId !== "string" || !/^[0-9a-f]{32}$/.test(meta.keyId)) return "corrupted";
 	}
 	var FACTOR_KINDS = /* @__PURE__ */ new Set([
@@ -72124,9 +72160,10 @@ zoo`.split("\n"));
 	* Snapshot contents for the `status` payload — the record-ownership composition point, and the
 	* image's health assessment. The core parses the kinds it owns (entropy, data-key), every record a
 	* module claims is re-parsed by that module's `parseHeader`, and each module's own status function
-	* is called explicitly. An unclaimed kind or a newer format marks the vault `unsupported` — the
-	* data stays untouched and the user must update; a malformed known header marks it `corrupted`.
-	* Locked snapshots are display-only data from unauthenticated public headers.
+	* is called explicitly. An unclaimed kind or a foreign format marks the vault unsupported — the
+	* direction comes from `meta.format` alone (content this format does not know can only be a newer
+	* build's), the data stays untouched and unsupported wins over corrupted; a malformed known header
+	* marks it `corrupted`. Locked snapshots are display-only data from unauthenticated public headers.
 	*/
 	function statusContents(image, modules, nostr) {
 		const factors = [];
@@ -72137,7 +72174,7 @@ zoo`.split("\n"));
 		const owned = [];
 		const meta = metaHealth(image);
 		let corrupted = meta === "corrupted";
-		let unsupported = meta === "unsupported";
+		let unsupported = meta === "unsupported-older" || meta === "unsupported-newer";
 		for (const kind of ["device", "hardware"]) if (image.factors.filter((factor) => factor.kind === kind).length > 1) corrupted = true;
 		for (const factor of image.factors) {
 			if (!FACTOR_KINDS.has(factor.kind)) {
@@ -72190,6 +72227,8 @@ zoo`.split("\n"));
 		if (image.meta !== void 0 && image.records.filter((r) => r.kind === "manifest").length !== 1) corrupted = true;
 		const section = nostr.status(owned.filter((record) => nostr.vault.ownsRecord(record.kind)));
 		corrupted = corrupted || section.corrupted;
+		const { meta: imageMeta } = image;
+		const reason = imageMeta !== void 0 && Number.isSafeInteger(imageMeta.format) ? formatReason(imageMeta.format) : "newer";
 		return {
 			factors,
 			wallets,
@@ -72197,15 +72236,24 @@ zoo`.split("\n"));
 			importedKeys,
 			backup,
 			blindSigning,
-			health: unsupported ? "unsupported" : corrupted ? "corrupted" : "ok"
+			health: unsupported ? `unsupported-${reason}` : corrupted ? "corrupted" : "ok"
 		};
+	}
+	/** Health → the vault state the status payload carries. */
+	function vaultState(ctx) {
+		if (ctx.health === "ok") return { status: ctx.session.status };
+		if (ctx.health === "unsupported-older" || ctx.health === "unsupported-newer") return {
+			status: "unsupported",
+			reason: ctx.health === "unsupported-older" ? "older" : "newer"
+		};
+		return { status: ctx.health };
 	}
 	/** The `status` payload for the current session + image; shared by `status` and `postStatus`. */
 	function statusPayload(ctx, nostr) {
 		const { factors, wallets, keys, importedKeys, backup, blindSigning } = statusContents(ctx.image, ctx.modules, nostr);
 		return {
 			protocol: 3,
-			vault: ctx.health === "ok" ? ctx.session.status : ctx.health,
+			vault: vaultState(ctx),
 			appLock: ctx.image.meta !== void 0 && !ctx.image.factors.some((f) => f.kind === "device"),
 			verification: factors.some((f) => f.kind === "hardware" || f.kind === "passkey" || f.kind === "password") ? "available" : "unavailable",
 			factors,
@@ -72259,10 +72307,8 @@ zoo`.split("\n"));
 		return ((_ops$ = ops[0]) === null || _ops$ === void 0 ? void 0 : _ops$.op) !== "init" && !ops.some((op) => op.op === "clear") && !ops.some((op) => op.op === "expect-revision");
 	}
 	function classifyLoadFailure(error) {
-		if (error instanceof KernelError) {
-			if (error.code === "unsupported") return "unsupported";
-			if (error.code === "integrity") return "corrupted";
-		}
+		if (error instanceof UnsupportedFormatError) return `unsupported-${error.reason}`;
+		if (error instanceof KernelError && error.code === "integrity") return "corrupted";
 		return "unavailable";
 	}
 	function startKernel(host, port, drivers = DRIVERS) {
@@ -72291,7 +72337,7 @@ zoo`.split("\n"));
 		/** Health transitions while unlocked invalidate the session immediately — except unavailable. */
 		const setHealth = (next) => {
 			ctx.health = next;
-			if (next === "corrupted" || next === "unsupported") ctx.session.lock("invalidated");
+			if (next === "corrupted" || next === "unsupported-older" || next === "unsupported-newer") ctx.session.lock("invalidated");
 		};
 		/**
 		* Reconciles live module state from `prev` to `ctx.image` under the unlocked session (S6): the
@@ -72535,7 +72581,8 @@ zoo`.split("\n"));
 				if (ctx.health !== "ok" && method !== "status" && method !== "vault.reset") {
 					if (ctx.health === "unavailable") await reload();
 					if (ctx.health === "corrupted") throw new KernelError("integrity", "the vault is corrupted");
-					if (ctx.health === "unsupported") throw new KernelError("unsupported", "the vault needs a newer build");
+					if (ctx.health === "unsupported-older") throw new KernelError("unsupported", "the vault was written by an older build: reset it, then restore");
+					if (ctx.health === "unsupported-newer") throw new KernelError("unsupported", "the vault needs a newer build");
 					if (ctx.health === "unavailable") throw new KernelError("unavailable", "the vault store is unavailable");
 				}
 				const result = await dispatch(method, params, typeof sessionField === "string" ? sessionField : void 0);
@@ -75387,7 +75434,8 @@ zoo`.split("\n"));
 	* Strict shape check for a vault image. Returns the input typed as VaultImage; throws KernelError
 	* "integrity" on any structural violation so a tampered store fails closed. `meta.format` is
 	* checked before anything else: a non-integer is integrity, a format other than VAULT_FORMAT is
-	* "unsupported" (data written by another build — left untouched).
+	* "unsupported" with its direction (older: this build has no reader; newer: a newer build wrote it
+	* — left untouched either way).
 	*/
 	function assertVaultImage(value) {
 		const image = plainObject(value);
@@ -75397,7 +75445,10 @@ zoo`.split("\n"));
 			const metaRow = plainObject(meta);
 			const { format } = metaRow;
 			if (typeof format !== "number" || !Number.isSafeInteger(format)) throw bad("meta format is not a safe integer");
-			if (format !== 6) throw new KernelError("unsupported", "vault store: meta format is not this build's");
+			if (format !== 6) {
+				const reason = formatReason(format);
+				throw new UnsupportedFormatError(reason, reason === "older" ? "vault store: meta format is an older build's" : "vault store: meta format needs a newer build");
+			}
 			exactKeys(metaRow, "format,keyId,revision");
 			if (typeof metaRow["keyId"] !== "string" || !HEX_32.test(metaRow["keyId"])) throw bad("meta keyId is not 32 lowercase hex");
 			if (typeof metaRow["revision"] !== "number" || !Number.isSafeInteger(metaRow["revision"]) || metaRow["revision"] < 1) throw bad("meta revision is not a safe integer ≥ 1");

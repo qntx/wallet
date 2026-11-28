@@ -27,7 +27,7 @@ const STATUS = {
   protocol: 3,
   appLock: true,
   verification: "available",
-  vault: "unlocked",
+  vault: { status: "unlocked" },
   factors: [],
   wallets: [],
   nostr: { keys: [] },

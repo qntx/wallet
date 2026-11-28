@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 /**
@@ -9,7 +11,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
  * names and superseded names are deleted once the new head is confirmed.
  */
 import { verifyEvent } from "@qntx/nostr";
-import type { VaultWalletInfo, Wallet } from "@qntx/wallet";
+import type { BackupHeader, VaultWalletInfo, Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 
 import { BackupControllerError } from "../src/backup/errors.ts";
@@ -272,6 +274,13 @@ function persistentEngineStore(
   };
 }
 
+const okHeader = (row: { readonly header: { readonly status: string } }): BackupHeader => {
+  if (row.header.status !== "ok") {
+    throw new Error(`expected a readable header, got ${row.header.status}`);
+  }
+  return row.header as BackupHeader;
+};
+
 function remoteName(files: Map<string, string>): string {
   const names = [...files.keys()];
   if (names.length !== 1) {
@@ -313,13 +322,46 @@ describe("BackupController", () => {
       expect(name).toMatch(FILE_NAME);
       const listed = await r.engine.backup.list();
       expect(listed.map((f) => f.name)).toStrictEqual([name]);
-      const { header: firstHeader } = listed[0]!;
+      const firstHeader = okHeader(listed[0]!);
       expect(firstHeader.wallets).toHaveLength(1);
       expect(firstHeader.keys).toStrictEqual([]);
     } finally {
       await r.close();
     }
   });
+
+  it.each([
+    ["an older build's (v1)", 1, "older"],
+    ["a newer build's (v4)", 4, "newer"],
+  ] as const)(
+    "a backup file written by %s is listed with its direction and refused on restore",
+    async (_label, version, reason) => {
+      const r = await rig();
+      try {
+        await vaultWithMnemonic(r.wallet);
+        await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+        const obj = JSON.parse(r.files.get(remoteName(r.files))!) as Record<string, unknown>;
+        obj["version"] = version;
+        const text = JSON.stringify(obj);
+        const unsupported = `qntx-wallet-backup-${"cd".repeat(16)}-${bytesToHex(sha256(utf8ToBytes(text)))}.json`;
+        r.files.set(unsupported, text);
+
+        // The file is listed — the host can say "made by an older version" vs "update the app".
+        const listed = await r.engine.backup.list();
+        const row = listed.find((f) => f.name === unsupported);
+        expect(row?.header).toStrictEqual({ status: "unsupported", reason });
+        // It is never coverage and never deleted.
+        expect(r.files.has(unsupported)).toBe(true);
+
+        // Restoring it surfaces the kernel's refusal, not a host guess.
+        await expect(
+          r.engine.backup.restore({ name: unsupported, backupFactor: BPW }),
+        ).rejects.toThrow(expect.objectContaining({ code: "unsupported" }));
+      } finally {
+        await r.close();
+      }
+    },
+  );
 
   it("import / delete changes each upload a new version and delete the superseded one", async () => {
     const r = await rig();
@@ -335,7 +377,7 @@ describe("BackupController", () => {
       await settle(r);
       let listed = await r.engine.backup.list();
       expect(listed).toHaveLength(1);
-      expect(listed[0]!.header.wallets).toHaveLength(2);
+      expect(okHeader(listed[0]!).wallets).toHaveLength(2);
       const second = remoteName(r.files);
       expect(second).not.toBe(first);
       expect(r.files.has(first)).toBe(false);
@@ -345,7 +387,7 @@ describe("BackupController", () => {
       await settle(r);
       listed = await r.engine.backup.list();
       expect(listed).toHaveLength(1);
-      expect(listed[0]!.header.wallets).toHaveLength(1);
+      expect(okHeader(listed[0]!).wallets).toHaveLength(1);
       expect(remoteName(r.files)).not.toBe(second);
       expect(r.files.has(second)).toBe(false);
     } finally {
@@ -388,7 +430,7 @@ describe("BackupController", () => {
       expect(r.engine.backup.getState().status).toBe("synced");
       const listed = await r.engine.backup.list();
       expect(listed).toHaveLength(1);
-      expect(listed[0]!.header.wallets).toHaveLength(3);
+      expect(okHeader(listed[0]!).wallets).toHaveLength(3);
       expect(r.files.has(foreignName)).toBe(false);
     } finally {
       await r.close();
@@ -826,7 +868,7 @@ describe("BackupController", () => {
       expect(seen).toContain("error");
       expect(r.engine.backup.getState().status).toBe("synced");
       const listed = await r.engine.backup.list();
-      expect(listed[0]?.header.wallets).toHaveLength(2);
+      expect(okHeader(listed[0]!).wallets).toHaveLength(2);
     } finally {
       await r.close();
     }
@@ -1010,7 +1052,7 @@ describe("BackupController", () => {
       expect(r.engine.backup.getState().status).toBe("synced");
       const listed = await r.engine.backup.list();
       expect(listed).toHaveLength(1);
-      expect(listed[0]!.header.wallets).toHaveLength(2);
+      expect(okHeader(listed[0]!).wallets).toHaveLength(2);
     } finally {
       await r.close();
     }

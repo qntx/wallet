@@ -5,7 +5,12 @@
  * Nostr API lives in the "./nostr" subpath (nostr(wallet)).
  */
 export { parseBackupHeader } from "./backup.ts";
-export type { BackupHeader, BackupHeaderKey, BackupHeaderWallet } from "./backup.ts";
+export type {
+  BackupHeader,
+  BackupHeaderKey,
+  BackupHeaderWallet,
+  BackupInspection,
+} from "./backup.ts";
 export type { BackupInfo } from "./types.ts";
 export type { WalletOptions } from "./options.ts";
 export {
@@ -35,6 +40,8 @@ export {
   type KeysApi,
   type BackupFactorInput,
   type UnlockFactor,
+  type Unsupported,
+  type UnsupportedReason,
   type VerifyFactor,
   type VaultApi,
   type VaultState,

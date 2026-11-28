@@ -536,7 +536,7 @@ describe("wallet.accounts", () => {
     expect(again).toStrictEqual(Array.from({ length: 5 }, () => address));
     expect(spy.seeds() - before).toBe(1);
     h.advance(60_001);
-    expect(field(ok(await h.call("status")), "vault")).toBe("locked");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "locked" });
     session = strField(ok(await h.call("vault.unlock", { factor: PASSKEY() })), "session");
     const unlocked = spy.seeds();
     await expect(accounts(session)).resolves.toBe(address);

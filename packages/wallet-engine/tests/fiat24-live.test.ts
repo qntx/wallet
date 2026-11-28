@@ -43,7 +43,7 @@ const rig = (options?: {
   const timers = manualTimer(1000);
   const snapshot = { vault: options?.vault ?? "unlocked" };
   const wallet = {
-    getSnapshot: () => ({ vault: snapshot.vault }),
+    getSnapshot: () => ({ vault: { status: snapshot.vault } }),
   } as unknown as Wallet;
   let reads = 0;
   const live = createFiat24Live({
@@ -129,7 +129,7 @@ describe("fiat24 live view", () => {
   it("never overlaps runs: a slow read holds the next tick", async () => {
     const timers = manualTimer(1000);
     const wallet = {
-      getSnapshot: () => ({ vault: "unlocked" }),
+      getSnapshot: () => ({ vault: { status: "unlocked" } }),
     } as unknown as Wallet;
     let release: (() => void) | undefined;
     let started = 0;
@@ -274,7 +274,7 @@ describe("fiat24 live view", () => {
         });
         return ACCOUNT;
       },
-      wallet: { getSnapshot: () => ({ vault: "unlocked" }) } as unknown as Wallet,
+      wallet: { getSnapshot: () => ({ vault: { status: "unlocked" } }) } as unknown as Wallet,
       setTimer: timers.setTimer,
       now: timers.now,
     });
@@ -301,7 +301,7 @@ describe("fiat24 live view", () => {
         });
         return ACCOUNT;
       },
-      wallet: { getSnapshot: () => ({ vault: "unlocked" }) } as unknown as Wallet,
+      wallet: { getSnapshot: () => ({ vault: { status: "unlocked" } }) } as unknown as Wallet,
       setTimer: timers.setTimer,
       now: timers.now,
     });

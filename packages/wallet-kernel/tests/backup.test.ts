@@ -116,18 +116,6 @@ const TAMPERS: ReadonlyArray<readonly [string, (e: Record<string, unknown>) => v
     },
   ],
   [
-    "version",
-    (e) => {
-      e["version"] = 1; // the PBKDF2 envelope this build no longer reads
-    },
-  ],
-  [
-    "old-version",
-    (e) => {
-      e["version"] = 2; // the pre-v3 envelope this build no longer reads
-    },
-  ],
-  [
     "added-factor",
     (e) => {
       // Well-formed but unauthenticated: the payload tag binds the factor list.
@@ -261,8 +249,9 @@ describe("backup.restore", () => {
     const newSession = strField(res, "session");
     expect(newSession).toMatch(/^[0-9a-f]{32}$/);
 
-    const status = field(ok(await b.call("status", undefined, newSession)), "vault");
-    expect(status).toBe("unlocked");
+    expect(field(ok(await b.call("status", undefined, newSession)), "vault")).toStrictEqual({
+      status: "unlocked",
+    });
   });
 
   it("restores an 18-word imported wallet with words:18 in its record", async () => {
@@ -396,7 +385,7 @@ describe("backup.restore", () => {
       factor: vaultPasswordFactor(),
     });
     expect(errCode(res)).toBe("wrong-password");
-    expect(field(ok(await b.call("status")), "vault")).toBe("uninitialized");
+    expect(field(ok(await b.call("status")), "vault")).toStrictEqual({ status: "uninitialized" });
   });
 
   it("rejects a wrong passkey PRF and an unknown credential", async () => {
@@ -446,8 +435,36 @@ describe("backup.restore", () => {
       factor: vaultPasswordFactor(),
     });
     expect(errCode(res)).toBe("integrity");
-    expect(field(ok(await b.call("status")), "vault")).toBe("uninitialized");
+    expect(field(ok(await b.call("status")), "vault")).toStrictEqual({ status: "uninitialized" });
   });
+
+  it.each([
+    ["v1 (the PBKDF2 envelope)", 1],
+    ["v2 (the pre-v3 envelope)", 2],
+    ["v4 (a newer build's)", 4],
+  ])(
+    "an envelope version this build cannot read is unsupported either way and writes nothing — %s",
+    async (_label, version) => {
+      const a = createHarness({ seed: 51 });
+      await a.settle();
+      const { session } = await createPasskeyWallet(a);
+      const envelope = await createBackupEnvelope(a, session, [backupPassword()]);
+      const obj = JSON.parse(envelope) as Record<string, unknown>;
+      obj["version"] = version;
+
+      const b = createHarness({ seed: 52 });
+      await b.settle();
+      const res = await b.call("backup.restore", {
+        envelope: JSON.stringify(obj),
+        backupFactor: backupPassword(),
+        factor: vaultPasswordFactor(),
+      });
+      expect(errCode(res)).toBe("unsupported");
+      expect(field(ok(await b.call("status")), "vault")).toStrictEqual({
+        status: "uninitialized",
+      });
+    },
+  );
 
   it("rejects a reordered factor list", async () => {
     const a = createHarness({ seed: 53 });
@@ -465,7 +482,7 @@ describe("backup.restore", () => {
       factor: vaultPasswordFactor(),
     });
     expect(errCode(res)).toBe("integrity");
-    expect(field(ok(await b.call("status")), "vault")).toBe("uninitialized");
+    expect(field(ok(await b.call("status")), "vault")).toStrictEqual({ status: "uninitialized" });
   });
 
   it("authenticates factors independent of their wire key order", async () => {
@@ -825,7 +842,7 @@ describe("backup enable/update/disable", () => {
     const record = mustFind(image.records, "backup-key", "default");
     await h.store.commit([{ op: "put-record", record: { ...record, id: "stray" } }]);
     const status = await h.call("status", undefined, session);
-    expect(field(ok(status), "vault")).toBe("corrupted");
+    expect(field(ok(status), "vault")).toStrictEqual({ status: "corrupted" });
   });
 
   it("a locked snapshot still reports the backup id; a tampered header corrupts", async () => {
@@ -854,7 +871,7 @@ describe("backup enable/update/disable", () => {
       },
     ]);
     const status = await h2.call("status", undefined, s2);
-    expect(field(ok(status), "vault")).toBe("corrupted");
+    expect(field(ok(status), "vault")).toStrictEqual({ status: "corrupted" });
   });
 });
 

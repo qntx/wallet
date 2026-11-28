@@ -1,15 +1,17 @@
 import type { Wallet } from "@qntx/wallet";
 
 /**
- * A 0.13.0 vault is format 3, which this release reports as `unsupported` and never opens. The only
- * way forward is a reset followed by a restore from the user's mnemonic, passkey or a backup made
- * after the upgrade — confirm with the user first, because the reset erases every wallet and key.
+ * A 0.13.0 vault is format 3, which this release reports as `unsupported` with reason `older` and
+ * never opens. The only way forward is a reset followed by a restore from the user's mnemonic,
+ * passkey or a backup made after the upgrade — confirm with the user first, because the reset
+ * erases every wallet and key. A `newer` vault means "update the app" — never reset it.
  */
 export async function replaceUnsupportedVault(
   wallet: Wallet,
   confirmErase: () => Promise<boolean>,
 ): Promise<"reset" | "kept"> {
-  if (wallet.getSnapshot().vault !== "unsupported" || !(await confirmErase())) {
+  const { vault } = wallet.getSnapshot();
+  if (vault.status !== "unsupported" || vault.reason !== "older" || !(await confirmErase())) {
     return "kept";
   }
   await wallet.vault.reset();

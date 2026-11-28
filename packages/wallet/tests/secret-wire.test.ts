@@ -43,7 +43,7 @@ const NOSTR_KEY: NostrKeyInfo = {
 function uninitializedStatus(): StatusPayload {
   return {
     ...unlockedStatus(),
-    vault: "uninitialized",
+    vault: { status: "uninitialized" },
     appLock: false,
     factors: [],
     nostr: { keys: [NOSTR_KEY] },
@@ -517,7 +517,7 @@ describe("passkey ceremony ordering and output wiping", () => {
       },
     };
     const { wallet } = await connect(
-      { ...uninitializedStatus(), vault: "locked" },
+      { ...uninitializedStatus(), vault: { status: "locked" } },
       RecordingPort,
       counting,
     );
@@ -579,7 +579,7 @@ describe("passkey ceremony ordering and output wiping", () => {
     });
     await new Promise((resolve) => setTimeout(resolve));
     // The vault initialized while the ceremony was pending: the given factor no longer applies.
-    kernel.status = { ...kernel.status, vault: "locked" };
+    kernel.status = { ...kernel.status, vault: { status: "locked" } };
     kernel.pushStatus();
     gate?.();
     await expect(call).rejects.toThrow(expect.objectContaining({ code: "invalid-input" }));
@@ -612,7 +612,7 @@ describe("passkey ceremony ordering and output wiping", () => {
       factor: { kind: "password", password: "pw" },
     });
     await new Promise((resolve) => setTimeout(resolve));
-    kernel.status = { ...kernel.status, vault: "locked" };
+    kernel.status = { ...kernel.status, vault: { status: "locked" } };
     kernel.pushStatus();
     gate?.();
     await expect(call).rejects.toThrow(expect.objectContaining({ code: "invalid-input" }));
@@ -672,7 +672,7 @@ describe("a wire that outlives its request", () => {
 describe("backup factor ceremonies", () => {
   const twoPasskeys = (): StatusPayload => ({
     ...unlockedStatus(),
-    vault: "locked",
+    vault: { status: "locked" },
     factors: [
       { kind: "passkey", id: "f".repeat(32), credentialId: "Y3JlZA", createdAt: 1 },
       { kind: "passkey", id: "e".repeat(32), credentialId: "Y3JlZA", createdAt: 2 },

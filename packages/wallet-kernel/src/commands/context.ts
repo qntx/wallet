@@ -51,8 +51,13 @@ export type VaultHooks = {
  */
 export type WalletRemoval = "delete" | "card-import";
 
-/** Vault health, recomputed on every load; only ok serves the full method set. */
-export type Health = "ok" | "corrupted" | "unsupported" | "unavailable";
+/**
+ * Vault health, recomputed on every load; only ok serves the full method set. The two unsupported
+ * values carry the direction decided from the persisted format alone: `unsupported-older` (a
+ * pre-1.0 format this build has no reader for — reset then restore is the only way out) and
+ * `unsupported-newer` (a newer build wrote it — update the app, never reset).
+ */
+export type Health = "ok" | "corrupted" | "unavailable" | "unsupported-older" | "unsupported-newer";
 
 /** Options for a commit sealed under a DEK other than the live session's. */
 export type CommitOptions = {
@@ -79,9 +84,9 @@ export type KernelContext = {
   readonly externalMaterial: (record: StoredRecord) => PublicMaterial;
   image: VaultImage;
   /**
-   * The kernel's read on the store: "corrupted" (authentication or structure), "unsupported" (data
-   * written by another build — left untouched) or "unavailable" (transient I/O). While non-ok only
-   * `status` and `vault.reset` are served.
+   * The kernel's read on the store: "corrupted" (authentication or structure), "unsupported-*"
+   * (data written by another build — left untouched; the suffix is the direction) or "unavailable"
+   * (transient I/O). While non-ok only `status` and `vault.reset` are served.
    */
   health: Health;
   /**

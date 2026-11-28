@@ -60,7 +60,7 @@ export async function runConsumerSmoke(): Promise<void> {
     });
     record("sign-verify", verifyEvent(event), `pubkey=${key.publicKey}`);
     await wallet.vault.lock();
-    record("lock", wallet.getSnapshot().vault === "locked");
+    record("lock", wallet.getSnapshot().vault.status === "locked");
   } catch (error) {
     record(
       "error",

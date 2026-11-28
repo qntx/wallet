@@ -202,7 +202,7 @@ const group = (groupIndex: number): AppGroup => ({ walletId, groupIndex });
 
 /* The store models the engine session: a locked vault reads as a closed store. */
 const session = (): EngineStore | undefined =>
-  wallet.getSnapshot().vault === "unlocked" ? backing : undefined;
+  wallet.getSnapshot().vault.status === "unlocked" ? backing : undefined;
 const credentials = credentialsStore(session);
 const signerOf = async (g: AppGroup): Promise<`0x${string}`> =>
   Promise.resolve(accountAt(g.groupIndex).address);

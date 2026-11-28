@@ -131,7 +131,7 @@ describe("replayed rows", () => {
 
     await h.store.commit([{ op: "put-record", record: captured }]);
     await h.settle();
-    await expect(vaultHealth(h)).resolves.toBe("corrupted");
+    await expect(vaultHealth(h)).resolves.toStrictEqual({ status: "corrupted" });
     expect(errCode(await h.call("session.touch", null, session))).toBe("integrity");
   });
 
@@ -156,7 +156,7 @@ describe("replayed rows", () => {
 
     await h.store.commit([{ op: "put-record", record: captured }]);
     await h.settle();
-    await expect(vaultHealth(h)).resolves.toBe("corrupted");
+    await expect(vaultHealth(h)).resolves.toStrictEqual({ status: "corrupted" });
     expect(errCode(await h.call("backup.update", null, session))).toBe("integrity");
   });
 
@@ -175,7 +175,7 @@ describe("replayed rows", () => {
 
     await h.store.commit([{ op: "put-record", record: captured }]);
     await h.settle();
-    await expect(vaultHealth(h)).resolves.toBe("corrupted");
+    await expect(vaultHealth(h)).resolves.toStrictEqual({ status: "corrupted" });
     expect(errCode(await h.call("backup.update", null, session))).toBe("integrity");
   });
 
@@ -194,7 +194,7 @@ describe("replayed rows", () => {
     expect(errCode(await fresh.call("vault.unlock", { factor: verifyPasskey() }))).toBe(
       "integrity",
     );
-    await expect(vaultHealth(fresh)).resolves.toBe("corrupted");
+    await expect(vaultHealth(fresh)).resolves.toStrictEqual({ status: "corrupted" });
   });
 });
 
@@ -228,7 +228,7 @@ describe("dropped rows", () => {
     const hardware = factorOf(await h.store.load(), "hardware");
     await h.store.commit([{ op: "delete-factor", id: hardware.id }]);
     await h.settle();
-    await expect(vaultHealth(h)).resolves.toBe("corrupted");
+    await expect(vaultHealth(h)).resolves.toStrictEqual({ status: "corrupted" });
     expect(errCode(await h.call("session.touch", null, session))).toBe("integrity");
   });
 
@@ -240,7 +240,7 @@ describe("dropped rows", () => {
 
     const fresh = createHarness({ store: h.store, seed: 50, anchor: h.anchor });
     await fresh.settle();
-    await expect(vaultHealth(fresh)).resolves.toBe("corrupted");
+    await expect(vaultHealth(fresh)).resolves.toStrictEqual({ status: "corrupted" });
   });
 });
 
@@ -271,7 +271,10 @@ describe("vault format", () => {
       // oxlint-disable-next-line eslint/no-await-in-loop -- one rewrite per older format
       await fresh.settle();
       // oxlint-disable-next-line eslint/no-await-in-loop -- one rewrite per older format
-      await expect(vaultHealth(fresh)).resolves.toBe("unsupported");
+      await expect(vaultHealth(fresh)).resolves.toStrictEqual({
+        status: "unsupported",
+        reason: "older",
+      });
       // oxlint-disable-next-line eslint/no-await-in-loop -- one rewrite per older format
       const unlocked = await fresh.call("vault.unlock", { factor: { kind: "hardware" } });
       expect(errCode(unlocked)).toBe("unsupported");
@@ -479,7 +482,7 @@ describe("structural commits", () => {
 
     const fresh = createHarness({ keystore: fk.keystore, store: h.store });
     await fresh.settle();
-    await expect(vaultHealth(fresh)).resolves.toBe("locked");
+    await expect(vaultHealth(fresh)).resolves.toStrictEqual({ status: "locked" });
     ok(await fresh.call("vault.unlock", { factor: { kind: "hardware" } }));
   });
 });
