@@ -427,6 +427,30 @@ and the kernel cannot tell the two apart.
   name only that scope's data. What links scopes is the network layer —
   client IP and request timing; hiding that needs an OHTTP-style relay
   this release does not ship.
+- **Who can become the gateway — one Cloudflare account.** The QNTX
+  gateway's staging and production Workers share one Cloudflare account,
+  and a Workers Scripts Edit token is account-wide, so the staging deploy
+  token can replace the production Worker. Residual: one account is one
+  blast radius — whoever holds either environment's deploy token, approves
+  either deployment, or has Workers access in the account is a compromised
+  production gateway with the powers above. Both GitHub environments
+  therefore require the same reviewer, deploy from `main` only and refuse
+  administrator bypass (`.github/rulesets/apply.sh`); each
+  `CLOUDFLARE_API_TOKEN` exists only as an environment secret and must be
+  an active token of the account in `apps/gateway/wrangler.jsonc`; the
+  deploy workflow checks all of this before it deploys and cannot check
+  the token's permissions, an administrator who changes the environments
+  later, or deploys made outside it (`apps/gateway/README.md` "One
+  Cloudflare account"). Staging shares no state with production: a test
+  fails when `sharedState` in `apps/gateway/scripts/deploy-check.ts` finds
+  a shared Worker name, route, KV or rate-limit namespace id. Splitting
+  accounts later: create the staging account and give it the staging
+  zone; delete the staging Worker, its KV namespaces and token from the
+  current account; point `env.staging.account_id` and its KV ids at the
+  new account; store a token of the new account as the `staging`
+  environment secret; deploy staging once by hand with its secrets
+  (`apps/gateway/README.md` "Splitting staging into its own account" has
+  the commands). The staging token then no longer reaches production.
 
 ### Stolen unlocked device
 

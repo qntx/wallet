@@ -1,16 +1,22 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   activeDeployment,
   commitFromMessage,
+  environmentGate,
   migrationsOf,
   missingRequired,
   parseDeployments,
   parseSecretNames,
   planRollback,
   requiredSecrets,
+  sharedState,
+  tokenProblem,
   workerNotFound,
 } from "../scripts/deploy-check.ts";
+import { parseJsonc } from "../scripts/jsonc.ts";
 
 describe("parseSecretNames", () => {
   it("reads the secret list's name rows", () => {
@@ -214,5 +220,268 @@ describe("planRollback", () => {
     });
     expect(plan.rollbackVersion).toBe("");
     expect(plan.reason).toContain("no previous deployment");
+  });
+});
+
+describe("sharedState", () => {
+  type EnvFixture = {
+    name: string;
+    routes: Array<{ pattern: string; custom_domain: boolean }>;
+    kv_namespaces: Array<{ binding: string; id?: string; preview_id?: string }>;
+    durable_objects: {
+      bindings: Array<{ name: string; class_name: string; script_name?: string }>;
+    };
+    services?: Array<{ binding: string; service: string }>;
+    ratelimits: Array<{ name: string; namespace_id: string }>;
+  };
+  const isolated = (): { env: { staging: EnvFixture; production: EnvFixture } } => ({
+    env: {
+      staging: {
+        name: "wallet-gateway-staging",
+        routes: [{ pattern: "staging.example.com", custom_domain: true }],
+        kv_namespaces: [{ binding: "RISK", id: "staging-kv", preview_id: "staging-preview" }],
+        durable_objects: { bindings: [{ name: "BUDGET", class_name: "BudgetObject" }] },
+        services: [{ binding: "S", service: "helper-worker" }],
+        ratelimits: [{ name: "LIMITER", namespace_id: "100" }],
+      },
+      production: {
+        name: "wallet-gateway",
+        routes: [{ pattern: "example.com", custom_domain: true }],
+        kv_namespaces: [{ binding: "RISK", id: "production-kv" }],
+        durable_objects: { bindings: [{ name: "BUDGET", class_name: "BudgetObject" }] },
+        ratelimits: [{ name: "LIMITER", namespace_id: "200" }],
+      },
+    },
+  });
+
+  it("finds nothing shared in the real wrangler.jsonc", () => {
+    const config = parseJsonc(
+      readFileSync(new URL("../wrangler.jsonc", import.meta.url).pathname, "utf8"),
+    );
+    expect(sharedState(config)).toStrictEqual([]);
+  });
+
+  it("finds nothing shared between isolated envs", () => {
+    expect(sharedState(isolated())).toStrictEqual([]);
+  });
+
+  it("flags one shared worker name", () => {
+    const config = isolated();
+    config.env.production.name = "wallet-gateway-staging";
+    const problems = sharedState(config);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('worker name "wallet-gateway-staging"');
+  });
+
+  it("flags a missing worker name", () => {
+    const config = isolated();
+    config.env.staging.name = "";
+    expect(sharedState(config)).toStrictEqual(["staging has no worker name"]);
+  });
+
+  it("flags one shared route pattern", () => {
+    const config = isolated();
+    config.env.staging.routes = [{ pattern: "example.com", custom_domain: true }];
+    const problems = sharedState(config);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('route pattern "example.com"');
+  });
+
+  it("flags one shared kv namespace id", () => {
+    const config = isolated();
+    config.env.staging.kv_namespaces = [{ binding: "RISK", id: "production-kv" }];
+    const problems = sharedState(config);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('kv namespace id "production-kv"');
+  });
+
+  it("flags a staging preview_id equal to the production id", () => {
+    const config = isolated();
+    config.env.staging.kv_namespaces = [{ binding: "RISK", preview_id: "production-kv" }];
+    const problems = sharedState(config);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('kv namespace id "production-kv"');
+  });
+
+  it("flags one shared rate-limit namespace", () => {
+    const config = isolated();
+    config.env.production.ratelimits = [{ name: "LIMITER", namespace_id: "100" }];
+    const problems = sharedState(config);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('rate-limit namespace "100"');
+  });
+
+  it("flags a durable-object binding at the other worker", () => {
+    const config = isolated();
+    config.env.staging.durable_objects.bindings = [
+      { name: "PUSH", class_name: "PushObject", script_name: "wallet-gateway" },
+    ];
+    const problems = sharedState(config);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('durable-object binding "PUSH"');
+    expect(problems[0]).toContain('"wallet-gateway"');
+  });
+
+  it("flags a service binding at the other worker", () => {
+    const config = isolated();
+    config.env.production.services = [{ binding: "S", service: "wallet-gateway-staging" }];
+    const problems = sharedState(config);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('service binding "S"');
+    expect(problems[0]).toContain('"wallet-gateway-staging"');
+  });
+});
+
+describe("environmentGate", () => {
+  type RecordFixture = {
+    environment: {
+      can_admins_bypass: boolean;
+      protection_rules: Array<{
+        id: number;
+        type: string;
+        prevent_self_review?: boolean;
+        reviewers?: Array<{ type: string; reviewer: Record<string, unknown> }>;
+      }>;
+      deployment_branch_policy: {
+        protected_branches: boolean;
+        custom_branch_policies: boolean;
+      };
+    };
+    branchPolicies: {
+      total_count: number;
+      branch_policies: Array<{ id: number; name: string; type: string }>;
+    };
+  };
+  const record = (): RecordFixture => ({
+    environment: {
+      can_admins_bypass: false,
+      protection_rules: [
+        {
+          id: 1,
+          type: "required_reviewers",
+          prevent_self_review: false,
+          reviewers: [{ type: "User", reviewer: { login: "gitctrlx", id: 76150709 } }],
+        },
+        { id: 2, type: "branch_policy" },
+      ],
+      deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+    },
+    branchPolicies: {
+      total_count: 1,
+      branch_policies: [{ id: 3, name: "main", type: "branch" }],
+    },
+  });
+
+  it("accepts two environments behind the same reviewer gate", () => {
+    expect(environmentGate({ staging: record(), production: record() })).toStrictEqual([]);
+  });
+
+  it("flags a missing environment", () => {
+    expect(environmentGate({ staging: undefined, production: record() })).toStrictEqual([
+      "staging: the environment does not exist",
+    ]);
+  });
+
+  it("flags an environment with no reviewer rule — today's live staging shape", () => {
+    const staging = record();
+    staging.environment.protection_rules = [{ id: 2, type: "branch_policy" }];
+    expect(environmentGate({ staging, production: record() })).toStrictEqual([
+      "staging: no required reviewer",
+    ]);
+  });
+
+  it("flags administrators allowed to bypass", () => {
+    const staging = record();
+    staging.environment.can_admins_bypass = true;
+    expect(environmentGate({ staging, production: record() })).toStrictEqual([
+      "staging: administrators may bypass the protection rules",
+    ]);
+  });
+
+  it("flags protected branches enabled in the branch policy", () => {
+    const staging = record();
+    staging.environment.deployment_branch_policy.protected_branches = true;
+    expect(environmentGate({ staging, production: record() })).toStrictEqual([
+      "staging: the deployment branch policy is not custom branch policies only",
+    ]);
+  });
+
+  it("flags a second deployment branch policy", () => {
+    const staging = record();
+    staging.branchPolicies.branch_policies = [
+      ...staging.branchPolicies.branch_policies,
+      { id: 4, name: "release/*", type: "branch" },
+    ];
+    expect(environmentGate({ staging, production: record() })).toStrictEqual([
+      "staging: the deployment branches are not exactly the main branch",
+    ]);
+  });
+
+  it("flags a tag policy instead of the main branch", () => {
+    const staging = record();
+    staging.branchPolicies.branch_policies = [{ id: 3, name: "v*.*.*", type: "tag" }];
+    expect(environmentGate({ staging, production: record() })).toStrictEqual([
+      "staging: the deployment branches are not exactly the main branch",
+    ]);
+  });
+
+  it("flags different reviewer sets", () => {
+    const production = record();
+    production.environment.protection_rules = [
+      {
+        id: 1,
+        type: "required_reviewers",
+        prevent_self_review: false,
+        reviewers: [{ type: "Team", reviewer: { slug: "ops", id: 42 } }],
+      },
+    ];
+    expect(environmentGate({ staging: record(), production })).toStrictEqual([
+      "staging and production require different reviewers",
+    ]);
+  });
+
+  it("flags a different prevent_self_review", () => {
+    const production = record();
+    production.environment.protection_rules = [
+      {
+        id: 1,
+        type: "required_reviewers",
+        prevent_self_review: true,
+        reviewers: [{ type: "User", reviewer: { login: "gitctrlx", id: 76150709 } }],
+      },
+    ];
+    expect(environmentGate({ staging: record(), production })).toStrictEqual([
+      "staging and production differ on prevent_self_review",
+    ]);
+  });
+});
+
+describe("tokenProblem", () => {
+  it("accepts an active token", () => {
+    expect(
+      tokenProblem(200, { success: true, result: { id: "t", status: "active" } }),
+    ).toBeUndefined();
+  });
+
+  it("reports a refused request", () => {
+    const problem = tokenProblem(401, {
+      success: false,
+      errors: [{ code: 9109, message: "Invalid access token" }],
+    });
+    expect(problem).toContain("401");
+  });
+
+  it("reports a disabled token", () => {
+    const problem = tokenProblem(200, { success: true, result: { status: "disabled" } });
+    expect(problem).toContain("200");
+    expect(problem).toContain('"disabled"');
+  });
+
+  it("reports success: false", () => {
+    expect(tokenProblem(200, { success: false, errors: [] })).toContain("success: false");
+  });
+
+  it("reports a non-object body", () => {
+    expect(tokenProblem(200, "not json")).toContain("200");
   });
 });

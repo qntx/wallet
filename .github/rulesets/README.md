@@ -88,13 +88,16 @@ It creates or updates the rulesets `main` and `release tags`, and configures the
 
 | Environment  | Reviewers        | Prevent self-review | Deployment policy (the only one) |
 | ------------ | ---------------- | ------------------- | -------------------------------- |
-| `staging`    | none             | —                   | branch `main`                    |
+| `staging`    | the given logins | with 2+ logins      | branch `main`                    |
 | `production` | the given logins | with 2+ logins      | branch `main`                    |
 | `npm`        | the given logins | with 2+ logins      | tag `v*.*.*`                     |
 
-Any other deployment policy an environment already has is deleted. Then, by hand (the REST API
-cannot set it), for `production` and `npm`: Settings → Environments → clear **Allow administrators
-to bypass configured protection rules**. `apply.sh` exits non-zero until that is done; rerun it.
+`staging` carries the same reviewers as `production` because both gateway environments deploy into
+one Cloudflare account, where a Workers token is account-wide: the staging token can replace the
+production Worker (`apps/gateway/README.md` "One Cloudflare account"). Any other deployment policy
+an environment already has is deleted. Then, by hand (the REST API cannot set it), for every
+environment that still allows it: Settings → Environments → clear **Allow administrators to bypass
+configured protection rules**. `apply.sh` exits non-zero until that is done; rerun it.
 
 Check the result:
 
@@ -118,8 +121,9 @@ keeps and what it gives up:
 
 - Kept: nothing reaches `main` without a pull request and green checks; release tags are
   admin-only; a publish job starts only from a `v*.*.*` tag and waits for an explicit approval in
-  the `npm` environment; npm accepts only that job's OIDC token; no long-lived token can publish.
-  A leaked `contents: write` token or a non-admin writer still cannot publish.
+  the `npm` environment; npm accepts only that job's OIDC token; no long-lived token can publish;
+  a gateway deploy, staging or production, waits for an explicit approval in its environment.
+  A leaked `contents: write` token or a non-admin writer still cannot publish or deploy.
 - Given up: a second person. Whoever controls the maintainer's GitHub account can merge, tag and
   approve. The account's own 2FA is the control; stage-only publishing (above) adds an npm 2FA
   approval on top and is the next step if that is not enough.

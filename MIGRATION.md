@@ -1,9 +1,10 @@
-# Migrating from 0.13.0
+# Migrating from 0.13.0 or 0.14.0
 
 This guide covers every change a host of `@qntx/wallet`, `@qntx/wallet-engine`,
 `@qntx/wallet-native` and `@qntx/wallet-worker` has to act on between the 0.13.0 release and
-0.14.0. [CHANGELOG.md](CHANGELOG.md) lists every change; this file only lists what
-needs host work, grouped by task.
+0.14.1: §1–§35 cover 0.13.0 → 0.14.0 and §36–§37 cover 0.14.0 → 0.14.1. A 0.14.0 host acts on
+§36–§37 only; a 0.13.0 host acts on every section. [CHANGELOG.md](CHANGELOG.md) lists every
+change; this file only lists what needs host work, grouped by task.
 
 Every snippet below is a file under [`tests/migration/`](tests/migration), compiled by
 `bun run typecheck` against the current sources. A line marked `@ts-expect-error` is the 0.13.0
@@ -16,9 +17,10 @@ release their kernel was built for. `@qntx/wallet`'s root declarations now refer
 
 ## What users lose on upgrade
 
-The upgrade is not data-preserving. Plan the release around this table and tell users before they
-update: a user who cannot produce their mnemonic, their passkey or a post-upgrade backup loses the
-wallet.
+The 0.14.0 → 0.14.1 upgrade keeps every vault, backup and engine store as it is (the vault stays
+at format 6). The 0.13.0 → 0.14.0 upgrade is not data-preserving. Plan the release around this
+table and tell users before they update: a user who cannot produce their mnemonic, their passkey or
+a post-upgrade backup loses the wallet.
 
 | Data                                                                                                                                                  | 0.13.0 location                                                                               | After the upgrade                                                                                                                                                                                                                                                                                                        |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -2178,9 +2180,9 @@ The vault gains a `card-wallet` record kind; existing vault wallets are unchange
    `wallets.exportMnemonic` answer `unsupported` for a card wallet. Hide them for
    `custody: "card"`.
 5. **Platforms.** Only `@qntx/wallet-native` has a card platform. Web and Node answer every
-   `card.*` call `unsupported`. **0.14.0 pins no production card certificate anchor**, so every
-   card — genuine or not — answers `card-not-genuine` until a later release ships the production
-   anchor. Ship the card UI behind a flag, or not at all, until then.
+   `card.*` call `unsupported`. **Neither 0.14.0 nor 0.14.1 pins a production card certificate
+   anchor**, so every card — genuine or not — answers `card-not-genuine` until a later release ships
+   the production anchor. Ship the card UI behind a flag, or not at all, until then.
 6. **New error codes** (§14): `card-not-genuine` (the certificate does not chain to a pinned
    anchor, or the card never finished personalisation — never offer to continue), `card-id-mismatch` (another card than the step asked for;
    nothing was sent), `wrong-device` (a card of another wallet), `card-erased`, `card-locked`,
@@ -3057,8 +3059,9 @@ export const historyAccount: HistoryControllerOptions["chains"]["account"] = asy
 
 ## 36. Change from the sealed mark, immediate confirmations and lookalike references
 
-The engine places Bitcoin change from the kernel-sealed mark alone, and a device confirmation now
-takes effect without a relock. The host-visible changes:
+For a host upgrading from 0.14.0 to 0.14.1, the engine places Bitcoin change from the
+kernel-sealed mark alone, and a device confirmation now takes effect without a relock. The
+host-visible changes:
 
 1. **`requestChangeMark` is removed** from `@qntx/wallet-chains/bitcoin`. Signed inputs never raise
    the change mark — for either origin — so the hidden-change window of §34 is always
@@ -3139,12 +3142,12 @@ export function wiredSigners(
 
 ## 37. The change pick never refuses
 
-For a host upgrading from 0.14.0:
+For a host upgrading from 0.14.0 to 0.14.1:
 
 1. **No Bitcoin send, sweep, speed-up, cancel or CPFP is refused for want of a change address.** The
    exhausted-window `invalid-request` refusal of an earlier draft of §36 never ships, so there is no
    new error to handle:
-   0.14.0 reused an address, and this release reuses the address at the window's end when the window
+   0.14.0 reused an address, and 0.14.1 reuses the address at the window's end when the window
    is full.
 2. **A sign attempt that fails before the factor verifies consumes no change index.** A cancelled
    prompt, a wrong password or a pre-verify refusal leaves `draft`/`rejected` rows whose own output
