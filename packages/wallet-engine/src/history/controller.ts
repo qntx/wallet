@@ -8,6 +8,7 @@ import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import { independentTrusted } from "../networks/controller.ts";
+import { vouchingOutflows } from "../requests/risk.ts";
 import type { SignersController } from "../signers/controller.ts";
 import type { SparkController } from "../spark/controller.ts";
 import { readJson } from "../store/json.ts";
@@ -341,10 +342,13 @@ export class HistoryController extends Controller<HistoryState> {
       }
     }
     for (const tx of Object.values(this.options.transactions.store.getState().txs)) {
-      if (RECIPIENT_STATES.has(tx.state)) {
-        for (const flow of tx.intent?.outflows ?? []) {
-          exempt[tx.family].add(flow.to);
+      if (RECIPIENT_STATES.has(tx.state) && tx.intent !== undefined) {
+        for (const flow of tx.intent.outflows) {
           references[tx.family].add(flow.to);
+        }
+        // An outflow a device-unconfirmed entry serves never vouches for its recipient.
+        for (const flow of vouchingOutflows(tx.intent)) {
+          exempt[tx.family].add(flow.to);
         }
       }
     }
