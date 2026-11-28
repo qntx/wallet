@@ -1,4 +1,3 @@
-import { ChainError } from "@qntx/wallet-chains";
 import { isDiscoverableChange } from "@qntx/wallet-chains/bitcoin";
 import type { BitcoinPathTail } from "@qntx/wallet-chains/bitcoin";
 import type {
@@ -10,9 +9,9 @@ import type {
 
 /**
  * Change from the sealed mark and immediate confirmations (section 36): `requestChangeMark` is gone
- * — the hidden-change window is the sealed mark alone; a send whose change window is exhausted
- * refuses with `invalid-request`; `SignersState.confirmations` counts completed on-device checks,
- * and host-wired history and notifications controllers take the signers store. Compiled only.
+ * — the hidden-change window is the sealed mark alone; `SignersState.confirmations` counts
+ * completed on-device checks, and host-wired history and notifications controllers take the signers
+ * store. Compiled only.
  */
 
 /**
@@ -25,15 +24,6 @@ export function hidesAsChange(
   mark: number,
 ): boolean {
   return isDiscoverableChange(output, signed, mark);
-}
-
-/** The exhausted change window: no change index is left above the sealed mark inside the scan. */
-export function changeWindowExhausted(error: unknown): boolean {
-  return (
-    error instanceof ChainError &&
-    error.code === "invalid-request" &&
-    error.message === "no unused change address inside the scan window"
-  );
 }
 
 /** Re-render whatever shows "unconfirmed" when a device confirmation completes. */

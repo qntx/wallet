@@ -117,7 +117,7 @@ async function* createOne(env: OpEnv, op: CreateOp): CardOp {
               d.body = record.body;
               d.extra.push({ op: "delete-record", kind: "entropy", id: sourceId });
               for (const module of env.ctx.modules) {
-                d.extra.push(...module.walletDeleteOps(env.ctx.image, sourceId));
+                d.extra.push(...module.walletDeleteOps(env.ctx.image, sourceId, "card-import"));
               }
             });
           };
@@ -338,7 +338,7 @@ async function* createSet(env: OpEnv, op: CreateOp): CardOp {
         if (sourceId !== undefined) {
           d.extra.push({ op: "delete-record", kind: "entropy", id: sourceId });
           for (const module of env.ctx.modules) {
-            d.extra.push(...module.walletDeleteOps(env.ctx.image, sourceId));
+            d.extra.push(...module.walletDeleteOps(env.ctx.image, sourceId, "card-import"));
           }
         }
       });

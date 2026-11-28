@@ -1,13 +1,15 @@
 /// <reference types="node" />
 /**
- * The command-level layer of the toolchain gate: a `run:` line, a manifest script or a Dockerfile
+ * The command-level layer of the toolchain lint: a `run:` line, a manifest script or a Dockerfile
  * `RUN` body — already lexed by `shell-words.ts` into pipelines of argv — is normalized down to the
- * tool it really invokes (basename, `sudo`/`env`/`nice`-style wrappers, `pipX.Y`/`pythonX.Y`,
- * `python -m pip`), then judged per invocation: bin runners must resolve a bin of a declared
- * dependency, installers must not reach a registry outside the lockfile, a `curl`/`wget` must never
- * feed an interpreter in the same pipeline or through a substitution, and `docker run|create|pull`
- * may only name digest-pinned or same-file-built images. `sh -c`, `eval` and heredoc bodies fed to
- * a shell recurse as scripts.
+ * tool it really invokes (basename, `sudo`/`env`/`nice`-style wrappers, `busybox`/`corepack`
+ * multicall prefixes, shell reserved words, `pipX.Y`/`pythonX.Y`, `python -m pip`), then judged per
+ * invocation: bin runners must resolve a bin of a declared dependency, installers must not reach a
+ * registry outside the lockfile, a `curl`/`wget` must never feed an interpreter in the same
+ * pipeline or through a substitution, and `docker run|create|pull` (podman/nerdctl alike) may only
+ * name digest-pinned or same-file-built images. `sh -c`, `eval`, `trap` and heredoc bodies fed to a
+ * shell recurse as scripts. This layer is a lint against accidental drift — the evasion classes the
+ * header of `check-toolchain.ts` lists are known and accepted.
  */
 import { parse } from "./shell-words.ts";
 import type { Command, Pipeline } from "./shell-words.ts";
@@ -18,13 +20,13 @@ export const DIGEST_IMAGE: RegExp = /@sha256:[0-9a-f]{64}$/;
 
 /**
  * The dependency facts a command resolves bins and packages against: `bin` maps an executable name
- * to the package that provides it, `declared` answers whether a package name is a declared
- * dependency — each over the candidate manifest directories the invocation's working directory
- * gives it (nearest first).
+ * to the package that provides it, `spec` answers the version spec a package name is declared at —
+ * each over the candidate manifest directories the invocation's working directory gives it (nearest
+ * first).
  */
 export type DependencyIndex = {
   readonly bin: (name: string, dirs: ReadonlyArray<string>) => string | undefined;
-  readonly declared: (name: string, dirs: ReadonlyArray<string>) => boolean;
+  readonly spec: (name: string, dirs: ReadonlyArray<string>) => string | undefined;
 };
 
 const basename = (word: string): string => word.slice(word.lastIndexOf("/") + 1);
@@ -32,7 +34,21 @@ const basename = (word: string): string => word.slice(word.lastIndexOf("/") + 1)
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "ash", "fish"]);
 
 /** Interpreters that may execute downloaded bytes — after basename/version normalization. */
-const EXECUTORS = new Set([...SHELLS, "python", "node", "perl", "ruby", "php", "bun", "deno"]);
+const EXECUTORS = new Set([
+  ...SHELLS,
+  "python",
+  "node",
+  "perl",
+  "ruby",
+  "php",
+  "bun",
+  "deno",
+  "pwsh",
+  "lua",
+  "source",
+  ".",
+  "eval",
+]);
 
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
@@ -51,6 +67,31 @@ const SUDO_VALUE_FLAGS = new Set([
   "-r",
 ]);
 
+/** `doas`'s flags that consume the next word (doas(1)); every other `-x` flag is boolean. */
+const DOAS_VALUE_FLAGS = new Set(["-u", "-C"]);
+
+/** `timeout`'s flags that consume the next word; the first non-flag word is the duration. */
+const TIMEOUT_VALUE_FLAGS = new Set(["-s", "--signal", "-k", "--kill-after"]);
+
+/**
+ * Shell grammar words that lead a pipeline whose real command is the next word: `then`/`do`/`else`
+ * open a command list, `!` negates a pipeline, `coproc` backgrounds one. The leading word alone is
+ * stripped — `if true`/`while read x` normalize to `true`/`read`, and their bodies sit in `then`/
+ * `do` pipelines of their own.
+ */
+const RESERVED = new Set([
+  "!",
+  "if",
+  "then",
+  "elif",
+  "else",
+  "do",
+  "while",
+  "until",
+  "coproc",
+  "{",
+]);
+
 /**
  * The command a `sudo -E bash`/`env A=1 sh`/`nohup nice -n 5 cmd` actually runs: wrapper prefixes
  * forward to the real argv0, which rules judge — so `curl | sudo -E bash` is `curl | bash`.
@@ -67,11 +108,12 @@ const normalize = (
   for (;;) {
     const tool = basename(argv[0] ?? "");
     let j = -1;
-    if (tool === "sudo") {
+    if (tool === "sudo" || tool === "doas") {
+      const values = tool === "sudo" ? SUDO_VALUE_FLAGS : DOAS_VALUE_FLAGS;
       j = 1;
       while (j < argv.length) {
         const token = argv[j] ?? "";
-        if (SUDO_VALUE_FLAGS.has(token)) {
+        if (values.has(token)) {
           j += 2;
         } else if (token.startsWith("-") || ASSIGNMENT.test(token)) {
           j += 1;
@@ -83,9 +125,25 @@ const normalize = (
       j = 1;
       while (j < argv.length) {
         const token = argv[j] ?? "";
-        if (token === "-u" || token === "-C" || token === "-S") {
-          j += 2;
-        } else if (token === "--unset" || token === "--chdir" || token === "--split-string") {
+        if (token === "-S" || token === "--split-string") {
+          /* `-S <s>` splits s into env's own argv: the parsed words replace the flag pair in
+             place and are re-examined — `env -S "npm install x"` forwards to npm. */
+          const body = argv[j + 1];
+          if (body === undefined) {
+            break;
+          }
+          const split = parse(body)[0]?.[0]?.argv ?? [];
+          argv = [...argv.slice(0, j), ...split, ...argv.slice(j + 2)];
+          continue;
+        }
+        if (
+          token === "-u" ||
+          token === "-C" ||
+          token === "-a" ||
+          token === "--unset" ||
+          token === "--chdir" ||
+          token === "--argv0"
+        ) {
           j += 2;
         } else if (token.startsWith("-") || ASSIGNMENT.test(token)) {
           j += 1;
@@ -105,11 +163,37 @@ const normalize = (
           break;
         }
       }
-    } else if (tool === "exec" || tool === "command" || tool === "nohup" || tool === "time") {
+    } else if (tool === "timeout") {
+      j = 1;
+      while (j < argv.length) {
+        const token = argv[j] ?? "";
+        if (TIMEOUT_VALUE_FLAGS.has(token)) {
+          j += 2;
+          continue;
+        }
+        // Every other flag is boolean; the first bare word is the duration — then the command.
+        j += 1;
+        if (!token.startsWith("-")) {
+          break;
+        }
+      }
+    } else if (
+      tool === "exec" ||
+      tool === "command" ||
+      tool === "nohup" ||
+      tool === "time" ||
+      tool === "setsid" ||
+      tool === "stdbuf"
+    ) {
       j = 1;
       while (j < argv.length && (argv[j] ?? "").startsWith("-")) {
         j += 1;
       }
+    } else if (tool === "busybox" || tool === "corepack") {
+      // A multicall binary's next word is the applet or package manager it delegates to.
+      j = 1;
+    } else if (RESERVED.has(tool)) {
+      j = 1;
     }
     if (j < 0) {
       break;
@@ -125,11 +209,13 @@ const normalize = (
     tool = "pip";
   } else if (/^python\d+(\.\d+)?$/.test(tool)) {
     tool = "python";
+  } else if (tool === "podman" || tool === "nerdctl") {
+    tool = "docker";
   }
-  // `python -m pip` is pip — including `python3.11 -m pip`.
-  if (tool === "python" && argv[1] === "-m" && argv[2] === "pip") {
+  /* `python -m pip` is pip — `python3.11 -m pip` and the glued `python -mpip` spellings too. */
+  if (tool === "python" && (argv[1] === "-mpip" || (argv[1] === "-m" && argv[2] === "pip"))) {
     tool = "pip";
-    argv = [argv[0] ?? "pip", ...argv.slice(3)];
+    argv = [argv[0] ?? "pip", ...argv.slice(argv[1] === "-mpip" ? 2 : 3)];
   }
   return {
     tool,
@@ -325,6 +411,39 @@ const NPM_VALUE_FLAGS = new Set([
   "--https-proxy",
   "--noproxy",
   "--scope",
+  "--location",
+  "--fetch-retries",
+  "--os",
+  "--cpu",
+  "--libc",
+]);
+
+/*
+ * pip's value-taking general options — skipped while locating the subcommand, whose own flags
+ * (`-r`, `--require-hashes`, …) stay in positionals for the rule to take apart. From the pip
+ * reference's General Options, https://pip.pypa.io/en/stable/cli/pip/ (retrieved 2026-11-28),
+ * plus the index options `-i`/`--index-url`, `--extra-index-url` and `-f`/`--find-links`.
+ */
+const PIP_VALUE_FLAGS = new Set([
+  "--python",
+  "--log",
+  "--proxy",
+  "--retries",
+  "--timeout",
+  "--exists-action",
+  "--trusted-host",
+  "--cert",
+  "--client-cert",
+  "--cache-dir",
+  "--keyring-provider",
+  "--use-feature",
+  "--use-deprecated",
+  "--resume-retries",
+  "-i",
+  "--index-url",
+  "--extra-index-url",
+  "-f",
+  "--find-links",
 ]);
 
 /** Bun's value-taking globals — skipped while locating the subcommand. */
@@ -438,6 +557,7 @@ const DOCKER_RUN_VALUE_FLAGS = new Set([
   "--label",
   "--label-file",
   "--link",
+  "--link-local-ip",
   "--log-driver",
   "--log-opt",
   "-m",
@@ -468,6 +588,7 @@ const DOCKER_RUN_VALUE_FLAGS = new Set([
   "--tmpfs",
   "-u",
   "--ulimit",
+  "--umask",
   "--user",
   "--userns",
   "--uts",
@@ -561,13 +682,20 @@ export const collectBuildTags = (script: ReadonlyArray<Pipeline>): string[] => {
   return tags;
 };
 
+/* A `name[@version]` package reference splits on the last `@` after index 0, so `@scope/pkg@x`
+   is { name: "@scope/pkg", version: "x" } and `@scope/pkg` is a bare name. */
+const packageRef = (text: string): { readonly name: string; readonly version?: string } => {
+  const at = text.lastIndexOf("@");
+  return at > 0 ? { name: text.slice(0, at), version: text.slice(at + 1) } : { name: text };
+};
+
 /**
  * The command rules shared by `run:` steps, manifest scripts and Dockerfile `RUN` bodies, applied
  * to the pipelines the shell parser returns — never to raw text: bin runners resolve only against
  * declared dependencies; installers that would reach a registry outside a lockfile are findings; a
  * downloader piped to an interpreter is a finding; and a `docker` command may only reference
- * digest-pinned images or images the file itself builds. `sh -c`, `eval` and heredoc bodies fed to
- * a shell recurse as scripts; substitution bodies recurse too.
+ * digest-pinned images or images the file itself builds. `sh -c`, `eval`, `trap` and heredoc bodies
+ * fed to a shell recurse as scripts; substitution bodies recurse too.
  */
 export const checkCommands = (
   at: string,
@@ -578,6 +706,14 @@ export const checkCommands = (
 ): string[] => {
   const errors: string[] = [];
   const images = new Set(builtImages);
+
+  /* Whether the manifests declare a package reference — a versioned one only when its version
+     is exactly the declared spec (`-p cowsay@9.9.9` escapes the lockfile). */
+  const declared = (ref: string): boolean => {
+    const { name, version } = packageRef(ref);
+    const spec = index.spec(name, dirs);
+    return spec !== undefined && (version === undefined || version === spec);
+  };
 
   const binRule = (tool: string, args: ReadonlyArray<string>): void => {
     let explicit = false;
@@ -590,7 +726,7 @@ export const checkCommands = (
         const pkg = args[i + 1] ?? "";
         i += 1;
         explicit = true;
-        if (!index.declared(pkg, dirs)) {
+        if (!declared(pkg)) {
           errors.push(`${at}: ${tool} -p ${pkg} names no declared dependency`);
         }
         continue;
@@ -598,7 +734,7 @@ export const checkCommands = (
       if (token.startsWith("--package=")) {
         const pkg = token.slice("--package=".length);
         explicit = true;
-        if (!index.declared(pkg, dirs)) {
+        if (!declared(pkg)) {
           errors.push(`${at}: ${tool} --package=${pkg} names no declared dependency`);
         }
         continue;
@@ -606,8 +742,10 @@ export const checkCommands = (
       if (token.startsWith("-")) {
         continue;
       }
-      // With -p the named package serves the bin; without it the declared deps must.
-      if (!explicit && index.bin(token, dirs) === undefined) {
+      /* With -p the named package serves the bin; without it the first positional is either a
+         bin a declared dependency serves, or itself a declared package name (or `name@<exact
+         spec>`) whose default bin the runner executes. */
+      if (!explicit && index.bin(token, dirs) === undefined && !declared(token)) {
         errors.push(
           `${at}: ${tool} ${token} resolves no bin of a dependency declared in ${dirs
             .map((d) => `${d}/package.json`)
@@ -669,6 +807,12 @@ export const checkCommands = (
           const offline = args.some((a) => a === "--offline" || a.startsWith("--offline="));
           if ((deref === "install" || deref === "install-test" || deref === "update") && !offline) {
             errors.push(`${at}: npm ${deref} resolves outside a committed lockfile — use npm ci`);
+          } else if ((deref === "init" || deref === "pack" || deref === "link") && sub.length > 1) {
+            /* Bare `npm init`/`pack`/`link` reach no registry, but with a package name each
+               resolves it remotely — `npm init x` runs create-x. */
+            errors.push(
+              `${at}: npm ${deref} ${sub[1] ?? ""} resolves outside a committed lockfile`,
+            );
           } else if (deref === "exec") {
             binRule("npm exec", sub.slice(1));
           }
@@ -686,17 +830,36 @@ export const checkCommands = (
             binRule("bun x", sub.slice(1));
           }
         } else if (n.tool === "pip") {
-          const [typed] = positionals(args, new Set());
-          if (
-            typed === "install" &&
-            !args.includes("--require-hashes") &&
-            !args.includes("--no-index")
-          ) {
-            errors.push(`${at}: pip install must pass --require-hashes`);
+          const [typed] = positionals(args, PIP_VALUE_FLAGS);
+          if (typed === "install" || typed === "download") {
+            /* `--no-index` disables the index only — a `-f`/`--find-links` value that names a URL
+               (separate or `=`-glued) still fetches remote artifacts, voiding the exemption. */
+            const remoteLinks = args.some((a, i) => {
+              if (a === "-f" || a === "--find-links") {
+                return (args[i + 1] ?? "").includes("://");
+              }
+              return (
+                (a.startsWith("-f=") || a.startsWith("--find-links=")) &&
+                a.slice(a.indexOf("=") + 1).includes("://")
+              );
+            });
+            const offline = args.includes("--no-index") && !remoteLinks;
+            if (!args.includes("--require-hashes") && !offline) {
+              errors.push(`${at}: pip ${typed} must pass --require-hashes`);
+            }
           }
         } else if (n.tool === "pnpm" || n.tool === "yarn") {
-          if (positionals(args, new Set())[0] === "dlx") {
+          const [typed] = positionals(args, new Set());
+          if (typed === "dlx") {
             errors.push(`${at}: ${n.tool} dlx runs registry code without a lockfile`);
+          } else if (typed === "add") {
+            errors.push(`${at}: ${n.tool} add resolves outside a committed lockfile`);
+          } else if (
+            (typed === "install" || (n.tool === "pnpm" && typed === "i")) &&
+            !args.includes("--frozen-lockfile") &&
+            !args.includes("--immutable")
+          ) {
+            errors.push(`${at}: ${n.tool} install must pass --frozen-lockfile or --immutable`);
           }
         } else if (n.tool === "docker") {
           const { verb: head, rest: after } = dockerVerb(args);
@@ -739,6 +902,10 @@ export const checkCommands = (
         }
         if (n.tool === "eval" && args.length > 0) {
           visit(parse(args.join(" ")), depth + 1);
+        }
+        // `trap '<script>' SIG…` runs its first argument on the signal.
+        if (n.tool === "trap" && args[0] !== undefined) {
+          visit(parse(args[0] ?? ""), depth + 1);
         }
       }
     }

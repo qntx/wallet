@@ -65,6 +65,23 @@ import type {
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
 /**
+ * The states whose transaction bytes exist or did: a `signed` row signed, everything past it
+ * broadcast, and a `failed`/`dropped`/`replaced` transaction may still surface. A `draft` or
+ * `rejected` row's sign call failed either before the factor verified — no signature exists — or
+ * after it, when the kernel had already sealed the mark past the picked index; either way its own
+ * output stays free for the change pick.
+ */
+const SIGNED_STATES: ReadonlySet<TxState> = new Set([
+  "signed",
+  "submitted",
+  "pending",
+  "confirmed",
+  "failed",
+  "dropped",
+  "replaced",
+]);
+
+/**
  * What a send, replacement or child build needs beyond the persisted record — derived from the
  * account and a fresh scan every time, so nothing of it has to survive a restart in memory.
  */
@@ -358,8 +375,10 @@ const accountContext = async (
  * kernel's sealed mark opens — `mark < index <= changeScanReach(mark)` — whose address this wallet
  * has not already used for change (`taken`). The pick never reads the endpoint's "used" answers: a
  * lying endpoint can then move the sealed mark by at most one index per real signed send — every
- * step a user approved — and a burned index (signed, never confirmed) is never handed out again.
- * Throws `invalid-request` once the scan window is exhausted.
+ * step a user approved — and a burned index (signed, never confirmed) is never handed out again. An
+ * exhausted window reuses the entry at the window's end: spending change there again only links
+ * payments, while refusing to pick would lock the funds, and the address stays discoverable —
+ * `isDiscoverableChange` accepts the window's end, so the kernel still classifies it as change.
  */
 export const changeAddressOf = (
   changeChain: ReadonlyArray<ScanAddress>,
@@ -370,10 +389,15 @@ export const changeAddressOf = (
   const found = changeChain.find(
     (a) => a.index > mark && a.index <= reach && !taken.has(a.address),
   );
-  if (found === undefined) {
-    throw new ChainError("invalid-request", "no unused change address inside the scan window");
+  if (found !== undefined) {
+    return found;
   }
-  return found;
+  const last = changeChain.find((a) => a.index === reach);
+  if (last === undefined) {
+    // Unreachable: scanChainWithHistory always covers [0, reach].
+    throw new Error("change chain does not reach the scan window");
+  }
+  return last;
 };
 
 /**
@@ -515,17 +539,23 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }
   };
   /**
-   * The change addresses this wallet itself already used — every in-flight pick plus every own
-   * output the tracked transactions carry, whatever their state. The endpoint's "used" answers
-   * never feed this set.
+   * The change addresses this wallet itself already used — every in-flight pick plus every output
+   * address a tracked transaction carries whose bytes exist (a payee on one of the wallet's own
+   * change addresses was paid on chain all the same, so counting it is strictly more conservative):
+   * a `signed` row signed, everything past it broadcast, and `failed`/`dropped`/`replaced` may
+   * still surface. A `draft`/`rejected` row's sign call failed either before the factor verified —
+   * no signature exists, so its address may be handed out again — or after it, when the kernel had
+   * already sealed the mark past that index, so the window no longer contains it. The endpoint's
+   * "used" answers never feed this set.
    */
   const changeTaken = (ctx: RouteContext): Set<string> => {
     const taken = new Set<string>(reservedChange.values());
     for (const tx of Object.values(ctx.txs())) {
+      if (!SIGNED_STATES.has(tx.state)) {
+        continue;
+      }
       for (const output of tx.btc?.outputs ?? []) {
-        if (output.own) {
-          taken.add(output.address);
-        }
+        taken.add(output.address);
       }
     }
     return taken;

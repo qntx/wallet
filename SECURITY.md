@@ -241,8 +241,11 @@ Summary, per platform — details in the sections below:
   (`exportAccount` in
   `packages/wallet-kernel/src/modules/chains/export.ts`).
 - **Unconfirmed keys are never "your own address".** A Bitcoin output
-  whose key an unconfirmed entry serves is not hidden as change, not
-  worded as an own-address send and never raises the change mark: the
+  whose key an unconfirmed entry serves is never hidden as change and
+  never worded as an own-address send — but an internal request's
+  discoverable output on such a key still raises the change mark after
+  the factor verifies, which only widens the wallet's own scan (at most
+  `BITCOIN_GAP_LIMIT` per approved signature): the
   prompt shows it as an ordinary send with a danger row
   (`bitcoinOwn` in `packages/wallet-kernel/src/modules/chains/bitcoin.ts`),
   and the `hardware.begin` `sign` operation refuses `approval-required`
@@ -296,9 +299,14 @@ Summary, per platform — details in the sections below:
   re-discoverable. `changeAddressOf`
   (`packages/wallet-engine/src/transactions/bitcoin.ts`) places the change
   of the engine's own sends at the lowest index above the sealed mark that
-  no in-flight request reserved and no tracked transaction used, and
-  refuses the send once the window to `changeScanReach(mark)` holds none;
-  it never reads an endpoint's "used" answers. Every
+  the in-flight picks and the output addresses of tracked rows that reached
+  `signed` leave free (a `draft` or `rejected` row never produced bytes,
+  or its sign call failed after the marks commit — which had already
+  moved the mark past that index); when the window to
+  `changeScanReach(mark)` holds none it reuses the address at the reach —
+  at the scan limit the mark itself — so no send, sweep, replacement or
+  CPFP is ever refused for want of a change address; reuse costs privacy
+  only. It never reads an endpoint's "used" answers. Every
   other own-key output is shown as a send to the user's own address at its
   unusual path, with a warning that the wallet may not display those
   funds. **Residuals:** a fully compromised runtime can claim `internal`
@@ -308,17 +316,26 @@ Summary, per platform — details in the sections below:
   chain whose used addresses walk the gap scan to `BITCOIN_SCAN_LIMIT`
   (2000) makes that template's scan fail (`scanChainWithHistory` in
   `packages/wallet-engine/src/chains/bitcoin-scan.ts`), and a mark at the
-  limit leaves no change index: sends with change from that template are
-  refused rather than reusing an address. The mark is not in the backup
+  limit leaves no fresh index: every send with change from that template
+  reuses the address at index 1999 of the change chain. The mark is not in the backup
   (entropy only): a seed-only restore starts it at 0, and the same seed on
   two devices carries two independent marks, so such a device places
   change on indexes the seed already used — address reuse that costs
-  privacy, never visibility. Each internal send that is signed but never
-  confirms consumes one change index; twenty in a row leave a 20-address
-  gap that this device's scan (which follows the mark) still crosses but
-  a gap-limit-20 wallet restored from the seed — this one included —
-  stops at, until it scans with a larger gap. Every such index costs a
-  user-approved signature.
+  privacy — except for a mark ratcheted under 0.14.0 (its endpoint could
+  walk the mark one gap limit per send): that mark is kept, so change
+  keeps landing at mark + 1 and beyond, past a seed-only restore's
+  gap-limit-20 scan; such coins stay visible on this device and to a
+  restore that scans with a gap of at least mark + 20, but a default
+  restore does not show them, and no command lowers a mark. Each internal
+  send whose factor verified but that never confirms — signed and never
+  broadcast, or declined on the device after the marks commit — consumes
+  one change index; twenty in a row leave a 20-address gap that this
+  device's scan (which follows the mark) still crosses but a
+  gap-limit-20 wallet restored from the seed stops at, until it scans
+  with a larger gap. Every such index costs a user approval — the factor
+  verification that precedes the marks commit; a sign attempt that fails
+  before it (a cancelled prompt, a wrong password, a pre-verify refusal)
+  consumes none.
 - **Can** craft deceptive requests. Solana named accounts loaded through
   address lookup tables cannot be verified on-device — there are no state
   proofs for table contents — so a prompt that would name one is handled
@@ -481,7 +498,12 @@ invariants). The release-path controls are defined in the repository —
 tag-only OIDC publishing in `.github/workflows/publish-npm.yml`, the environment and tag
 rulesets in `.github/rulesets/` — and applied as repository and npm
 settings; `.github/rulesets/README.md` records them and what a single
-admin can still do alone. Third-party npm
+admin can still do alone. `scripts/check-toolchain.ts`, run by
+`bun run lint` on every PR, is a lint against accidental toolchain drift
+— an unpinned tool or an install outside the lockfile introduced by
+mistake — not a boundary against a hostile committer: a reviewed change
+to the CI files can evade it, and review plus branch protection are that
+boundary. Third-party npm
 versions are adopted only once seven days old: `bunfig.toml`
 `minimumReleaseAge` for bun, and the consumer smoke's npm lockfile is
 regenerated by `packages/wallet-worker/scripts/consumer-lock.ts` with
@@ -513,7 +535,11 @@ pins. The response to a compromised release is in
   unconfirmed accounts out of push subscriptions (no gateway watches or
   learns their addresses) and out of the history addresses that vouch for
   themselves: an unconfirmed own address is not exempt from the
-  `address-poisoning` flag, but it stays a reference, so a counterparty
+  `address-poisoning` flag — not even as the recipient of a tracked send:
+  an outflow the decode marks `unconfirmed-signer-output` never enters
+  the exempt set (`vouchingOutflows` in
+  `packages/wallet-engine/src/requests/risk.ts`), in requests and in
+  history — but it stays a reference, so a counterparty
   imitating it is flagged like one imitating a confirmed address
   (`assessRecipients` in `packages/wallet-engine/src/requests/risk.ts`). A
   successful `engine.signers.verifyAddress` takes effect at once —

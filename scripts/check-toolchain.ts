@@ -1,5 +1,11 @@
 /// <reference types="node" />
 /**
+ * This gate is a lint against accidental toolchain drift: it catches an unpinned tool, an install
+ * outside the lockfile or an undigested image a change introduces by mistake. It is not a boundary
+ * against a hostile committer — whoever writes the workflow can also write this script and its
+ * tests, and the shapes under "Deliberately not covered" below evade it by design. Review of CI
+ * changes and branch protection are that boundary.
+ *
  * Every tool CI runs must come from the lockfile, and its version must have one source of truth.
  * Bun is pinned by the root package.json `packageManager` field: every `oven-sh/setup-bun` step
  * reads it via `bun-version-file: package.json` (a literal `bun-version` would be a second,
@@ -13,33 +19,46 @@
  * `docker://image@sha256:` satisfies it). Command text — `run:` steps (after YAML decoding and
  * alias resolution), composite-action steps, Dockerfile `RUN` bodies and manifest scripts — is
  * parsed by the POSIX-shell lexer in `shell-words.ts` into pipelines of argv tokens, so quoting,
- * `\\`-continuations, comments, `$(…)`/backtick/process substitutions and heredocs cannot hide a
- * command; `sh -c`, `eval` and heredoc bodies fed to a shell recurse as scripts. Over the
- * normalized commands: `bunx`/`bun x`/`npx`/`npm exec`/`npm x` names a bin provided by a dependency
- * declared in the root manifest or the step's working-directory manifest — an undeclared name would
- * resolve against the registry instead of the lockfile — and nothing may reach a registry at all:
+ * `\\`-continuations, comments, `$(…)`/backtick/process substitutions and heredocs do not hide a
+ * command from the rules below; `sh -c`, `eval`, `trap` and heredoc bodies fed to a shell recurse
+ * as scripts. Over the normalized commands: `bunx`/`bun x`/`npx`/`npm exec`/`npm x` names a bin
+ * provided by a dependency declared in the root manifest or the step's working-directory manifest —
+ * or itself names a declared package (`npx <pkg>`, `-p pkg@<exact spec>`), which the runner
+ * executes from the lockfile — and the installer and image rules pin what else may fetch:
  * `curl`/`wget` piped to an interpreter (or substituted into one's argv), `npm
  * install|install-test|update` after npm's own alias-and-abbreviation dereference (`npm ci` is
- * fine, `--offline` clears install), `bun add|update|create`, `bun install` without
- * `--frozen-lockfile` in that same invocation, `pnpm dlx`/`yarn dlx`/`pnpx`, `pip install` without
- * a `--require-hashes` or `--no-index` token, and `docker run|create|pull` (the `container run` /
- * `image pull` spellings included) of an image that is neither digest-pinned nor built by the
- * file's own `docker/build-push-action` steps or `docker build -t` commands. `container.image` and
- * `services.*.image` pin `@sha256:` digests, and a Dockerfile `FROM` is a `@sha256:` image or a
- * prior build stage. `bunfig.toml`'s `[install]` table — the parsed document, not the text — sets
- * `minimumReleaseAge >= 604800` and its `minimumReleaseAgeExcludes` entries must be exact
- * `name@X.Y.Z` pins — a bare name exempts every future release of that package from the 7-day
- * cooldown, not just the one the PR meant to land early — and every directory that keeps a
- * `bun.lock` carries a `bunfig.toml` meeting that bar.
+ * fine, `--offline` clears install), `npm init|pack|link <name>`, `bun add|update|create`, `bun
+ * install` without `--frozen-lockfile` in that same invocation, `pnpm dlx`/`yarn dlx`/`pnpx`, `pnpm
+ * add`/`yarn add`, `pnpm|yarn install` without `--frozen-lockfile`/`--immutable`, `pip
+ * install|download` without a `--require-hashes` or clean `--no-index` (a remote `--find-links`
+ * voids it), and `docker run|create|pull` — `container run`/`image pull` spellings, podman and
+ * nerdctl alike — of an image that is neither digest-pinned nor built by the file's own
+ * `docker/build-push-action` steps or `docker build -t` commands. `container.image` and
+ * `services.*.image` pin `@sha256:` digests, a `shell:` step runs bash or sh, and a Dockerfile
+ * `FROM`, `COPY --from` or `RUN --mount …,from=` is a `@sha256:` image or a prior build stage.
+ * `bunfig.toml`'s `[install]` table — the parsed document, not the text — sets `minimumReleaseAge >=
+ * 604800` and its `minimumReleaseAgeExcludes` entries must be exact `name@X.Y.Z` pins — a bare name
+ * exempts every future release of that package from the 7-day cooldown, not just the one the PR
+ * meant to land early — and every directory that keeps a `bun.lock` carries a `bunfig.toml` meeting
+ * that bar.
  *
- * Deliberately not covered: the internals of script files a `run:` command or manifest script
- * invokes (a `bun scripts/x.ts` is checked for its own command words, not the files it runs); tools
- * the runner image itself provides (docker, buildx, jq, apt); `apt-get` and `rustup
- * --default-toolchain stable` inside the emulator Dockerfiles; the Gradle wrapper; a `curl -o` that
- * only downloads a file a following sha256 check verifies; heredoc bodies fed to a non-shell
- * interpreter (`python <<EOF` is checked as `python`, not as Python source); and a Dockerfile
- * `RUN`'s `# escape=` parser directive (backslash continuations are assumed). Exit 1 with one line
- * per finding.
+ * Deliberately not covered — the shapes a determined committer, not an accident, would reach for:
+ * the internals of script files a `run:` command or manifest script invokes (a `bun scripts/x.ts`
+ * is checked for its own command words, not the files it runs); launchers beyond the normalized
+ * ones — ionice, taskset, flock, watch, unshare, chroot, su -c, script -c, tmux, screen, xargs,
+ * find -exec, parallel, a script queued through `at`; shell expansion the lexer keeps verbatim —
+ * `$X`/`$IFS`/`${P:-npm}` argv0s, brace expansion, aliases, `eval`/`sh -c` of a variable, `$(echo
+ * npm)` as a command name; a file hand-off across `&&` and a download inside another command's
+ * substitution (`echo "$(curl …)" | sh`); `bun --install`, inline interpreter source (`python -c`,
+ * `node -e`, `bun -e`), `pnpm exec`, `npm explore`; the other package managers — uvx, uv, pipx, go,
+ * cargo, gem, deno; docker compose/stack and remote build contexts; YAML merge keys (`<<`) and env-
+ * or expression-carried run text; Dockerfile `RUN $C`, `RUN npm $C` and `RUN $(echo npm)`; a
+ * manifest script that only echoes the words `vp test`; tools the runner image itself provides
+ * (docker, buildx, jq, apt); `apt-get` and `rustup --default-toolchain stable` inside the emulator
+ * Dockerfiles; the Gradle wrapper; a `curl -o` that only downloads a file a following sha256 check
+ * verifies; heredoc bodies fed to a non-shell interpreter (`python <<EOF` is checked as `python`,
+ * not as Python source); and a Dockerfile `RUN`'s `# escape=` parser directive (backslash
+ * continuations are assumed). Exit 1 with one line per finding.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -101,18 +120,21 @@ const binNames = (pkg: string, field: unknown): ReadonlyArray<string> =>
       ? Object.keys(field)
       : [];
 
-/** The deps a manifest declares — dependencies and devDependencies hold the tool bins. */
-const declaredDeps = (dir: string): ReadonlyArray<string> => {
+/** The dependency specs a manifest declares — dependencies and devDependencies hold the tools. */
+const declaredSpecs = (dir: string): JsonObject => {
   const manifest = join(dir, "package.json");
   if (!existsSync(manifest)) {
-    return [];
+    return {};
   }
   const pkg: unknown = JSON.parse(readFileSync(manifest, "utf8"));
-  return [
-    ...Object.keys(asRecord(asRecord(pkg)["dependencies"])),
-    ...Object.keys(asRecord(asRecord(pkg)["devDependencies"])),
-  ];
+  return {
+    ...asRecord(asRecord(pkg)["dependencies"]),
+    ...asRecord(asRecord(pkg)["devDependencies"]),
+  };
 };
+
+/** The dep names a manifest declares. */
+const declaredDeps = (dir: string): ReadonlyArray<string> => Object.keys(declaredSpecs(dir));
 
 /**
  * The real resolver: for each in-scope manifest dir, each declared dependency's package.json is
@@ -141,7 +163,15 @@ export const liveIndex = (root: string): DependencyIndex => ({
     }
     return undefined;
   },
-  declared: (name, dirs) => dirs.some((dir) => declaredDeps(dir).includes(name)),
+  spec: (name, dirs) => {
+    for (const dir of dirs) {
+      const spec = declaredSpecs(dir)[name];
+      if (typeof spec === "string") {
+        return spec;
+      }
+    }
+    return undefined;
+  },
 });
 
 /** The directories a `run:` step resolves against: its working-directory, then the root. */
@@ -436,6 +466,20 @@ export function checkWorkflow(path: string, source: string, index: DependencyInd
         );
       }
     }
+    /* The command rules read run: as a bash/sh script — a step that selects another shell runs
+       different text than the lint sees. `bash {0}`-style composite templates still count. */
+    const shell = scalarAt(step, "shell", stepAt);
+    if (shell !== undefined) {
+      const squeezed = squeezeExpressions(shell);
+      if (
+        squeezed !== "bash" &&
+        squeezed !== "sh" &&
+        !squeezed.startsWith("bash ") &&
+        !squeezed.startsWith("sh ")
+      ) {
+        errors.push(`${stepAt}: a run step's shell: must be bash or sh, got ${shell}`);
+      }
+    }
     const run = scalarAt(step, "run", stepAt);
     if (run !== undefined) {
       const stepDir = scalarAt(step, "working-directory", stepAt) ?? jobDir;
@@ -673,10 +717,11 @@ const runScript = (text: string): string => {
 /**
  * Dockerfile rules: `RUN` bodies answer to the shared command rules — exec-form JSON arrays are
  * argv, shell form is a script, `\`-continuations join first, `RUN <<EOF` bodies are the script,
- * `RUN --mount=`-style flags are skipped, and `#` comment lines are skipped outside heredoc bodies
- * — and `FROM` references a digest-pinned image or a stage the file itself built. A remote `ADD`
- * source (`http(s)://` or git) must pin `--checksum=sha256:<64 hex>` — nothing else in the build
- * gets to fetch code the lockfile never saw.
+ * `ONBUILD` unwraps to the instruction it carries, `RUN --mount=`-style flags are skipped (their
+ * `from=` image still answers below), and `#` comment lines are skipped outside heredoc bodies —
+ * and `FROM`, `COPY --from=` and a `--mount` `from=` reference a digest-pinned image or a stage the
+ * file itself built. A remote `ADD` source (`http(s)://` or git) must pin `--checksum=sha256:<64
+ * hex>` — nothing else in the build gets to fetch code the lockfile never saw.
  */
 export function checkDockerfile(path: string, source: string, index: DependencyIndex): string[] {
   const errors: string[] = [];
@@ -703,6 +748,7 @@ export function checkDockerfile(path: string, source: string, index: DependencyI
     if (match === null) {
       continue;
     }
+    let name = (match[1] ?? "").toUpperCase();
     let args = match[2] ?? "";
     for (const delimiter of heredocDelims(args)) {
       while (i + 1 < lines.length) {
@@ -714,10 +760,26 @@ export function checkDockerfile(path: string, source: string, index: DependencyI
         }
       }
     }
-    instructions.push({ name: (match[1] ?? "").toUpperCase(), args, line: start });
+    // `ONBUILD <instr>` fires as `<instr>` in the child build — checked as the instruction it is.
+    while (name === "ONBUILD") {
+      const inner = /^\s*([A-Za-z]+)[ \t]+(.*)$/s.exec(args);
+      if (inner === null) {
+        break;
+      }
+      name = (inner[1] ?? "").toUpperCase();
+      args = inner[2] ?? "";
+    }
+    instructions.push({ name, args, line: start });
   }
 
   const stages = new Set<string>();
+  let stageCount = 0;
+  /* What a `--from=` operand may name: a prior stage by name or index, or a digest-pinned image —
+     the same bar FROM's operand meets. */
+  const priorRef = (ref: string): boolean =>
+    DIGEST_IMAGE.test(ref) ||
+    stages.has(ref.toLowerCase()) ||
+    (/^\d+$/.test(ref) && Number(ref) < stageCount);
   const builtImages = new Set<string>();
   // `docker build -t` anywhere in the file counts as built — collect before checking runs.
   for (const { name, args } of instructions) {
@@ -737,10 +799,26 @@ export function checkDockerfile(path: string, source: string, index: DependencyI
       if (!DIGEST_IMAGE.test(image) && !stages.has(image.toLowerCase())) {
         errors.push(`${at}: FROM ${image} must pin a @sha256: digest or name a prior stage`);
       }
+      stageCount += 1;
       if (stageIndex > 0) {
         const stage = tokens[stageIndex + 1];
         if (stage !== undefined) {
           stages.add(stage.toLowerCase());
+        }
+      }
+      continue;
+    }
+    if (name === "COPY") {
+      // `--from=` pulls from another stage or an external image — the latter owes a digest.
+      const tokens = args.split(/\s+/).filter((t) => t !== "");
+      for (const token of tokens) {
+        if (token.startsWith("--from=")) {
+          const ref = token.slice("--from=".length);
+          if (!priorRef(ref)) {
+            errors.push(
+              `${at}: COPY --from=${ref} must name a prior stage or a @sha256:-pinned image`,
+            );
+          }
         }
       }
       continue;
@@ -757,6 +835,15 @@ export function checkDockerfile(path: string, source: string, index: DependencyI
     }
     if (name === "RUN") {
       const trimmed = args.trimStart();
+      // A `--mount=…,from=<x>,…` bind mounts another stage or an external image — same bar as COPY.
+      for (const mount of trimmed.matchAll(/--mount=\S+/g)) {
+        const from = /(?:^|,)from=([^,\s]+)/.exec(mount[0] ?? "");
+        if (from !== null && !priorRef(from[1] ?? "")) {
+          errors.push(
+            `${at}: RUN --mount from=${from[1] ?? ""} must name a prior stage or a @sha256:-pinned image`,
+          );
+        }
+      }
       if (trimmed.startsWith("[")) {
         // Exec form: the JSON array IS the argv — no shell text to parse.
         try {

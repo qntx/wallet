@@ -35335,7 +35335,7 @@ zoo`.split("\n"));
 		await verifyFactor(ctx, params.verify, dek, corePromptFor(ctx.platform.keystore, "delete-wallet"));
 		const record = findWalletRecord(ctx.image, params.walletId);
 		if (record === void 0) throw new KernelError("not-found", "record not found");
-		const extras = ctx.modules.flatMap((module) => module.walletDeleteOps(ctx.image, params.walletId));
+		const extras = ctx.modules.flatMap((module) => module.walletDeleteOps(ctx.image, params.walletId, "delete"));
 		await ctx.commit([{
 			op: "delete-record",
 			kind: record.kind,
@@ -36473,13 +36473,6 @@ zoo`.split("\n"));
 		}
 	});
 	// packages/wallet-kernel/src/modules/chains/marks.ts
-	/**
-	* Sealed change marks: the highest change-chain index a wallet's own transactions have proven, per
-	* (groupIndex, purpose, network). The mark — not anything in a PSBT — bounds which own-key outputs
-	* a signing prompt may hide as change. One record per wallet, id = walletId, one marker byte as the
-	* sealed body like `vault/policy.ts`; the marks live in the public header so the scan reach is
-	* readable without opening the record.
-	*/
 	var CHANGE_MARKS_KIND = "change-marks";
 	var MARKER = 1;
 	var CAIP2 = /^[a-z0-9-]{3,64}:[0-9a-zA-Z-]{1,128}$/;
@@ -36606,7 +36599,7 @@ zoo`.split("\n"));
 			}
 			return unclaimed;
 		},
-		walletDeleteOps: (image, walletId) => marksRecord(image, walletId) === void 0 ? [] : [{
+		walletDeleteOps: (image, walletId, cause) => cause === "card-import" || marksRecord(image, walletId) === void 0 ? [] : [{
 			op: "delete-record",
 			kind: CHANGE_MARKS_KIND,
 			id: walletId
@@ -41962,17 +41955,19 @@ zoo`.split("\n"));
 	* 44/49/84 — whose path is a valid `m/purpose'/coin'/group'/{0,1}/i` of this group and whose script
 	* equals that key's script for the purpose. Failures just mean "not own". An own-key output the
 	* serving entry never confirmed on the device is `unconfirmed` — a plain send with a danger
-	* warning; it is never hidden, never worded as "your own address", and never touches the marks. A
-	* verified, confirmed own output is hidden as change only when `isDiscoverableChange` says the
-	* wallet can reach it — anything else is shown as a send to the user's own address at the unusual
-	* path it names. The returned `hidden` map holds the highest change index each purpose hid — the
-	* raise the request would commit; the caller seals it only for `internal` requests.
+	* warning; it is never hidden and never worded as "your own address", but an internal request's
+	* discoverable unconfirmed change still raises the mark: the signed bytes pay that address, so the
+	* wallet must scan that far. A verified, confirmed own output is hidden as change only when
+	* `isDiscoverableChange` says the wallet can reach it — anything else is shown as a send to the
+	* user's own address at the unusual path it names. The returned `reached` map holds the highest
+	* change index each purpose's discoverable outputs reached — the raise the request would commit;
+	* the caller seals it only for `internal` requests.
 	*/
 	var bitcoinOwn = async (b, tx, signed, markOf) => {
 		const change = /* @__PURE__ */ new Set();
 		const unusual = /* @__PURE__ */ new Map();
 		const unconfirmed = /* @__PURE__ */ new Set();
-		const hidden = /* @__PURE__ */ new Map();
+		const reached = /* @__PURE__ */ new Map();
 		for (let i = 0; i < tx.outputsLength; i++) {
 			const output = tx.getOutput(i);
 			if (output.script === void 0) continue;
@@ -41983,20 +41978,22 @@ zoo`.split("\n"));
 					var _entry$path$, _entry$path$2;
 					const pub = await childAt(b, purpose, entry.path);
 					if (!deepEqual(output.script, expectedScript(purpose, pub))) continue;
-					if (!await b.material.confirmed("secp256k1", entry.path)) {
-						unconfirmed.add(hex(output.script));
-						break;
-					}
 					const tail = {
 						purpose,
 						change: (_entry$path$ = entry.path[3]) !== null && _entry$path$ !== void 0 ? _entry$path$ : 0,
 						index: (_entry$path$2 = entry.path[4]) !== null && _entry$path$2 !== void 0 ? _entry$path$2 : 0
 					};
-					if (isDiscoverableChange(tail, signed, markOf(purpose))) {
-						var _hidden$get;
-						change.add(hex(output.script));
-						hidden.set(purpose, Math.max((_hidden$get = hidden.get(purpose)) !== null && _hidden$get !== void 0 ? _hidden$get : -1, tail.index));
-					} else unusual.set(hex(output.script), pathString(entry.path));
+					const discoverable = isDiscoverableChange(tail, signed, markOf(purpose));
+					if (discoverable) {
+						var _reached$get;
+						reached.set(purpose, Math.max((_reached$get = reached.get(purpose)) !== null && _reached$get !== void 0 ? _reached$get : -1, tail.index));
+					}
+					if (!await b.material.confirmed("secp256k1", entry.path)) {
+						unconfirmed.add(hex(output.script));
+						break;
+					}
+					if (discoverable) change.add(hex(output.script));
+					else unusual.set(hex(output.script), pathString(entry.path));
 					break;
 				} catch (error) {
 					if (error instanceof KernelError && error.code === "device-required") throw error;
@@ -42010,16 +42007,17 @@ zoo`.split("\n"));
 				unusual,
 				unconfirmed
 			},
-			hidden
+			reached
 		};
 	};
 	/**
 	* The PSBT plan: input ownership, output binding, normalize, decode intent, then plan. The hidden
 	* change bound is the sealed mark alone — a signed input can name any path, so inputs never widen
-	* it — and the raise an `internal` request commits after verification is exactly the change indexes
-	* it hid. Only `internal` requests produce `changeMarks`: an external request may hide change
-	* within the mark + gap window — the scan reaches it either way — but commits nothing, so no
-	* outside caller can ratchet the sealed mark without broadcasting.
+	* it — and the raise an `internal` request commits after verification is the highest change index
+	* its discoverable own outputs reached, hidden or unconfirmed. Only `internal` requests produce
+	* `changeMarks`: an external request may hide change within the mark + gap window — the scan
+	* reaches it either way — but commits nothing, so no outside caller can ratchet the sealed mark
+	* without broadcasting.
 	*/
 	var prepareBitcoinPsbt = async (b, request, storedMark) => {
 		const tx = Transaction.fromPSBT(request.psbt);
@@ -42033,7 +42031,7 @@ zoo`.split("\n"));
 			});
 			signed.push(input.tail);
 		}
-		const { own, hidden } = await bitcoinOwn(b, tx, signed, storedMark);
+		const { own, reached } = await bitcoinOwn(b, tx, signed, storedMark);
 		let normalized;
 		try {
 			normalized = normalizeBitcoin(request);
@@ -42053,7 +42051,7 @@ zoo`.split("\n"));
 		} catch (error) {
 			mapChainError(error);
 		}
-		const raises = request.origin === "internal" ? [...hidden.entries()].map(([purpose, index]) => ({
+		const raises = request.origin === "internal" ? [...reached.entries()].map(([purpose, index]) => ({
 			purpose,
 			index
 		})) : [];
@@ -44447,7 +44445,7 @@ zoo`.split("\n"));
 										kind: "entropy",
 										id: sourceId
 									});
-									for (const module of env.ctx.modules) d.extra.push(...module.walletDeleteOps(env.ctx.image, sourceId));
+									for (const module of env.ctx.modules) d.extra.push(...module.walletDeleteOps(env.ctx.image, sourceId, "card-import"));
 								});
 							};
 							if (tap.status.life === "loaded") {
@@ -44636,7 +44634,7 @@ zoo`.split("\n"));
 								kind: "entropy",
 								id: sourceId
 							});
-							for (const module of env.ctx.modules) d.extra.push(...module.walletDeleteOps(env.ctx.image, sourceId));
+							for (const module of env.ctx.modules) d.extra.push(...module.walletDeleteOps(env.ctx.image, sourceId, "card-import"));
 						}
 					});
 				};

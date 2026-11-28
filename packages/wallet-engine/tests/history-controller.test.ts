@@ -394,6 +394,7 @@ const tracked = (over: {
   state: over.state ?? "submitted",
   intent: {
     outflows: [{ to: OTHER, amount: { asset: "native", amount: "5" }, verified: true }],
+    warnings: [],
   },
   nonce: 0,
   evm: { from: OWNER, account: { kind: "hd", walletId: GROUP.walletId, groupIndex: 0 } },
@@ -1186,6 +1187,206 @@ describe("device-unconfirmed own addresses — the known set's two roles", () =>
     // Confirmed, the address vouches for itself — the flow reads self and flags nothing.
     confirmed.set("btc.bip86", true);
     await controller.load(GROUP);
+    expect(entriesOf(controller).find((e) => e.family === "bitcoin")?.flags).toStrictEqual([]);
+    controller.lock();
+  });
+
+  it("bitcoin: a tracked send's unconfirmed-signer outflow feeds references, never exempt", async () => {
+    /* The outflow a device-unconfirmed entry serves is a plain `to` in the tracked intent — but
+       its `unconfirmed-signer-output` warning names it, so it lands in the lookalike corpus
+       while never vouching for itself: it as counterparty keeps its flag, and so does a
+       counterparty imitating it. */
+    const U = btcAddress("btc.bip86", 0, 5);
+    const C = btcAddress("btc.bip84", 0, 0);
+    // The book contact U imitates, and a different address wearing U's edge characters.
+    const contact = lookalikeOf(U);
+    const imitator = `${U.slice(0, 4)}${"1".repeat(U.length - 8)}${U.slice(-4)}`;
+    const paid = btcTx("ee".repeat(32), U, C);
+    const copycat = btcTx("ef".repeat(32), imitator, C);
+    const { controller } = make({
+      bitcoin: {
+        account: btcAccountFor(new Map([["btc.bip86", false]])),
+        esplora: esploraOf(new Map([[scripthash(C, NETWORK), [paid, copycat]]])),
+      },
+      book: {
+        e1: {
+          id: "e1",
+          name: "mate",
+          family: "bitcoin",
+          address: contact,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      },
+      txs: {
+        sent: {
+          id: "sent",
+          family: "bitcoin",
+          network: BTC_NET,
+          account: GROUP.walletId,
+          hash: "aa".repeat(32),
+          state: "submitted",
+          intent: {
+            outflows: [{ to: U, amount: { asset: "native", amount: "5" }, verified: true }],
+            warnings: [{ kind: "unconfirmed-signer-output", message: U, level: "danger" }],
+          },
+          nonce: 0,
+          submittedAt: 0,
+          error: undefined,
+        },
+      },
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    const entries = entriesOf(controller).filter((e) => e.family === "bitcoin");
+    // U sits in references — every outflow's `to` is a lookalike anchor — so the counterparty
+    // imitating it keeps the flag…
+    expect(entries.find((e) => e.counterparties[0] === imitator)?.flags).toContain(
+      "lookalike-counterparty",
+    );
+    // …and U itself never vouches: as a counterparty it imitates the book contact and is flagged.
+    expect(entries.find((e) => e.counterparties[0] === U)?.flags).toContain(
+      "lookalike-counterparty",
+    );
+    controller.lock();
+  });
+
+  it("bitcoin: an unconfirmed-signer outflow outside the group's own set still anchors references", async () => {
+    /* The `to` a device-unconfirmed entry serves is not always one of THIS group's own
+       addresses — a tracked send may pay an address another group owns. `references` gets every
+       outflow's `to` regardless, so a counterparty imitating that recipient keeps the flag even
+       though nothing else puts the address in the corpus. */
+    const foreign = p2wpkh(
+      HDKey.fromMasterSeed(new Uint8Array(64).fill(7))
+        .derive("m/84'/0'/0'")
+        .deriveChild(1)
+        .deriveChild(5).publicKey!,
+      NETWORK,
+    ).address;
+    const imitator = `${foreign.slice(0, 4)}${"1".repeat(foreign.length - 8)}${foreign.slice(-4)}`;
+    const C = btcAddress("btc.bip84", 0, 0);
+    const copycat = btcTx("ef".repeat(32), imitator, C);
+    const { controller } = make({
+      bitcoin: {
+        account: btcAccountFor(new Map()),
+        esplora: esploraOf(new Map([[scripthash(C, NETWORK), [copycat]]])),
+      },
+      txs: {
+        sent: {
+          id: "sent",
+          family: "bitcoin",
+          network: BTC_NET,
+          account: GROUP.walletId,
+          hash: "aa".repeat(32),
+          state: "submitted",
+          intent: {
+            outflows: [{ to: foreign, amount: { asset: "native", amount: "5" }, verified: true }],
+            warnings: [{ kind: "unconfirmed-signer-output", message: foreign, level: "danger" }],
+          },
+          nonce: 0,
+          submittedAt: 0,
+          error: undefined,
+        },
+      },
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    const entries = entriesOf(controller).filter((e) => e.family === "bitcoin");
+    expect(entries.find((e) => e.counterparties[0] === imitator)?.flags).toContain(
+      "lookalike-counterparty",
+    );
+    controller.lock();
+  });
+
+  it("a confirmed tracked send's recipient vouches for itself — an equal counterparty flags nothing", async () => {
+    /* The tracked send paid OTHER, so OTHER sits in the exempt set: as a counterparty it is
+       skipped before the lookalike check — even wearing a book contact's first and last four,
+       it raises no flag. */
+    const { controller } = make({
+      txs: { local1: tracked({ id: "local1", hash: hash("cd"), state: "confirmed" }) },
+      book: {
+        e1: {
+          id: "e1",
+          name: "mate",
+          family: "evm",
+          address: lookalikeOf(OTHER),
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      },
+      page: {
+        items: [
+          {
+            hash: hash("ee"),
+            block: "100",
+            timestamp: 5_000_000,
+            transfers: [
+              {
+                kind: "erc20",
+                from: OTHER,
+                to: OWNER,
+                contract: "0x9999999999999999999999999999999999999999",
+                tokenId: null,
+                amount: "700",
+                decimals: 6,
+                symbol: null,
+                logIndex: null,
+              },
+            ],
+          },
+        ],
+        cursor: null,
+      },
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    expect(entriesOf(controller).every((e) => !e.flags.includes("lookalike-counterparty"))).toBe(
+      true,
+    );
+    controller.lock();
+  });
+
+  it("a reload whose first page fails on a stream still adopts the fresh own set", async () => {
+    /* `OrderedMerge.take` reports a stream failure into `errors` and resolves — a failed source
+       cannot pin the previous own in place: the runtime still adopts the freshly resolved set
+       once the page settles, so the recompose reads U confirmed. */
+    const U = btcAddress("btc.bip86", 0, 0);
+    const C = btcAddress("btc.bip84", 0, 0);
+    const tx = btcTx("dd".repeat(32), U, C);
+    const confirmed = new Map<BitcoinAccountTemplate, boolean>([["btc.bip86", false]]);
+    const { controller } = make({
+      bitcoin: {
+        account: btcAccountFor(confirmed),
+        esplora: esploraOf(new Map([[scripthash(C, NETWORK), [tx]]])),
+      },
+      book: {
+        e1: {
+          id: "e1",
+          name: "mate",
+          family: "bitcoin",
+          address: lookalikeOf(U),
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      },
+      // The reload's evm fetch dies — the bitcoin stream still serves the entry.
+      pages: [
+        { items: [], cursor: null },
+        { status: 500, error: "gateway down" },
+      ],
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    expect(entriesOf(controller).find((e) => e.family === "bitcoin")?.flags).toContain(
+      "lookalike-counterparty",
+    );
+
+    confirmed.set("btc.bip86", true);
+    await controller.load(GROUP);
+    const group = controller.getState().groups["w:0"];
+    expect(group?.status).toBe("ready");
+    expect(group?.errors["eip155:1"]).toBeDefined();
+    // The fresh own was adopted across the failure: U vouches for itself — no flag.
     expect(entriesOf(controller).find((e) => e.family === "bitcoin")?.flags).toStrictEqual([]);
     controller.lock();
   });

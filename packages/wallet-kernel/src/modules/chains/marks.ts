@@ -5,6 +5,7 @@
  * sealed body like `vault/policy.ts`; the marks live in the public header so the scan reach is
  * readable without opening the record.
  */
+import type { WalletRemoval } from "../../commands/context.ts";
 import { KernelError } from "../../errors.ts";
 import type { KernelPlatform } from "../../platform.ts";
 import type { Secret } from "../../secret/secret.ts";
@@ -202,8 +203,14 @@ export const marksHooks = {
     return unclaimed;
   },
 
-  walletDeleteOps: (image: VaultImage, walletId: string): ReadonlyArray<StoreOp> =>
-    marksRecord(image, walletId) === undefined
+  // A card import moves the software secret onto a card under the same walletId — every address
+  // and change index is unchanged, so the sealed marks stay valid and survive.
+  walletDeleteOps: (
+    image: VaultImage,
+    walletId: string,
+    cause: WalletRemoval,
+  ): ReadonlyArray<StoreOp> =>
+    cause === "card-import" || marksRecord(image, walletId) === undefined
       ? []
       : [{ op: "delete-record", kind: CHANGE_MARKS_KIND, id: walletId }],
 

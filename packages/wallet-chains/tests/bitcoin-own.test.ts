@@ -31,4 +31,10 @@ describe("isDiscoverableChange", () => {
     // Receive-chain outputs are never discoverable change.
     expect(isDiscoverableChange({ purpose: 84, change: 0, index: 1 }, [input], 0)).toBe(false);
   });
+
+  it("clamps the window at the scan limit — mark 1980 sees 1999, never 2000", () => {
+    expect(changeScanReach(1980)).toBe(BITCOIN_SCAN_LIMIT - 1);
+    expect(isDiscoverableChange(output(BITCOIN_SCAN_LIMIT - 1), [input], 1980)).toBe(true);
+    expect(isDiscoverableChange(output(BITCOIN_SCAN_LIMIT), [input], 1980)).toBe(false);
+  });
 });

@@ -427,9 +427,22 @@ export const comparable = (family: string, address: string): string =>
   family === "evm" ? address.replace(/^0x/i, "").toLowerCase() : address;
 
 /**
- * Who a flow pays. A Fiat24 ledger transfer or payout names its recipient in the calldata — `to` is
- * the cash-token contract all of them share — so the account or payee is the recipient compared.
+ * The outflows whose recipients vouch for themselves — all of them except any an
+ * `unconfirmed-signer-output` warning of the same intent names. A payee sitting on a
+ * device-unconfirmed entry never exempts itself: the wallet cannot prove the address is its own, so
+ * a counterparty wearing it keeps its flag. It still feeds the lookalike references.
  */
+export const vouchingOutflows = (
+  intent: Pick<DisplayIntent, "outflows" | "warnings">,
+): DisplayIntent["outflows"] => {
+  const named = new Set(
+    intent.warnings
+      .filter((warning) => warning.kind === "unconfirmed-signer-output")
+      .map((warning) => warning.message),
+  );
+  return named.size === 0 ? intent.outflows : intent.outflows.filter((flow) => !named.has(flow.to));
+};
+
 /**
  * Addresses the wallet already knows for a family: contacts, plus recipients of tracked chain sends
  * (Spark payments are not tracked — for spark the contacts list is the whole answer).
@@ -453,10 +466,14 @@ export const knownAddresses = (
         tx.family === family &&
         (tx.state === "submitted" || tx.state === "pending" || tx.state === "confirmed"),
     )
-    .flatMap((tx) => tx.intent?.outflows.map(recipientOf) ?? []);
+    .flatMap((tx) => (tx.intent === undefined ? [] : vouchingOutflows(tx.intent).map(recipientOf)));
   return [...contacts, ...paid];
 };
 
+/**
+ * Who a flow pays. A Fiat24 ledger transfer or payout names its recipient in the calldata — `to` is
+ * the cash-token contract all of them share — so the account or payee is the recipient compared.
+ */
 export const recipientOf = (flow: Pick<AssetFlow, "to" | "fiat24">): string =>
   flow.fiat24 === undefined
     ? flow.to

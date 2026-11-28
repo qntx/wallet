@@ -24,9 +24,10 @@ import type { BitcoinAccountTemplate, BitcoinPathTail } from "@qntx/wallet-chain
 import { scripthash } from "../src/chains/bitcoin-scan.ts";
 import type { ScanAddress } from "../src/chains/bitcoin-scan.ts";
 import { EsploraError } from "../src/chains/bitcoin.ts";
+import { assessRecipients, knownAddresses } from "../src/requests/risk.ts";
 import { changeAddressOf } from "../src/transactions/bitcoin.ts";
 import type { SignParams } from "../src/transactions/route.ts";
-import { ACCOUNT, CHANGE_ADDR, HD, NET, RECIP, world } from "./support/btc-world.ts";
+import { ACCOUNT, CHANGE_ADDR, HD, NET, RECIP, VERIFY, world } from "./support/btc-world.ts";
 
 const PURPOSE = 84;
 const SEED = new Uint8Array(64).fill(1);
@@ -61,20 +62,6 @@ const changeTailOf = (psbt: Transaction): BitcoinPathTail => {
     throw new Error("no bound change derivation on the PSBT");
   }
   return { purpose: found[0] - 0x80000000, change: 1, index: found[4] };
-};
-
-/** `changeAddressOf`'s refusal — a ChainError whose code reads `unavailable`. */
-const expectUnavailable = (pick: () => unknown): void => {
-  try {
-    pick();
-  } catch (error) {
-    expect(error).toMatchObject({
-      code: "invalid-request",
-      message: "no unused change address inside the scan window",
-    });
-    return;
-  }
-  throw new Error("expected the change pick to refuse");
 };
 
 const inputTxidsOf = (psbt: Transaction): ReadonlyArray<string> =>
@@ -138,29 +125,34 @@ describe("changeAddressOf", () => {
     // The reach caps the pick: at mark 1979 the first usable index is 1980.
     const deep = chainOf(Array.from({ length: BITCOIN_SCAN_LIMIT }, () => true));
     expect(changeAddressOf(deep, 1979, new Set()).index).toBe(1980);
-    // Taking every index inside the window leaves nothing — the pick refuses.
-    expectUnavailable(() =>
-      changeAddressOf(deep, 1979, new Set(deep.slice(1980).map((a) => a.address))),
-    );
   });
 
-  // oxlint-disable-next-line vitest/expect-expect -- expectUnavailable wraps the expect calls
-  it("throws `invalid-request` once the window the mark opens is exhausted", () => {
+  it("an exhausted window reuses the entry at the reach — the pick never refuses", () => {
     const deep = chainOf(Array.from({ length: BITCOIN_SCAN_LIMIT }, () => false));
-    // At mark 1999 the reach is 1999: no index above the mark can ever lie inside it.
-    expectUnavailable(() => changeAddressOf(deep, BITCOIN_SCAN_LIMIT - 1, new Set()));
-    // Every index inside the window already taken by the wallet itself ends the same way.
+    // At mark 1999 the reach is 1999: the window above the mark is empty, so the entry at the
+    // reach — the mark itself — is handed out again.
+    expect(changeAddressOf(deep, BITCOIN_SCAN_LIMIT - 1, new Set()).index).toBe(
+      BITCOIN_SCAN_LIMIT - 1,
+    );
+    // Mark 0 covers indexes 1..changeScanReach(0): taken 1..19 leaves the reach itself the pick.
+    const chain = chainOf(Array.from({ length: 60 }, () => false));
+    const almost = new Set(chain.slice(1, changeScanReach(0)).map((a) => a.address));
+    expect(changeAddressOf(chain, 0, almost).index).toBe(changeScanReach(0));
+    // Take the whole window and the same reach entry is reused — a refusal would lock the funds
+    // while reusing it only links payments.
     const taken = new Set(deep.map((a) => a.address));
-    expectUnavailable(() => changeAddressOf(deep, 0, taken));
+    expect(changeAddressOf(deep, 0, taken).index).toBe(changeScanReach(0));
+    // Mark 1980 with 1981..1999 taken falls back to the reach too — never one past it.
+    const takenDeep = new Set(deep.slice(1981).map((a) => a.address));
+    expect(changeAddressOf(deep, 1980, takenDeep).index).toBe(BITCOIN_SCAN_LIMIT - 1);
   });
 
-  // oxlint-disable-next-line vitest/expect-expect -- expectUnavailable wraps the expect calls
-  it("refuses a pick one index past the scan reach, however free it is", () => {
+  it("a full window caps the pick at the reach — the index past it stays out", () => {
+    // Indexes 1..changeScanReach(0) all taken on a 60-entry scan: index 21 is free, yet the pick
+    // may never leave the window — it reuses the entry at the reach, never steps one past it.
     const chain = chainOf(Array.from({ length: 60 }, () => false));
-    // Mark 0 covers indexes 1..changeScanReach(0): take them all so the only free index sits
-    // one past the reach — a window even one wider would hand it out.
     const taken = new Set(chain.slice(1, changeScanReach(0) + 1).map((a) => a.address));
-    expectUnavailable(() => changeAddressOf(chain, 0, taken));
+    expect(changeAddressOf(chain, 0, taken).index).toBe(changeScanReach(0));
   });
 });
 
@@ -256,10 +248,11 @@ describe("change reservations", () => {
     expect(changeTailOf(Transaction.fromPSBT(psbtOf(w3.signedCalls))).index).toBe(1);
   }, 120_000);
 
-  it("an unconfirmed account's tracked change is still skipped — the mark never rose", async () => {
-    /* A device entry never confirmed shows its change as a plain send, so no internal request
-       seals a mark for it. The next send must still not reuse the first send's change address:
-       `taken` covers the tracked transaction's own output whatever the mark says. */
+  it("an unconfirmed account's tracked change is still skipped even while the mark is 0", async () => {
+    /* A device entry never confirmed shows its change as a plain send; the kernel now still seals
+       the raise for it (the signed bytes pay that address, so the wallet must scan there). Either
+       way `taken` covers the tracked transaction's own output — the next send never reuses the
+       first send's change address. */
     const w = world({ confirmed: false });
     w.fund(1, 50_000);
     w.fund(2, 50_000);
@@ -293,24 +286,170 @@ describe("a send whose serving entry was never confirmed on the device", () => {
     expect(intent?.outflows.some((o) => o.to === CHANGE_ADDR)).toBe(true);
     expect(intent?.warnings.every((w) => w.kind !== "unusual-own-output")).toBe(true);
   });
+
+  it("the unconfirmed change never vouches — out of `knownAddresses`, still a first recipient", async () => {
+    /* The tracked send's intent lists the change as a plain outflow to CHANGE_ADDR, but the
+       `unconfirmed-signer-output` warning names it — `knownAddresses` takes only vouching
+       outflows, so paying CHANGE_ADDR stays a first-recipient finding. */
+    const w = world({ confirmed: false });
+    w.fund(1, 50_000);
+    const booted = await w.boot();
+    const tx = await w.send(booted, 10_000n, "req-1");
+    expect(tx.state).not.toBe("failed");
+    expect(tx.intent?.outflows.some((o) => o.to === CHANGE_ADDR)).toBe(true);
+
+    const known = knownAddresses([], Object.values(booted.ctl.getState().txs), "bitcoin");
+    expect(known).not.toContain(CHANGE_ADDR);
+    expect(assessRecipients("bitcoin", [CHANGE_ADDR], known).map((f) => f.code)).toContain(
+      "first-recipient",
+    );
+  });
 });
 
 describe("a send whose window the sealed mark opens is exhausted", () => {
-  it("mark 1999 refuses with `invalid-request` and signs nothing", async () => {
+  it("mark 1999 signs with change at /1/1999 — the last index, hidden as change", async () => {
+    /* The window above mark 1999 is empty, so the pick reuses the entry at the reach — the mark
+       itself — and the send still builds and signs. Reusing the index only links payments; a
+       refusal would lock the funds, and the kernel still classifies the output as change. */
     const w = world({ changeMark: BITCOIN_SCAN_LIMIT - 1 });
     w.fund(1, 50_000);
     const booted = await w.boot();
-    await expect(
-      booted.ctl.prepareSend(
-        { account: { ...ACCOUNT }, network: NET, to: RECIP, amount: 10_000n, fee: "slow" },
-        "req-edge",
-      ),
-    ).rejects.toMatchObject({
-      code: "invalid-request",
-      message: "no unused change address inside the scan window",
-    });
-    expect(w.signedCalls).toStrictEqual([]);
+    const tx = await w.send(booted, 10_000n, "req-edge");
+    expect(tx.state).not.toBe("failed");
+    const tail = changeTailOf(Transaction.fromPSBT(psbtOf(w.signedCalls)));
+    expect(tail).toStrictEqual({ purpose: PURPOSE, change: 1, index: BITCOIN_SCAN_LIMIT - 1 });
+    // /1/1999 is discoverable change at the mark-1999 reach — the intent hides it.
+    const last = bitcoinAddressFromXpub(HD.publicExtendedKey, "btc.bip84", NET, 1, 1999);
+    expect(tx.intent?.outflows.every((o) => o.to !== last)).toBe(true);
   }, 120_000);
+});
+
+describe("a change window the wallet itself already filled", () => {
+  const prepare = async (
+    booted: Awaited<ReturnType<ReturnType<typeof world>["boot"]>>,
+    requestId: string,
+    amount = 10_000n,
+  ) =>
+    booted.ctl.prepareSend(
+      { account: { ...ACCOUNT }, network: NET, to: RECIP, amount, fee: "slow" },
+      requestId,
+    );
+
+  it("twenty rejected rows take nothing — the next send builds, sweeps too, across a restart", async () => {
+    /* A cancelled prompt flips the draft to `rejected` — bytes that never existed. Their own
+       outputs stay free: the next send still picks /1/1, a sweep builds, and a restart — the
+       rows persisted — changes nothing. */
+    const w = world();
+    w.fund(1, 500_000);
+    const booted = await w.boot();
+    const { sign } = w.apis;
+    (w.apis as { sign: (p: SignParams) => Promise<unknown> }).sign = async () => {
+      await Promise.resolve();
+      throw new Error("user cancelled");
+    };
+    for (let i = 0; i < 20; i += 1) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- each rejected row must land first
+      const prepared = await prepare(booted, `req-${String(i)}`);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential attempts
+      await expect(prepared.submit(VERIFY, () => undefined)).rejects.toThrow("user cancelled");
+      prepared.release();
+    }
+    const states = Object.values(booted.ctl.getState().txs).map((t) => t.state);
+    expect(new Set(states)).toStrictEqual(new Set(["rejected"]));
+
+    (w.apis as { sign: typeof sign }).sign = sign;
+    const tx = await w.send(booted, 10_000n, "req-ok");
+    expect(tx.state).not.toBe("failed");
+    expect(changeTailOf(Transaction.fromPSBT(psbtOf(w.signedCalls))).index).toBe(1);
+    // A fresh coin — req-ok's input is locked to its broadcast — sweeps just the same: the
+    // build never blocks on a change pick.
+    w.fund(2, 600_000);
+    const sweep = await prepare(booted, "req-sweep", 599_000n);
+    sweep.release();
+    // The rows are persisted: a restart changes nothing — req-ok's signed change is taken.
+    const rebooted = await w.boot(booted.backing);
+    const again = await w.send(rebooted, 10_000n, "req-after-restart");
+    expect(again.state).not.toBe("failed");
+    expect(changeTailOf(Transaction.fromPSBT(psbtOf(w.signedCalls))).index).toBe(2);
+  }, 240_000);
+
+  it("a mark that follows each unconfirmed-entry send walks the indexes it used", async () => {
+    /* The kernel seals the raise for an internal request's discoverable change even when the
+       serving entry never confirmed on the device — modelled here by the fake `account`
+       reporting each signed send's change index: twenty-two sends all build at fresh indexes. */
+    let mark = 0;
+    const w = world({ confirmed: false });
+    for (let i = 1; i <= 22; i += 1) {
+      w.fund(i, 50_000);
+    }
+    const { account } = w.apis;
+    (w.apis as { account: typeof account }).account = async (p: Parameters<typeof account>[0]) => ({
+      ...(await account(p)),
+      changeMark: mark,
+    });
+    const booted = await w.boot();
+    const indexes: number[] = [];
+    for (let i = 0; i < 22; i += 1) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the mark follows each signed send
+      const tx = await w.send(booted, 10_000n, `req-${String(i)}`);
+      expect(tx.state).not.toBe("failed");
+      const { index } = changeTailOf(Transaction.fromPSBT(psbtOf(w.signedCalls)));
+      indexes.push(index);
+      mark = index;
+    }
+    expect(indexes).toStrictEqual(Array.from({ length: 22 }, (_, i) => i + 1));
+  }, 240_000);
+
+  it("a stuck mark with the window taken reuses the reach — the twenty-first send signs /1/20", async () => {
+    /* A device entry never confirmed that raises nothing — the pre-fix kernel's behaviour — keeps
+       the fake mark at 0 while twenty signed sends fill the window. The twenty-first still builds:
+       every index in (0, 20] is taken, so the pick falls back to the reach itself. */
+    const w = world({ confirmed: false });
+    for (let i = 1; i <= 22; i += 1) {
+      w.fund(i, 50_000);
+    }
+    const booted = await w.boot();
+    for (let i = 0; i < 20; i += 1) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- each send's row must land before the next picks
+      const tx = await w.send(booted, 10_000n, `req-${String(i)}`);
+      expect(tx.state).not.toBe("failed");
+    }
+    const tx = await w.send(booted, 10_000n, "req-20");
+    expect(tx.state).not.toBe("failed");
+    expect(changeTailOf(Transaction.fromPSBT(psbtOf(w.signedCalls))).index).toBe(20);
+  }, 240_000);
+
+  it("a mark reset under kept rows reuses the reach, then climbs once the mark follows", async () => {
+    /* Twenty signed sends fill the mark-0 window 1..20 (the mark follows each send). The mark
+       then answers 0 again — the wallet's own rows still hold the window — so the next send
+       reuses the reach index /1/20 rather than refusing. Once the mark catches up to 20 the
+       window opens again and the next pick is /1/21. */
+    let mark = 0;
+    const w = world();
+    for (let i = 1; i <= 22; i += 1) {
+      w.fund(i, 50_000);
+    }
+    const { account } = w.apis;
+    (w.apis as { account: typeof account }).account = async (p: Parameters<typeof account>[0]) => ({
+      ...(await account(p)),
+      changeMark: mark,
+    });
+    const booted = await w.boot();
+    for (let i = 1; i <= 20; i += 1) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- the mark follows each signed send
+      const tx = await w.send(booted, 10_000n, `req-${String(i)}`);
+      expect(tx.state).not.toBe("failed");
+      mark = i;
+    }
+    mark = 0;
+    const reuse = await w.send(booted, 10_000n, "req-after-reset");
+    expect(reuse.state).not.toBe("failed");
+    expect(changeTailOf(Transaction.fromPSBT(psbtOf(w.signedCalls))).index).toBe(20);
+    mark = 20;
+    const next = await w.send(booted, 10_000n, "req-caught-up");
+    expect(next.state).not.toBe("failed");
+    expect(changeTailOf(Transaction.fromPSBT(psbtOf(w.signedCalls))).index).toBe(21);
+  }, 240_000);
 });
 
 describe("a far change coin the primary reports", () => {
@@ -411,5 +550,45 @@ describe("a change coin past the sealed-mark reach", () => {
       .filter((h) => changeHashes.has(h));
     // txs + utxo per scanned change address, and the walk can never pass the scan limit.
     expect(scripthashReads.length).toBeLessThanOrEqual(2 * BITCOIN_SCAN_LIMIT);
+  }, 120_000);
+});
+
+describe("a ratcheted mark places change a mark-0 restore cannot see (documented residual)", () => {
+  it("mark 1979: change binds /1/1980; a seed-only restore starts at mark 0 and never scans there", async () => {
+    /* Documented residual, kept on purpose: the sealed mark only ratchets up — a mark a hostile
+       endpoint already walked to 1979 keeps placing change at mark + 1, and marks are not in the
+       backup, so a seed-only restore starts at 0 and its gap-limited scan never reaches /1/1980.
+       No API lowers a mark. */
+    const upgraded = world({ changeMark: 1979 });
+    upgraded.fund(1, 50_000);
+    const booted = await upgraded.boot();
+    const tx = await upgraded.send(booted, 10_000n, "req-1");
+    expect(tx.state).not.toBe("failed");
+    expect(changeTailOf(Transaction.fromPSBT(psbtOf(upgraded.signedCalls))).index).toBe(1980);
+
+    // The same seed restored elsewhere: honest history (receive /0/0, the change at /1/1980).
+    const restored = world();
+    restored.fund(2, 50_000);
+    const change = restored.fundChange(1980, 9, 39_000);
+    const rbooted = await restored.boot();
+    // The change coin is not an account candidate: the gap scan never walked to /1/1980.
+    await expect(
+      rbooted.ctl.prepareSend(
+        {
+          account: { ...ACCOUNT },
+          network: NET,
+          to: RECIP,
+          amount: 10_000n,
+          fee: "slow",
+          inputs: [`${change.txid}:${String(change.vout)}`],
+        },
+        "req-r",
+      ),
+    ).rejects.toThrow("is not a spendable output of this account");
+    const far = scripthash(
+      bitcoinAddressFromXpub(HD.publicExtendedKey, "btc.bip84", NET, 1, 1980),
+      NETWORK,
+    );
+    expect(restored.requests.some((u) => u.includes(far))).toBe(false);
   }, 120_000);
 });

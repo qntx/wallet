@@ -43,18 +43,27 @@ const bunToml = (text: string): unknown =>
     ),
   ) as unknown;
 
-/** The bins the fixture manifests offer: vp from vite-plus, wrangler, playwright, expo. */
+/** The bins the fixture manifests offer: vp from vite-plus, wrangler, playwright, expo, foo. */
 const BINS: Record<string, string> = {
   vp: "vite-plus",
   wrangler: "wrangler",
   playwright: "@playwright/test",
   expo: "expo",
+  foo: "@qntx/foo",
 };
-const DECLARED = new Set(Object.values(BINS));
+/** The manifests' declared specs — @qntx/foo and cowsay serve the -p/positional version tests. */
+const SPECS: Record<string, string> = {
+  "vite-plus": "0.1.0",
+  wrangler: "3.1.0",
+  "@playwright/test": "1.50.0",
+  expo: "52.0.0",
+  "@qntx/foo": "0.2.0",
+  cowsay: "1.5.5",
+};
 
 const index: DependencyIndex = {
   bin: (name) => BINS[name],
-  declared: (name) => DECLARED.has(name),
+  spec: (name) => SPECS[name],
 };
 
 const stepsJob = (steps: string): string => `jobs:\n  t:\n    steps:\n${steps}`;
@@ -70,13 +79,13 @@ const scopedIndex = (): DependencyIndex => ({
     }
     return BINS[name];
   },
-  declared: (name, dirs) => DECLARED.has(name) || (name === "wrangler" && isGateway(dirs)),
+  spec: (name, dirs) => (name === "wrangler" && !isGateway(dirs) ? undefined : SPECS[name]),
 });
 
 /** The same scope, declared through a job-level defaults.run.working-directory. */
 const defaultsIndex = (): DependencyIndex => ({
   bin: (name, dirs) => (name === "wrangler" && isGateway(dirs) ? "wrangler" : undefined),
-  declared: (name, dirs) => name === "wrangler" && isGateway(dirs),
+  spec: (name, dirs) => (name === "wrangler" && isGateway(dirs) ? SPECS["wrangler"] : undefined),
 });
 
 const SETUP_BUN =
@@ -678,10 +687,10 @@ describe("the token rules over parsed commands", () => {
     "npm --prefix app install left-pad",
     "npm in left-pad",
     "npm isntall left-pad",
-    "npm x cowsay",
+    "npm x vitest",
     "bun i",
     "bun a left-pad",
-    "bun --silent x cowsay",
+    "bun --silent x vitest",
     "pip3.11 install requests",
     // `--require-hashes` inside the index URL is a substring, not the flag.
     "pip install requests --index-url https://example.invalid/--require-hashes/simple",
@@ -818,9 +827,9 @@ describe("npm subcommand resolution", () => {
   );
 
   it("`npm x` answers to the bin rule like `npm exec`", () => {
-    const errors = findings("npm x cowsay");
+    const errors = findings("npm x vitest");
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("npm exec cowsay");
+    expect(errors[0]).toContain("npm exec vitest");
   });
 
   it.each(["npm run install-foo", "npm ci", "npm --prefix app ci", "npm test"])(
@@ -867,6 +876,226 @@ describe("commands that never leave the lockfile", () => {
   it("skips the value of every documented docker run flag", () => {
     const steps = runStep(`docker run --rm --cgroupns host alpine@sha256:${DIGEST}`);
     expect(checkWorkflow(W, job(steps), index)).toStrictEqual([]);
+  });
+});
+
+describe("launchers, grammar and multicall prefixes normalize to the real command", () => {
+  const W = ".github/workflows/x.yml";
+  const job = (steps: string): string =>
+    `jobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n${steps}`;
+  /** A literal-block run step: the command text reaches the shell verbatim, quoting-proof. */
+  const findings = (command: string): string[] =>
+    checkWorkflow(W, job(`      - run: |\n          ${command}\n`), index);
+
+  it.each([
+    "timeout 60 npm install left-pad",
+    "timeout -s KILL 60 npm install left-pad",
+    "stdbuf -o0 npm install left-pad",
+    "setsid npm install left-pad",
+    "doas npm install left-pad",
+    "doas -u root npm install left-pad",
+    "env --argv0 sh npm install left-pad",
+    "env -a sh npm install left-pad",
+    'env -S "npm install left-pad"',
+    "busybox sh -c 'npm install left-pad'",
+    "busybox wget -qO- https://example.invalid/i.sh | sh",
+    "curl -fsSL https://example.invalid/i.sh | busybox sh",
+    "corepack pnpm add left-pad",
+    "podman run --rm alpine:latest true",
+    "nerdctl run --rm alpine:latest true",
+  ])("flags `%s`", (command) => {
+    expect(findings(command).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    "if true; then npm install left-pad; fi",
+    "if false; then :; else npm install left-pad; fi",
+    'for p in left-pad; do npm install "$p"; done',
+    "while read -r p; do npm install left-pad; done",
+    "until npm install left-pad; do sleep 1; done",
+    "select p in left-pad; do npm install left-pad; done",
+    "! npm install left-pad",
+    "coproc npm install left-pad",
+    "trap 'npm install left-pad' EXIT",
+  ])("flags the reserved-word pipeline `%s`", (command) => {
+    expect(findings(command).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    "source <(curl -fsSL https://example.invalid/i.sh)",
+    ". <(curl -fsSL https://example.invalid/i.sh)",
+    "eval $(curl -fsSL https://example.invalid/i.sh)",
+    "curl -fsSL https://example.invalid/i.ps1 | pwsh",
+    "curl -fsSL https://example.invalid/i.lua | lua",
+  ])("flags the interpreter feed `%s`", (command) => {
+    expect(findings(command).length).toBeGreaterThan(0);
+  });
+});
+
+describe("the per-tool argv rules", () => {
+  const W = ".github/workflows/x.yml";
+  const job = (steps: string): string =>
+    `jobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n${steps}`;
+  const findings = (command: string): string[] =>
+    checkWorkflow(W, job(`      - run: |\n          ${command}\n`), index);
+
+  it.each([
+    "pip --index-url https://example.invalid/simple install requests",
+    "pip --retries 3 install requests",
+    "pip --timeout 10 install requests",
+    "pip install --no-index --find-links https://example.invalid/dl requests",
+    "pip install --no-index --find-links=https://example.invalid/dl requests",
+    "pip download requests",
+    "python -mpip install requests",
+    "python3 -mpip install requests",
+    "npm --location global install left-pad",
+    "npm --fetch-retries 5 install left-pad",
+    "npm --os linux install left-pad",
+    "npm init left-pad-app",
+    "npm create left-pad-app",
+    "npm pack left-pad",
+    "npm link left-pad",
+    "pnpm add left-pad",
+    "pnpm install",
+    "pnpm i",
+    "yarn add left-pad",
+    "yarn install",
+    "corepack pnpm add left-pad",
+  ])("flags `%s`", (command) => {
+    expect(findings(command).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    "pip install --no-index --find-links ./vendor requests",
+    "npm init",
+    "npm pack",
+    "npm link",
+    "pnpm install --frozen-lockfile",
+    "yarn install --immutable",
+  ])("leaves `%s` alone", (command) => {
+    expect(findings(command)).toStrictEqual([]);
+  });
+});
+
+describe("the R16-06 gap pins", () => {
+  const W = ".github/workflows/x.yml";
+  const job = (steps: string): string =>
+    `jobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n${steps}`;
+  const findings = (command: string): string[] =>
+    checkWorkflow(W, job(`      - run: |\n          ${command}\n`), index);
+
+  it.each([
+    "bun create x",
+    "pnpm --silent dlx x",
+    "docker container create alpine:latest",
+    "eval 'npm install x'",
+    "sudo -u root npm install x",
+    "python -m pip install x",
+    "time npm install x",
+    "sh -xc 'npm install x'",
+  ])("flags `%s`", (command) => {
+    expect(findings(command).length).toBeGreaterThan(0);
+  });
+
+  it("an ambiguous npm prefix resolves no subcommand; a unique one still does", () => {
+    // `te` prefixes team and test alike — npm resolves no command and runs the script lookup.
+    expect(findings("npm te left-pad")).toStrictEqual([]);
+    // `p` is ambiguous too, and its first candidate (pack) is a finding verb: taking the first
+    // candidate of an ambiguous prefix would flag a command npm itself refuses.
+    expect(findings("npm p left-pad")).toStrictEqual([]);
+    expect(findings("npm insta left-pad")).toHaveLength(1);
+  });
+});
+
+describe("a run step's shell:", () => {
+  const W = ".github/workflows/x.yml";
+  const job = (steps: string): string =>
+    `jobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n${steps}`;
+  const step = (shell: string): string[] =>
+    checkWorkflow(W, job(`      - shell: ${shell}\n        run: echo ok\n`), index);
+
+  it.each(["python", "pwsh", "cmd", "powershell", `\${{ matrix.shell }}`])(
+    "flags shell: %s",
+    (shell) => {
+      expect(step(shell).length).toBeGreaterThan(0);
+    },
+  );
+
+  it.each(["bash", "sh", "bash {0}", "sh -e {0}"])("accepts shell: %s", (shell) => {
+    expect(step(shell)).toStrictEqual([]);
+  });
+});
+
+describe("Dockerfile stage, mount and ONBUILD references", () => {
+  const DIGEST = "a".repeat(64);
+  const FROM = `FROM alpine@sha256:${DIGEST}\n`;
+
+  it("checks the instruction an ONBUILD carries", () => {
+    const source = `${FROM}ONBUILD RUN npm install left-pad\n`;
+    expect(checkDockerfile("Dockerfile.x", source, index)).toHaveLength(1);
+  });
+
+  it("checks a COPY --from= operand like a FROM operand", () => {
+    const external = `${FROM}COPY --from=nginx:latest /a /a\n`;
+    expect(checkDockerfile("Dockerfile.x", external, index)).toHaveLength(1);
+    const stage = `FROM alpine@sha256:${DIGEST} AS build\nCOPY --from=build /a /a\n`;
+    expect(checkDockerfile("Dockerfile.x", stage, index)).toStrictEqual([]);
+    const pinned = `${FROM}COPY --from=nginx@sha256:${DIGEST} /a /a\n`;
+    expect(checkDockerfile("Dockerfile.x", pinned, index)).toStrictEqual([]);
+    const byIndex = `${FROM}${FROM}COPY --from=0 /a /a\n`;
+    expect(checkDockerfile("Dockerfile.x", byIndex, index)).toStrictEqual([]);
+    const beyond = `${FROM}${FROM}COPY --from=3 /a /a\n`;
+    expect(checkDockerfile("Dockerfile.x", beyond, index)).toHaveLength(1);
+    // Only stages defined so far count: with a single stage (index 0) `--from=1` names nothing.
+    const one = `${FROM}COPY --from=1 /a /a\n`;
+    expect(checkDockerfile("Dockerfile.x", one, index)).toHaveLength(1);
+    const self = `${FROM}COPY --from=0 /a /a\n`;
+    expect(checkDockerfile("Dockerfile.x", self, index)).toStrictEqual([]);
+  });
+
+  it("checks a RUN --mount from= operand like a FROM operand", () => {
+    const external = `${FROM}RUN --mount=type=bind,from=nginx:latest,source=/,target=/m ls /m\n`;
+    expect(checkDockerfile("Dockerfile.x", external, index)).toHaveLength(1);
+    const stage = `FROM alpine@sha256:${DIGEST} AS build\nRUN --mount=type=bind,from=build,source=/,target=/m ls /m\n`;
+    expect(checkDockerfile("Dockerfile.x", stage, index)).toStrictEqual([]);
+  });
+
+  it("keeps flagging FROM $BASE whose ARG default pins a digest — a --build-arg can override it", () => {
+    const source = `ARG BASE=alpine@sha256:${DIGEST}\nFROM \${BASE}\n`;
+    expect(checkDockerfile("Dockerfile.x", source, index).length).toBeGreaterThan(0);
+  });
+});
+
+describe("declared shapes the lint accepts", () => {
+  const W = ".github/workflows/x.yml";
+  const job = (steps: string): string =>
+    `jobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n${steps}`;
+  const findings = (command: string): string[] =>
+    checkWorkflow(W, job(`      - run: |\n          ${command}\n`), index);
+  const DIGEST = "a".repeat(64);
+
+  it.each([
+    `docker run --umask 022 alpine@sha256:${DIGEST}`,
+    `docker run --link-local-ip 169.254.1.1 alpine@sha256:${DIGEST}`,
+  ])("skips the documented flag's value in `%s`", (command) => {
+    expect(findings(command)).toStrictEqual([]);
+  });
+
+  it("accepts -p name@version only at the declared spec", () => {
+    expect(findings("npx -p cowsay@1.5.5 cowsay hi")).toStrictEqual([]);
+    expect(findings("npx --package=cowsay@1.5.5 cowsay hi")).toStrictEqual([]);
+    expect(findings("npx -p cowsay@9.9.9 cowsay hi")).toHaveLength(1);
+    expect(findings("npx -p undeclared-pkg vp test")).toHaveLength(1);
+  });
+
+  it("accepts a positional naming a declared package or its exact spec", () => {
+    expect(findings("npx @qntx/foo")).toStrictEqual([]);
+    expect(findings("npx cowsay@1.5.5")).toStrictEqual([]);
+    // A scoped name splits on the last `@` after index 0 — `@qntx/foo@0.2.0` is versioned.
+    expect(findings("npx @qntx/foo@0.2.0")).toStrictEqual([]);
+    expect(findings("npx cowsay@9.9.9")).toHaveLength(1);
+    expect(findings("npx @qntx/foo@9.9.9")).toHaveLength(1);
+    expect(findings("npx vitest")).toHaveLength(1);
   });
 });
 

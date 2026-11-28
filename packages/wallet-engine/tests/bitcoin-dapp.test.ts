@@ -275,6 +275,55 @@ describe("prepareDappPsbts", () => {
   );
 
   it(
+    "hides own change exactly at the mark's bound and shows mark + 21 as unusual",
+    { timeout: 20_000 },
+    async () => {
+      /* Mark 0's reach is index 20: /1/20 sits in the scanned change chain, so the engine binds
+         it and hides it as change. /1/21 lies one past the scan — the engine never binds it, so
+         a derivation the dApp itself attached is what `ownOutputTail` reads: the output is own
+         but not discoverable, and shows at its path rather than hiding. */
+      const atBound = scriptOf("btc.bip84", 1, 20);
+      const pastBound = scriptOf("btc.bip84", 1, 21);
+      const deep = nodeOf("btc.bip84", 1, 21);
+      const tx = Transaction.fromPSBT(
+        dappPsbt(
+          [{ script: scriptOf("btc.bip84"), amount: 100_000n }],
+          [
+            { script: PAYEE_SCRIPT, amount: 80_000n },
+            { script: atBound, amount: 5000n },
+            { script: pastBound, amount: 5000n },
+          ],
+        ),
+      );
+      tx.updateOutput(2, {
+        bip32Derivation: [
+          [
+            deep.publicKey!,
+            {
+              fingerprint: master.fingerprint,
+              path: [0x80000054, 0x80000000, 0x80000000, 1, 21],
+            },
+          ],
+        ],
+      });
+      const { es } = rig();
+      const [prepared] = await prepareDappPsbts(
+        apisWithMark(0),
+        es,
+        GROUP,
+        MAINNET,
+        [{ psbt: tx.toPSBT(0), sign: [signEntry(0, "btc.bip84")] }],
+        new Set<string>(),
+      );
+      const atBoundHex = Buffer.from(atBound).toString("hex");
+      const pastBoundHex = Buffer.from(pastBound).toString("hex");
+      expect(prepared!.own.change.has(atBoundHex)).toBe(true);
+      expect(prepared!.own.change.has(pastBoundHex)).toBe(false);
+      expect(prepared!.own.unusual.get(pastBoundHex)).toBe("m/84'/0'/0'/1/21");
+    },
+  );
+
+  it(
     "a signed change input never raises the dApp preview's own mark",
     { timeout: 20_000 },
     async () => {

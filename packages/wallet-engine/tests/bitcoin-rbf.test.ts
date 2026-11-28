@@ -6,7 +6,12 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { scripthash } from "../src/chains/bitcoin-scan.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { createBitcoinRoute } from "../src/transactions/bitcoin.ts";
-import type { RouteContext, TrackedTransaction, SignParams } from "../src/transactions/route.ts";
+import type {
+  RouteContext,
+  SignParams,
+  TrackedTransaction,
+  TxState,
+} from "../src/transactions/route.ts";
 import { routeCpfp, routeReplace, routeSend } from "./send-helpers.ts";
 
 const HD = HDKey.fromMasterSeed(new Uint8Array(64).fill(1)).derive("m/84'/0'/0'");
@@ -182,6 +187,42 @@ const signGroupIndex = (n: number): number | undefined => {
   return req !== undefined && req.account.kind === "hd" ? req.account.groupIndex : undefined;
 };
 
+/** A tracked send whose output sits at `address` — what `changeTaken` reads for `state`. */
+const ownRow = (id: string, state: TxState, address: string, own = true): TrackedTransaction => ({
+  id,
+  family: "bitcoin",
+  network: "bip122:000000000019d6689c085ae165831e93",
+  account: "w",
+  hash: TXID(0x99),
+  state,
+  intent: undefined,
+  nonce: 0,
+  btc: {
+    inputs: [],
+    outputs: [{ address, value: 1000, own }],
+    vsize: 1,
+    fee: 1,
+    feeRate: 1,
+    template: "btc.bip84",
+    groupIndex: 0,
+    tier: "slow",
+  },
+  submittedAt: 0,
+  error: undefined,
+});
+
+/** The bound change index of a signed PSBT — the output derivation with `change === 1`. */
+const boundChangeIndex = (tx: Transaction): number | undefined => {
+  for (let i = 0; i < tx.outputsLength; i++) {
+    for (const [, v] of tx.getOutput(i).bip32Derivation ?? []) {
+      if (v.path[3] === 1) {
+        return v.path[4];
+      }
+    }
+  }
+  return undefined;
+};
+
 const send = async (c: RouteContext, amount = 10_000n): Promise<TrackedTransaction> => {
   setUtxos(DEFAULT_UTXOS);
   return routeSend(route, c, {
@@ -250,6 +291,64 @@ describe("bitcoin rbf", () => {
     expect(change?.own).toBe(true);
     expect(cancelled.replaces).toBe(original.id);
     expect(btcOf(cancelled).fee).toBeGreaterThan(btcOf(original).fee);
+  });
+
+  it.each([
+    // `draft` and `rejected` rows never signed — the kernel sealed the mark past their pick
+    // before the first signature, so their own output stays free for the next send.
+    ["draft", 1],
+    ["rejected", 1],
+    ["signed", 2],
+    ["submitted", 2],
+    ["pending", 2],
+    ["confirmed", 2],
+    ["failed", 2],
+    ["dropped", 2],
+    ["replaced", 2],
+  ] as const)(
+    "a `%s` row's own output counts only once its bytes exist — the next send takes /1/%d",
+    async (state, index) => {
+      const earlier = ownRow("earlier", state, CHANGE_ADDR);
+      const c = { ...ctx(), txs: () => ({ earlier }) };
+      const tx = await send(c);
+      expect(tx.state).not.toBe("failed");
+      expect(btcOf(tx).outputs.find((o) => o.own)?.address).toBe(
+        p2wpkh(HD.deriveChild(1).deriveChild(index).publicKey!, NETWORK).address,
+      );
+    },
+  );
+
+  it("a confirmed row's payee output is taken too — an address the chain paid is never re-picked", async () => {
+    /* `own: false` marks the payee side, but an outflow that landed on /1/1 paid that address on
+       chain all the same — the next send must not hand it out as fresh change. */
+    const earlier = ownRow("earlier", "confirmed", CHANGE_ADDR, false);
+    const c = { ...ctx(), txs: () => ({ earlier }) };
+    const tx = await send(c);
+    expect(tx.state).not.toBe("failed");
+    expect(btcOf(tx).outputs.find((o) => o.own)?.address).toBe(CHANGE_ADDR_2);
+  });
+
+  it("a speed-up and a cancel of a change-paying parent reuse the parent's own output", async () => {
+    /* /1/1 is burned by an older confirmed send, so the parent's change sits at /1/2 — and every
+       replacement pays /1/2 back, never a fresh pick. The store the replacement reads holds the
+       parent's row too, so a fresh pick would skip both taken addresses and hand out /1/3 —
+       the reuse of /1/2 is the point, not an accident of an empty store. The PSBT binds the
+       parent's own path, so the kernel classifies the output as change. */
+    const earlier = ownRow("earlier", "confirmed", CHANGE_ADDR);
+    const rows: Record<string, TrackedTransaction> = { earlier };
+    const c = { ...ctx(), txs: () => rows };
+    const parent = await send(c);
+    rows[parent.id] = parent;
+    expect(btcOf(parent).outputs.find((o) => o.own)?.address).toBe(CHANGE_ADDR_2);
+
+    const verify = { kind: "password" as const, password: "pw" };
+    const bumped = await routeReplace(route, c, parent, "speed-up", verify);
+    expect(btcOf(bumped).outputs.find((o) => o.own)?.address).toBe(CHANGE_ADDR_2);
+    expect(boundChangeIndex(signedPsbt(signedCalls.length - 1))).toBe(2);
+
+    const cancelled = await routeReplace(route, c, parent, "cancel", verify);
+    expect(btcOf(cancelled).outputs.map((o) => o.address)).toStrictEqual([CHANGE_ADDR_2]);
+    expect(boundChangeIndex(signedPsbt(signedCalls.length - 1))).toBe(2);
   });
 
   it("speed-up bumps the fee (BIP-125 rule 4: fee + vsize) and keeps payee outputs", async () => {

@@ -3,9 +3,10 @@
  * discoverable only when the wallet's gap-limited scan can reach it — anything else is shown as a
  * send to the caller's own address at an unusual path, with a warning. The reach bound comes from
  * the kernel's sealed change mark, never from the PSBT: a signed input can name any path, so inputs
- * never raise the mark. An `internal` request — one the wallet itself built — seals only the hidden
- * change indexes it carried, up to the highest each purpose hid; an external request still hides
- * change inside the window — the scan reaches it either way — but commits nothing.
+ * never raise the mark. An `internal` request — one the wallet itself built — seals the change
+ * indexes its discoverable own outputs reached, hidden or unconfirmed alike — the signed bytes pay
+ * those addresses, so the wallet must scan that far; an external request still hides change inside
+ * the window — the scan reaches it either way — but commits nothing.
  */
 
 /**
@@ -36,7 +37,9 @@ export type BitcoinPathTail = {
  * `change` maps script hex to nothing — it is hidden from the prompt; `unusual` maps script hex to
  * the output's `m/…` path text — it is shown as an outflow to the caller's own address;
  * `unconfirmed` holds script hexes whose key sits on an entry the signer never confirmed on the
- * device — shown as a plain send with a danger warning, never as "your own address".
+ * device — shown as a plain send with a danger warning, never as "your own address"; an internal
+ * request's discoverable unconfirmed output still raises the mark, which only widens the wallet's
+ * own scan.
  */
 export type BitcoinOwn = {
   readonly change: ReadonlySet<string>;
