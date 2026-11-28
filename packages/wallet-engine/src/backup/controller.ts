@@ -16,6 +16,7 @@ import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import type {
   Wallet,
   BackupHeader,
+  BackupInspection,
   BackupInfo,
   WalletInfo,
   WalletSnapshot,
@@ -301,9 +302,13 @@ export class BackupController extends Controller<BackupControllerState> {
     await this.reconcileOrThrow();
   }
 
-  /** Every versioned file with a verified digest and a parseable header. */
+  /**
+   * Every versioned file with a verified digest and a readable or unsupported header — an
+   * unsupported version is listed with its direction so a host can say "made by an older version —
+   * restore from your mnemonic" vs "update the app to restore it".
+   */
   async list(): Promise<
-    ReadonlyArray<{ readonly name: string; readonly id: string; readonly header: BackupHeader }>
+    ReadonlyArray<{ readonly name: string; readonly id: string; readonly header: BackupInspection }>
   > {
     const { cloud } = this;
     if (cloud === undefined) {
@@ -372,7 +377,10 @@ export class BackupController extends Controller<BackupControllerState> {
     // ceremony itself would apply it against the pre-merge coverage.
     let adoption: { readonly name: string; readonly coverage: Coverage } | undefined;
     try {
-      adoption = { name: options.name, coverage: headerCoverage(parseBackupHeader(text)) };
+      const header = parseBackupHeader(text);
+      if (header.status === "ok") {
+        adoption = { name: options.name, coverage: headerCoverage(header) };
+      }
     } catch (error) {
       this.logger.warn("backup file header failed to parse", error);
     }
@@ -506,7 +514,7 @@ export class BackupController extends Controller<BackupControllerState> {
 
   private async pass(generation: number): Promise<void> {
     const snapshot = this.snapshot();
-    if (snapshot.vault !== "unlocked" || this.engineStore === undefined) {
+    if (snapshot.vault.status !== "unlocked" || this.engineStore === undefined) {
       return;
     }
     let record = await this.readRecord();
@@ -736,7 +744,17 @@ export class BackupController extends Controller<BackupControllerState> {
     let coverage: Coverage | undefined;
     if (digestOf(text) === parsed.digest) {
       try {
-        coverage = headerCoverage(parseBackupHeader(text));
+        const header = parseBackupHeader(text);
+        if (header.status === "ok") {
+          coverage = headerCoverage(header);
+        } else {
+          // A version this build cannot read never counts as coverage — it is never
+          // re-read, and the controller deletes only versions it wrote or merged.
+          this.logger.warn(
+            "foreign backup file is unsupported",
+            new Error(`${name} (${header.reason})`),
+          );
+        }
       } catch (error) {
         this.logger.warn("foreign backup file failed to parse", error);
       }

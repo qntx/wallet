@@ -461,7 +461,7 @@ export function createPolymarketLive(options: {
   const followLock = (): void => {
     unsubscribeWallet ??= options.wallet.subscribe(() => {
       const snapshot = options.wallet.getSnapshot();
-      if (snapshot.vault !== "unlocked") {
+      if (snapshot.vault.status !== "unlocked") {
         // oxlint-disable-next-line unicorn/prefer-spread -- the loop removes views from the set; a snapshot is required.
         for (const view of Array.from(accountViews)) {
           view.stop("unlock-required");

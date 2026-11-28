@@ -136,7 +136,7 @@ export function fiat24(config: Fiat24Config = {}): AppDefinition<"fiat24", Fiat2
       /** The group's tokenId once it has an owned live account — the session's identity. */
       const session = (group: AppGroup): Fiat24SecuredReads => {
         const gated = async (): Promise<Fiat24SecuredReads> => {
-          if (context.wallet.getSnapshot().vault !== "unlocked") {
+          if (context.wallet.getSnapshot().vault.status !== "unlocked") {
             throw new Fiat24AppError("unlock-required", "unlock the vault to use the Fiat24 app");
           }
           if (context.groupState(group)?.status !== "enabled") {

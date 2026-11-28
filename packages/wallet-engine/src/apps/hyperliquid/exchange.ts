@@ -424,7 +424,7 @@ export function createHyperliquidExchange(options: {
      a reads-only provider never needs the wallet's subscription channel. */
   const watchLock = (): void => {
     lockWatch ??= options.wallet.subscribe(() => {
-      if (options.wallet.getSnapshot().vault !== "unlocked") {
+      if (options.wallet.getSnapshot().vault.status !== "unlocked") {
         session += 1;
         pending.clear();
         pollCancel?.();
@@ -475,7 +475,7 @@ export function createHyperliquidExchange(options: {
     cloid: string,
     signedIn: number,
   ): void => {
-    if (signedIn !== session || options.wallet.getSnapshot().vault !== "unlocked") {
+    if (signedIn !== session || options.wallet.getSnapshot().vault.status !== "unlocked") {
       return; // a locked session drops its pending cloids — nothing account-bound survives it
     }
     const key = pendingKey(master, cloid);

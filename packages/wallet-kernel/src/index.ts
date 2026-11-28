@@ -5,7 +5,7 @@
  * is imported from `../src/...` by tests only; the package is private and bundled, never
  * published.
  */
-export { KernelError } from "./errors.ts";
+export { KernelError, UnsupportedFormatError } from "./errors.ts";
 export type { KernelErrorCode } from "./errors.ts";
 export { startKernel } from "./kernel.ts";
 export type {

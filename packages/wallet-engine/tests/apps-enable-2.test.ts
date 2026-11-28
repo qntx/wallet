@@ -1006,7 +1006,7 @@ describe("app-sourced request origins", () => {
     };
     /* A locked wallet never transitions — nothing but the definitions' `create` runs. */
     const wallet = {
-      getSnapshot: () => ({ vault: "locked", wallets: [] }),
+      getSnapshot: () => ({ vault: { status: "locked" }, wallets: [] }),
       subscribe: () => () => undefined,
     } as unknown as Wallet;
     const created = createApps({
@@ -1075,7 +1075,7 @@ describe("app-sourced request origins", () => {
     /* A locked wallet never transitions — registration throws before any lifecycle runs. */
     const options = (apps: ReadonlyArray<AppDefinition<AppId, unknown>>) => ({
       wallet: {
-        getSnapshot: () => ({ vault: "locked", wallets: [] }),
+        getSnapshot: () => ({ vault: { status: "locked" }, wallets: [] }),
         subscribe: () => () => undefined,
       } as unknown as Wallet,
       account: async (): Promise<never> => Promise.reject(new Error("unused")),

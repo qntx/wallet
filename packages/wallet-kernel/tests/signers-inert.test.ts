@@ -184,7 +184,7 @@ describe("unknown hardware device kind stays inert", () => {
     const walletId = await plantHardwareWallet(h, "trezor", realBody());
     const status = ok(await h.call("status", null, session));
     // An ok vault reports its session state; only non-ok health shadows it.
-    expect(strField(status, "vault")).toBe("unlocked");
+    expect(field(status, "vault")).toStrictEqual({ status: "unlocked" });
     const entry = walletEntry(status, walletId);
     expect(strField(entry, "custody")).toBe("hardware");
     expect(strField(entry, "device")).toBe("trezor");
@@ -196,7 +196,7 @@ describe("unknown hardware device kind stays inert", () => {
     // Bytes that would fail every body rule — valid ciphertext, inert because the kind is unknown.
     const walletId = await plantHardwareWallet(h, "trezor", utf8ToBytes("not json"));
     const status = ok(await h.call("status", null, session));
-    expect(strField(status, "vault")).toBe("unlocked");
+    expect(field(status, "vault")).toStrictEqual({ status: "unlocked" });
     expect(field(walletEntry(status, walletId), "supported")).toBe(false);
   });
 
@@ -272,7 +272,7 @@ describe("unknown hardware device kind stays inert", () => {
     const walletId = await plantHardwareWallet(h, "trezor", realBody());
     ok(await h.call("wallet.delete", { walletId, verify: PASSKEY() }, session));
     const status = ok(await h.call("status", null, session));
-    expect(strField(status, "vault")).toBe("unlocked");
+    expect(field(status, "vault")).toStrictEqual({ status: "unlocked" });
     expect(
       arrField(status, "wallets").find((w) => strField(w, "walletId") === walletId),
     ).toBeUndefined();
@@ -282,6 +282,6 @@ describe("unknown hardware device kind stays inert", () => {
     const { h, session } = await boot();
     await plantHardwareWallet(h, "Trezor-3", realBody());
     const status = ok(await h.call("status", null, session));
-    expect(strField(status, "vault")).toBe("corrupted");
+    expect(field(status, "vault")).toStrictEqual({ status: "corrupted" });
   });
 });

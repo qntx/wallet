@@ -553,7 +553,7 @@ describe("a matched verify-address seals the serving entry confirmed", () => {
     ).toBe(true);
     // The flag survives a lock/unlock — it is committed in the re-sealed record body.
     h.advance(60_001);
-    expect(strField(okValue(await h.call("status")), "vault")).toBe("locked");
+    expect(field(okValue(await h.call("status")), "vault")).toStrictEqual({ status: "locked" });
     const unlocked = okValue(await h.call("vault.unlock", { factor: { kind: "device" } }));
     const session2 = strField(unlocked, "session");
     expect(

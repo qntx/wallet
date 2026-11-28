@@ -572,7 +572,7 @@ export function createApps<const A extends ReadonlyArray<AppDefinition<AppId, un
     | ((group: AppGroup, app: AppId, run: (flow: AppFlow) => Promise<void>) => Promise<void>)
     | undefined;
   let sessionStore: EngineStore | undefined;
-  const unlocked = (): boolean => options.wallet.getSnapshot().vault === "unlocked";
+  const unlocked = (): boolean => options.wallet.getSnapshot().vault.status === "unlocked";
   const openStore = async (): Promise<EngineStore> => {
     const store = await options.openStore();
     sessionStore = store;

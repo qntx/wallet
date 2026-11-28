@@ -254,7 +254,7 @@ describe("hardware factor: guarded commands", () => {
     await restarted.settle();
     fake.fail("cancelled");
     expect(errCode(await restarted.call("vault.unlock", { factor: HARDWARE }))).toBe("cancelled");
-    expect(field(ok(await restarted.call("status")), "vault")).toBe("locked");
+    expect(field(ok(await restarted.call("status")), "vault")).toStrictEqual({ status: "locked" });
   });
 
   it("runs one ceremony at a time; a rejected one does not block the next", async () => {
@@ -462,7 +462,7 @@ describe("hardware factor: chain.sign", () => {
     const response = await pending;
     expect(errCode(response)).toBe("locked");
     expect(seeds.length - before).toBe(1);
-    expect(field(ok(await h.call("status")), "vault")).toBe("locked");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "locked" });
   });
 
   it("a cancelled prompt never reaches the sign pass", async () => {
@@ -653,7 +653,7 @@ describe("hardware factor: reset", () => {
       { op: "authenticate", prompt: corePrompt("en", "reset") },
       { op: "clear" },
     ]);
-    expect(field(ok(await h.call("status")), "vault")).toBe("uninitialized");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "uninitialized" });
   });
 
   it("a cancelled owner check leaves the vault untouched", async () => {
@@ -662,7 +662,7 @@ describe("hardware factor: reset", () => {
     const { session } = await importHardware(h);
     fake.fail("cancelled");
     expect(errCode(await h.call("vault.reset", null, session))).toBe("cancelled");
-    expect(field(ok(await h.call("status")), "vault")).toBe("unlocked");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "unlocked" });
     expect(fake.keys.size).toBe(2);
   });
 });

@@ -192,7 +192,9 @@ describe("kernel passkey ceremony: restore", () => {
     const { authenticator } = fakeAuthenticator([new KernelError("cancelled", "user cancelled")]);
     const h = nativeHarness(authenticator);
     expect(errCode(await restore(h))).toBe("cancelled");
-    await expect(h.call("status")).resolves.toMatchObject({ ok: { vault: "uninitialized" } });
+    await expect(h.call("status")).resolves.toMatchObject({
+      ok: { vault: { status: "uninitialized" } },
+    });
   });
 });
 

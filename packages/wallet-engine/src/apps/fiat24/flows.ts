@@ -204,7 +204,7 @@ export function createFiat24Flows(options: {
   let timer: (() => void) | undefined;
   let polling = false;
 
-  const unlocked = (): boolean => options.wallet.getSnapshot().vault === "unlocked";
+  const unlocked = (): boolean => options.wallet.getSnapshot().vault.status === "unlocked";
 
   const requireUnlocked = (): void => {
     if (!unlocked()) {

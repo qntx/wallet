@@ -136,7 +136,7 @@ export class KernelWallet implements Wallet {
     this.setTimer = options.setTimer;
     this.onDestroy = options.onDestroy;
     this.snapshotValue = {
-      vault: "uninitialized",
+      vault: { status: "uninitialized" },
       lockReason: undefined,
       verifying: false,
       appLock: false,
@@ -258,14 +258,14 @@ export class KernelWallet implements Wallet {
    * (uninitialized, corrupted, …) are the kernel's truth and stay untouched.
    */
   private markLocked(): void {
-    if (this.status !== undefined && this.status.vault === "unlocked") {
-      this.status = { ...this.status, vault: "locked" };
+    if (this.status !== undefined && this.status.vault.status === "unlocked") {
+      this.status = { ...this.status, vault: { status: "locked" } };
     }
     this.emit();
   }
 
   private onStatus(status: StatusPayload): void {
-    if (this.lockReason === undefined && status.vault === "locked") {
+    if (this.lockReason === undefined && status.vault.status === "locked") {
       this.lockReason = "cold-start"; // locked at first sight, not by an action of ours
     }
     this.status = status;
@@ -279,7 +279,7 @@ export class KernelWallet implements Wallet {
   private emit(): void {
     const { status } = this;
     const next: WalletSnapshot = {
-      vault: status === undefined ? "uninitialized" : status.vault,
+      vault: status === undefined ? { status: "uninitialized" } : status.vault,
       lockReason: this.lockReason,
       verifying: this.verifying > 0,
       appLock: status === undefined ? false : status.appLock,
@@ -293,7 +293,7 @@ export class KernelWallet implements Wallet {
     };
     const current = this.snapshotValue;
     if (
-      current.vault === next.vault &&
+      deepEqual(current.vault, next.vault) &&
       current.lockReason === next.lockReason &&
       current.verifying === next.verifying &&
       current.appLock === next.appLock &&
@@ -346,7 +346,7 @@ export class KernelWallet implements Wallet {
   }
 
   private initialized(): boolean {
-    return this.snapshotValue.vault !== "uninitialized";
+    return this.snapshotValue.vault.status !== "uninitialized";
   }
 
   /**

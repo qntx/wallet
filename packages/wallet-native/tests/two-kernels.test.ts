@@ -335,8 +335,8 @@ describe("two kernels over one vault file", () => {
     const anchor = nativeAnchor({ value: undefined });
     const walletA = await connect(boot(fileStore(bytes), keystore.native, anchor));
     const walletB = await connect(boot(fileStore(bytes), fakeNativeKeystore().native, anchor));
-    expect(walletA.getSnapshot().vault).toBe("uninitialized");
-    expect(walletB.getSnapshot().vault).toBe("uninitialized");
+    expect(walletA.getSnapshot().vault.status).toBe("uninitialized");
+    expect(walletB.getSnapshot().vault.status).toBe("uninitialized");
     try {
       const a = await walletA.wallets.importMnemonic({ mnemonic: M1 });
       // B's `init` precondition is judged against the file A just wrote — the store reads at

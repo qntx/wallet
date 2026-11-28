@@ -50,6 +50,8 @@ export type QntxApi = {
     readonly blocked: boolean;
     readonly success: boolean;
   }>;
+  readonly seedVaultFormat: (format: number) => Promise<{ readonly seeded: boolean }>;
+  readonly vaultMetaFormat: () => Promise<number | undefined>;
 };
 
 declare global {

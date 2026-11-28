@@ -189,22 +189,22 @@ const runCreate = async (
 const runA1 = async (): Promise<void> => {
   const { wallet, walletId } = await runCreate("a1", true);
   await wallet.vault.lock();
-  result("a1-lock", wallet.getSnapshot().vault === "locked", `wallet=${walletId}`);
+  result("a1-lock", wallet.getSnapshot().vault.status === "locked", `wallet=${walletId}`);
 };
 
 const runA2 = async (): Promise<void> => {
   const { wallet, verify } = await open();
   const snapshot = wallet.getSnapshot();
   const walletId = snapshot.wallets[0]?.walletId;
-  if (snapshot.vault !== "locked" || walletId === undefined) {
-    result("a2-state", false, `vault=${snapshot.vault}`);
+  if (snapshot.vault.status !== "locked" || walletId === undefined) {
+    result("a2-state", false, `vault=${snapshot.vault.status}`);
     return;
   }
 
   await wallet.vault.unlock();
   result(
     "a2-unlock",
-    wallet.getSnapshot().vault === "unlocked" && verify() === 0,
+    wallet.getSnapshot().vault.status === "unlocked" && verify() === 0,
     `verify=${verify()}`,
   );
   await sign(wallet, "a2", walletId);
@@ -250,8 +250,8 @@ const runA2 = async (): Promise<void> => {
 const runA3 = async (): Promise<void> => {
   const { wallet, verify } = await open();
   const snapshot = wallet.getSnapshot();
-  if (snapshot.vault !== "locked" || !snapshot.appLock) {
-    result("a3-state", false, `vault=${snapshot.vault} appLock=${snapshot.appLock}`);
+  if (snapshot.vault.status !== "locked" || !snapshot.appLock) {
+    result("a3-state", false, `vault=${snapshot.vault.status} appLock=${snapshot.appLock}`);
     return;
   }
 
@@ -260,7 +260,7 @@ const runA3 = async (): Promise<void> => {
   await wallet.vault.unlock();
   result(
     "a3-unlock",
-    wallet.getSnapshot().vault === "unlocked" && verify() > before,
+    wallet.getSnapshot().vault.status === "unlocked" && verify() > before,
     `verify=${verify() - before}`,
   );
 
@@ -279,7 +279,7 @@ const runA3 = async (): Promise<void> => {
   await wallet.vault.unlock();
   result(
     "a3-silent-unlock",
-    wallet.getSnapshot().vault === "unlocked" && verify() === beforeSilent,
+    wallet.getSnapshot().vault.status === "unlocked" && verify() === beforeSilent,
     `verify=${verify() - beforeSilent}`,
   );
 };
@@ -290,7 +290,7 @@ const runAuto = async (): Promise<void> => {
   await wallet.vault.unlock();
   result(
     "auto-unlock",
-    wallet.getSnapshot().vault === "unlocked" && verify() === before,
+    wallet.getSnapshot().vault.status === "unlocked" && verify() === before,
     `verify=${verify() - before}`,
   );
 
@@ -304,20 +304,20 @@ const runAuto = async (): Promise<void> => {
   let snapshot = wallet.getSnapshot();
   while (Date.now() < deadline) {
     snapshot = wallet.getSnapshot();
-    if (snapshot.vault === "locked" && snapshot.lockReason === "background") break;
+    if (snapshot.vault.status === "locked" && snapshot.lockReason === "background") break;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   result(
     "auto-background-lock",
-    snapshot.vault === "locked" && snapshot.lockReason === "background",
-    `vault=${snapshot.vault} reason=${String(snapshot.lockReason)}`,
+    snapshot.vault.status === "locked" && snapshot.lockReason === "background",
+    `vault=${snapshot.vault.status} reason=${String(snapshot.lockReason)}`,
   );
 
   const beforeUnlock = verify();
   await wallet.vault.unlock();
   result(
     "auto-silent-unlock",
-    wallet.getSnapshot().vault === "unlocked" && verify() === beforeUnlock,
+    wallet.getSnapshot().vault.status === "unlocked" && verify() === beforeUnlock,
     `verify=${verify() - beforeUnlock}`,
   );
 };
@@ -364,7 +364,7 @@ const runB2 = async (): Promise<void> => {
   await wallet.vault.unlock();
   result(
     "b2-unlock",
-    wallet.getSnapshot().vault === "unlocked" && verify() === before && walletId !== undefined,
+    wallet.getSnapshot().vault.status === "unlocked" && verify() === before && walletId !== undefined,
     `verify=${verify() - before}`,
   );
   if (walletId === undefined) {
@@ -404,7 +404,7 @@ const runB3 = async (): Promise<void> => {
   await wallet.vault.unlock();
   result(
     "b3-unlock",
-    wallet.getSnapshot().vault === "unlocked" && verify() === before,
+    wallet.getSnapshot().vault.status === "unlocked" && verify() === before,
     `verify=${verify() - before}`,
   );
 
@@ -435,7 +435,7 @@ const runSilent = async (): Promise<void> => {
   const walletId = snapshot.wallets[0]?.walletId;
   result(
     "silent-unlock",
-    snapshot.vault === "unlocked" && verify() === before,
+    snapshot.vault.status === "unlocked" && verify() === before,
     `wallet=${walletId} npub=${snapshot.nostr.keys[0]?.publicKey} verify=${verify() - before}`,
   );
   await sign(smoke.wallet, "silent", walletId);
@@ -445,7 +445,7 @@ const runSilent = async (): Promise<void> => {
 const runPhys = async (): Promise<void> => {
   const smoke = await open();
   const { wallet, verify } = smoke;
-  if (wallet.getSnapshot().vault === "uninitialized") {
+  if (wallet.getSnapshot().vault.status === "uninitialized") {
     waiting("phys-create");
     const before = verify();
     const info = await wallet.wallets.importMnemonic({ mnemonic: MNEMONIC });
@@ -457,7 +457,7 @@ const runPhys = async (): Promise<void> => {
     );
     await sign(smoke.wallet, "phys", info.walletId);
     await wallet.vault.lock();
-    result("phys-lock", wallet.getSnapshot().vault === "locked", "");
+    result("phys-lock", wallet.getSnapshot().vault.status === "locked", "");
     return;
   }
   const before = verify();
@@ -465,7 +465,7 @@ const runPhys = async (): Promise<void> => {
   const snapshot = wallet.getSnapshot();
   result(
     "phys-unlock",
-    snapshot.vault === "unlocked" && verify() === before,
+    snapshot.vault.status === "unlocked" && verify() === before,
     `factors=${kinds(snapshot)} verify=${verify() - before}`,
   );
   await sign(smoke.wallet, "phys");

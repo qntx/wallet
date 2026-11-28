@@ -5,8 +5,8 @@
 ```ts
 
 import { BackupFactorInput } from '@qntx/wallet';
-import { BackupHeader } from '@qntx/wallet';
 import { BackupInfo } from '@qntx/wallet';
+import { BackupInspection } from '@qntx/wallet';
 import { BitcoinAccountTemplate } from '@qntx/wallet-chains/bitcoin';
 import { BitcoinOwn } from '@qntx/wallet-chains/bitcoin';
 import { BitcoinTemplate } from '@qntx/wallet-chains';
@@ -52,6 +52,7 @@ import { SparkStore } from '@qntx/spark';
 import { SparkTransfer } from '@qntx/spark';
 import { StoreApi } from 'zustand/vanilla';
 import { UnsignedEvent } from '@qntx/nostr';
+import { UnsupportedReason } from '@qntx/wallet';
 import { VerifyFactor } from '@qntx/wallet';
 import { Wallet } from '@qntx/wallet';
 import { WalletInfo } from '@qntx/wallet';
@@ -517,7 +518,7 @@ export class BackupController extends Controller<BackupControllerState> {
     list(): Promise<ReadonlyArray<{
         readonly name: string;
         readonly id: string;
-        readonly header: BackupHeader;
+        readonly header: BackupInspection;
     }>>;
     lock(): void;
     restore(options: {
@@ -1214,7 +1215,7 @@ export type EngineCollection = {
 };
 
 // @public (undocumented)
-export type EngineErrorCode = "closed" | "invalid-input";
+export type EngineErrorCode = "closed" | "invalid-input" | "unsupported";
 
 // @public
 type EngineFamily = "evm" | "solana" | "bitcoin" | "tron";
@@ -1262,9 +1263,11 @@ export type EngineStore = {
 
 // @public
 export class EngineStoreError extends Error {
-    constructor(code: EngineErrorCode, message: string);
+    constructor(code: EngineErrorCode, message: string, reason?: UnsupportedReason);
     // (undocumented)
     readonly code: EngineErrorCode;
+    // (undocumented)
+    readonly reason: UnsupportedReason | undefined;
 }
 
 // @public (undocumented)

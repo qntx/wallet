@@ -588,8 +588,10 @@ pins. The response to a compromised release is in
   memory — a request whose secret shares bytes with another field is
   refused, because the kernel wipes secrets in place.
 - **Persisted data:** an image this build cannot read is surfaced as
-  `unsupported` and left untouched — never silently wiped; `vault.reset`
-  is an explicit user call. Starting at the first production release (1.0),
+  `unsupported` — `reason` `"older"` (a pre-1.0 format) or `"newer"` (a
+  newer build wrote it) — and left untouched, never silently wiped;
+  `vault.reset` is an explicit user call. Starting at the first
+  production release (1.0),
   no upgrade discards persisted user data (vault, backup envelope, engine
   store): every format change ships a one-step, tested forward upgrade
   from the previous released format.

@@ -1009,7 +1009,7 @@ describe("lock transition serialization", () => {
     set: (v: string) => void;
   };
   function wallet(vault = "locked"): FakeWallet & {
-    getSnapshot: () => { vault: string };
+    getSnapshot: () => { vault: { status: string } };
     subscribe: (l: () => void) => () => void;
   } {
     const listeners = new Set<() => void>();
@@ -1017,7 +1017,7 @@ describe("lock transition serialization", () => {
       vault,
       listeners,
       getSnapshot() {
-        return { vault: w.vault };
+        return { vault: { status: w.vault } };
       },
       subscribe(l: () => void) {
         listeners.add(l);
@@ -1159,7 +1159,7 @@ describe("lock transition serialization", () => {
       // the transient store failure below is consumed by it rather than racing a later event.
       vault: "unlocked",
       getSnapshot() {
-        return { vault: w.vault, wallets: [], backup: null };
+        return { vault: { status: w.vault }, wallets: [], backup: null };
       },
       subscribe(l: () => void) {
         listeners.add(l);
@@ -1216,7 +1216,7 @@ describe("createWalletEngine lifecycle", () => {
     expect.hasAssertions();
     const listeners = new Set<() => void>();
     const wallet = {
-      getSnapshot: () => ({ vault: "locked" }),
+      getSnapshot: () => ({ vault: { status: "locked" } }),
       subscribe: (l: () => void) => {
         listeners.add(l);
         return () => listeners.delete(l);

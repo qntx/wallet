@@ -48,7 +48,7 @@ const rig = () => {
   const sockets: FakeSocket[] = [];
   const http: Record<string, () => unknown> = {};
   const walletListeners = new Set<() => void>();
-  const snapshot = { vault: "unlocked" as string };
+  const snapshot = { vault: "unlocked" as "locked" | "unlocked" };
   const socket = createHyperliquidSocket({
     network: "Mainnet",
     socket: () => {
@@ -85,7 +85,7 @@ const rig = () => {
     },
   };
   const wallet = {
-    getSnapshot: () => ({ vault: snapshot.vault }),
+    getSnapshot: () => ({ vault: { status: snapshot.vault } }),
     subscribe: (listener: () => void) => {
       walletListeners.add(listener);
       return () => walletListeners.delete(listener);

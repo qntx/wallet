@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { KernelError } from "../src/errors.ts";
+import { UnsupportedFormatError } from "../src/errors.ts";
 import { VAULT_FORMAT } from "../src/vault/store.ts";
 import { assertVaultImage } from "../src/vault/validate.ts";
 
@@ -30,6 +31,18 @@ const code = (fn: () => unknown): string => {
     return "no-throw";
   } catch (error) {
     return (error as KernelError).code;
+  }
+};
+
+const formatFailure = (format: number): { code: string; reason: string | undefined } => {
+  try {
+    assertVaultImage({ ...validImage(), meta: { ...validImage().meta, format } });
+    return { code: "no-throw", reason: undefined };
+  } catch (error) {
+    return {
+      code: (error as KernelError).code,
+      reason: error instanceof UnsupportedFormatError ? error.reason : undefined,
+    };
   }
 };
 
@@ -159,8 +172,15 @@ describe("assertVaultImage", () => {
     );
   });
 
-  it("rejects a foreign meta.format with unsupported", () => {
-    const image = { ...validImage(), meta: { ...validImage().meta, format: VAULT_FORMAT + 1 } };
-    expect(code(() => assertVaultImage(image))).toBe("unsupported");
+  // Below VAULT_FORMAT is a pre-1.0 build's image, above it a newer build's; a non-integer
+  // format is integrity, never unsupported.
+  it.each([
+    { format: 3, code: "unsupported", reason: "older" },
+    { format: VAULT_FORMAT - 1, code: "unsupported", reason: "older" },
+    { format: VAULT_FORMAT + 1, code: "unsupported", reason: "newer" },
+    { format: Number.MAX_SAFE_INTEGER, code: "unsupported", reason: "newer" },
+    { format: 1.5, code: "integrity", reason: undefined },
+  ])("meta.format $format is $code/$reason", ({ format, code: wanted, reason }) => {
+    expect(formatFailure(format)).toStrictEqual({ code: wanted, reason });
   });
 });

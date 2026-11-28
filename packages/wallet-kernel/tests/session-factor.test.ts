@@ -341,7 +341,7 @@ describe("vault.setAppLock", () => {
         await other.call("wallet.exportMnemonic", { verify: HARDWARE, walletId }, otherSession),
       ),
     ).toBeDefined();
-    expect(field(ok(await other.call("status")), "vault")).toBe("locked");
+    expect(field(ok(await other.call("status")), "vault")).toStrictEqual({ status: "locked" });
 
     // Device unlock is gone; hardware unlock prompts.
     expect(errCode(await h.call("vault.unlock", { factor: DEVICE }))).toBe("not-found");
@@ -489,7 +489,7 @@ describe("establish on a keystore host", () => {
       ),
     ).toBe("cancelled");
     expect(fake.keys.size).toBe(0);
-    expect(field(ok(await h.call("status")), "vault")).toBe("uninitialized");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "uninitialized" });
     expect(keystoreCalls(fake.calls)).toStrictEqual(["clear", "seal", "seal", "clear"]);
   });
 

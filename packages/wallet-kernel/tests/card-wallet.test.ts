@@ -484,7 +484,7 @@ describe("card-wallet record", () => {
     }
     await h.settle();
     const status = ok(await h.call("status", null, session)) as Record<string, ProtocolValue>;
-    expect(status["vault"]).toBe("corrupted");
+    expect(status["vault"]).toStrictEqual({ status: "corrupted" });
   });
 });
 

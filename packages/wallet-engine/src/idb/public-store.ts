@@ -1,3 +1,4 @@
+import { EngineStoreError } from "../errors.ts";
 import { checkName } from "../store/guard.ts";
 import type { PublicStore } from "../store/port.ts";
 import { done, request } from "./requests.ts";
@@ -19,7 +20,17 @@ export async function openIndexedDbPublicStore(
       resolve(open.result);
     });
     open.addEventListener("error", () => {
-      reject(new Error("indexeddb open failed", { cause: open.error }));
+      if (open.error instanceof DOMException && open.error.name === "VersionError") {
+        reject(
+          new EngineStoreError(
+            "unsupported",
+            "indexeddb: the database was written by a newer build",
+            "newer",
+          ),
+        );
+      } else {
+        reject(new Error("indexeddb open failed", { cause: open.error }));
+      }
     });
   });
   return {

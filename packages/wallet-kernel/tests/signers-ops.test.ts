@@ -713,7 +713,7 @@ describe("operation lifecycle", () => {
     const { opId } = await beginOp(h, session, PAIR_OP, PASSKEY());
     const rejection = rejectionOf(device.exchanges[0]!);
     h.advance(60_001);
-    expect(field(ok(await h.call("status")), "vault")).toBe("locked");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "locked" });
     await expect(rejection).resolves.toBe("cancelled");
     const unlocked = ok(await h.call("vault.unlock", { factor: FACTOR() }));
     const session2 = strField(unlocked, "session");
@@ -1242,7 +1242,7 @@ describe("record id binding", () => {
     ]);
     await h.settle();
     const status = ok(await h.call("status", undefined, session));
-    expect(field(status, "vault")).toBe("corrupted");
+    expect(field(status, "vault")).toStrictEqual({ status: "corrupted" });
   });
 });
 
@@ -1275,7 +1275,7 @@ describe("vault lifecycle", () => {
     const { h, session, walletId } = await boot(undefined, { idleMs: 60_000 });
     const hwId = await pairDevice(h, session);
     h.advance(60_001);
-    expect(field(ok(await h.call("status")), "vault")).toBe("locked");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "locked" });
     const unlocked = ok(await h.call("vault.unlock", { factor: FACTOR() }));
     const session2 = strField(unlocked, "session");
     const status = ok(await h.call("status", undefined, session2));

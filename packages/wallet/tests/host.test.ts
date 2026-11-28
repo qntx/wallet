@@ -79,7 +79,7 @@ export class FakeKernel {
     this.handlers.set("status", () => ({ ok: this.status }));
     // Real-kernel flow: the unlock response carries the session the deferred status waits for.
     this.handlers.set("vault.unlock", () => {
-      this.status = { ...this.status, vault: "unlocked" };
+      this.status = { ...this.status, vault: { status: "unlocked" } };
       this.pushStatus();
       return { ok: { session: "0a".repeat(16) } };
     });
@@ -113,7 +113,7 @@ export class FakeKernel {
   }
 
   lock(reason: LockReason): void {
-    this.status = { ...this.status, vault: "locked" };
+    this.status = { ...this.status, vault: { status: "locked" } };
     this.active?.send({ v: 3, event: "locked", reason });
     this.active?.send({ v: 3, event: "status", status: this.status });
   }
@@ -191,7 +191,7 @@ export function unlockedStatus(): StatusPayload {
     protocol: 3,
     appLock: true,
     verification: "available",
-    vault: "unlocked",
+    vault: { status: "unlocked" },
     factors: [{ kind: "passkey", id: "f".repeat(32), credentialId: "Y3JlZA", createdAt: 1 }],
     wallets: [],
     nostr: { keys: [NOSTR_KEY] },
@@ -260,7 +260,7 @@ async function connectFake(
   spawned: ScriptedPort[];
 }> {
   const kernel = new FakeKernel(
-    status.vault === "unlocked" ? { ...status, vault: "locked" } : status,
+    status.vault.status === "unlocked" ? { ...status, vault: { status: "locked" } } : status,
   );
   const spawned: ScriptedPort[] = [];
   const wallet = await connectKernel({
@@ -277,7 +277,7 @@ async function connectFake(
     setTimer,
     ...(presence === undefined ? {} : { presence }),
   });
-  if (status.vault === "unlocked") {
+  if (status.vault.status === "unlocked") {
     // The fixture models an already-unlocked kernel — drive a real unlock so the host installs
     // the session and the deferred status event reaches subscribers, like a live kernel.
     await wallet.vault.unlock({ kind: "password", password: "long enough password" });
@@ -316,12 +316,12 @@ describe("channel status ordering", () => {
     expect(statuses).toHaveLength(0);
     channel.session = "0a".repeat(16);
     channel.flushStatus();
-    expect(statuses.map((s) => s.vault)).toStrictEqual(["unlocked"]);
+    expect(statuses.map((s) => s.vault.status)).toStrictEqual(["unlocked"]);
     channel.destroy();
   });
 
   it("delivers an unlocked status at once when the session is already installed", async () => {
-    const kernel = new FakeKernel({ ...unlockedStatus(), vault: "locked" });
+    const kernel = new FakeKernel({ ...unlockedStatus(), vault: { status: "locked" } });
     const statuses: StatusPayload[] = [];
     const channel = new Channel(
       () => {
@@ -341,9 +341,9 @@ describe("channel status ordering", () => {
     await channel.start();
     // Response-first order: the session is installed before the status event arrives.
     channel.session = "0a".repeat(16);
-    kernel.status = { ...kernel.status, vault: "unlocked" };
+    kernel.status = { ...kernel.status, vault: { status: "unlocked" } };
     kernel.pushStatus();
-    expect(statuses.map((s) => s.vault)).toStrictEqual(["locked", "unlocked"]);
+    expect(statuses.map((s) => s.vault.status)).toStrictEqual(["locked", "unlocked"]);
     channel.destroy();
   });
 });
@@ -476,7 +476,7 @@ describe("response validation", () => {
 describe("port lifecycle", () => {
   it("fails pending requests with crashed on port exit and respawns", async () => {
     const { wallet, kernel, spawned } = await connectFake(unlockedStatus());
-    kernel.status = { ...kernel.status, vault: "locked" }; // a crashed kernel reloads locked
+    kernel.status = { ...kernel.status, vault: { status: "locked" } }; // a crashed kernel reloads locked
     kernel.handlers.set("dataKeys.get", async () => new Promise<Reply>(() => undefined)); // never resolves
     const pending = wallet.dataKeys.get("notes");
     await new Promise<void>((resolve) => {
@@ -489,14 +489,14 @@ describe("port lifecycle", () => {
     await new Promise<void>((resolve) => {
       setTimeout(resolve);
     });
-    expect(wallet.getSnapshot().vault).toBe("locked");
+    expect(wallet.getSnapshot().vault.status).toBe("locked");
     expect(wallet.getSnapshot().lockReason).toBe("crashed");
     expect(spawned.at(0)?.dead).toBe(true);
   });
 
   it("a background exit takes the lock path: locked code, background reason, respawn", async () => {
     const { wallet, kernel, spawned } = await connectFake(unlockedStatus());
-    kernel.status = { ...kernel.status, vault: "locked" }; // the host locked — a fresh kernel reloads locked
+    kernel.status = { ...kernel.status, vault: { status: "locked" } }; // the host locked — a fresh kernel reloads locked
     kernel.handlers.set("dataKeys.get", async () => new Promise<Reply>(() => undefined)); // never resolves
     const pending = wallet.dataKeys.get("notes");
     await new Promise<void>((resolve) => {
@@ -508,7 +508,7 @@ describe("port lifecycle", () => {
     await new Promise<void>((resolve) => {
       setTimeout(resolve);
     });
-    expect(wallet.getSnapshot().vault).toBe("locked");
+    expect(wallet.getSnapshot().vault.status).toBe("locked");
     expect(wallet.getSnapshot().lockReason).toBe("background");
   });
 
@@ -560,7 +560,7 @@ describe("port lifecycle", () => {
     expect(spawned).toHaveLength(2);
     expect(spawned.at(0)?.dead).toBe(true);
     const snapshot = wallet.getSnapshot();
-    expect(snapshot.vault).toBe("locked");
+    expect(snapshot.vault.status).toBe("locked");
     expect(snapshot.lockReason).toBe("idle");
     expect(snapshot.nostr.keys.at(0)?.publicKey).toBe(PUBLIC_KEY);
 
@@ -798,7 +798,7 @@ describe("proxy signer", () => {
     };
     kernel.handlers.set("nostr.signEvent", realSign);
     kernel.handlers.set("vault.unlock", () => {
-      kernel.status = { ...kernel.status, vault: "unlocked" };
+      kernel.status = { ...kernel.status, vault: { status: "unlocked" } };
       kernel.pushStatus();
       return { ok: { session: "0a".repeat(16) } };
     });
@@ -818,7 +818,7 @@ describe("proxy signer", () => {
     await new Promise<void>((resolve) => {
       setTimeout(resolve);
     });
-    expect(wallet.getSnapshot().vault).toBe("locked");
+    expect(wallet.getSnapshot().vault.status).toBe("locked");
 
     // Locked: the kernel's error maps to WalletError locked.
     kernel.handlers.set("nostr.signEvent", () => ({ err: { code: "locked" } }));
@@ -829,7 +829,7 @@ describe("proxy signer", () => {
     // After unlock the same proxy object works again — resolution is per call.
     kernel.handlers.set("nostr.signEvent", realSign);
     await wallet.vault.unlock({ kind: "password", password: "long enough password" });
-    expect(wallet.getSnapshot().vault).toBe("unlocked");
+    expect(wallet.getSnapshot().vault.status).toBe("unlocked");
     const again = await signer.signEvent({
       kind: 1,
       created_at: 101,
@@ -844,7 +844,7 @@ describe("proxy signer", () => {
 describe("host-side lock", () => {
   it("lock resolves without a kernel reply, fails pending calls, and respawns the port", async () => {
     const { wallet, kernel, spawned } = await connectFake(unlockedStatus());
-    kernel.status = { ...kernel.status, vault: "locked" }; // the respawned kernel reloads locked
+    kernel.status = { ...kernel.status, vault: { status: "locked" } }; // the respawned kernel reloads locked
     kernel.handlers.set("dataKeys.get", async () => new Promise<Reply>(() => undefined)); // silent
     const pending = wallet.dataKeys.get("notes");
     await new Promise<void>((resolve) => {
@@ -858,27 +858,30 @@ describe("host-side lock", () => {
     await new Promise<void>((resolve) => {
       setTimeout(resolve);
     }); // the fresh port's initial status
-    expect(wallet.getSnapshot().vault).toBe("locked");
+    expect(wallet.getSnapshot().vault.status).toBe("locked");
     expect(wallet.getSnapshot().lockReason).toBe("user");
   });
 
   it("lock on an uninitialized vault leaves the snapshot uninitialized", async () => {
-    const { wallet } = await connectFake({ ...unlockedStatus(), vault: "uninitialized" });
+    const { wallet } = await connectFake({
+      ...unlockedStatus(),
+      vault: { status: "uninitialized" },
+    });
     await wallet.vault.lock();
-    expect(wallet.getSnapshot().vault).toBe("uninitialized");
+    expect(wallet.getSnapshot().vault.status).toBe("uninitialized");
   });
 
   it("lock on a corrupted vault keeps the kernel's verdict", async () => {
-    const { wallet } = await connectFake({ ...unlockedStatus(), vault: "corrupted" });
+    const { wallet } = await connectFake({ ...unlockedStatus(), vault: { status: "corrupted" } });
     await wallet.vault.lock();
-    expect(wallet.getSnapshot().vault).toBe("corrupted");
+    expect(wallet.getSnapshot().vault.status).toBe("corrupted");
     expect(wallet.getSnapshot().lockReason).toBe("user");
   });
 
   it("a call that never gets an answer times out as crashed and respawns", async () => {
     const timers = new FakeTimers();
     const { wallet, kernel, spawned } = await connectFake(unlockedStatus(), timers.setTimer);
-    kernel.status = { ...kernel.status, vault: "locked" };
+    kernel.status = { ...kernel.status, vault: { status: "locked" } };
     kernel.handlers.set("dataKeys.get", async () => new Promise<Reply>(() => undefined)); // silent
     const pending = wallet.dataKeys.get("notes");
     await new Promise<void>((resolve) => {
@@ -891,7 +894,7 @@ describe("host-side lock", () => {
     await new Promise<void>((resolve) => {
       setTimeout(resolve);
     });
-    expect(wallet.getSnapshot().vault).toBe("locked");
+    expect(wallet.getSnapshot().vault.status).toBe("locked");
     expect(wallet.getSnapshot().lockReason).toBe("crashed");
   });
 });
@@ -900,7 +903,7 @@ describe("message ordering", () => {
   it("resolves vault.reset while unlocked; the snapshot ends uninitialized", async () => {
     const { wallet, kernel, spawned } = await connectFake(unlockedStatus());
     kernel.handlers.set("vault.reset", () => {
-      kernel.status = { ...kernel.status, vault: "uninitialized" };
+      kernel.status = { ...kernel.status, vault: { status: "uninitialized" } };
       kernel.pushStatus();
       setTimeout(() => {
         kernel.send({ v: 3, event: "locked", reason: "user" });
@@ -908,7 +911,7 @@ describe("message ordering", () => {
       return { ok: null };
     });
     await wallet.vault.reset();
-    expect(wallet.getSnapshot().vault).toBe("uninitialized");
+    expect(wallet.getSnapshot().vault.status).toBe("uninitialized");
     await new Promise<void>((resolve) => {
       setTimeout(resolve);
     });
@@ -925,14 +928,14 @@ describe("snapshot", () => {
     const unsubscribe = subscribe(() => {
       calls++;
     });
-    expect(getSnapshot().vault).toBe("unlocked");
-    kernel.status = { ...kernel.status, vault: "locked" };
+    expect(getSnapshot().vault.status).toBe("unlocked");
+    kernel.status = { ...kernel.status, vault: { status: "locked" } };
     kernel.pushStatus();
     await new Promise<void>((resolve) => {
       setTimeout(resolve);
     });
     expect(calls).toBe(1);
-    expect(getSnapshot().vault).toBe("locked");
+    expect(getSnapshot().vault.status).toBe("locked");
     unsubscribe();
   });
 
@@ -950,14 +953,14 @@ describe("snapshot", () => {
     expect(calls).toBe(0);
     expect(wallet.getSnapshot()).toBe(first);
 
-    kernel.status = { ...kernel.status, vault: "locked" };
+    kernel.status = { ...kernel.status, vault: { status: "locked" } };
     kernel.pushStatus();
     await new Promise<void>((resolve) => {
       setTimeout(resolve);
     });
     expect(calls).toBe(1);
     expect(wallet.getSnapshot()).not.toBe(first);
-    expect(wallet.getSnapshot().vault).toBe("locked");
+    expect(wallet.getSnapshot().vault.status).toBe("locked");
   });
 });
 
@@ -1160,7 +1163,7 @@ describe("passkey restore purpose", () => {
     wallet: Awaited<ReturnType<typeof connectKernel>>;
     kernel: FakeKernel;
   }> {
-    const kernel = new FakeKernel({ ...unlockedStatus(), vault: "uninitialized" });
+    const kernel = new FakeKernel({ ...unlockedStatus(), vault: { status: "uninitialized" } });
     const wallet = await connectKernel({
       verifyEvent,
       spawn: () => {
@@ -1282,7 +1285,7 @@ describe("passkey restore purpose", () => {
 
 describe("kernel-run passkey ceremonies (hardware host)", () => {
   it("sends the kernel ceremony shape with no PRF evidence and no host ceremony", async () => {
-    const kernel = new FakeKernel({ ...unlockedStatus(), vault: "uninitialized" });
+    const kernel = new FakeKernel({ ...unlockedStatus(), vault: { status: "uninitialized" } });
     const seen: ProtocolValue[] = [];
     kernel.handlers.set("wallet.createWithPasskey", (request) => {
       seen.push(request.params);
@@ -1491,7 +1494,7 @@ describe("presence activity", () => {
     const timers = new FakeTimers();
     let activity: (() => void) | undefined;
     const { wallet, kernel } = await connectFake(
-      { ...unlockedStatus(), vault: "locked" },
+      { ...unlockedStatus(), vault: { status: "locked" } },
       timers.setTimer,
       (onActivity) => {
         activity = onActivity;
@@ -1530,7 +1533,7 @@ describe("presence activity", () => {
     let activity: (() => void) | undefined;
     let unsubscribed = false;
     const { wallet, kernel } = await connectFake(
-      { ...unlockedStatus(), vault: "locked" },
+      { ...unlockedStatus(), vault: { status: "locked" } },
       timers.setTimer,
       (onActivity) => {
         activity = onActivity;
