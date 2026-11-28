@@ -69,7 +69,7 @@ bunx vp test tests/hyperliquid-testnet.test.ts
 
 `HYPERLIQUID_E2E_LOG` (optional) receives one JSON line per step and per `/exchange` post (action,
 nonce, response; never signatures). The run takes about three minutes, needs a few hundred USDC
-of perp collateral for margin, costs about 1 USDC in fees, and leaves the account flat with the
+of perp collateral for margin, costs a few cents in fees, and leaves the account flat with the
 agent revoked.
 
 ## Working across repositories
