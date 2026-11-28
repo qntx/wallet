@@ -41959,7 +41959,7 @@ zoo`.split("\n"));
 	* discoverable unconfirmed change still raises the mark: the signed bytes pay that address, so the
 	* wallet must scan that far. A verified, confirmed own output is hidden as change only when
 	* `isDiscoverableChange` says the wallet can reach it — anything else is shown as a send to the
-	* user's own address at the unusual path it names. The returned `raises` map holds the highest
+	* user's own address at the unusual path it names. The returned `reached` map holds the highest
 	* change index each purpose's discoverable outputs reached — the raise the request would commit;
 	* the caller seals it only for `internal` requests.
 	*/
@@ -41967,7 +41967,7 @@ zoo`.split("\n"));
 		const change = /* @__PURE__ */ new Set();
 		const unusual = /* @__PURE__ */ new Map();
 		const unconfirmed = /* @__PURE__ */ new Set();
-		const raises = /* @__PURE__ */ new Map();
+		const reached = /* @__PURE__ */ new Map();
 		for (let i = 0; i < tx.outputsLength; i++) {
 			const output = tx.getOutput(i);
 			if (output.script === void 0) continue;
@@ -41983,15 +41983,16 @@ zoo`.split("\n"));
 						change: (_entry$path$ = entry.path[3]) !== null && _entry$path$ !== void 0 ? _entry$path$ : 0,
 						index: (_entry$path$2 = entry.path[4]) !== null && _entry$path$2 !== void 0 ? _entry$path$2 : 0
 					};
-					if (isDiscoverableChange(tail, signed, markOf(purpose))) {
-						var _raises$get;
-						raises.set(purpose, Math.max((_raises$get = raises.get(purpose)) !== null && _raises$get !== void 0 ? _raises$get : -1, tail.index));
+					const discoverable = isDiscoverableChange(tail, signed, markOf(purpose));
+					if (discoverable) {
+						var _reached$get;
+						reached.set(purpose, Math.max((_reached$get = reached.get(purpose)) !== null && _reached$get !== void 0 ? _reached$get : -1, tail.index));
 					}
 					if (!await b.material.confirmed("secp256k1", entry.path)) {
 						unconfirmed.add(hex(output.script));
 						break;
 					}
-					if (isDiscoverableChange(tail, signed, markOf(purpose))) change.add(hex(output.script));
+					if (discoverable) change.add(hex(output.script));
 					else unusual.set(hex(output.script), pathString(entry.path));
 					break;
 				} catch (error) {
@@ -42006,7 +42007,7 @@ zoo`.split("\n"));
 				unusual,
 				unconfirmed
 			},
-			raises
+			reached
 		};
 	};
 	/**
@@ -42030,7 +42031,7 @@ zoo`.split("\n"));
 			});
 			signed.push(input.tail);
 		}
-		const { own, raises: reachable } = await bitcoinOwn(b, tx, signed, storedMark);
+		const { own, reached } = await bitcoinOwn(b, tx, signed, storedMark);
 		let normalized;
 		try {
 			normalized = normalizeBitcoin(request);
@@ -42050,7 +42051,7 @@ zoo`.split("\n"));
 		} catch (error) {
 			mapChainError(error);
 		}
-		const raises = request.origin === "internal" ? [...reachable.entries()].map(([purpose, index]) => ({
+		const raises = request.origin === "internal" ? [...reached.entries()].map(([purpose, index]) => ({
 			purpose,
 			index
 		})) : [];
