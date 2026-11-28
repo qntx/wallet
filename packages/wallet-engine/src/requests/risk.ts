@@ -427,10 +427,6 @@ export const comparable = (family: string, address: string): string =>
   family === "evm" ? address.replace(/^0x/i, "").toLowerCase() : address;
 
 /**
- * Who a flow pays. A Fiat24 ledger transfer or payout names its recipient in the calldata — `to` is
- * the cash-token contract all of them share — so the account or payee is the recipient compared.
- */
-/**
  * The outflows whose recipients vouch for themselves — all of them except any an
  * `unconfirmed-signer-output` warning of the same intent names. A payee sitting on a
  * device-unconfirmed entry never exempts itself: the wallet cannot prove the address is its own, so
@@ -474,6 +470,10 @@ export const knownAddresses = (
   return [...contacts, ...paid];
 };
 
+/**
+ * Who a flow pays. A Fiat24 ledger transfer or payout names its recipient in the calldata — `to` is
+ * the cash-token contract all of them share — so the account or payee is the recipient compared.
+ */
 export const recipientOf = (flow: Pick<AssetFlow, "to" | "fiat24">): string =>
   flow.fiat24 === undefined
     ? flow.to

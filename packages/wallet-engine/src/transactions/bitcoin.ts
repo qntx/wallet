@@ -66,8 +66,10 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 
 /**
  * The states whose transaction bytes exist or did: a `signed` row signed, everything past it
- * broadcast, and a `failed`/`dropped`/`replaced` transaction may still surface. `draft` and
- * `rejected` rows never signed, so their own outputs stay free for the change pick.
+ * broadcast, and a `failed`/`dropped`/`replaced` transaction may still surface. A `draft` or
+ * `rejected` row's sign call failed either before the factor verified — no signature exists — or
+ * after it, when the kernel had already sealed the mark past the picked index; either way its own
+ * output stays free for the change pick.
  */
 const SIGNED_STATES: ReadonlySet<TxState> = new Set([
   "signed",
@@ -539,10 +541,11 @@ export const createBitcoinRoute = (): BitcoinRoute => {
   /**
    * The change addresses this wallet itself already used — every in-flight pick plus every own
    * output a tracked transaction carries whose bytes exist: a `signed` row signed, everything past
-   * it broadcast, and `failed`/`dropped`/`replaced` may still surface. `draft` and `rejected` rows
-   * never signed — and the kernel seals the mark after factor verification, before the first
-   * signature, so a cancelled prompt already moved the mark past its pick. The endpoint's "used"
-   * answers never feed this set.
+   * it broadcast, and `failed`/`dropped`/`replaced` may still surface. A `draft`/`rejected` row's
+   * sign call failed either before the factor verified — no signature exists, so its address may
+   * be handed out again — or after it, when the kernel had already sealed the mark past that
+   * index, so the window no longer contains it. The endpoint's "used" answers never feed this
+   * set.
    */
   const changeTaken = (ctx: RouteContext): Set<string> => {
     const taken = new Set<string>(reservedChange.values());

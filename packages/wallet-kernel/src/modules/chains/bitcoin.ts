@@ -196,7 +196,7 @@ const bitcoinInput = async (
  * discoverable unconfirmed change still raises the mark: the signed bytes pay that address, so the
  * wallet must scan that far. A verified, confirmed own output is hidden as change only when
  * `isDiscoverableChange` says the wallet can reach it — anything else is shown as a send to the
- * user's own address at the unusual path it names. The returned `raises` map holds the highest
+ * user's own address at the unusual path it names. The returned `reached` map holds the highest
  * change index each purpose's discoverable outputs reached — the raise the request would commit;
  * the caller seals it only for `internal` requests.
  */
@@ -207,12 +207,12 @@ const bitcoinOwn = async (
   markOf: (purpose: number) => number,
 ): Promise<{
   own: BitcoinOwn;
-  raises: Map<number, number>;
+  reached: Map<number, number>;
 }> => {
   const change = new Set<string>();
   const unusual = new Map<string, string>();
   const unconfirmed = new Set<string>();
-  const raises = new Map<number, number>();
+  const reached = new Map<number, number>();
   for (let i = 0; i < tx.outputsLength; i++) {
     const output = tx.getOutput(i);
     if (output.script === undefined) {
@@ -230,15 +230,16 @@ const bitcoinOwn = async (
           continue;
         }
         const tail = { purpose, change: entry.path[3] ?? 0, index: entry.path[4] ?? 0 };
-        if (isDiscoverableChange(tail, signed, markOf(purpose))) {
-          raises.set(purpose, Math.max(raises.get(purpose) ?? -1, tail.index));
+        const discoverable = isDiscoverableChange(tail, signed, markOf(purpose));
+        if (discoverable) {
+          reached.set(purpose, Math.max(reached.get(purpose) ?? -1, tail.index));
         }
         // oxlint-disable-next-line no-await-in-loop -- ownership checks keep output order
         if (!(await b.material.confirmed("secp256k1", entry.path))) {
           unconfirmed.add(hex(output.script));
           break;
         }
-        if (isDiscoverableChange(tail, signed, markOf(purpose))) {
+        if (discoverable) {
           change.add(hex(output.script));
         } else {
           unusual.set(hex(output.script), pathString(entry.path));
@@ -253,7 +254,7 @@ const bitcoinOwn = async (
       }
     }
   }
-  return { own: { change, unusual, unconfirmed }, raises };
+  return { own: { change, unusual, unconfirmed }, reached };
 };
 
 /**
@@ -279,7 +280,7 @@ const prepareBitcoinPsbt = async (
     inputs.push({ index: input.index, key: input.key });
     signed.push(input.tail);
   }
-  const { own, raises: reachable } = await bitcoinOwn(b, tx, signed, storedMark);
+  const { own, reached } = await bitcoinOwn(b, tx, signed, storedMark);
   let normalized;
   try {
     normalized = normalizeBitcoin(request);
@@ -307,7 +308,7 @@ const prepareBitcoinPsbt = async (
   // external request commits nothing either way.
   const raises =
     request.origin === "internal"
-      ? [...reachable.entries()].map(([purpose, index]) => ({ purpose, index }))
+      ? [...reached.entries()].map(([purpose, index]) => ({ purpose, index }))
       : [];
   return {
     prompt: intent,
