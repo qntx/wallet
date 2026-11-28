@@ -407,7 +407,7 @@ describe("createNativeWallet", () => {
     "a vault file written by %s build reports unsupported with its direction and is never wiped",
     async (_label, format, reason, extraMeta) => {
       const { bytes, wallet } = await seededWallet(format, extraMeta);
-      const before = bytes.value.slice();
+      const before = new Uint8Array(bytes.value);
       expect(wallet.getSnapshot().vault).toStrictEqual({ status: "unsupported", reason });
       await expect(wallet.vault.unlock()).rejects.toThrow(
         expect.objectContaining({ code: "unsupported" }),
