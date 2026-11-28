@@ -11,6 +11,11 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Fixed
 
+- `apps/gateway`: provider-account budgets are now short rate windows plus hard sliding daily and
+  monthly spend caps in the provider's own billing unit, kept across deploys; a spent provider
+  fails over instead of billing overage. Rows re-derived from 2026-11-28 pricing (TronGrid Credits
+  per path, Alchemy billed-CU rows for NFT/DAS endpoints, dRPC Pro, CoinGecko Basic, Tatum
+  Starter, Blockstream Basic), and the hourly token-list build is metered from the same budgets.
 - `@qntx/wallet-engine/apps/hyperliquid`: an `/exchange` rejection "User or API Wallet 0x<X> does
   not exist" latches the agent as rejected only when X is the agent itself; any other X (the
   signature recovered to another address) is a plain `rejected` and the agent keeps trading.

@@ -3,7 +3,6 @@ import type { Account } from "./config/accounts.ts";
 import type { Limiters } from "./limits.ts";
 import type { PushService } from "./push/backend.ts";
 import type { RiskStore } from "./risk/phishing.ts";
-import type { TokenListStore } from "./tokens/build.ts";
 
 /** One upstream exchange; `send` adds the provider's auth headers and the attempt's signal. */
 export type UpstreamRequest = {
@@ -61,6 +60,12 @@ export type GatewayNetwork = {
 export type BudgetDecision =
   | { readonly ok: true }
   | { readonly ok: false; readonly retryAfterSeconds: number };
+
+/** The store the published token lists live in — the worker passes the RISK KV namespace. */
+export type TokenListStore = {
+  readonly get: (key: string) => Promise<string | undefined>;
+  readonly put: (key: string, value: string) => Promise<void>;
+};
 
 /**
  * The gateway-wide per-account budget — the counter every isolate shares, so the provider sees at

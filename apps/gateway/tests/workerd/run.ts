@@ -4,7 +4,7 @@
  * readiness, runs the drive scenario, and always stops the wrangler processes. Usage:
  *
  * Bun tests/workerd/run.ts # the default suite bun tests/workerd/run.ts <scenario> # one of
- * smoke|steady|s1|s2|s4|s5|s6|s7|storm
+ * smoke|steady|s1|s2|s4|s5|s6|s7|pin|push|storm|cap
  *
  * `smoke` runs the real deploy smoke plan (scripts/smoke-plan.ts runSmoke, env production) against
  * worker A — the entry's stub upstream answers the smoke calls.
@@ -55,6 +55,7 @@ const GROUPS: Record<string, { readonly workers: ReadonlyArray<Worker>; readonly
     push: { workers: [WORKER_A], scale: "production" },
     s2: { workers: [WORKER_A, WORKER_B], scale: "small" },
     storm: { workers: [WORKER_A, WORKER_B], scale: "small" },
+    cap: { workers: [WORKER_A, WORKER_B], scale: "cap" },
     // B alone: its `script_name` binding cannot reach A's objects — the outage scenario.
     s4: { workers: [WORKER_B], scale: "small" },
   };
@@ -68,6 +69,7 @@ const DEFAULT_SUITE = [
   "s5",
   "s2",
   "storm",
+  "cap",
   "s4",
   "pin",
   "push",
@@ -93,6 +95,24 @@ const stopAll = async (): Promise<void> => {
   await Promise.allSettled(running.map(async (proc) => proc.exited));
   running.length = 0;
   runningKey = "";
+};
+
+/** Polls until nothing answers on `port` — a killed wrangler's socket can outlive its process. */
+const waitFree = async (port: number): Promise<void> => {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- a vacancy poll waits between tries
+      await fetch(`http://localhost:${String(port)}/__stats`);
+    } catch {
+      return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`port ${String(port)} never came free`);
+    }
+    // oxlint-disable-next-line eslint/no-await-in-loop -- poll interval
+    await sleep(200);
+  }
 };
 
 /** Starts `wrangler dev` for `worker` and polls its stats route until it answers. */
@@ -173,8 +193,12 @@ const main = async (): Promise<void> => {
         // oxlint-disable-next-line eslint/no-await-in-loop -- ports must be free before the restart
         await stopAll();
         for (const worker of group.workers) {
+          // The persist dir carries the scale: a spent cap must never leak into another scale's
+          // objects (the caps scenario relies on starting clean).
           // oxlint-disable-next-line eslint/no-await-in-loop -- sequential starts isolate port races
-          await start(worker, group.scale, `${root}/${String(worker.port)}`);
+          await waitFree(worker.port);
+          // oxlint-disable-next-line eslint/no-await-in-loop -- sequential starts isolate port races
+          await start(worker, group.scale, `${root}/${group.scale}/${String(worker.port)}`);
         }
         runningKey = key;
       }

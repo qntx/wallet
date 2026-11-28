@@ -102,31 +102,44 @@ whole 1000-unit window on every provider is `413 too-costly` without touching th
 The **account budget** (`PROVIDER_BUDGET`, one Durable Object per provider account) is the global
 bound the share limiter cannot express: the Workers rate-limit binding counts per Cloudflare
 location, so only a Durable Object can hold one account's worldwide quota (the binding
-documentation's "Strict limits" section prescribes exactly this). Each object keeps a multi-window
-token bucket in its SQLite storage covering every window in the account's `budget` list — the
-sub-minute burst depth, the per-minute rate, and the day/month caps alike. Each isolate holds a
-one-second adaptive lease from it (sized by what it actually spent, capped at 1 % of the account's
-tightest window) so the object sees seconds, not requests — a Durable Object's ~1,000 rps soft
-limit and its round trip are amortised away. A spent account refuses with its own wait time; the
-request fails over — never a breaker outage — and when every provider is spent or cooling, the 503
-`unavailable` carries the shortest announced wait. Operator note: the budgets in
-`src/config/accounts.ts` assume the provider plans listed in each row's comment — review them when
-a plan changes.
+documentation's "Strict limits" section prescribes exactly this). Each object keeps two kinds of
+limit in its SQLite storage. **Rate windows** (the account's `rate` list) are token buckets of at
+most 60 s — our share of the provider's own throttle, sized by the rule c + r·T ≤ L: depth c plus
+refill r over the window T never exceeds the provider's published limit L. **Spend caps** (the
+account's `cap`) are hard sliding quotas in the provider's own billing unit — 24 h (the current
+hour slot plus the previous 24) and 31 days — enforced by the same Durable Object and kept across
+deploys, so a redeploy that re-sizes a rate window never refills a spent cap. Exceeding a cap
+means that provider is spent: the request fails over — never a breaker outage, never an unbilled
+call — and when every provider is spent or cooling the 503 `unavailable` carries the shortest
+announced wait. Each isolate holds a two-second adaptive lease from the object (sized by what it
+actually spent, capped at 5 % of the account's tightest rate window) so the object sees seconds,
+not requests — a Durable Object's ~1,000 rps soft limit and its round trip are amortised away.
+Operator note: the plan table lives in `src/config/accounts.ts`, each row's comment carrying the
+published inputs, their source URL and the derivation — review it when a plan changes.
 
-TRON providers are request-priced like Esplora: every allow-listed `/v1/tron` path is one bounded
-upstream call billed one request credit on the provider's account (`trongrid`, `tatum`).
+TRON providers are priced in TronGrid Credits per path (`TRONGRID_COSTS` in `src/budget/costs.ts`,
+transcribed from trongrid.io's credit-cost table — 80 credits for most node paths, 200 for the
+dearest indexer rows); Tatum has no published credit schedule, so its POLICY price is 5 credits a
+call.
 
 The global budgets are sized for ≥ 20 concurrently active all-family wallets each
 foreground-refreshing once per minute, plus 10 fresh all-family cold starts per minute (numbers
 from `packages/wallet-engine/tests/gateway-capacity.test.ts`): Alchemy 20 × 1,570 + 10 × 7,150 =
-102,900 CU/min ≤ the 480,000 CU/min budget; Blockstream 20 × 81 + 10 × 200 = 3,620 calls/min ≤ the
-4,000/min budget. CoinGecko and DefiLlama cold starts cost upstream calls only on a cold per-colo
-price cache (≈ 85 calls per colo per cache lifetime — the native-coins call now runs once per
-family request, at most four — well under the 400/min and 450/min budgets).
+102,900 CU/min ≤ the 360,000 CU/min rate; Blockstream 20 × 81 + 10 × 200 = 3,620 calls/min ≤ the
+4,000/min rate; CoinGecko's whole minute is 210 calls. Alchemy units are the maximum of billed CU
+and throughput CU, so one meter never under-counts the bill (the caps) nor the throughput (the
+rate). The day caps are the money bound: Alchemy's $10/day ceiling is ≈ 19.0M CU ≈ 185 minutes a
+day at the 102,900 CU/min design peak — beyond it the provider is spent and traffic fails over
+rather than billing overage.
 TRON is the known exception: a fresh wallet costs 3 calls, but a used wallet's history fetches
-`getassetissuebyid` once per TRC-10 row — ≈ 50 calls per refresh — which exceeds the free-tier
-TronGrid/Tatum POLICY budgets (144/min each); raising them waits on the operator's keyed-QPS
-confirmation and an engine-side history cache (outside this change).
+`getassetissuebyid` once per TRC-10 row — ≈ 50 calls per refresh, ≈ 4,000 TronGrid credits —
+which bursts past TronGrid's 250 credits/s share; Tatum absorbs the rest, and raising the depth
+waits on an engine-side history cache (outside this change).
+
+The hourly token-list build pays from the same account budgets (one CoinGecko or Jupiter unit per
+source fetch) and skips a source whose budget refuses rather than billing it. Alchemy's webhook
+deliveries — billed 0.04 CU/byte by Alchemy — are push traffic the gateway cannot meter and stay
+outside the caps.
 
 ## Prices
 

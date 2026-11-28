@@ -10,17 +10,18 @@
  * Scenarios: steady | s1 | s2 | s4 | s5 | s6 | s7 | storm. Output is plain text; redirect it to the
  * evidence directory. The process exits non-zero when a scenario assertion fails.
  *
- * | scenario | servers | SCALE      | what it does                                                                        |
- * | -------- | ------- | ---------- | ----------------------------------------------------------------------------------- |
- * | `steady` | A       | production | 20 eth_call/s for 20 s, rotating IPs; lease RPCs/s must amortise, not 1:1           |
- * | `s1`     | A       | production | 200 sequential + 200 concurrent eth_call, unique IPs; lease RPCs vs upstream calls  |
- * | `s2`     | A+B     | small      | 15 s concurrent drive on both isolates; upstream units vs `400 + 80×elapsed`        |
- * | `s4`     | B       | small      | A stopped ⇒ every DO call fails; requests fail closed, no upstream is contacted     |
- * | `s5`     | A       | production | TRON 1/s×70, prices eur/usd, Jupiter 1/5s×15, Esplora ×30 burst — one IP            |
- * | `s6`     | A       | production | IP keying on eth_chainId: mapped-v4 pair, missing-address pair, IPv6 same-/48 pair  |
- * | `s7`     | A       | production | 100 concurrent eth_call from 100 IPs; wall time + DO lease RPC count                |
- * | `pin`    | A       | production | Solana getSlot with x-gateway-provider: answered by the pin only; unknown pin → 400 |
- * | `storm`  | A+B     | small      | 30 s concurrent drive on two isolates; DO RPCs vs refusals; fails on over-grant     |
+ * | scenario | servers | SCALE      | what it does                                                                         |
+ * | -------- | ------- | ---------- | ------------------------------------------------------------------------------------ |
+ * | `steady` | A       | production | 20 eth_call/s for 20 s, rotating IPs; lease RPCs/s must amortise, not 1:1            |
+ * | `s1`     | A       | production | 200 sequential + 200 concurrent eth_call, unique IPs; lease RPCs vs upstream calls   |
+ * | `s2`     | A+B     | small      | 15 s concurrent drive on both isolates; upstream units vs `400 + 80×elapsed`         |
+ * | `s4`     | B       | small      | A stopped ⇒ every DO call fails; requests fail closed, no upstream is contacted      |
+ * | `s5`     | A       | production | TRON 1/s×70, prices eur/usd, Jupiter 1/5s×15, Esplora ×30 burst — one IP             |
+ * | `s6`     | A       | production | IP keying on eth_chainId: mapped-v4 pair, missing-address pair, IPv6 same-/48 pair   |
+ * | `s7`     | A       | production | 100 concurrent eth_call from 100 IPs; wall time + DO lease RPC count                 |
+ * | `pin`    | A       | production | Solana getSlot with x-gateway-provider: answered by the pin only; unknown pin → 400  |
+ * | `storm`  | A+B     | small      | 30 s concurrent drive on two isolates; DO RPCs vs refusals; fails on over-grant      |
+ * | `cap`    | A+B     | cap        | eth_call on two alchemy-first networks until the tiny caps refuse; units ≤ cap, 503s |
  *
  * Vars: `SCALE` = `production` (default, PRODUCTION_ACCOUNTS) or `small` (alchemy `[{400,5s}]`, all
  * other accounts `[{10,5s}]` — exhaustion in seconds); `UPSTREAM_DELAY_MS` adds latency to the stub
@@ -808,12 +809,118 @@ const storm = async (a: string, b: string): Promise<void> => {
   );
 };
 
+/**
+ * `cap` — SCALE=cap: production rates and costs but tiny spend caps (alchemy day 2,600 CU = 100
+ * eth_calls, every other account 10 units/day). Concurrent eth_call on eip155:1 and eip155:10 (both
+ * alchemy-first) from rotating /24s on both isolates until refusals appear, then twenty more.
+ * Asserts the summed upstream units per account never exceed its day cap, every refusal is a 503
+ * `unavailable` with an hours-scale Retry-After, and post-cap requests produce no upstream call at
+ * all.
+ */
+const capScenario = async (a: string, b: string): Promise<void> => {
+  await Promise.all([reset(a), reset(b)]);
+  const DAY_CAPS: Readonly<Record<string, number>> = { alchemy: 2600 };
+  const OTHER_DAY_CAP = 10;
+  const networks = ["eip155:1", "eip155:10"];
+  type Row = { status: number; retryAfter: number | undefined; body: string };
+  const rows: Row[] = [];
+  let sawRefusal = false;
+
+  const call = async (base: string, network: string, ip: string): Promise<void> => {
+    const res = await fetch(`${base}/v1/rpc/${network}`, {
+      method: "POST",
+      headers: headers(ip),
+      body: JSON.stringify(ETH_CALL),
+    });
+    const body = await res.text();
+    const retry = res.headers.get("retry-after");
+    rows.push({
+      status: res.status,
+      retryAfter: retry === null ? undefined : Number(retry),
+      body,
+    });
+    if (res.status === 503) {
+      sawRefusal = true;
+    }
+  };
+
+  const workers = [a, b].flatMap((base, isolate) =>
+    Array.from({ length: 3 }, async (_, w) => {
+      const seed = isolate * 10 + w + 1;
+      // oxlint-disable-next-line eslint/no-unmodified-loop-condition -- `call` flips it on a refusal
+      for (let seq = 1; !sawRefusal && seq <= 2000; seq += 1) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- drive until the first refusal
+        await call(base, networks[seq % 2] ?? "eip155:1", `40.${seed}.${(seq % 250) + 1}.1`);
+      }
+    }),
+  );
+  await Promise.all(workers);
+  console.log(
+    `CAP: drive ended after ${String(rows.length)} requests, statuses=${statusCounts(rows.map((r) => r.status))}`,
+  );
+  expect(sawRefusal, "cap: no refusal ever appeared");
+
+  // Let every live lease die, then twenty more requests across both isolates.
+  await sleep(2500);
+  const before = await Promise.all([stats(a), stats(b)]);
+  const callsBefore = before.map(upstreamCalls);
+  for (let i = 0; i < 20; i += 1) {
+    const base = i % 2 === 0 ? a : b;
+    // oxlint-disable-next-line eslint/no-await-in-loop -- twenty sequential post-cap requests
+    await call(base, networks[i % 2] ?? "eip155:1", `41.${i + 1}.0.1`);
+  }
+  const after = await Promise.all([stats(a), stats(b)]);
+
+  // Per-account upstream units summed over both isolates never exceed the day cap.
+  const accounts = new Set([
+    ...Object.keys(after[0]?.upstream ?? {}),
+    ...Object.keys(after[1]?.upstream ?? {}),
+  ]);
+  for (const account of accounts) {
+    const units =
+      (after[0]?.upstream[account]?.units ?? 0) + (after[1]?.upstream[account]?.units ?? 0);
+    const dayCap = DAY_CAPS[account] ?? OTHER_DAY_CAP;
+    console.log(`CAP: upstream ${account} units=${String(units)} day-cap=${String(dayCap)}`);
+    expect(
+      units <= dayCap,
+      `cap: ${account} upstream units ${String(units)} exceed day cap ${String(dayCap)}`,
+    );
+  }
+
+  // Every non-200 is a 503 {"error":"unavailable"} with an hours-scale numeric retry-after.
+  const refused = rows.filter((row) => row.status !== 200);
+  expect(refused.length > 0, "cap: no refused requests recorded");
+  for (const row of refused) {
+    expect(row.status === 503, `cap: refusal status ${String(row.status)} is not 503`);
+    expect(row.body === JSON.stringify({ error: "unavailable" }), `cap: refusal body ${row.body}`);
+    expect(
+      row.retryAfter !== undefined && row.retryAfter >= 600,
+      `cap: retry-after ${String(row.retryAfter)} is not hours-scale`,
+    );
+  }
+
+  // Post-cap requests add zero upstream calls on either isolate.
+  const callsAfter = after.map(upstreamCalls);
+  console.log(
+    `CAP: upstream calls before extra=${String(callsBefore[0] ?? 0)},${String(callsBefore[1] ?? 0)} after=${String(callsAfter[0] ?? 0)},${String(callsAfter[1] ?? 0)}`,
+  );
+  expect(
+    callsAfter[0] === callsBefore[0] && callsAfter[1] === callsBefore[1],
+    "cap: post-cap requests reached an upstream",
+  );
+
+  // The refusals come from the object itself, not only isolate caches.
+  const leaseRefusals =
+    (after[0]?.leases["alchemy"]?.refused ?? 0) + (after[1]?.leases["alchemy"]?.refused ?? 0);
+  expect(leaseRefusals > 0, "cap: the budget object never refused a lease");
+};
+
 const main = async (): Promise<void> => {
   const [scenario, a, b] = process.argv.slice(2);
-  const needsB = scenario === "s2" || scenario === "storm";
+  const needsB = scenario === "s2" || scenario === "storm" || scenario === "cap";
   if (scenario === undefined || a === undefined || (needsB && b === undefined)) {
     console.log(
-      "usage: bun drive.ts <steady|s1|s2|s4|s5|s6|s7|pin|storm> <url-a> [url-b]  (s2/storm need both; s4 drives the url given)",
+      "usage: bun drive.ts <steady|s1|s2|s4|s5|s6|s7|pin|storm|cap> <url-a> [url-b]  (s2/storm/cap need both; s4 drives the url given)",
     );
     process.exit(2);
   }
@@ -848,6 +955,9 @@ const main = async (): Promise<void> => {
       break;
     case "storm":
       await storm(a, b ?? a);
+      break;
+    case "cap":
+      await capScenario(a, b ?? a);
       break;
     default:
       console.log(`unknown scenario ${scenario}`);

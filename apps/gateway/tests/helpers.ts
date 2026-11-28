@@ -9,8 +9,8 @@ import { PRODUCTION_ACCOUNTS } from "../src/config/accounts.ts";
 import { PRODUCTION_NETWORKS } from "../src/config/networks.ts";
 import type { Limiters, RateLimiter } from "../src/limits.ts";
 import type { RiskStore } from "../src/risk/phishing.ts";
-import type { TokenListStore } from "../src/tokens/build.ts";
 import type {
+  TokenListStore,
   GatewayNetwork,
   EdgeCache,
   ProviderBudget,
@@ -68,7 +68,7 @@ export const TEST_ACCOUNTS: Readonly<Record<string, Account>> = {
       id,
       {
         costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
-        budget: [{ units: 1_000_000, seconds: 60 }],
+        rate: [{ units: 1_000_000, seconds: 60 }],
         clientShare: 0.05,
         source: "https://test.invalid",
       } satisfies Account,
@@ -76,7 +76,7 @@ export const TEST_ACCOUNTS: Readonly<Record<string, Account>> = {
   ),
   alchemy: {
     costs: ALCHEMY_COSTS,
-    budget: [{ units: 1_000_000, seconds: 60 }],
+    rate: [{ units: 1_000_000, seconds: 60 }],
     clientShare: 0.05,
     source: "https://test.invalid",
   },

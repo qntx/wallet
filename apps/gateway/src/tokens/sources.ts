@@ -13,6 +13,11 @@ export type TokenListUpstream = {
   readonly id: TokenListSource;
   readonly url: string;
   readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * The provider account and per-fetch cost the hourly build pays before fetching — a source
+   * without one is free to fetch. A refused take skips the build for this source.
+   */
+  readonly charge?: { readonly account: string; readonly units: number };
   /** Networks this source feeds; `parse` returns entries for these only. Throws on a wrong shape. */
   readonly networks: ReadonlyArray<string>;
   readonly parse: (json: unknown) => ReadonlyMap<string, ReadonlyArray<RawToken>>;
@@ -149,6 +154,7 @@ export function tokenListSources(keys: {
             id: "coingecko" as const,
             url: "https://pro-api.coingecko.com/api/v3/token_lists/hyperevm/all.json",
             headers: { "x-cg-pro-api-key": keys.coingecko },
+            charge: { account: "coingecko", units: 1 },
             networks: Object.values(COINGECKO_CHAINS),
             parse: tokenListDoc("coingecko", COINGECKO_CHAINS),
           },
@@ -158,6 +164,7 @@ export function tokenListSources(keys: {
       // (developers.jup.ag/docs/legal/sdk-api-license-agreement).
       id: "jupiter",
       url: "https://api.jup.ag/tokens/v2/tag?query=verified",
+      charge: { account: "jupiter", units: 1 },
       ...(keys.jupiter === undefined ? {} : { headers: { "x-api-key": keys.jupiter } }),
       networks: [SOLANA_MAINNET],
       parse: jupiterDoc,

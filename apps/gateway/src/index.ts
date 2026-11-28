@@ -3,6 +3,8 @@ import { PHISHING_SOURCES } from "./config/phishing.ts";
 import type { WorkerEnv } from "./env.ts";
 import { buildPhishingList } from "./risk/phishing.ts";
 import { buildTokenLists } from "./tokens/build.ts";
+import type { Upstream } from "./upstream.ts";
+import { upstreamFor } from "./upstream.ts";
 import { gatewayFor, pushServiceFor, riskStoreOf, tokenSourcesFor } from "./worker.ts";
 
 // The PROVIDER_BUDGET and PUSH bindings resolve these classes by name.
@@ -28,6 +30,14 @@ const log = (line: string): void => {
   console.log(line);
 };
 
+// The cron isolate's own view of the shared account budgets — same construction the fetch handler
+// uses, so the hourly token-list build pays into the same accounts the routes draw from.
+let upstream: Upstream | undefined;
+const cronUpstream = (env: WorkerEnv): Upstream => {
+  upstream ??= upstreamFor(env, fetch, log);
+  return upstream;
+};
+
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     const gateway = await build(env);
@@ -50,6 +60,7 @@ export default {
           now: () => Date.now(),
           log,
           sources: tokenSourcesFor(env),
+          budget: cronUpstream(env).budget,
         }),
       ]),
     );

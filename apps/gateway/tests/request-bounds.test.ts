@@ -34,7 +34,7 @@ const ACCOUNTS: Readonly<Record<string, Account>> = {
   ...TEST_ACCOUNTS,
   alchemy: {
     costs: ALCHEMY_COSTS,
-    budget: [{ units: 40_000, seconds: 5 }],
+    rate: [{ units: 40_000, seconds: 5 }],
     clientShare: 0.05,
     source: "https://test.invalid",
   },
@@ -43,7 +43,7 @@ const ACCOUNTS: Readonly<Record<string, Account>> = {
       kind: "request",
       request: { units: 1, source: "https://drpc.org/docs/howitworks/ratelimiting" },
     },
-    budget: [{ units: 400, seconds: 5 }],
+    rate: [{ units: 400, seconds: 5 }],
     clientShare: 0.05,
     source: "https://test.invalid",
   },
@@ -115,7 +115,7 @@ describe("per-request parameter bounds", () => {
       ...TEST_ACCOUNTS,
       alchemy: {
         costs: ALCHEMY_COSTS,
-        budget: [{ units: 60, seconds: 60 }],
+        rate: [{ units: 60, seconds: 60 }],
         clientShare: 0.05,
         source: "https://test.invalid",
       },

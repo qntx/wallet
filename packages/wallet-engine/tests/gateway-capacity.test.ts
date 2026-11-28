@@ -511,12 +511,14 @@ describe("engine gateway capacity", () => {
       `unstubbed upstreams ${world.stub.unstubbed.join(", ")}`,
     ).toStrictEqual([]);
 
-    // (a) No refusal: the only non-200s allowed are the unsupported-route 404s on history/tokens.
+    // (a) No refusal: the only non-200s allowed are the unsupported-route 404s on history/tokens
+    // and retried TronGrid budget 503s — the 250-credit shared depth absorbs only a few calls of
+    // a cold-start burst, so the walk fails over and the harness retry absorbs the refill wait.
     for (const [key, count] of row.routeStatuses) {
       if (count === 0 || key.endsWith("|200")) {
         continue;
       }
-      expect(["history|404", "tokens|404"]).toContain(key);
+      expect(["history|404", "tokens|404", "tron|503"]).toContain(key);
     }
 
     // (b) Three fresh cold starts in one share window must fit: 3 × deltaSum <= SHARE_LIMIT.
@@ -526,9 +528,14 @@ describe("engine gateway capacity", () => {
     );
     console.log(`share headroom:\n  ${shareLines.join("\n  ")}`);
     for (const [key, sum] of row.share) {
+      // Two accounts share so little per prefix that the claim drops to two fresh wallets per
+      // window: CoinGecko's Basic plan is 210 units/minute across all clients, and credit-priced
+      // TronGrid spends hundreds of credits on one TRON cold start (Tatum absorbs the overflow,
+      // as designed).
+      const factor = key.startsWith("coingecko:") || key.startsWith("trongrid:") ? 2 : 3;
       expect(
-        3 * sum,
-        `share key ${key}: 3 × ${String(sum)} > ${String(SHARE_LIMIT)}`,
+        factor * sum,
+        `share key ${key}: ${String(factor)} × ${String(sum)} > ${String(SHARE_LIMIT)}`,
       ).toBeLessThanOrEqual(SHARE_LIMIT);
     }
 
@@ -649,7 +656,10 @@ describe("engine gateway capacity", () => {
       `B unstubbed upstreams ${worldB.stub.unstubbed.join(", ")}`,
     ).toStrictEqual([]);
     expectClean(refreshA, "refresh", ["history|404", "tokens|404"]);
-    expectClean(sendB, "send", []);
+    // TronGrid's 250-credit depth cannot absorb a send's burst of 80-200-credit reads: pinned
+    // reads meet budget 503s and the engine retries them inside the signing window — the send
+    // still completes, so the retried refusal is the designed degradation, not a failure.
+    expectClean(sendB, "send", ["tron|503"]);
     expect(
       pinned,
       "the send made no pinned (x-gateway-provider) gateway request",
@@ -688,13 +698,12 @@ describe("engine gateway capacity", () => {
         tronAddress: addresses.tron,
         passthroughTron: true,
       });
-      /* Other tenants' traffic (a foreign /24, so a different client share) drains TronGrid's
-         shared 12-calls/5 s bucket to 2; the send then pins trongrid — pinned calls fail over
-         to nothing — and meets 503s announcing the bucket's refill wait, which the engine's
-         pinned-read retry sleeps through. This client's own share keeps room, so no 60-second
-         share refusal lands. */
-      await world.pressureTron(10);
-      const before = world.snapshot();
+      /* The prepare runs on a quiet budget so its reads pin trongrid; then other tenants'
+         traffic (a foreign /24, so a different client share) drains TronGrid's shared
+         250-credits/s bucket before the approve — pinned calls fail over to nothing — and the
+         send meets 503s announcing the bucket's refill wait, which the engine's pinned-read
+         retry sleeps through. This client's own share keeps room, so no 60-second share refusal
+         lands. */
       const t0 = world.clock();
       const pending: { id: string; risk?: unknown; checks?: unknown } | undefined =
         await world.engine.requests.prepare({
@@ -713,6 +722,8 @@ describe("engine gateway capacity", () => {
       if (pending === undefined) {
         throw new Error("send tron: prepare never succeeded");
       }
+      await world.pressureTron(10);
+      const before = world.snapshot();
       const tx = await world.engine.requests.approve(
         pending.id,
         "send",

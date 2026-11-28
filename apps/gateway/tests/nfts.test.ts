@@ -471,11 +471,11 @@ describe("nft routes metering", () => {
     const g = app(up, share);
     const nfts = await g.request(nftItemsPath(ETH), post({ owner: OWNER }));
     expect(nfts.status).toBe(200);
-    // getNFTsForOwner = 100 CU → 2 share units; getAssetsByOwner = 200 CU → 4.
-    expect(share.deltas).toStrictEqual([2]);
+    // getNFTsForOwner = 480 CU → 10 share units; getAssetsByOwner = 480 CU → 10.
+    expect(share.deltas).toStrictEqual([10]);
     const sol = await g.request(nftItemsPath(SOLANA), post({ owner: SOL_OWNER }));
     expect(sol.status).toBe(200);
-    expect(share.deltas).toStrictEqual([2, 4]);
+    expect(share.deltas).toStrictEqual([10, 10]);
   });
 
   it("bills detail, collection and floor by their rows", async () => {
@@ -491,8 +491,8 @@ describe("nft routes metering", () => {
     await g.request(nftCollectionPath(ETH), post({ collection: WOW }));
     await g.request(nftFloorPath(ETH), post({ collection: BAYC }));
     await g.request(nftItemPath(SOLANA), post({ contract: MADLAD }));
-    // 10 CU → 1 share unit each; the Solana getAsset is 200 CU → 4.
-    expect(share.deltas).toStrictEqual([1, 1, 1, 4]);
+    // 80 CU → 2, 160 CU → 4, 80 CU → 2 share units; the Solana getAsset is 200 CU → 4.
+    expect(share.deltas).toStrictEqual([2, 4, 2, 4]);
     expect(share.keys).toStrictEqual(Array.from({ length: 4 }, () => "alchemy:unknown"));
   });
 });

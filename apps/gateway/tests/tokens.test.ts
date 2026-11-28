@@ -8,6 +8,7 @@ import type { TokenListResponse } from "@qntx/wallet-engine/gateway/contract";
 import { buildTokenLists } from "../src/tokens/build.ts";
 import { NATIVE_ALIASES, tokenListSources } from "../src/tokens/sources.ts";
 import type { RawToken, TokenListUpstream } from "../src/tokens/sources.ts";
+import type { ProviderBudget } from "../src/types.ts";
 import {
   allowAll,
   DEVNET,
@@ -58,6 +59,13 @@ const evmToken = (address: string, extra: Partial<RawToken> = {}): RawToken => (
   ...extra,
 });
 
+const openBudget: ProviderBudget = {
+  take: async () => {
+    await Promise.resolve();
+    return { ok: true };
+  },
+};
+
 const build = async (
   sources: ReadonlyArray<TokenListUpstream>,
   options: {
@@ -66,6 +74,7 @@ const build = async (
     };
     readonly now?: number;
     readonly fetch?: typeof globalThis.fetch;
+    readonly budget?: ProviderBudget;
   } = {},
 ): Promise<{
   readonly store: ReturnType<typeof memoryRiskStore>;
@@ -79,6 +88,7 @@ const build = async (
     now: () => options.now ?? 1000,
     log: (line) => lines.push(line),
     sources,
+    budget: options.budget ?? openBudget,
   });
   return { store, lines };
 };
@@ -208,6 +218,28 @@ describe("source parsers", () => {
 });
 
 describe("buildTokenLists", () => {
+  it("skips a metered source without fetching when its account budget refuses", async () => {
+    const refusing: ProviderBudget = {
+      take: async () => {
+        await Promise.resolve();
+        return { ok: false, retryAfterSeconds: 3600 };
+      },
+    };
+    const upstream = fakeFetch(FIXTURE_URLS);
+    const { store, lines } = await build(fixtureSources(), {
+      fetch: upstream.fetch,
+      budget: refusing,
+    });
+    // Uniswap carries no account and still builds; coingecko and jupiter never fetched.
+    expect(stored(store, "eip155:1")?.tokens.length).toBeGreaterThan(0);
+    expect(stored(store, "eip155:999")).toBeUndefined();
+    expect(stored(store, SOLANA_MAINNET)).toBeUndefined();
+    expect(upstream.callsTo("https://fixture.test/coingecko")).toHaveLength(0);
+    expect(upstream.callsTo("https://fixture.test/jupiter")).toHaveLength(0);
+    expect(hasLine(lines, '"token-list-build-skipped"', '"budget"', '"coingecko"')).toBe(true);
+    expect(hasLine(lines, '"token-list-build-skipped"', '"budget"', '"jupiter"')).toBe(true);
+  });
+
   it("publishes every network of the fixture sources as a contract-valid document", async () => {
     const { store, lines } = await build(fixtureSources());
     const doc = stored(store, "eip155:1");

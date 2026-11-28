@@ -19,7 +19,7 @@ Two kinds of structured output exist:
 | `upstream-throttled`                            | src/providers/forward.ts:342                                                                                                                                                                                                            | provider announced a rate limit (`account`, `retryAfter` seconds) |
 | `all-providers-failed`                          | src/providers/forward.ts:434                                                                                                                                                                                                            | every configured provider failed for the request                  |
 | `breaker`                                       | src/providers/forward.ts:531                                                                                                                                                                                                            | the per-provider circuit breaker changed state                    |
-| `budget-error`                                  | src/budget/leased.ts:137                                                                                                                                                                                                                | the account-budget Durable Object errored                         |
+| `budget-error`                                  | src/budget/leased.ts:138                                                                                                                                                                                                                | the account-budget Durable Object errored                         |
 | `internal-error`                                | src/middleware/errors.ts:44                                                                                                                                                                                                             | unhandled route error                                             |
 | `price-cache-failure`                           | src/providers/prices.ts:151,164                                                                                                                                                                                                         | KV cache get/put failed (`op`)                                    |
 | `nft-cache-failure`                             | src/routes/nft*.ts:82,97                                                                                                                                                                                                                | NFT cache failure                                                 |
@@ -74,22 +74,28 @@ baseline.
 
 ## Capacity per provider account
 
-From `src/config/accounts.ts` (`budget` windows are our own share — usually
-~80 % of the provider's published rate; the comment on each row names the
-assumed plan). Concurrent-wallet figures are derived from the README's
-per-active-wallet cost (README "Provider budget": one `eth_blockNumber` +
-4×`eth_getLogs` ≈ 300 CU per refresh where applicable) — **every number here
-is "owner must confirm"**.
+From `src/config/accounts.ts` — each row's comment carries the published inputs, their source
+URL and the derivation; the rules are: rate refill + depth never exceed the provider's published
+limit (`c + r·T ≤ L`), a subscription cap is 80 % of the included quota, a PAYG cap is the dollar
+ceiling over the unit price, and the day cap is a tenth of the month.
 
-| Account                                             | Assumed plan (comment in row) | Budget window (ours) | Per-active-wallet cost      | Resulting concurrent wallets |
-| --------------------------------------------------- | ----------------------------- | -------------------- | --------------------------- | ---------------------------- |
-| alchemy                                             | PAYG 10 000 CU/s              | 40 000 CU / 5 s      | ~300 CU / refresh (confirm) | ~130 refreshes / 5 s         |
-| drpc                                                | see row                       | see `accounts.ts`    | same unit family            | to confirm                   |
-| coingecko                                           | priced page in row            | see `accounts.ts`    | 1 request / refresh         | to confirm                   |
-| defillama                                           | see row                       | 150 u / 20 s         | 1 u / request               | to confirm                   |
-| jupiter (0x)                                        | see row                       | 8 u / 2 s            | 1 u / request               | to confirm                   |
-| across                                              | see row                       | 10 u / 2 s           | 1 u / request               | to confirm                   |
-| blockstream / ankr / trongrid / tatum / hyperliquid | public or keyed — see rows    | see `accounts.ts`    | —                           | to confirm                   |
+| Account     | Plan                                       | Unit                       | Rate (ours)         | Cap day / month          | $/month at cap        |
+| ----------- | ------------------------------------------ | -------------------------- | ------------------- | ------------------------ | --------------------- |
+| alchemy     | PAYG $0.525/M CU, 10 000 CU/s over 10 s    | CU (max billed/throughput) | 36 000 CU / 6 s     | 19 047 619 / 190 476 190 | $100 (POLICY ceiling) |
+| drpc        | Pro $49/mo, 163 M CU pool, 300 RPS         | request (20 CU)            | 200 / 2 s           | 652 000 / 6 520 000      | $49                   |
+| blockstream | Basic $40/mo, 500 k credits                | credit (1/call POLICY)     | 1 000 / 15 s POLICY | 40 000 / 400 000         | $40                   |
+| coingecko   | Basic $35/mo, 100 k/month, 300/min         | credit                     | 84 / 24 s           | 8 000 / 80 000           | $35                   |
+| tatum       | Starter $49/mo, 4 M credits, 200 RPS       | credit (5/call POLICY)     | 200 / 0.25 s        | 320 000 / 3 200 000      | $49                   |
+| ankr        | Freemium, 200 M credits/mo, ≈1 800 req/min | credit (200/call)          | 72 000 / 15 s       | 16 000 000 / 160 000 000 | $0                    |
+| trongrid    | Free, 3 M credits/UTC day, 500 credits/s   | credit per path 80–200     | 250 / 1 s           | 2 400 000 / —            | $0                    |
+| jupiter     | Free, 60 per sliding 60 s                  | request                    | 12 / 15 s           | —                        | $0                    |
+| 0x          | Standard free, 5 per fixed 1 s             | request                    | 1 / 0.25 s          | —                        | $0                    |
+| defillama   | keyless public, no published limit         | request                    | 150 / 20 s POLICY   | —                        | $0                    |
+| across      | public endpoints, no published limit       | request                    | 10 / 2 s POLICY     | —                        | $0                    |
+
+Total at the caps: $273/month. A cap refusal fails over to the route's next provider; when every
+provider is spent the client sees 503 `unavailable` with an hours-scale `Retry-After`, logged as
+`all-providers-failed`.
 
 Staging rows (`accounts.ts` ~line 172+) are keyless public endpoints — shared
 quota, not a plan.

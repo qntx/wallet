@@ -8,13 +8,8 @@ import {
 import type { TokenListEntry, TokenListResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import { readCapped } from "../providers/body.ts";
+import type { ProviderBudget, TokenListStore } from "../types.ts";
 import type { RawToken, TokenListUpstream } from "./sources.ts";
-
-/** The store the published lists live in — the worker passes the RISK KV namespace. */
-export type TokenListStore = {
-  readonly get: (key: string) => Promise<string | undefined>;
-  readonly put: (key: string, value: string) => Promise<void>;
-};
 
 export type TokenListBuildOptions = {
   readonly fetch: typeof globalThis.fetch;
@@ -22,6 +17,8 @@ export type TokenListBuildOptions = {
   readonly now: () => number;
   readonly log: (line: string) => void;
   readonly sources: ReadonlyArray<TokenListUpstream>;
+  /** The shared provider budget: a source naming an account pays its cost before fetching. */
+  readonly budget: ProviderBudget;
 };
 
 const FETCH_TIMEOUT_MS = 30_000;
@@ -149,13 +146,27 @@ const publish = async (
 /**
  * Fetches every configured source and republishes its networks' lists. Sources run in parallel and
  * each is isolated: one that fails leaves its networks' stored lists untouched. A network is
- * skipped (never rewritten) when its cleaned list exceeds the cap or halved versus the stored one.
+ * skipped (never rewritten) when its cleaned list exceeds the cap or halved versus the stored one,
+ * and a source whose account budget refuses the fetch is skipped before any upstream call.
  */
 export async function buildTokenLists(options: TokenListBuildOptions): Promise<void> {
   const { fetch, log } = options;
   await Promise.all(
     options.sources.map(async (source) => {
       try {
+        if (source.charge !== undefined) {
+          const decision = await options.budget.take(source.charge.account, source.charge.units);
+          if (!decision.ok) {
+            log(
+              JSON.stringify({
+                event: "token-list-build-skipped",
+                reason: "budget",
+                source: source.id,
+              }),
+            );
+            return;
+          }
+        }
         const response = await fetch(source.url, {
           signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
           ...(source.headers === undefined ? {} : { headers: source.headers }),

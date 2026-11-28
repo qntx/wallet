@@ -1,10 +1,11 @@
-import type { Account, BudgetWindow } from "../config/accounts.ts";
+import type { Account, RateWindow } from "../config/accounts.ts";
 import type { BudgetDecision, ProviderBudget } from "../types.ts";
+import type { BudgetLimits } from "./bucket.ts";
 import type { LeaseResult } from "./durable.ts";
 
 /** The `lease` RPC one account's Durable Object serves. */
 export type BudgetStub = {
-  lease: (windows: ReadonlyArray<BudgetWindow>, want: number, min: number) => Promise<LeaseResult>;
+  lease: (limits: BudgetLimits, want: number, min: number) => Promise<LeaseResult>;
 };
 
 /** The slice of `env.PROVIDER_BUDGET` the port uses — a namespace of per-account objects. */
@@ -48,11 +49,11 @@ const LEASE_FRACTION = 0.05;
 /** The spend rate is an EWMA over roughly the last two seconds. */
 const RATE_TAU_MS = 2000;
 
-const tightest = (windows: ReadonlyArray<BudgetWindow>): BudgetWindow => {
+const tightest = (windows: ReadonlyArray<RateWindow>): RateWindow => {
   const [first] = windows;
   let best = first;
   if (best === undefined) {
-    throw new Error("provider account has no budget windows");
+    throw new Error("provider account has no rate windows");
   }
   for (const window of windows) {
     if (window.units / window.seconds < best.units / best.seconds) {
@@ -112,7 +113,7 @@ export function durableBudget(
 
   const lease = async (
     account: string,
-    windows: ReadonlyArray<BudgetWindow>,
+    limits: BudgetLimits,
     units: number,
     state: AccountState,
   ): Promise<FlightResult> => {
@@ -123,14 +124,14 @@ export function durableBudget(
     const flight = (async (): Promise<FlightResult> => {
       const at = now();
       const rate = state.rate * Math.exp(-(at - state.rateAt) / RATE_TAU_MS);
-      const cap = Math.max(units, Math.ceil(tightest(windows).units * LEASE_FRACTION));
+      const cap = Math.max(units, Math.ceil(tightest(limits.rate).units * LEASE_FRACTION));
       const want = Math.min(
         Math.max(units, Math.ceil((LEASE_HEADROOM * rate * LEASE_TTL_MS) / 1000)),
         cap,
       );
       let result: LeaseResult;
       try {
-        result = await namespace.get(namespace.idFromName(account)).lease(windows, want, units);
+        result = await namespace.get(namespace.idFromName(account)).lease(limits, want, units);
       } catch (error) {
         log(
           JSON.stringify({
@@ -182,7 +183,12 @@ export function durableBudget(
         return { ok: true };
       }
       // oxlint-disable-next-line eslint/no-await-in-loop -- each pass spends or joins one lease flight
-      const landed = await lease(account, found.budget, units, state);
+      const landed = await lease(
+        account,
+        { rate: found.rate, ...(found.cap === undefined ? {} : { cap: found.cap }) },
+        units,
+        state,
+      );
       // A smaller follower of a refused flight is not covered by the refusal — it loops and asks
       // on its own minimum. Every pass either answers or strictly lowers the cached refusal size.
       if (!landed.result.ok && units >= landed.min) {

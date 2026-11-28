@@ -3,13 +3,23 @@ import { describe, expect, it } from "vite-plus/test";
 import { PROVIDERS_HEADER } from "@qntx/wallet-engine/gateway/contract";
 
 import { fullBuckets, grant } from "../src/budget/bucket.ts";
-import type { BucketState } from "../src/budget/bucket.ts";
+import type { BucketState, BudgetLimits } from "../src/budget/bucket.ts";
+import type { CostModel } from "../src/budget/costs.ts";
+import {
+  ALCHEMY_COSTS,
+  TRONGRID_COSTS,
+  probeCost,
+  requestCost,
+  rpcCost,
+  tronCost,
+} from "../src/budget/costs.ts";
 import { ProviderBudgetObject } from "../src/budget/durable.ts";
 import { durableBudget } from "../src/budget/leased.ts";
 import type { BudgetStub, BudgetNamespace } from "../src/budget/leased.ts";
 import { localBudget } from "../src/budget/local.ts";
-import type { Account, BudgetWindow } from "../src/config/accounts.ts";
+import type { Account } from "../src/config/accounts.ts";
 import { PRODUCTION_ACCOUNTS } from "../src/config/accounts.ts";
+import { sharePerMinute } from "../src/middleware/rate-limit.ts";
 import type { ProviderBudget } from "../src/types.ts";
 import {
   SEPOLIA,
@@ -31,43 +41,46 @@ describe("bucket", () => {
   const windows = [{ units: 100, seconds: 10 }, seconds(20)];
 
   it("starts full and grants up to the smallest level", () => {
-    const state = fullBuckets(windows, 0);
-    const first = grant(windows, state, 0, 50, 10);
+    const state = fullBuckets({ rate: windows }, 0);
+    const first = grant({ rate: windows }, state, 0, 50, 10);
     expect(first).toStrictEqual({ ok: true, granted: 20 });
     expect(state.levels).toStrictEqual([80, 0]);
-    const second = grant(windows, state, 0, 50, 1);
+    const second = grant({ rate: windows }, state, 0, 50, 1);
     expect(second).toStrictEqual({ ok: false, retryAfterSeconds: 1 });
     expect(state.levels).toStrictEqual([80, 0]);
   });
 
   it("refills continuously and clamps at capacity", () => {
-    const state: BucketState = { levels: [0, 0], at: 0 };
+    const state: BucketState = { levels: [0, 0], at: 0, spend: { hours: [], days: [] } };
     // After 5 s: window 1 holds 50, window 2 holds 5 — the grant is the smallest level.
-    expect(grant(windows, state, 5000, 60, 5)).toStrictEqual({ ok: true, granted: 5 });
+    expect(grant({ rate: windows }, state, 5000, 60, 5)).toStrictEqual({ ok: true, granted: 5 });
     expect(state.levels).toStrictEqual([45, 0]);
     // A minute later the levels refill to capacity, not beyond.
-    expect(grant(windows, state, 65_000, 1, 1)).toStrictEqual({ ok: true, granted: 1 });
+    expect(grant({ rate: windows }, state, 65_000, 1, 1)).toStrictEqual({ ok: true, granted: 1 });
     expect(state.levels).toStrictEqual([99, 19]);
   });
 
   it("reports the wait until the tightest window reaches min again", () => {
     // levels [0, 5]: window 1 needs 10 more at 10/s → 1 s; window 2 needs 5 more at 1/s → 5 s.
-    const state: BucketState = { levels: [0, 5], at: 0 };
-    expect(grant(windows, state, 0, 50, 10)).toStrictEqual({ ok: false, retryAfterSeconds: 5 });
+    const state: BucketState = { levels: [0, 5], at: 0, spend: { hours: [], days: [] } };
+    expect(grant({ rate: windows }, state, 0, 50, 10)).toStrictEqual({
+      ok: false,
+      retryAfterSeconds: 5,
+    });
   });
 
   it("never announces a wait below one second, however short the refill", () => {
     // The second window is already above min — its own wait is non-positive; the announced wait
     // is still the tightest window's, floored at one second.
-    const state: BucketState = { levels: [0, 20], at: 0 };
-    const result = grant(windows, state, 0, 50, 10);
+    const state: BucketState = { levels: [0, 20], at: 0, spend: { hours: [], days: [] } };
+    const result = grant({ rate: windows }, state, 0, 50, 10);
     expect(result.ok).toBe(false);
     expect(result).toStrictEqual({ ok: false, retryAfterSeconds: 1 });
   });
 
   it("never grants a min above capacity, but still answers a finite wait", () => {
-    const state = fullBuckets(windows, 0);
-    const result = grant(windows, state, 0, 500, 200);
+    const state = fullBuckets({ rate: windows }, 0);
+    const result = grant({ rate: windows }, state, 0, 500, 200);
     expect(result.ok).toBe(false);
     expect(result).toStrictEqual({ ok: false, retryAfterSeconds: expect.any(Number) });
   });
@@ -75,9 +88,178 @@ describe("bucket", () => {
   it("treats a level absent from persisted state as empty", () => {
     /* A window added after the state was stored holds no level: window 2 starts at zero and the
        announced wait is its refill to min (10 units at 1/s). */
-    const state: BucketState = { levels: [50], at: 0 };
-    expect(grant(windows, state, 0, 50, 10)).toStrictEqual({ ok: false, retryAfterSeconds: 10 });
+    const state: BucketState = { levels: [50], at: 0, spend: { hours: [], days: [] } };
+    expect(grant({ rate: windows }, state, 0, 50, 10)).toStrictEqual({
+      ok: false,
+      retryAfterSeconds: 10,
+    });
     expect(state.levels).toStrictEqual([50, 0]);
+  });
+});
+
+describe("bucket spend caps", () => {
+  const rate = [{ units: 1_000_000, seconds: 1 }];
+
+  it("refuses at the cap with the wait until the spending slot ages out", () => {
+    const limits = { rate, cap: { day: 100 } };
+    const state = fullBuckets(limits, 0);
+    expect(grant(limits, state, 0, 80, 80)).toStrictEqual({ ok: true, granted: 80 });
+    // Headroom is 20 — a 30-unit minimum cannot fit. The 80 units sit in hour slot 0 and age out
+    // when the checked range (25 slots) no longer reaches them: at hour 25, in 90,000 s.
+    const refused = grant(limits, state, 0, 50, 30);
+    expect(refused).toStrictEqual({ ok: false, retryAfterSeconds: 90_000 });
+  });
+
+  it("clamps a partial grant to the cap headroom", () => {
+    const limits = { rate, cap: { day: 100 } };
+    const state = fullBuckets(limits, 0);
+    expect(grant(limits, state, 0, 80, 80)).toStrictEqual({ ok: true, granted: 80 });
+    expect(grant(limits, state, 0, 50, 10)).toStrictEqual({ ok: true, granted: 20 });
+    expect(state.spend.hours).toStrictEqual([[0, 100]]);
+  });
+
+  it("keeps day and month slots separate", () => {
+    const limits = { rate, cap: { day: 100, month: 150 } };
+    const state = fullBuckets(limits, 0);
+    expect(grant(limits, state, 0, 80, 80)).toStrictEqual({ ok: true, granted: 80 });
+    // 25 hours later the day-cap slot has aged out, but the month slot still counts — its
+    // headroom of 70 clamps the grant.
+    const later = 25 * 3_600_000;
+    expect(grant(limits, state, later, 80, 60)).toStrictEqual({ ok: true, granted: 70 });
+    expect(state.spend.days).toHaveLength(2);
+  });
+
+  it("prunes slots that have aged out of the checked range", () => {
+    const limits = { rate, cap: { day: 100 } };
+    const state = fullBuckets(limits, 0);
+    expect(grant(limits, state, 0, 80, 80).ok).toBe(true);
+    const later = 26 * 3_600_000;
+    expect(grant(limits, state, later, 80, 80)).toStrictEqual({ ok: true, granted: 80 });
+    expect(state.spend.hours).toStrictEqual([[26, 80]]);
+  });
+
+  it("answers a finite wait for a minimum above the cap itself", () => {
+    const limits = { rate, cap: { day: 100, month: 1000 } };
+    const state = fullBuckets(limits, 0);
+    expect(grant(limits, state, 0, 200, 200)).toStrictEqual({
+      ok: false,
+      retryAfterSeconds: 86_400,
+    });
+    expect(grant(limits, state, 0, 2000, 2000)).toStrictEqual({
+      ok: false,
+      retryAfterSeconds: 31 * 86_400,
+    });
+  });
+
+  it("records spend even without a cap, so a deploy that adds one sees it", () => {
+    const limits = { rate };
+    const state = fullBuckets(limits, 0);
+    expect(grant(limits, state, 0, 80, 80)).toStrictEqual({ ok: true, granted: 80 });
+    expect(state.spend.hours).toStrictEqual([[0, 80]]);
+    expect(state.spend.days).toStrictEqual([[0, 80]]);
+    // The same slots then bind an account that gains the cap: 80 of the 100 are already spent.
+    const capped = grant({ ...limits, cap: { day: 100 } }, state, 0, 80, 80);
+    expect(capped).toStrictEqual({ ok: false, retryAfterSeconds: 90_000 });
+  });
+
+  it("reports the slowest constraint's wait when rate and cap both refuse", () => {
+    const limits = { rate: [{ units: 10, seconds: 10 }], cap: { day: 100 } };
+    // Rate empty (refill to 20 takes 20 s at 1/s); cap headroom 10 < 20 — the 90 units in hour
+    // slot 0 age out in 90,000 s, the slower constraint.
+    const state: BucketState = { levels: [0], at: 0, spend: { hours: [[0, 90]], days: [] } };
+    expect(grant(limits, state, 0, 50, 20)).toStrictEqual({ ok: false, retryAfterSeconds: 90_000 });
+  });
+});
+
+describe("ProviderBudgetObject spend persistence", () => {
+  const state = (kv: Map<string, unknown>): DurableObjectState =>
+    ({
+      storage: {
+        kv: {
+          get: (key: string) => kv.get(key),
+          put: (key: string, value: unknown) => {
+            kv.set(key, value);
+          },
+        },
+      },
+    }) as unknown as DurableObjectState;
+
+  const object = (kv: Map<string, unknown>): ProviderBudgetObject =>
+    new ProviderBudgetObject(state(kv), {});
+
+  it("keeps the spend when a deploy changes the rate window count", () => {
+    const kv = new Map<string, unknown>();
+    const cap = { day: 100 };
+    const one = { rate: [{ units: 1000, seconds: 10 }], cap };
+    expect(object(kv).lease(one, 90, 90)).toStrictEqual({ ok: true, granted: 90 });
+    // The deploy adds a rate window: the levels reset full — but the spent cap must survive:
+    // headroom is 10, so a minimum of 20 refuses despite the full buckets.
+    const two = {
+      rate: [
+        { units: 1000, seconds: 10 },
+        { units: 1000, seconds: 10 },
+      ],
+      cap,
+    };
+    expect(object(kv).lease(two, 50, 20).ok).toBe(false);
+    expect(object(kv).lease(two, 50, 10)).toStrictEqual({ ok: true, granted: 10 });
+    // A state without spend (the pre-cap shape) starts fresh.
+    kv.set("levels", { levels: [0], at: 0 });
+    expect(object(kv).lease(one, 10, 10)).toStrictEqual({ ok: true, granted: 10 });
+  });
+});
+
+describe("account validation", () => {
+  const valid: Account = {
+    costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
+    rate: [{ units: 10, seconds: 10 }],
+    clientShare: 0.05,
+    source: "https://test.invalid",
+  };
+
+  it("throws on a rate window longer than a minute", () => {
+    expect(() => sharePerMinute({ ...valid, rate: [{ units: 10, seconds: 86_400 }] })).toThrow(
+      /86,400|86_400|86400|rate window/,
+    );
+  });
+
+  it("throws on a non-positive rate window", () => {
+    expect(() => sharePerMinute({ ...valid, rate: [{ units: 10, seconds: 0 }] })).toThrow(
+      /rate window/,
+    );
+  });
+
+  it.each([0, -5, 1.5, Number.NaN])("throws on a cap of %s", (cap) => {
+    expect(() => sharePerMinute({ ...valid, cap: { day: cap } })).toThrow(/cap/);
+    expect(() => sharePerMinute({ ...valid, cap: { month: cap } })).toThrow(/cap/);
+  });
+});
+
+describe("tron cost model", () => {
+  it("prices each path from its row", () => {
+    expect(tronCost(TRONGRID_COSTS, "/wallet/getnowblock")).toBe(80);
+    expect(tronCost(TRONGRID_COSTS, "/wallet/listwitnesses")).toBe(150);
+    expect(tronCost(TRONGRID_COSTS, "/v1/accounts/transactions")).toBe(160);
+    expect(tronCost(TRONGRID_COSTS, "/v1/accounts/transactions/trc20")).toBe(200);
+    expect(tronCost(TRONGRID_COSTS, "/v1/accounts/account")).toBe(80);
+  });
+
+  it("answers the request units for a request-priced provider", () => {
+    const model: CostModel = {
+      kind: "request",
+      request: { units: 5, source: "https://test.invalid" },
+    };
+    expect(tronCost(model, "/wallet/getnowblock")).toBe(5);
+  });
+
+  it("throws for requestCost, rpcCost and probeCost on a tron-priced account", () => {
+    expect(() => requestCost(TRONGRID_COSTS)).toThrow(/misconfigured/);
+    expect(() => rpcCost(TRONGRID_COSTS, { method: "eth_chainId" })).toThrow(/misconfigured/);
+    expect(() => probeCost(TRONGRID_COSTS, "eth_chainId")).toThrow(/misconfigured/);
+  });
+
+  it("throws for tronCost on an rpc-priced account", () => {
+    expect(() => tronCost(ALCHEMY_COSTS, "/wallet/getnowblock")).toThrow(/misconfigured/);
   });
 });
 
@@ -85,7 +267,7 @@ describe("localBudget", () => {
   const accounts: Readonly<Record<string, Account>> = {
     test: {
       costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
-      budget: [{ units: 10, seconds: 10 }],
+      rate: [{ units: 10, seconds: 10 }],
       clientShare: 0.05,
       source: "https://test.invalid",
     },
@@ -126,14 +308,14 @@ describe("ProviderBudgetObject", () => {
 
   it("grants until the windows are spent and persists the levels across instances", () => {
     const kv = new Map<string, unknown>();
-    const windows = [{ units: 10, seconds: 10 }];
-    expect(object(kv).lease(windows, 10, 5)).toStrictEqual({
+    const limits = { rate: [{ units: 10, seconds: 10 }] };
+    expect(object(kv).lease(limits, 10, 5)).toStrictEqual({
       ok: true,
       granted: 10,
     });
     // A freshly constructed object over the same storage (an evicted one re-instantiated) sees
     // the spent levels — it does not reset to full.
-    const refused = object(kv).lease(windows, 5, 5);
+    const refused = object(kv).lease(limits, 5, 5);
     expect(refused.ok).toBe(false);
   });
 });
@@ -142,7 +324,7 @@ describe("durableBudget", () => {
   const accounts: Readonly<Record<string, Account>> = {
     test: {
       costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
-      budget: [{ units: 1000, seconds: 60 }],
+      rate: [{ units: 1000, seconds: 60 }],
       clientShare: 0.05,
       source: "https://test.invalid",
     },
@@ -362,7 +544,7 @@ describe("durableBudget lease amortisation", () => {
   const roomy: Readonly<Record<string, Account>> = {
     test: {
       costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
-      budget: [{ units: 100_000, seconds: 5 }],
+      rate: [{ units: 100_000, seconds: 5 }],
       clientShare: 0.05,
       source: "https://test.invalid",
     },
@@ -385,13 +567,13 @@ describe("durableBudget lease amortisation", () => {
       get: (id: DurableObjectId): BudgetStub => {
         const account = id as unknown as string;
         return {
-          lease: async (windows: ReadonlyArray<BudgetWindow>, want: number, min: number) => {
+          lease: async (limits: BudgetLimits, want: number, min: number) => {
             calls.push({ want, min });
             await options.gate?.();
             const state =
-              states.get(account) ?? options.seeded?.[account] ?? fullBuckets(windows, at());
+              states.get(account) ?? options.seeded?.[account] ?? fullBuckets(limits, at());
             states.set(account, state);
-            return grant(windows, state, at(), want, min);
+            return grant(limits, state, at(), want, min);
           },
         };
       },
@@ -423,7 +605,7 @@ describe("durableBudget lease amortisation", () => {
   it("answers a refusal storm from the negative cache", async () => {
     let at = 0;
     const { namespace, calls } = fakeNamespace(() => at, {
-      seeded: { alchemy: { levels: [0], at: 0 } },
+      seeded: { alchemy: { levels: [0], at: 0, spend: { hours: [], days: [] } } },
     });
     const { take } = durableBudget(
       namespace,
@@ -458,7 +640,7 @@ describe("durableBudget lease amortisation", () => {
       };
     });
     const { namespace, calls } = fakeNamespace(() => at, {
-      seeded: { alchemy: { levels: [100], at: 0 } },
+      seeded: { alchemy: { levels: [100], at: 0, spend: { hours: [], days: [] } } },
       gate: async () => gate,
     });
     const { take } = durableBudget(
@@ -550,8 +732,8 @@ describe("durableBudget lease amortisation", () => {
       expect(result.ok).toBe(true);
     }
     expect(calls.length).toBeGreaterThan(1);
-    // alchemy's tightest window is 40,000 units — the ask never exceeds 2,000.
-    expect(Math.max(...calls.map((call) => call.want))).toBeLessThanOrEqual(2000);
-    expect(calls.some((call) => call.want === 2000)).toBe(true);
+    // alchemy's tightest window is 36,000 units — the ask never exceeds 1,800.
+    expect(Math.max(...calls.map((call) => call.want))).toBeLessThanOrEqual(1800);
+    expect(calls.some((call) => call.want === 1800)).toBe(true);
   });
 });
