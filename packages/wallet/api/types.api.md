@@ -232,6 +232,15 @@ export type UnlockFactor = {
     readonly password: string;
 };
 
+// @public
+export type Unsupported = {
+    readonly status: "unsupported";
+    readonly reason: UnsupportedReason;
+};
+
+// @public
+export type UnsupportedReason = "older" | "newer";
+
 // @public (undocumented)
 export type VaultApi = {
     readonly unlock: (factor?: UnlockFactor) => Promise<void>;
@@ -245,7 +254,9 @@ export type VaultApi = {
 };
 
 // @public
-export type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
+export type VaultState = {
+    readonly status: "uninitialized" | "locked" | "unlocked" | "corrupted" | "unavailable";
+} | Unsupported;
 
 // @public
 export type VaultWalletInfo = {

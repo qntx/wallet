@@ -101,9 +101,9 @@ describe("createWebWallet", () => {
 
   it("creates a vault in IndexedDB, signs, locks by ending the worker and unlocks a new one", async () => {
     wallet = await createWebWallet(OPTIONS);
-    expect(wallet.getSnapshot().vault).toBe("uninitialized");
+    expect(wallet.getSnapshot().vault.status).toBe("uninitialized");
     const created = await wallet.wallets.importMnemonic({ mnemonic: MNEMONIC, factor: VERIFY });
-    expect(wallet.getSnapshot().vault).toBe("unlocked");
+    expect(wallet.getSnapshot().vault.status).toBe("unlocked");
 
     const account = await chains(wallet).account({
       walletId: created.walletId,
@@ -115,7 +115,7 @@ describe("createWebWallet", () => {
 
     const { spawned } = PageKernelWorker;
     await wallet.vault.lock();
-    expect(wallet.getSnapshot().vault).toBe("locked");
+    expect(wallet.getSnapshot().vault.status).toBe("locked");
     expect(PageKernelWorker.terminated).toBeGreaterThan(0);
     expect(PageKernelWorker.spawned).toBeGreaterThan(spawned);
 
@@ -143,7 +143,7 @@ describe("createWebWallet", () => {
     await wallet.wallets.importMnemonic({ mnemonic: MNEMONIC, factor: VERIFY });
     globalThis.dispatchEvent(new PageTransitionEvent("pagehide"));
     await vi.waitFor(() => {
-      expect(wallet?.getSnapshot().vault).toBe("locked");
+      expect(wallet?.getSnapshot().vault.status).toBe("locked");
     });
   });
 

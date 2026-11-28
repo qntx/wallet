@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import { KernelError, VAULT_FORMAT, createMemoryStore } from "@qntx/wallet-kernel";
+import {
+  KernelError,
+  UnsupportedFormatError,
+  VAULT_FORMAT,
+  createMemoryStore,
+} from "@qntx/wallet-kernel";
 import type { RecordStore, StoreOp, VaultImage, VaultMeta } from "@qntx/wallet-kernel";
 
+import vectors from "../../../../vectors/unsupported.json" with { type: "json" };
 import { createIndexedDbStore } from "../../src/worker/indexeddb.ts";
 
 const DB_NAME = "qntx-wallet";
@@ -67,11 +73,42 @@ function commits(seed: number, count: number): ReadonlyArray<ReadonlyArray<Store
   return Array.from({ length: count }, () => Array.from({ length: 1 + next(3) }, one));
 }
 
+/** Seeds the meta row at the given format — the schema the store's own upgradeneeded creates. */
+async function seedMeta(format: number): Promise<void> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME);
+    request.addEventListener("upgradeneeded", () => {
+      request.result.createObjectStore("records", { keyPath: ["kind", "id"] });
+      request.result.createObjectStore("factors", { keyPath: "id" });
+      request.result.createObjectStore("meta");
+    });
+    request.addEventListener("success", () => {
+      resolve(request.result);
+    });
+    request.addEventListener("error", () => {
+      reject(request.error ?? new Error("indexeddb open failed"));
+    });
+  });
+  const tx = db.transaction("meta", "readwrite");
+  tx.objectStore("meta").put({ format, revision: 1, keyId: "0".repeat(32) }, "vault");
+  await new Promise<void>((resolve) => {
+    tx.addEventListener("complete", () => {
+      resolve();
+    });
+  });
+  db.close();
+}
+
 const sorted = (image: VaultImage): VaultImage => ({
   meta: image.meta,
   records: image.records.toSorted((a, b) => `${a.kind}/${a.id}`.localeCompare(`${b.kind}/${b.id}`)),
   factors: image.factors.toSorted((a, b) => a.id.localeCompare(b.id)),
 });
+
+/** True when the error is an UnsupportedFormatError carrying the wanted direction. */
+function unsupportedWith(error: unknown, reason: string): boolean {
+  return error instanceof UnsupportedFormatError && error.reason === reason;
+}
 
 const outcome = async (store: RecordStore, ops: ReadonlyArray<StoreOp>): Promise<string> => {
   try {
@@ -170,14 +207,48 @@ describe("IndexedDB vault store", () => {
     await expect(store.load()).rejects.toMatchObject({ code: "integrity" });
   });
 
-  it("reports a database from a newer build as unsupported, then recovers", async () => {
+  it("reports a database from a newer build as unsupported/newer, then recovers", async () => {
     const store = createIndexedDbStore();
     await store.commit([{ op: "init", meta: META }]);
     // Another tab upgrades the schema: this store closes on versionchange and reopens lazily.
     const newer = await settled(indexedDB.open(DB_NAME, 2));
-    await expect(store.load()).rejects.toMatchObject({ code: "unsupported" });
+    await expect(store.load()).rejects.toMatchObject({ code: "unsupported", reason: "newer" });
     newer?.close();
     await settled(indexedDB.deleteDatabase(DB_NAME));
+    await expect(store.load()).resolves.toStrictEqual({
+      meta: undefined,
+      records: [],
+      factors: [],
+    });
+  });
+
+  it.each(vectors.vaultDb.cases)("vaultDb $name", async ({ version, expect: expected }) => {
+    // A database another build wrote at a newer schema version refuses to open: VersionError.
+    const db = await settled(indexedDB.open(DB_NAME, version));
+    db?.close();
+    await expect(createIndexedDbStore().load()).rejects.toSatisfy((e) =>
+      unsupportedWith(e, expected.reason),
+    );
+  });
+
+  it.each([
+    ["an older build's (format 5)", VAULT_FORMAT - 1, "older"],
+    ["a newer build's (format 7)", VAULT_FORMAT + 1, "newer"],
+  ] as const)(
+    "a vault whose meta row was written by %s rejects load with its direction",
+    async (_label, format, reason) => {
+      await seedMeta(format);
+      await expect(createIndexedDbStore().load()).rejects.toSatisfy((e) =>
+        unsupportedWith(e, reason),
+      );
+    },
+  );
+
+  it("a clear commit empties a store whose meta row it cannot read", async () => {
+    // reset's only exit: the clear never decodes the unsupported meta row, so it goes through.
+    await seedMeta(VAULT_FORMAT - 1);
+    const store = createIndexedDbStore();
+    await store.commit([{ op: "clear" }]);
     await expect(store.load()).resolves.toStrictEqual({
       meta: undefined,
       records: [],

@@ -59,7 +59,19 @@ export function createFileStore(file: KernelFile): RecordStore {
       // preconditions judge the file's truth, and the compare-and-swap below fails closed when
       // another writer slipped in between this read and the write.
       const bytes = file.read();
-      const next = applyStoreOps(bytes === undefined ? EMPTY : decodeImage(bytes), ops);
+      // A vault this build cannot read (a foreign format or unparseable bytes) can still be
+      // erased: a `clear` needs no old image — the compare-and-swap still races real writers.
+      // Every other op needs the decoded image and fails on it as before.
+      let image: VaultImage;
+      try {
+        image = bytes === undefined ? EMPTY : decodeImage(bytes);
+      } catch (error) {
+        if (!ops.every((op) => op.op === "clear")) {
+          throw error;
+        }
+        image = EMPTY;
+      }
+      const next = applyStoreOps(image, ops);
       const encoded = new Uint8Array(
         encodeFrame({
           meta: next.meta ?? null,

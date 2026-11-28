@@ -1125,7 +1125,7 @@ describe("session key isolation", () => {
       { op: "put-record", record: { ...record, sealed: flipByte(record.sealed) } },
     ]);
     await h.settle();
-    expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "corrupted" });
     expect(errCode(await h.call("session.touch", null, session))).toBe("integrity");
   });
 
@@ -1136,7 +1136,7 @@ describe("session key isolation", () => {
     const record = mustSessionRecord(image);
     await h.store.commit([{ op: "put-record", record: { ...record, header: '{"walletId":1}' } }]);
     await h.settle();
-    expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "corrupted" });
   });
 
   it("a known scheme's invalid scope corrupts status", async () => {
@@ -1151,7 +1151,7 @@ describe("session key isolation", () => {
       },
     ]);
     await h.settle();
-    expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "corrupted" });
   });
 
   it("a resealed known-scheme record whose scope the scheme rejects corrupts status", async () => {
@@ -1170,7 +1170,7 @@ describe("session key isolation", () => {
       createdAt: T0,
     });
     await h.settle();
-    expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "corrupted" });
   });
 });
 
@@ -1198,7 +1198,7 @@ describe("unknown schemes stay inert", () => {
     const { h, session, walletId } = await setup(T0);
     const address = await injectUnknown(h, session, walletId);
     await h.settle();
-    expect(field(ok(await h.call("status")), "vault")).toBe("unlocked");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "unlocked" });
 
     const list = ok(await h.call("sessions.list", null, session)) as unknown as Array<
       Record<string, unknown>
@@ -1291,7 +1291,7 @@ describe("unknown schemes stay inert", () => {
       dek.wipe();
     }
     await h.settle();
-    expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "corrupted" });
     expect(errCode(await h.call("session.touch", null, session))).toBe("integrity");
   });
 });

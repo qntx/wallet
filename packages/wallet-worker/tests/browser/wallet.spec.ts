@@ -113,7 +113,7 @@ test.describe("web host", () => {
       throw new Error(`deriveKey failed: ${derived.code}`);
     }
     let snap = await snapshot(page);
-    expect(snap.vault).toBe("unlocked");
+    expect(snap.vault.status).toBe("unlocked");
     expect(snap.wallets[0]?.walletId).toBe(created.value.walletId);
     expect(snap.nostr.keys[0]?.publicKey).toBe(derived.value.publicKey);
     expect(npubEncode(derived.value.publicKey)).toMatch(/^npub1/);
@@ -124,7 +124,7 @@ test.describe("web host", () => {
     await expect.poll(async () => terminated(page)).toBeGreaterThanOrEqual(1);
     await expect.poll(async () => spawned(page)).toBeGreaterThanOrEqual(2);
     snap = await snapshot(page);
-    expect(snap.vault).toBe("locked");
+    expect(snap.vault.status).toBe("locked");
     expect(snap.wallets[0]?.walletId).toBe(created.value.walletId);
 
     const unlockedNow = await page.evaluate(async () => qntx.unlockPasskey());
@@ -179,7 +179,7 @@ test.describe("web host", () => {
     const reset = await page.evaluate(async () => qntx.reset());
     expect(reset.ok).toBe(true);
     let snap = await snapshot(page);
-    expect(snap.vault).toBe("uninitialized");
+    expect(snap.vault.status).toBe("uninitialized");
     expect(snap.wallets).toHaveLength(0);
 
     // restore unwraps the BEK with the password backup factor and establishes the vault.
@@ -190,7 +190,7 @@ test.describe("web host", () => {
     expect(restored.value.wallets[0]?.walletId).toBe(created.value.walletId);
 
     snap = await snapshot(page);
-    expect(snap.vault).toBe("unlocked");
+    expect(snap.vault.status).toBe("unlocked");
     expect(snap.wallets[0]?.walletId).toBe(created.value.walletId);
   });
 
@@ -215,13 +215,13 @@ test.describe("web host", () => {
     await page.reload();
     await page.evaluate(async () => qntx.create());
     const snap = await snapshot(page);
-    expect(snap.vault).toBe("locked");
+    expect(snap.vault.status).toBe("locked");
     expect(snap.lockReason).toBe("cold-start");
     expect(snap.wallets).toHaveLength(1);
 
     const unlockedWith = await page.evaluate(async (p) => qntx.unlockPassword(p), PASSWORD);
     expect(unlockedWith.ok).toBe(true);
-    const unlocked = await page.evaluate(() => qntx.snapshot().vault);
+    const unlocked = await page.evaluate(() => qntx.snapshot().vault.status);
     expect(unlocked).toBe("unlocked");
   });
 
@@ -270,10 +270,14 @@ test.describe("web host", () => {
 
     // The DEK opened but a record failed authentication: the vault reports corrupted, every
     // method except status/reset answers integrity, and reset clears the vault.
-    await expect.poll(async () => page.evaluate(() => qntx.snapshot().vault)).toBe("corrupted");
+    await expect
+      .poll(async () => page.evaluate(() => qntx.snapshot().vault.status))
+      .toBe("corrupted");
     const reset = await page.evaluate(async () => qntx.reset());
     expect(reset.ok).toBe(true);
-    await expect.poll(async () => page.evaluate(() => qntx.snapshot().vault)).toBe("uninitialized");
+    await expect
+      .poll(async () => page.evaluate(() => qntx.snapshot().vault.status))
+      .toBe("uninitialized");
   });
 
   test("a malformed stored row fails integrity without a respawn loop", async ({ page }) => {
@@ -306,7 +310,9 @@ test.describe("web host", () => {
     // The respawned worker hit the malformed row on its first load: it keeps serving and
     // reports the vault corrupted instead of crashing into a respawn loop. The status event
     // lands after the Worker constructor, so poll rather than read once.
-    await expect.poll(async () => page.evaluate(() => qntx.snapshot().vault)).toBe("corrupted");
+    await expect
+      .poll(async () => page.evaluate(() => qntx.snapshot().vault.status))
+      .toBe("corrupted");
     const unlocked = await page.evaluate(async (p) => qntx.unlockPassword(p), PASSWORD);
     expect(unlocked).toEqual({ ok: false, code: "integrity" });
 
@@ -318,7 +324,9 @@ test.describe("web host", () => {
     // vault.reset is the recovery path: the corrupted vault clears to uninitialized.
     const reset = await page.evaluate(async () => qntx.reset());
     expect(reset.ok).toBe(true);
-    await expect.poll(async () => page.evaluate(() => qntx.snapshot().vault)).toBe("uninitialized");
+    await expect
+      .poll(async () => page.evaluate(() => qntx.snapshot().vault.status))
+      .toBe("uninitialized");
     expect(await spawned(page)).toBe(2);
   });
 
@@ -351,7 +359,51 @@ test.describe("web host", () => {
     // fails VersionError → the vault reports unsupported, not corrupted, and stays untouched.
     const unlocked = await page.evaluate(async (p) => qntx.unlockPassword(p), PASSWORD);
     expect(unlocked).toEqual({ ok: false, code: "unsupported" });
-    await expect.poll(async () => page.evaluate(() => qntx.snapshot().vault)).toBe("unsupported");
+    await expect
+      .poll(async () => page.evaluate(() => qntx.snapshot().vault))
+      .toStrictEqual({ status: "unsupported", reason: "newer" });
+  });
+
+  for (const [format, reason] of [
+    [5, "older"],
+    [7, "newer"],
+  ] as const) {
+    test(`a vault image at format ${format} reports unsupported/${reason} and is left untouched`, async ({
+      page,
+    }) => {
+      await page.goto("/");
+      // A vault database seeded as an older/newer build would have left it — before create.
+      const seeded = await page.evaluate(async (f) => qntx.seedVaultFormat(f), format);
+      expect(seeded.seeded).toBe(true);
+      const created = await page.evaluate(async () => qntx.create());
+      expect(created.ok).toBe(true);
+
+      // The kernel's first load refused the seeded format; the direction rides the status.
+      await expect
+        .poll(async () => page.evaluate(() => qntx.snapshot().vault))
+        .toStrictEqual({ status: "unsupported", reason });
+      const unlocked = await page.evaluate(async (p) => qntx.unlockPassword(p), PASSWORD);
+      expect(unlocked).toEqual({ ok: false, code: "unsupported" });
+
+      // The meta row still carries the seeded format — the refused open never wiped it.
+      expect(await page.evaluate(async () => qntx.vaultMetaFormat())).toBe(format);
+    });
+  }
+
+  test("a vault image at an older format yields only to the explicit reset", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(async (f) => qntx.seedVaultFormat(f), 5);
+    await page.evaluate(async () => qntx.create());
+    await expect
+      .poll(async () => page.evaluate(() => qntx.snapshot().vault))
+      .toStrictEqual({ status: "unsupported", reason: "older" });
+    const reset = await page.evaluate(async () => qntx.reset());
+    expect(reset.ok).toBe(true);
+    await expect
+      .poll(async () => page.evaluate(() => qntx.snapshot().vault))
+      .toStrictEqual({ status: "uninitialized" });
+    // The clear went through the same store: the seeded meta row is gone.
+    expect(await page.evaluate(async () => qntx.vaultMetaFormat())).toBeUndefined();
   });
 
   test("a failed passkey ceremony surfaces as cancelled @webauthn", async ({ context, page }) => {

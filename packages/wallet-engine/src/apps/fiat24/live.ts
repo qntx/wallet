@@ -89,7 +89,7 @@ export function createFiat24Live(options: {
     !view.closed &&
     visible &&
     !locked &&
-    options.wallet.getSnapshot().vault === "unlocked";
+    options.wallet.getSnapshot().vault.status === "unlocked";
 
   const arm = (view: View): void => {
     if (view.cancel !== undefined || !active(view)) {

@@ -251,9 +251,10 @@ if ("onAccountChange" in cloud) {
   vault without any user action; app lock on restores the previous guarantee. On Android 11–14
   the `device` key stays usable while the device is locked, so do not reopen the vault from
   lock-screen background work.
-- This build reads and writes vault format 5 only. A vault written by an older format reports
-  `vault: "unsupported"` and every command fails with `unsupported` — the data is left
-  untouched and `vault.reset` is the recovery path.
+- This build reads and writes vault format 6 only. A vault of any other format reports
+  `vault: { status: "unsupported", reason }` and every command fails with `unsupported` — the data
+  is left untouched. `reason: "older"` (a pre-1.0 format) recovers only through `vault.reset` and a
+  restore; `reason: "newer"` means update the app, never reset.
 - `vault.addFactor` / `vault.removeFactor` are `unsupported` here, and so is the `factor`
   option on create, import and restore — the host picks the vault's factors itself.
 - `vault.reset` authenticates the device owner first, then erases the vault and all keystore

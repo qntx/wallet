@@ -9,6 +9,14 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-11-28
+
+Bitcoin change follows the kernel-sealed mark alone. An endpoint's "used" answers no longer choose
+the change index, so a lying endpoint moves the mark by at most one index per signed send, and no
+send, sweep, replacement or CPFP is refused for want of a change address. A device confirmation
+takes effect without a relock, and an unconfirmed own address is a lookalike reference again
+without exempting itself. The vault stays at format 6; the upgrade from 0.14.0 keeps all data.
+
 ### Breaking changes
 
 - `@qntx/wallet-chains/bitcoin`: `requestChangeMark` is removed. Signed inputs never raise the
@@ -17,6 +25,21 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
   `BITCOIN_GAP_LIMIT`. (MIGRATION §36)
 - `@qntx/wallet-engine`: `HistoryControllerOptions` and `NotificationsControllerOptions` require
   `signers: Pick<SignersController, "store">`; `SignersState` gains `confirmations`. (MIGRATION §36)
+- `@qntx/wallet`: the vault status is a `VaultState` object — `snapshot.vault.status` and every
+  status payload — so `unsupported` can carry its direction: `{ status: "unsupported", reason:
+  "older" | "newer" }`, decided from the persisted format alone. `older` means a pre-1.0 build
+  wrote it (reset, then restore); `newer` means a newer build did (update the app, never reset).
+  `BackupHeader` drops `version` for `status: "ok"`, and `parseBackupHeader` returns a
+  `BackupInspection` (`BackupHeader | Unsupported`). (MIGRATION §38)
+- `@qntx/wallet-engine`: `backup.list()` rows report an unreadable envelope with its direction
+  (`header: BackupInspection`) instead of skipping it; `restore` of one is refused `unsupported`
+  by the kernel. `EngineStoreError` gains `reason`, set when `code` is `"unsupported"` — an older
+  IndexedDB engine store is refused `unsupported`/`older` and never wiped (the host deletes it
+  after confirmation); a newer one is `unsupported`/`newer`. (MIGRATION §38)
+- `@qntx/wallet-kernel` and the hosts: the unsupported direction comes from the persisted format
+  alone — an unknown factor or record kind, policy id or KDF parameter inside the current format
+  means `newer`. The Web vault's newer IndexedDB schema surfaces the same
+  `unsupported`/`newer`. (MIGRATION §38)
 
 ### Changed
 
@@ -2629,7 +2652,8 @@ engine is in this repository but not yet published to npm.
 - `@qntx/wallet-worker/node`: `createNodeWallet` runs the same kernel in `worker_threads`, with the test-only `createSoftwarePasskey`.
 - The kernel: BIP-39 (random with a backup quiz, import, export), passkey wallets (PRF output as BIP-39 entropy), BIP-32 and NIP-06 derivation, `walletId`, an XChaCha20-Poly1305 vault whose public headers are authenticated and record-kind agnostic (an unknown kind reports `corrupted` rather than silently dropping data), password and passkey factors with online rate limiting, sessions with idle and absolute limits, a statically composed Nostr module (derived keys, nsec, ncryptsec, generated, NIP-46 client; NIP-04, NIP-44 and batched NIP-59 unwrapping).
 
-[Unreleased]: https://github.com/qntx/wallet/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/qntx/wallet/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/qntx/wallet/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/qntx/wallet/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/qntx/wallet/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/qntx/wallet/compare/v0.11.0...v0.12.0

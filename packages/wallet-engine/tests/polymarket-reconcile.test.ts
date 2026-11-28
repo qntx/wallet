@@ -612,7 +612,7 @@ const unitRig = (over: {
         listeners.delete(listener);
       };
     },
-    getSnapshot: () => ({ vault: vault(), wallets: [] }),
+    getSnapshot: () => ({ vault: { status: vault() }, wallets: [] }),
   };
   const fire = () => {
     for (const listener of listeners) {

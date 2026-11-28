@@ -91,7 +91,7 @@ const rig = (): {
     },
   };
   const wallet = {
-    getSnapshot: () => ({ vault: snapshot.vault }),
+    getSnapshot: () => ({ vault: { status: snapshot.vault } }),
     subscribe: (listener: () => void) => {
       walletListeners.add(listener);
       return () => walletListeners.delete(listener);

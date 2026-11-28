@@ -1087,7 +1087,7 @@ describe("credential records", () => {
        there must already fail closed through the app's own credential store. */
     let l2: Promise<unknown> | undefined;
     const unsubscribe = w.wallet.subscribe(() => {
-      if (w.wallet.getSnapshot().vault !== "unlocked" && l2 === undefined) {
+      if (w.wallet.getSnapshot().vault.status !== "unlocked" && l2 === undefined) {
         l2 = pm.account.openOrders(w.group, {});
       }
     });

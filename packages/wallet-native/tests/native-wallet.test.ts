@@ -15,7 +15,7 @@ import type { KernelKeystoreNative } from "../kernel/keystore.ts";
 import { createFileStore } from "../kernel/store.ts";
 import { createKernelPort } from "../kernel/transport.ts";
 import type { KernelFramePipe } from "../kernel/transport.ts";
-import { FRAME_MAX_BYTES } from "../src/cbor.ts";
+import { encodeFrame, FRAME_MAX_BYTES } from "../src/cbor.ts";
 import type { KernelHostLike, KernelExitReason } from "../src/host.ts";
 import { createNativeWallet, spawnFromHost } from "../src/index.ts";
 
@@ -395,11 +395,54 @@ describe("createNativeWallet", () => {
     await expect(wallet2.vault.unlock()).rejects.toThrow(
       expect.objectContaining({ code: "cancelled" }),
     );
-    expect(wallet2.getSnapshot().vault).toBe("locked");
+    expect(wallet2.getSnapshot().vault.status).toBe("locked");
     await wallet2.vault.unlock();
-    expect(wallet2.getSnapshot().vault).toBe("unlocked");
+    expect(wallet2.getSnapshot().vault.status).toBe("unlocked");
+  });
+
+  it.each([
+    ["an older build's (format 5)", 5, "older", { failedAttempts: 0, lastFailureAt: 0 }],
+    ["a newer build's (format 7)", 7, "newer", {}],
+  ] as const)(
+    "a vault file written by %s build reports unsupported with its direction and is never wiped",
+    async (_label, format, reason, extraMeta) => {
+      const { bytes, wallet } = await seededWallet(format, extraMeta);
+      const before = new Uint8Array(bytes.value);
+      expect(wallet.getSnapshot().vault).toStrictEqual({ status: "unsupported", reason });
+      await expect(wallet.vault.unlock()).rejects.toThrow(
+        expect.objectContaining({ code: "unsupported" }),
+      );
+      expect(bytes.value).toStrictEqual(before);
+    },
+  );
+
+  it("an older format's only exit is the explicit reset, then a restore", async () => {
+    const { wallet } = await seededWallet(5, { failedAttempts: 0, lastFailureAt: 0 });
+    await wallet.vault.reset();
+    expect(wallet.getSnapshot().vault).toStrictEqual({ status: "uninitialized" });
   });
 });
+
+/** A wallet over a vault file seeded at an arbitrary format — ciphertext and headers only. */
+async function seededWallet(format: number, extraMeta: Record<string, unknown>) {
+  const bytes = {
+    value: new Uint8Array(
+      encodeFrame({
+        meta: { format, revision: 4, keyId: "ab".repeat(16), ...extraMeta },
+        records: [],
+        factors: [],
+      }),
+    ),
+  };
+  const host = boot(fileStore(bytes), fakeNativeKeystore().native);
+  const wallet = await createNativeWallet({
+    verifyEvent,
+    passkey: PASSKEY,
+    autoLock: AUTOLOCK,
+    createHost: () => host,
+  });
+  return { bytes, wallet };
+}
 
 /** A wallet whose every kernel runtime gets a fresh host over one persistent vault. */
 async function openWallet() {
@@ -432,14 +475,14 @@ describe("kernel restarts", () => {
     await createMnemonicWallet(wallet);
     expect(hosts).toHaveLength(1);
     await wallet.vault.lock();
-    expect(wallet.getSnapshot().vault).toBe("locked");
+    expect(wallet.getSnapshot().vault.status).toBe("locked");
     await wallet.vault.unlock();
-    expect(wallet.getSnapshot().vault).toBe("unlocked");
+    expect(wallet.getSnapshot().vault.status).toBe("unlocked");
     expect(hosts).toHaveLength(2);
     await wallet.vault.lock();
-    expect(wallet.getSnapshot().vault).toBe("locked");
+    expect(wallet.getSnapshot().vault.status).toBe("locked");
     await wallet.vault.unlock();
-    expect(wallet.getSnapshot().vault).toBe("unlocked");
+    expect(wallet.getSnapshot().vault.status).toBe("unlocked");
     expect(hosts).toHaveLength(3);
     expect(hosts.slice(0, -1).every((host) => host.locked())).toBe(true);
   });
@@ -449,10 +492,10 @@ describe("kernel restarts", () => {
     const first = await createMnemonicWallet(wallet);
     await wallet.wallets.delete(first.walletId, { kind: "hardware" });
     expect(wallet.getSnapshot().wallets).toHaveLength(0);
-    expect(wallet.getSnapshot().vault).toBe("unlocked");
+    expect(wallet.getSnapshot().vault.status).toBe("unlocked");
     const imported = await wallet.wallets.importMnemonic({ mnemonic: first.phrase });
     expect(imported.walletId).toBe(first.walletId);
-    expect(wallet.getSnapshot().vault).toBe("unlocked");
+    expect(wallet.getSnapshot().vault.status).toBe("unlocked");
   });
 });
 

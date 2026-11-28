@@ -165,6 +165,43 @@ async function openNewerDb(): Promise<{
   });
 }
 
+/** Seeds the vault DB's meta row at the given format — as an older or newer build left it. */
+async function seedVaultFormat(format: number): Promise<{ readonly seeded: boolean }> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open("qntx-wallet", 1);
+    request.addEventListener("upgradeneeded", () => {
+      request.result.createObjectStore("records", { keyPath: ["kind", "id"] });
+      request.result.createObjectStore("factors", { keyPath: "id" });
+      request.result.createObjectStore("meta");
+    });
+    request.addEventListener("success", () => {
+      resolve(request.result);
+    });
+    request.addEventListener("error", () => {
+      reject(new Error("indexeddb open failed", { cause: request.error }));
+    });
+  });
+  const tx = db.transaction("meta", "readwrite");
+  await requestResult(
+    tx.objectStore("meta").put({ format, revision: 1, keyId: "ab".repeat(16) }, "vault"),
+  );
+  await transactionDone(tx);
+  db.close();
+  return { seeded: true };
+}
+
+/** Reads the stored meta row's format — proof the seed survived a refused open. */
+async function vaultMetaFormat(): Promise<number | undefined> {
+  const db = await requestResult<IDBDatabase>(indexedDB.open("qntx-wallet", 1));
+  const tx = db.transaction("meta", "readonly");
+  const meta = await requestResult<{ readonly format?: number } | undefined>(
+    tx.objectStore("meta").get("vault"),
+  );
+  await transactionDone(tx);
+  db.close();
+  return meta?.format;
+}
+
 const api = {
   stats,
   async create(): Promise<unknown> {
@@ -260,6 +297,8 @@ const api = {
   tamperBackup,
   tamperSealed,
   openNewerDb,
+  seedVaultFormat,
+  vaultMetaFormat,
 };
 
 Object.assign(globalThis, { qntx: api });

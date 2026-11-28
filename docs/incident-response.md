@@ -82,8 +82,8 @@ A published version is broken or malicious.
    with the bad version needs its own store release. Tell the host contacts which builds are
    affected, with the kernel manifest hash of the bad and the fixed version.
 5. If the bad release changed a persisted format, say in the advisory whether downgrading is safe.
-   Downgrading below a vault format reads the vault as `unsupported` (data kept, see
-   `MIGRATION.md`); it never wipes it.
+   Downgrading below a vault format reads the vault as `unsupported` with `reason: "newer"`
+   (data kept, see `MIGRATION.md`); it never wipes it.
 
 ## Gateway incident
 

@@ -394,7 +394,7 @@ export class Channel {
         return;
       }
       if (event.event === "status") {
-        if (event.status.vault !== "unlocked") {
+        if (event.status.vault.status !== "unlocked") {
           this.session = undefined;
           this.deferredStatus = undefined;
           this.handlers.onStatus(event.status);

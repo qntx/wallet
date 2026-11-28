@@ -1,0 +1,233 @@
+{
+  "vault": {
+    "current": 6,
+    "cases": [
+      {
+        "name": "format-3",
+        "image": {
+          "meta": {
+            "format": 3,
+            "revision": 4,
+            "keyId": "0123456789abcdef0123456789abcdef",
+            "failedAttempts": 2,
+            "lastFailureAt": 1700000000000
+          },
+          "records": [],
+          "factors": []
+        },
+        "expect": {
+          "status": "unsupported",
+          "reason": "older"
+        }
+      },
+      {
+        "name": "format-5",
+        "image": {
+          "meta": {
+            "format": 5,
+            "revision": 4,
+            "keyId": "0123456789abcdef0123456789abcdef",
+            "failedAttempts": 2,
+            "lastFailureAt": 1700000000000
+          },
+          "records": [],
+          "factors": []
+        },
+        "expect": {
+          "status": "unsupported",
+          "reason": "older"
+        }
+      },
+      {
+        "name": "format-6",
+        "image": {
+          "meta": {
+            "format": 6,
+            "revision": 4,
+            "keyId": "0123456789abcdef0123456789abcdef"
+          },
+          "records": [
+            {
+              "kind": "manifest",
+              "id": "default",
+              "header": "{}",
+              "sealed": "deadbeef000000000000000000000000"
+            }
+          ],
+          "factors": []
+        },
+        "expect": "ok"
+      },
+      {
+        "name": "format-7",
+        "image": {
+          "meta": {
+            "format": 7,
+            "revision": 4,
+            "keyId": "0123456789abcdef0123456789abcdef"
+          },
+          "records": [],
+          "factors": []
+        },
+        "expect": {
+          "status": "unsupported",
+          "reason": "newer"
+        }
+      },
+      {
+        "name": "format-max-safe",
+        "image": {
+          "meta": {
+            "format": 9007199254740991,
+            "revision": 4,
+            "keyId": "0123456789abcdef0123456789abcdef"
+          },
+          "records": [],
+          "factors": []
+        },
+        "expect": {
+          "status": "unsupported",
+          "reason": "newer"
+        }
+      },
+      {
+        "name": "format-non-integer",
+        "image": {
+          "meta": {
+            "format": 1.5,
+            "revision": 4,
+            "keyId": "0123456789abcdef0123456789abcdef"
+          },
+          "records": [],
+          "factors": []
+        },
+        "expect": "integrity"
+      },
+      {
+        "name": "unknown-record-kind",
+        "image": {
+          "meta": {
+            "format": 6,
+            "revision": 4,
+            "keyId": "0123456789abcdef0123456789abcdef"
+          },
+          "records": [
+            {
+              "kind": "manifest",
+              "id": "default",
+              "header": "{}",
+              "sealed": "deadbeef000000000000000000000000"
+            },
+            {
+              "kind": "frost-share",
+              "id": "id-1",
+              "header": "{}",
+              "sealed": "deadbeef000000000000000000000000"
+            }
+          ],
+          "factors": []
+        },
+        "expect": {
+          "status": "unsupported",
+          "reason": "newer"
+        }
+      }
+    ]
+  },
+  "vaultDb": {
+    "current": 1,
+    "cases": [
+      {
+        "name": "version-2",
+        "version": 2,
+        "expect": {
+          "status": "unsupported",
+          "reason": "newer"
+        }
+      }
+    ]
+  },
+  "backup": {
+    "current": 3,
+    "cases": [
+      {
+        "name": "v1-pbkdf2",
+        "envelope": "{\"createdAt\":1700000000000,\"header\":\"{\\\"wallets\\\":[{\\\"walletId\\\":\\\"95fea534ed0f2996\\\",\\\"origin\\\":\\\"mnemonic\\\",\\\"words\\\":24}]}\",\"payload\":\"cGF5bG9hZA\",\"version\":1,\"factors\":[{\"kind\":\"password\",\"iterations\":600000,\"salt\":\"AAAA\",\"sealedBek\":\"BBBB\"}]}",
+        "expect": {
+          "status": "unsupported",
+          "reason": "older"
+        }
+      },
+      {
+        "name": "v2",
+        "envelope": "{\"createdAt\":1700000000000,\"header\":\"{\\\"wallets\\\":[{\\\"walletId\\\":\\\"95fea534ed0f2996\\\",\\\"origin\\\":\\\"mnemonic\\\",\\\"words\\\":24}]}\",\"payload\":\"cGF5bG9hZA\",\"version\":2,\"factors\":[{\"kind\":\"password\",\"kdf\":\"argon2id\",\"memoryKiB\":65536,\"passes\":3,\"lanes\":4,\"salt\":\"AAAA\",\"sealedBek\":\"BBBB\"}]}",
+        "expect": {
+          "status": "unsupported",
+          "reason": "older"
+        }
+      },
+      {
+        "name": "v3-valid",
+        "envelope": "{\"version\":3,\"createdAt\":1700000000000,\"header\":\"{\\\"wallets\\\":[{\\\"walletId\\\":\\\"fa4079dcc186aab5\\\",\\\"origin\\\":\\\"passkey\\\",\\\"words\\\":12}]}\",\"factors\":[{\"kind\":\"password\",\"kdf\":\"argon2id\",\"memoryKiB\":65536,\"passes\":3,\"lanes\":4,\"salt\":\"EhISEhISEhISEhISEhISEg\",\"sealedBek\":\"ARMTExMTExMTExMTExMTExMTExMTExMTE1snXfScvBmn9oCWhX5xWIet-MQiC3hZbWl7H-U9f3tYEFr3KXg5dzUCeNVBoJ-0Pg\"},{\"kind\":\"passkey\",\"credentialId\":\"YmFja3VwLXZlY3Rvci1jcmVkZW50aWFs\",\"sealedBek\":\"ARQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFLOHVYRZnl7yiWlsTU2nogoUL8aJdKNFZdPHh7hAzhKuffizCJgOosi0TdCiVXcN6w\"}],\"payload\":\"ARYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhMhLHw7eGi9ieeh94KN-h93C6RAJtwKJeLYzBroeryM9ct93Q\"}",
+        "expect": "ok"
+      },
+      {
+        "name": "v4",
+        "envelope": "{\"createdAt\":1700000000000,\"header\":\"{\\\"wallets\\\":[{\\\"walletId\\\":\\\"95fea534ed0f2996\\\",\\\"origin\\\":\\\"mnemonic\\\",\\\"words\\\":24}]}\",\"payload\":\"cGF5bG9hZA\",\"version\":4,\"factors\":[{\"kind\":\"password\",\"kdf\":\"argon2id\",\"memoryKiB\":65536,\"passes\":3,\"lanes\":4,\"salt\":\"AAAA\",\"sealedBek\":\"BBBB\"}]}",
+        "expect": {
+          "status": "unsupported",
+          "reason": "newer"
+        }
+      },
+      {
+        "name": "version-string",
+        "envelope": "{\"createdAt\":1700000000000,\"header\":\"{\\\"wallets\\\":[{\\\"walletId\\\":\\\"95fea534ed0f2996\\\",\\\"origin\\\":\\\"mnemonic\\\",\\\"words\\\":24}]}\",\"payload\":\"cGF5bG9hZA\",\"version\":\"3\",\"factors\":[{\"kind\":\"password\",\"kdf\":\"argon2id\",\"memoryKiB\":65536,\"passes\":3,\"lanes\":4,\"salt\":\"AAAA\",\"sealedBek\":\"BBBB\"}]}",
+        "expect": "integrity"
+      },
+      {
+        "name": "version-missing",
+        "envelope": "{\"createdAt\":1700000000000,\"header\":\"{\\\"wallets\\\":[{\\\"walletId\\\":\\\"95fea534ed0f2996\\\",\\\"origin\\\":\\\"mnemonic\\\",\\\"words\\\":24}]}\",\"payload\":\"cGF5bG9hZA\",\"factors\":[{\"kind\":\"password\",\"kdf\":\"argon2id\",\"memoryKiB\":65536,\"passes\":3,\"lanes\":4,\"salt\":\"AAAA\",\"sealedBek\":\"BBBB\"}]}",
+        "expect": "integrity"
+      }
+    ]
+  },
+  "engineDb": {
+    "current": 2,
+    "cases": [
+      {
+        "name": "version-1",
+        "version": 1,
+        "expect": {
+          "status": "unsupported",
+          "reason": "older"
+        }
+      },
+      {
+        "name": "version-2",
+        "version": 2,
+        "expect": "ok"
+      },
+      {
+        "name": "version-3",
+        "version": 3,
+        "expect": {
+          "status": "unsupported",
+          "reason": "newer"
+        }
+      }
+    ]
+  },
+  "publicDb": {
+    "current": 1,
+    "cases": [
+      {
+        "name": "version-2",
+        "version": 2,
+        "expect": {
+          "status": "unsupported",
+          "reason": "newer"
+        }
+      }
+    ]
+  }
+}

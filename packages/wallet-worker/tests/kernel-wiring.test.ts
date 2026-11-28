@@ -115,7 +115,10 @@ describe("startNodeKernel", () => {
     main.port1.postMessage({ v: 3, id: 1, method: "status", params: null });
     await vi.waitFor(() => {
       expect(replies).toContainEqual(
-        expect.objectContaining({ id: 1, ok: expect.objectContaining({ vault: "uninitialized" }) }),
+        expect.objectContaining({
+          id: 1,
+          ok: expect.objectContaining({ vault: { status: "uninitialized" } }),
+        }),
       );
     });
     stopStore();

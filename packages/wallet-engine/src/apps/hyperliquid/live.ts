@@ -216,11 +216,11 @@ export function createHyperliquidLive(options: HyperliquidLiveOptions): Hyperliq
 
   const watchLock = (view: { close: () => Promise<void> }): void => {
     userViews.add(view);
-    if (wallet.getSnapshot().vault !== "unlocked") {
+    if (wallet.getSnapshot().vault.status !== "unlocked") {
       void view.close();
     }
     walletUnsubscribe ??= wallet.subscribe(() => {
-      if (wallet.getSnapshot().vault !== "unlocked") {
+      if (wallet.getSnapshot().vault.status !== "unlocked") {
         /* `close` removes the view from the set — iterate a copy. */
         // oxlint-disable-next-line unicorn/no-useless-spread -- the copy is the point.
         for (const v of [...userViews]) {

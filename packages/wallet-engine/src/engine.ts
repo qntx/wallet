@@ -1142,7 +1142,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   };
 
   const transition = async (): Promise<void> => {
-    const unlocked = options.wallet.getSnapshot().vault === "unlocked";
+    const unlocked = options.wallet.getSnapshot().vault.status === "unlocked";
     if (unlocked && !started) {
       started = true;
       try {
@@ -1199,7 +1199,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const snapshotListener = (): void => {
     // Every snapshot change while unlocked nudges the reconcile; the lock transition is
     // handled inside transition() and bumps the backup generation.
-    if (options.wallet.getSnapshot().vault === "unlocked") {
+    if (options.wallet.getSnapshot().vault.status === "unlocked") {
       backup.trigger();
       accounts.reconcile();
       metaSync.reconcile();

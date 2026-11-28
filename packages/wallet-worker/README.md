@@ -88,8 +88,8 @@ const wallet = await createNodeWallet({
   passkey factors and passkey-derived wallets unrecoverable. Moving domains needs WebAuthn
   related origins (`/.well-known/webauthn`); offer `exportMnemonic` for passkey-derived wallets.
 - IndexedDB upgrades are never `blocked`: the worker closes its connection on `versionchange`,
-  and once the database is newer than this build's schema the vault reports `unsupported` —
-  update the app, do not reset.
+  and once the database is newer than this build's schema the vault reports
+  `{ status: "unsupported", reason: "newer" }` — update the app, do not reset.
 - The Node store's RPC failures surface as `unavailable` and precondition failures as
   `conflict` — neither hangs a kernel call.
 - The Web host is a **hot wallet**. CSP needs `worker-src 'self'`. The host spawns the kernel

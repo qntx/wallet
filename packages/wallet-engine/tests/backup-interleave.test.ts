@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
  * name digest, header coverage, its own record — is exercised for real.
  */
 import type {
+  BackupHeader,
   BackupInfo,
   CardWalletInfo,
   FactorInfo,
@@ -34,13 +35,22 @@ import type { CloudStore } from "../src/backup/port.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 
+/** The fixture envelopes are all readable — fail loudly if one is not. */
+const headerOf = (text: string): BackupHeader => {
+  const header = parseBackupHeader(text);
+  if (header.status !== "ok") {
+    throw new Error("fixture envelope is unreadable");
+  }
+  return header;
+};
+
 /** The shared backup id — one BEK lineage, 32 lowercase hex like the kernel's HKDF output. */
 const BACKUP_ID = "ab".repeat(16);
 const LOGGER: EngineLogger = { warn: () => {} };
 
 /** The mutable innards a scripted `getSnapshot` reports — the test edits them as device events. */
 type FakeVault = {
-  vault: "unlocked";
+  vault: { status: "unlocked" };
   lockReason: undefined;
   verifying: false;
   appLock: false;
@@ -134,7 +144,7 @@ function fakeWallet(state: FakeVault, bekId: string): Wallet {
         return Promise.resolve();
       },
       restore: async ({ envelope, passphrases }) => {
-        const header = parseBackupHeader(envelope);
+        const header = headerOf(envelope);
         const given = new Set((passphrases ?? []).map((p) => p.walletId));
         const held = new Set(state.wallets.map((w) => w.walletId));
         const restored: VaultWalletInfo[] = [];
@@ -302,7 +312,7 @@ type Device = {
 /** A device already holding the lineage BEK (`backup` set), or a fresh vault (`null`). */
 function device(tag: Device["tag"], cloud: CloudStore, options?: { fresh?: boolean }): Device {
   const state: FakeVault = {
-    vault: "unlocked",
+    vault: { status: "unlocked" },
     lockReason: undefined,
     verifying: false,
     appLock: false,
@@ -376,7 +386,7 @@ type CloudFile = { readonly name: string; readonly wallets: string[]; readonly k
 
 function cloudFiles(files: Map<string, string>): ReadonlyArray<CloudFile> {
   return [...files.entries()].map(([name, text]) => {
-    const header = parseBackupHeader(text);
+    const header = headerOf(text);
     return {
       name,
       wallets: header.wallets.map((w) => w.walletId),
@@ -471,7 +481,7 @@ describe("two devices, one shared cloud", () => {
     await sched.drive([a.backup.restore({ name: bFile, backupFactor: { kind: "passkey" } })]);
     await sched.drive([a.backup.sync()]);
     const unionFile = singleFile(files);
-    const unionHeader = parseBackupHeader(files.get(unionFile)!);
+    const unionHeader = headerOf(files.get(unionFile)!);
     expect(unionHeader.wallets).toHaveLength(3);
     expect(a.backup.getState().status).toBe("synced");
 
@@ -625,7 +635,7 @@ describe("two devices, one shared cloud", () => {
     await sched.drive([a.backup.sync()]);
     expect(a.backup.getState().status).toBe("synced");
     const name = singleFile(files);
-    const header = parseBackupHeader(files.get(name)!);
+    const header = headerOf(files.get(name)!);
     expect(header.keys.map((k) => k.keyId)).toStrictEqual(["aa".repeat(8)]);
   });
 

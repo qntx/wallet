@@ -1,3 +1,5 @@
+import type { UnsupportedReason } from "@qntx/wallet/types";
+
 /**
  * A record kind names the module that owns the record's header and plaintext format. The store and
  * the envelope are kind-agnostic: any string matching the pattern is a valid kind, and a stored
@@ -35,6 +37,17 @@ export type StoredFactor = {
  * untouched.
  */
 export const VAULT_FORMAT = 6;
+
+/**
+ * The unsupported direction of a stored vault format: `older` below VAULT_FORMAT, `newer` above.
+ * The invariant that makes the comparison meaningful: pre-1.0, every removal or change of a record
+ * or factor kind, a policy id or a KDF parameter bumps VAULT_FORMAT — so unknown content inside the
+ * current format (a record kind no module owns, an unknown factor kind, an unknown policy id, new
+ * KDF parameters) can only have come from a newer build.
+ */
+export function formatReason(format: number): UnsupportedReason {
+  return format < VAULT_FORMAT ? "older" : "newer";
+}
 
 export type VaultMeta = {
   readonly format: number; // this build reads VAULT_FORMAT only

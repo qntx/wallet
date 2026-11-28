@@ -131,7 +131,7 @@ export async function createWebWallet(options: WalletOptions): Promise<Wallet> {
   // Ask the browser to persist the vault once it exists — a denied request is fine.
   let persisted = false;
   const unsubscribe = wallet.subscribe(() => {
-    if (!persisted && wallet.getSnapshot().vault !== "uninitialized") {
+    if (!persisted && wallet.getSnapshot().vault.status !== "uninitialized") {
       persisted = true;
       unsubscribe();
       void bestEffort(async () => navigator.storage.persist());

@@ -21,7 +21,7 @@ import type { LockReason } from "@qntx/wallet/types";
 
 import type { CommitOptions, Handler, KernelContext } from "./commands/context.ts";
 import { CORE_HANDLERS } from "./commands/index.ts";
-import { KernelError } from "./errors.ts";
+import { KernelError, UnsupportedFormatError } from "./errors.ts";
 import { createCardModule } from "./modules/card/index.ts";
 import { createChainsModule } from "./modules/chains/index.ts";
 import { createNostrModule } from "./modules/nostr/index.ts";
@@ -113,14 +113,14 @@ function needsGuard(ops: ReadonlyArray<StoreOp>): boolean {
   );
 }
 
-function classifyLoadFailure(error: unknown): "corrupted" | "unsupported" | "unavailable" {
-  if (error instanceof KernelError) {
-    if (error.code === "unsupported") {
-      return "unsupported";
-    }
-    if (error.code === "integrity") {
-      return "corrupted";
-    }
+function classifyLoadFailure(
+  error: unknown,
+): "corrupted" | "unavailable" | "unsupported-older" | "unsupported-newer" {
+  if (error instanceof UnsupportedFormatError) {
+    return `unsupported-${error.reason}`;
+  }
+  if (error instanceof KernelError && error.code === "integrity") {
+    return "corrupted";
   }
   return "unavailable";
 }
@@ -175,7 +175,7 @@ export function startKernel(
   /** Health transitions while unlocked invalidate the session immediately — except unavailable. */
   const setHealth = (next: KernelContext["health"]): void => {
     ctx.health = next;
-    if (next === "corrupted" || next === "unsupported") {
+    if (next === "corrupted" || next === "unsupported-older" || next === "unsupported-newer") {
       ctx.session.lock("invalidated"); // no-op unless unlocked
     }
   };
@@ -552,7 +552,13 @@ export function startKernel(
         if (ctx.health === "corrupted") {
           throw new KernelError("integrity", "the vault is corrupted");
         }
-        if (ctx.health === "unsupported") {
+        if (ctx.health === "unsupported-older") {
+          throw new KernelError(
+            "unsupported",
+            "the vault was written by an older build: reset it, then restore",
+          );
+        }
+        if (ctx.health === "unsupported-newer") {
           throw new KernelError("unsupported", "the vault needs a newer build");
         }
         if (ctx.health === "unavailable") {

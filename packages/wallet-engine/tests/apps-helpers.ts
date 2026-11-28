@@ -746,7 +746,7 @@ export const world = async (
     /* The vault flag gates the session like the real close — deterministic under a lock that
        has resolved but whose transition is still queued. */
     storage: createAppStorage("polymarket", () =>
-      wallet.getSnapshot().vault === "unlocked" ? session : undefined,
+      wallet.getSnapshot().vault.status === "unlocked" ? session : undefined,
     ),
     logger,
   });

@@ -1283,7 +1283,88 @@
           "protocol": 3,
           "appLock": true,
           "verification": "available",
-          "vault": "unlocked",
+          "vault": {
+            "status": "unlocked"
+          },
+          "factors": [
+            {
+              "kind": "password",
+              "id": "11223344556677889900aabbccddeeff",
+              "createdAt": 1767225600000
+            }
+          ],
+          "wallets": [
+            {
+              "custody": "vault",
+              "walletId": "0011223344556677",
+              "origin": "mnemonic",
+              "words": 12,
+              "backup": "mnemonic",
+              "passphrase": false,
+              "createdAt": 1767225600000
+            }
+          ],
+          "nostr": {
+            "keys": [
+              {
+                "ref": {
+                  "kind": "derived",
+                  "walletId": "0011223344556677",
+                  "index": 0
+                },
+                "publicKey": "9ba1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f",
+                "createdAt": 1767225600000
+              },
+              {
+                "ref": {
+                  "kind": "derived",
+                  "walletId": "0011223344556677",
+                  "index": 0
+                },
+                "publicKey": "9ba1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f",
+                "createdAt": 1767225600000
+              }
+            ]
+          },
+          "importedKeys": [
+            {
+              "keyId": "3d2718a5a66188a7",
+              "family": "solana",
+              "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+              "createdAt": 1767225600000
+            },
+            {
+              "keyId": "20738682c94a48dc",
+              "family": "evm",
+              "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+              "createdAt": 1767225600000
+            }
+          ],
+          "backup": {
+            "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "factors": [
+              "password"
+            ],
+            "createdAt": 1
+          },
+          "blindSigning": false
+        }
+      }
+    },
+    {
+      "name": "response-ok-status-unsupported",
+      "check": "response:status",
+      "message": {
+        "v": 3,
+        "id": 1,
+        "ok": {
+          "protocol": 3,
+          "appLock": true,
+          "verification": "available",
+          "vault": {
+            "status": "unsupported",
+            "reason": "older"
+          },
           "factors": [
             {
               "kind": "password",
@@ -1826,7 +1907,9 @@
           "protocol": 3,
           "appLock": true,
           "verification": "available",
-          "vault": "unlocked",
+          "vault": {
+            "status": "unlocked"
+          },
           "factors": [
             {
               "kind": "password",
@@ -1902,7 +1985,9 @@
           "protocol": 3,
           "appLock": false,
           "verification": "available",
-          "vault": "unlocked",
+          "vault": {
+            "status": "unlocked"
+          },
           "factors": [
             {
               "kind": "device",

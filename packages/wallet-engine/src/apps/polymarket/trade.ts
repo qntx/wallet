@@ -352,7 +352,7 @@ export function createPolymarketTrade(options: PolymarketTradeOptions): Polymark
      a reads-only provider never needs the wallet's subscription channel. */
   const watchLock = (): void => {
     lockWatch ??= options.wallet.subscribe(() => {
-      if (options.wallet.getSnapshot().vault !== "unlocked") {
+      if (options.wallet.getSnapshot().vault.status !== "unlocked") {
         session += 1;
         pending.clear();
         pollCancel?.();
@@ -403,7 +403,7 @@ export function createPolymarketTrade(options: PolymarketTradeOptions): Polymark
   };
 
   const registerPending = (group: AppGroup, orderId: string, signedIn: number): void => {
-    if (signedIn !== session || options.wallet.getSnapshot().vault !== "unlocked") {
+    if (signedIn !== session || options.wallet.getSnapshot().vault.status !== "unlocked") {
       return; // a locked session drops its pending ids — nothing account-bound survives it
     }
     const key = pendingKey(group, orderId);

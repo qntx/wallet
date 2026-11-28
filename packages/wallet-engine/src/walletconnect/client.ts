@@ -894,7 +894,7 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
   private onWallet(): void {
     const snapshot = this.options.wallet.getSnapshot();
     // A locked vault reports no wallets — that is the lock, not a deletion.
-    if (snapshot.vault !== "unlocked") {
+    if (snapshot.vault.status !== "unlocked") {
       return;
     }
     const ids = new Set(snapshot.wallets.map((w) => w.walletId));

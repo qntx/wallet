@@ -140,21 +140,31 @@ export type WalletErrorCode =
   | "device-rejected"
   | "wrong-device";
 
+/** Which side of this build wrote a persisted format it cannot read. */
+export type UnsupportedReason = "older" | "newer";
+
+/**
+ * A persisted artefact this build cannot read — left untouched, never wiped implicitly. `older`
+ * means a pre-1.0 format this build has no reader for: the only exit is the explicit `vault.reset`
+ * (or the artefact's equivalent discard), then a restore from the mnemonic, passkey or cloud
+ * backup. `newer` means a newer build wrote it: update the app — never reset.
+ */
+export type Unsupported = {
+  readonly status: "unsupported";
+  readonly reason: UnsupportedReason;
+};
+
 /**
  * The vault half of the status payload: `corrupted` means authentication or structural data failed
- * to verify, `unsupported` means a different build wrote it — a newer one, or (before 1.0) an older
- * one whose format this build never read; the data is left untouched either way — a newer build's
- * vault reads again once the app is updated, while a pre-1.0 older format has no reader here and
- * the only way out is the explicit `vault.reset`. `unavailable` means a transient store I/O failure
- * (retried on the next request or change).
+ * to verify, `unavailable` a transient store I/O failure (retried on the next request or change).
+ * `{ status: "unsupported", reason }` means a different build wrote the vault — `older`: a pre-1.0
+ * format this build has no reader for, the only exit is the explicit `vault.reset`, then restore
+ * from the mnemonic, passkey or cloud backup; `newer`: a newer build wrote it — update the app,
+ * never reset. The data is left untouched either way.
  */
 export type VaultState =
-  | "uninitialized"
-  | "locked"
-  | "unlocked"
-  | "corrupted"
-  | "unsupported"
-  | "unavailable";
+  | { readonly status: "uninitialized" | "locked" | "unlocked" | "corrupted" | "unavailable" }
+  | Unsupported;
 
 /**
  * `status` result / status event payload. Locked snapshots come from unauthenticated headers;

@@ -231,7 +231,7 @@ describe.each(sources)("chain.sign two-pass flow: %s", (_name, source) => {
     const response = await pending;
     expect(errCode(response)).toBe("locked");
     expect("ok" in response).toBe(false);
-    expect(field(ok(await h.call("status")), "vault")).toBe("locked");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "locked" });
   });
 
   it("a session that ends during the post-verification write fails locked", async () => {
@@ -269,7 +269,7 @@ describe.each(sources)("chain.sign two-pass flow: %s", (_name, source) => {
     const response = await pending;
     expect(errCode(response)).toBe("locked");
     expect("ok" in response).toBe(false);
-    expect(field(ok(await h.call("status")), "vault")).toBe("locked");
+    expect(field(ok(await h.call("status")), "vault")).toStrictEqual({ status: "locked" });
   });
 
   it("a text personal message signs while blind signing is off", async () => {

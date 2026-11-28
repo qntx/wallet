@@ -4,6 +4,7 @@
  * Cryptographic checks (the payload tag, factor unwrap) stay in the kernel; these rules only shape
  * the JSON.
  */
+import type { UnsupportedReason } from "../types.ts";
 import { safeTime } from "./core.ts";
 import type { Validator } from "./validate.ts";
 import { arr, int, literal, obj, opt, str, union } from "./validate.ts";
@@ -12,6 +13,34 @@ const MAX_FACTOR_CHARS = 512;
 const MAX_STRING_BYTES = 64_000;
 const MAX_PAYLOAD_CHARS = 1_400_000; // ~1 MiB of sealed bytes in base64url
 const MAX_ENVELOPE_CHARS = 4_000_000;
+
+/** The only backup-envelope version this build reads and writes. */
+export const BACKUP_ENVELOPE_VERSION = 3;
+
+/**
+ * The unsupported direction of a parsed envelope: `version` is a safe integer other than
+ * BACKUP_ENVELOPE_VERSION — `older` (a pre-1.0 format this build has no reader for) or `newer` (a
+ * newer build wrote it). `undefined` means the version alone does not decide — strict validation
+ * does (a missing or non-integer version stays an integrity failure).
+ */
+export function backupEnvelopeReason(value: unknown): UnsupportedReason | undefined {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    !("version" in value)
+  ) {
+    return undefined;
+  }
+  const { version } = value;
+  if (typeof version !== "number" || !Number.isSafeInteger(version)) {
+    return undefined;
+  }
+  if (version === BACKUP_ENVELOPE_VERSION) {
+    return undefined;
+  }
+  return version < BACKUP_ENVELOPE_VERSION ? "older" : "newer";
+}
 
 export type BackupEnvelopeFactor =
   | { readonly kind: "passkey"; readonly credentialId: string; readonly sealedBek: string }
@@ -30,7 +59,7 @@ export type BackupEnvelopeFactor =
     };
 
 export type BackupEnvelopeWire = {
-  readonly version: 3;
+  readonly version: typeof BACKUP_ENVELOPE_VERSION;
   readonly createdAt: number;
   /** Raw JSON text — authenticated by the payload tag before it is parsed. */
   readonly header: string;
@@ -57,7 +86,7 @@ export const backupEnvelopeFactor: Validator<BackupEnvelopeFactor> = union(
 );
 
 export const backupEnvelope: Validator<BackupEnvelopeWire> = obj({
-  version: literal(3),
+  version: literal(BACKUP_ENVELOPE_VERSION),
   createdAt: int(0, Number.MAX_SAFE_INTEGER),
   header: str(MAX_STRING_BYTES),
   factors: arr(backupEnvelopeFactor, 5, 1),
