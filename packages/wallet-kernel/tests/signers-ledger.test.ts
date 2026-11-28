@@ -75,7 +75,7 @@ const signContext = (
   stage: ChainPlan,
   hardwarePin: HardwarePin = pin,
 ): SignContext => {
-  const verdict = LEDGER_DRIVER.display(request, stage, pin);
+  const verdict = LEDGER_DRIVER.display(request, stage, pin, undefined);
   return {
     request,
     stage,
@@ -555,9 +555,9 @@ describe("ledger driver verifyAddress", () => {
 describe("ledger driver display", () => {
   it("clears a simple evm transaction, blinds calldata and contract creation", () => {
     const clear = planEvm(evmTxRequest(LEGACY_TX), EVM_KEY);
-    expect(LEDGER_DRIVER.display(evmTxRequest(LEGACY_TX), clear, pin)).toBe("clear");
+    expect(LEDGER_DRIVER.display(evmTxRequest(LEGACY_TX), clear, pin, undefined)).toBe("clear");
     const dataTx = evmTxRequest({ ...LEGACY_TX, data: "0x1234" });
-    expect(LEDGER_DRIVER.display(dataTx, planEvm(dataTx, EVM_KEY), pin)).toBe("blind");
+    expect(LEDGER_DRIVER.display(dataTx, planEvm(dataTx, EVM_KEY), pin, undefined)).toBe("blind");
     const create = evmTxRequest({
       type: "legacy",
       chainId: 1,
@@ -567,7 +567,7 @@ describe("ledger driver display", () => {
       value: "0xde0b6b3a7640000",
       data: "0x",
     });
-    expect(LEDGER_DRIVER.display(create, planEvm(create, EVM_KEY), pin)).toBe("blind");
+    expect(LEDGER_DRIVER.display(create, planEvm(create, EVM_KEY), pin, undefined)).toBe("blind");
     const eip7702 = evmTxRequest({
       type: "eip7702",
       chainId: 1,
@@ -581,7 +581,9 @@ describe("ledger driver display", () => {
       accessList: [],
       authorization: { address: "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae" },
     });
-    expect(LEDGER_DRIVER.display(eip7702, planEvm(eip7702, EVM_KEY), pin)).toBe("unsupported");
+    expect(LEDGER_DRIVER.display(eip7702, planEvm(eip7702, EVM_KEY), pin, undefined)).toBe(
+      "unsupported",
+    );
   });
 
   it("clears personal messages and blinds typed data", () => {
@@ -591,7 +593,9 @@ describe("ledger driver display", () => {
       account: hd("evm.bip44"),
       message: utf8ToBytes("hello"),
     };
-    expect(LEDGER_DRIVER.display(personal, planEvm(personal, EVM_KEY), pin)).toBe("clear");
+    expect(LEDGER_DRIVER.display(personal, planEvm(personal, EVM_KEY), pin, undefined)).toBe(
+      "clear",
+    );
     const typed: Extract<ChainSignRequest, { kind: "evm.typed-data" }> = {
       kind: "evm.typed-data",
       network: "eip155:1",
@@ -606,7 +610,7 @@ describe("ledger driver display", () => {
         message: { x: "y" },
       }),
     };
-    expect(LEDGER_DRIVER.display(typed, planEvm(typed, EVM_KEY), pin)).toBe("blind");
+    expect(LEDGER_DRIVER.display(typed, planEvm(typed, EVM_KEY), pin, undefined)).toBe("blind");
   });
 
   it("clears a plain tron transfer and blinds a memo", () => {
@@ -617,10 +621,14 @@ describe("ledger driver display", () => {
       account: hd("tron.bip44"),
       rawData,
     };
-    expect(LEDGER_DRIVER.display(request, planTron(request, TRX_KEY), pin)).toBe("clear");
+    expect(LEDGER_DRIVER.display(request, planTron(request, TRX_KEY), pin, undefined)).toBe(
+      "clear",
+    );
     const trc20 = unhex((vectorCase("tron", "tx-trc20").call as { rawData: string }).rawData);
     const trc20Request = { ...request, rawData: trc20 };
-    expect(LEDGER_DRIVER.display(trc20Request, planTron(trc20Request, TRX_KEY), pin)).toBe("clear");
+    expect(
+      LEDGER_DRIVER.display(trc20Request, planTron(trc20Request, TRX_KEY), pin, undefined),
+    ).toBe("clear");
     // A TriggerSmartContract whose selector is not a TRC20 call needs "Custom contracts".
     const trc20Hex = (vectorCase("tron", "tx-trc20").call as { rawData: string }).rawData;
     const selectorAt = trc20Hex.indexOf("a9059cbb");
@@ -629,7 +637,7 @@ describe("ledger driver display", () => {
       ...request,
       rawData: unhex(`${trc20Hex.slice(0, selectorAt)}ab${trc20Hex.slice(selectorAt + 2)}`),
     };
-    expect(LEDGER_DRIVER.display(blind, planTron(blind, TRX_KEY), pin)).toBe("blind");
+    expect(LEDGER_DRIVER.display(blind, planTron(blind, TRX_KEY), pin, undefined)).toBe("blind");
     // The same TRC20 call carrying TRX value is never clear — field 3 `call_value` inserted
     // before the data field 4 (all three enclosing lengths bumped by two).
     const trc20Bytes = unhex(trc20Hex);
@@ -641,7 +649,7 @@ describe("ledger driver display", () => {
     withValue[27] = 0xab;
     withValue[81] = 0x76;
     const moved = { ...request, rawData: withValue };
-    expect(LEDGER_DRIVER.display(moved, planTron(moved, TRX_KEY), pin)).toBe("blind");
+    expect(LEDGER_DRIVER.display(moved, planTron(moved, TRX_KEY), pin, undefined)).toBe("blind");
     // And field 5 `call_token_value` right after the data field — a TRC10-moved call is not clear.
     const withTokenValue = new Uint8Array(trc20Bytes.length + 2);
     withTokenValue.set(trc20Bytes.subarray(0, selectorAt / 2 + 68));
@@ -651,10 +659,12 @@ describe("ledger driver display", () => {
     withTokenValue[27] = 0xab;
     withTokenValue[81] = 0x76;
     const movedToken = { ...request, rawData: withTokenValue };
-    expect(LEDGER_DRIVER.display(movedToken, planTron(movedToken, TRX_KEY), pin)).toBe("blind");
+    expect(LEDGER_DRIVER.display(movedToken, planTron(movedToken, TRX_KEY), pin, undefined)).toBe(
+      "blind",
+    );
     // A contract without a dedicated screen (ClearABIContract, enum 48) signs by hash.
     const hashed = { ...request, rawData: renameContract(rawData, 0x30, "ClearABIContract") };
-    expect(LEDGER_DRIVER.display(hashed, planTron(hashed, TRX_KEY), pin)).toBe("blind");
+    expect(LEDGER_DRIVER.display(hashed, planTron(hashed, TRX_KEY), pin, undefined)).toBe("blind");
     // A personal message is hash-signed behind "Blind signing" — never clear.
     const message: Extract<ChainSignRequest, { kind: "tron.message" }> = {
       kind: "tron.message",
@@ -662,7 +672,9 @@ describe("ledger driver display", () => {
       account: hd("tron.bip44"),
       message: utf8ToBytes("hello tron"),
     };
-    expect(LEDGER_DRIVER.display(message, planTron(message, TRX_KEY), pin)).toBe("blind");
+    expect(LEDGER_DRIVER.display(message, planTron(message, TRX_KEY), pin, undefined)).toBe(
+      "blind",
+    );
   });
 
   it("clears a solana system transfer and blinds an unknown program", () => {
@@ -674,7 +686,7 @@ describe("ledger driver display", () => {
       message,
     };
     const key: TaskKey = { path: SOL_PATH, publicKey: new Uint8Array(32) };
-    expect(LEDGER_DRIVER.display(request, planSolana(request, key), pin)).toBe("clear");
+    expect(LEDGER_DRIVER.display(request, planSolana(request, key), pin, undefined)).toBe("clear");
     // A ComputeBudget instruction alongside the transfer stays clear.
     const budgetMessage = unhex(
       "01000104c45a24a9739accab4e759af91435a89ae9b78e6f145b0ac6786df0423438c524" +
@@ -685,14 +697,14 @@ describe("ledger driver display", () => {
         "0203000502a0860100020200010c02000000e8030000e8030000",
     );
     const budget = { ...request, message: budgetMessage };
-    expect(LEDGER_DRIVER.display(budget, planSolana(budget, key), pin)).toBe("clear");
+    expect(LEDGER_DRIVER.display(budget, planSolana(budget, key), pin, undefined)).toBe("clear");
     const blind = {
       ...request,
       message: unhex(
         (vectorCase("solana", "tx-unknown-blind-off").call as { message: string }).message,
       ),
     };
-    expect(LEDGER_DRIVER.display(blind, planSolana(blind, key), pin)).toBe("blind");
+    expect(LEDGER_DRIVER.display(blind, planSolana(blind, key), pin, undefined)).toBe("blind");
   });
 
   it("admits the off-chain message formats it can show", () => {
@@ -720,11 +732,11 @@ describe("ledger driver display", () => {
       message: offchain(0, "app", "hello ledger"),
       format: "raw",
     };
-    expect(LEDGER_DRIVER.display(ascii, planSolana(ascii, key), pin)).toBe("clear");
+    expect(LEDGER_DRIVER.display(ascii, planSolana(ascii, key), pin, undefined)).toBe("clear");
     const utf8 = { ...ascii, message: offchain(1, "app", "héllo") };
-    expect(LEDGER_DRIVER.display(utf8, planSolana(utf8, key), pin)).toBe("blind");
+    expect(LEDGER_DRIVER.display(utf8, planSolana(utf8, key), pin, undefined)).toBe("blind");
     const raw = { ...ascii, message: utf8ToBytes("not an offchain document") };
-    expect(LEDGER_DRIVER.display(raw, planSolana(raw, key), pin)).toBe("unsupported");
+    expect(LEDGER_DRIVER.display(raw, planSolana(raw, key), pin, undefined)).toBe("unsupported");
   });
 
   it("clears short printable bitcoin messages and refuses bip322", () => {
@@ -748,19 +760,19 @@ describe("ledger driver display", () => {
       index: 0,
     };
     const ascii = { ...base, message: "hello ledger" };
-    expect(LEDGER_DRIVER.display(ascii, messagePlan(ascii), pin)).toBe("clear");
+    expect(LEDGER_DRIVER.display(ascii, messagePlan(ascii), pin, undefined)).toBe("clear");
     // The planner caps messages at 252 bytes; the display still bounds what it claims clear —
     // test the bound directly with a synthetic stage.
     const long = { ...base, message: "x".repeat(641) };
     const stage = messagePlan(ascii);
-    expect(LEDGER_DRIVER.display(long, stage, pin)).toBe("blind");
+    expect(LEDGER_DRIVER.display(long, stage, pin, undefined)).toBe("blind");
     const control = { ...base, message: "bell\u0007ring" };
-    expect(LEDGER_DRIVER.display(control, messagePlan(control), pin)).toBe("blind");
+    expect(LEDGER_DRIVER.display(control, messagePlan(control), pin, undefined)).toBe("blind");
     const bip322 = { ...ascii, format: "bip322-simple" as const };
-    expect(LEDGER_DRIVER.display(bip322, messagePlan(ascii), pin)).toBe("unsupported");
+    expect(LEDGER_DRIVER.display(bip322, messagePlan(ascii), pin, undefined)).toBe("unsupported");
     // The pinned app is the mainnet build — a testnet request is unservable.
     const testnet = { ...ascii, network: "bip122:00000000da84f2bafbbc53dee25a72ae" };
-    expect(LEDGER_DRIVER.display(testnet, messagePlan(ascii), pin)).toBe("unsupported");
+    expect(LEDGER_DRIVER.display(testnet, messagePlan(ascii), pin, undefined)).toBe("unsupported");
   });
 
   it("clears a single-template psbt and refuses mixed templates", () => {
@@ -774,7 +786,7 @@ describe("ledger driver display", () => {
       sign: [{ index: 0, template: "btc.bip84" }],
     };
     const stage = planBitcoinPsbt(psbt, [{ index: 0, key: BTC84_KEY }]);
-    expect(LEDGER_DRIVER.display(request, stage, pin)).toBe("clear");
+    expect(LEDGER_DRIVER.display(request, stage, pin, undefined)).toBe("clear");
     const mixed = {
       ...request,
       sign: [
@@ -782,9 +794,9 @@ describe("ledger driver display", () => {
         { index: 1, template: "btc.bip49" as const },
       ],
     };
-    expect(LEDGER_DRIVER.display(mixed, stage, pin)).toBe("unsupported");
+    expect(LEDGER_DRIVER.display(mixed, stage, pin, undefined)).toBe("unsupported");
     const testnet = { ...request, network: "bip122:00000000da84f2bafbbc53dee25a72ae" };
-    expect(LEDGER_DRIVER.display(testnet, stage, pin)).toBe("unsupported");
+    expect(LEDGER_DRIVER.display(testnet, stage, pin, undefined)).toBe("unsupported");
   });
 });
 

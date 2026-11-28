@@ -1,4 +1,10 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { HDKey } from "@scure/bip32";
 import { Address, OutScript, Transaction } from "@scure/btc-signer";
 import { p2wpkh } from "@scure/btc-signer/payment.js";
 import { describe, expect, it } from "vite-plus/test";
@@ -6,11 +12,22 @@ import { describe, expect, it } from "vite-plus/test";
 import type { Wallet } from "@qntx/wallet";
 import { bitcoinNetwork, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
 import { chains } from "@qntx/wallet/chains";
-import type { DeviceIo } from "@qntx/wallet/hardware";
+import { hardware } from "@qntx/wallet/hardware";
+import type { DeviceIo, LedgerDescriptorSource } from "@qntx/wallet/hardware";
 
+import {
+  hex as bytesHex,
+  ok,
+  scriptedLedger,
+  SEED as LEDGER_SEED,
+  unhex,
+  utf8Hex,
+  vectorCase,
+  xpubAt,
+} from "../../wallet-kernel/tests/signers-ledger-fake.ts";
 import { SignersController } from "../src/signers/controller.ts";
 import type { SignerFamily, SignersState } from "../src/signers/controller.ts";
-import { nodeWallet, until, VERIFY } from "./apps-helpers.ts";
+import { freshNodeWallet, nodeWallet, until, VERIFY } from "./apps-helpers.ts";
 import { cardRig, CARD_CODE, CARD_VERIFY } from "./card-rig.ts";
 import { keystoneIo, pairKeystone } from "./keystone-io.ts";
 
@@ -20,6 +37,8 @@ const controller = (
   wallet: Wallet,
   options: {
     readonly deviceIo?: DeviceIo;
+    readonly ledgerDescriptors?: LedgerDescriptorSource;
+    readonly logger?: { readonly warn: (message: string, error?: unknown) => void };
     readonly recheck?: (
       walletId: string,
       groupIndex: number,
@@ -32,9 +51,12 @@ const controller = (
     wallet,
     ...(io === undefined ? {} : { deviceIo: () => io }),
     recheck: options.recheck ?? (async () => Promise.resolve()),
-    networks: { enabled: (family) => (family === "evm" ? ["eip155:42161"] : []) },
+    networks: { enabled: (family) => (family === "evm" ? ["eip155:42161", "eip155:1"] : []) },
     random: (n) => new Uint8Array(n).fill(7),
-    logger: { warn: () => undefined },
+    logger: options.logger ?? { warn: () => undefined },
+    ...(options.ledgerDescriptors === undefined
+      ? {}
+      : { ledgerDescriptors: options.ledgerDescriptors }),
   });
 };
 
@@ -111,6 +133,148 @@ const unconfirmedPsbt = async (wallet: Wallet, hwId: string) => {
   };
 };
 
+const pairFakeLedger = async (wallet: Wallet): Promise<string> => {
+  const word = (index: number): string => (index + H).toString(16).padStart(8, "0");
+  const fake = scriptedLedger("bitcoin", [
+    { apdu: "e105000100", response: ok("f5acc2fd") },
+    ...[44, 49, 84, 86].map((purpose) => ({
+      apdu: `e10000010e0003${word(purpose)}${word(0)}${word(0)}`,
+      response: ok(utf8Hex(xpubAt([purpose + H, H, H]))),
+    })),
+  ]);
+  const result = await hardware(wallet).start(
+    { kind: "pair", device: "ledger" },
+    { io: fake.link, verify: VERIFY },
+  ).result;
+  fake.done();
+  if (result.kind !== "pair" || result.wallet.custody !== "hardware") {
+    throw new Error("pair did not return a hardware wallet");
+  }
+  return result.wallet.walletId;
+};
+
+const pinFakeLedgerEvm = async (wallet: Wallet, walletId: string): Promise<void> => {
+  const [command] = vectorCase("ethereum", "public-node").commands;
+  if (command === undefined) {
+    throw new Error("ethereum vectors carry no public-node command");
+  }
+  const fake = scriptedLedger("ethereum", [{ response: command.response }]);
+  const result = await hardware(wallet).start(
+    {
+      kind: "accounts",
+      walletId,
+      groupIndex: 0,
+      templates: ["evm.bip44"],
+      network: "eip155:1",
+    },
+    { io: fake.link, verify: VERIFY },
+  ).result;
+  fake.done();
+  if (result.kind !== "accounts") {
+    throw new Error("accounts did not complete");
+  }
+};
+
+const ledgerAppReply = (name: string, version: string): Uint8Array => {
+  const lv = (text: string): string => {
+    const data = utf8Hex(text);
+    return `${(data.length / 2).toString(16).padStart(2, "0")}${data}`;
+  };
+  return unhex(ok(`01${lv(name)}${lv(version)}00`));
+};
+
+/**
+ * A Ledger Ethereum app fake that performs the one SIGN command itself with the speculos seed's
+ * key. It is deliberately small: tests assert the token-provision/configuration APDUs around it.
+ */
+const evmSigningIo = (): { readonly io: DeviceIo; readonly sent: string[] } => {
+  const key = HDKey.fromMasterSeed(LEDGER_SEED).derive("m/44'/60'/0'/0/0").privateKey;
+  if (key === null) {
+    throw new Error("speculos seed has no evm key");
+  }
+  const sent: string[] = [];
+  return {
+    sent,
+    io: {
+      // oxlint-disable-next-line typescript/require-await -- the transport contract is async
+      exchange: async (request) => {
+        if (request.kind !== "message") {
+          throw new Error("ledger io carries only messages");
+        }
+        const apdu = request.data;
+        sent.push(bytesHex(apdu));
+        if (bytesHex(apdu) === "b001000000") {
+          return { kind: "message", data: ledgerAppReply("Ethereum", "1.24.0") };
+        }
+        if (apdu[1] === 0x0a) {
+          return { kind: "message", data: unhex(ok("00")) };
+        }
+        if (apdu[1] === 0x06) {
+          return { kind: "message", data: unhex(ok("01011800")) };
+        }
+        if (apdu[1] === 0x04) {
+          const payload = apdu.subarray(5);
+          const [depth] = payload;
+          if (depth === undefined) {
+            throw new Error("sign APDU carries no path");
+          }
+          const unsigned = payload.subarray(1 + depth * 4);
+          const signature = secp256k1.sign(keccak_256(unsigned), key, { prehash: false });
+          return {
+            kind: "message",
+            data: Uint8Array.of(0, ...signature, 0x90, 0x00),
+          };
+        }
+        throw new Error(`unscripted Ledger APDU ${bytesHex(apdu)}`);
+      },
+    },
+  };
+};
+
+const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+const TRANSFER_DATA = `0xa9059cbb${"0".repeat(24)}00000000000000000000000000000000deadbeef${"0".repeat(63)}1`;
+
+const usdcDescriptor = (): Uint8Array => {
+  const parsed: unknown = JSON.parse(
+    readFileSync(
+      fileURLToPath(new URL("../../../vectors/ledger/cal/tokens.json", import.meta.url)),
+      "utf8",
+    ),
+  );
+  if (typeof parsed !== "object" || parsed === null || !("tokens" in parsed)) {
+    throw new Error("CAL token vector has no tokens");
+  }
+  const rows = parsed.tokens as ReadonlyArray<{
+    chainId: number;
+    address: string;
+    descriptor: string;
+  }>;
+  const row = rows.find((entry) => entry.chainId === 1 && entry.address === USDC);
+  if (row === undefined) {
+    throw new Error("CAL token vector has no chain-1 USDC row");
+  }
+  return unhex(row.descriptor);
+};
+
+const usdcTransfer = (walletId: string) =>
+  ({
+    kind: "evm.transaction",
+    network: "eip155:1",
+    account: { kind: "hd", walletId, groupIndex: 0, template: "evm.bip44" },
+    tx: {
+      type: "eip1559",
+      chainId: 1,
+      nonce: 0,
+      to: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      value: "0x0",
+      data: TRANSFER_DATA,
+      gas: "0x5208",
+      maxFeePerGas: "0x77359400",
+      maxPriorityFeePerGas: "0x3b9aca00",
+      accessList: [],
+    },
+  }) as const;
+
 describe("the signers controller", () => {
   it("routes a hardware wallet's signature through deviceIo and publishes exchange steps", async () => {
     const { wallet } = await nodeWallet();
@@ -129,6 +293,49 @@ describe("the signers controller", () => {
     expect(steps).toContain("starting");
     expect(steps).toContain("device");
     expect(signers.getState().active).toBeNull();
+  });
+
+  it("passes a Ledger descriptor source into deviceSign and clear-signs the bound token", async () => {
+    const { wallet } = await freshNodeWallet();
+    const walletId = await pairFakeLedger(wallet);
+    await pinFakeLedgerEvm(wallet, walletId);
+    const signing = evmSigningIo();
+    let sourceCalls = 0;
+    const signers = controller(wallet, {
+      deviceIo: signing.io,
+      // oxlint-disable-next-line typescript/require-await -- the source contract is async
+      ledgerDescriptors: async () => {
+        sourceCalls += 1;
+        return { tokens: [usdcDescriptor()] };
+      },
+    });
+    const result = await signers.apis.sign({ request: usdcTransfer(walletId), verify: VERIFY });
+    expect(result.kind).toBe("evm.transaction");
+    expect(sourceCalls).toBe(1);
+    expect(signing.sent.some((apdu) => apdu.startsWith("e00a0000"))).toBe(true);
+    expect(signing.sent.some((apdu) => apdu.startsWith("e0060000"))).toBe(false);
+  });
+
+  it("still signs a Ledger request when the descriptor source throws", async () => {
+    const { wallet } = await freshNodeWallet();
+    const walletId = await pairFakeLedger(wallet);
+    await pinFakeLedgerEvm(wallet, walletId);
+    const signing = evmSigningIo();
+    const warnings: string[] = [];
+    const signers = controller(wallet, {
+      deviceIo: signing.io,
+      ledgerDescriptors: async () => Promise.reject(new Error("CAL offline")),
+      logger: {
+        warn: (message) => {
+          warnings.push(message);
+        },
+      },
+    });
+    const result = await signers.apis.sign({ request: usdcTransfer(walletId), verify: VERIFY });
+    expect(result.kind).toBe("evm.transaction");
+    expect(warnings).toStrictEqual(["ledger descriptor fetch failed"]);
+    expect(signing.sent.some((apdu) => apdu.startsWith("e00a0000"))).toBe(false);
+    expect(signing.sent.some((apdu) => apdu.startsWith("e0060000"))).toBe(true);
   });
 
   it("forwards the unconfirmed acknowledgement into the hardware sign op", async () => {

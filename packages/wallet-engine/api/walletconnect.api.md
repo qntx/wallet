@@ -27,6 +27,7 @@ import { HardwareStep } from '@qntx/wallet/hardware';
 import { InitialFactor } from '@qntx/wallet';
 import { KeyInfo } from '@qntx/wallet';
 import { KeysApi } from '@qntx/wallet';
+import { LedgerDescriptorSource } from '@qntx/wallet/hardware';
 import { LightningInvoice } from '@qntx/spark';
 import { LightningPayment } from '@qntx/spark';
 import { LightningSendStatus } from '@qntx/spark';
@@ -2483,6 +2484,8 @@ type SignersControllerOptions = {
     };
     readonly random: (length: number) => Uint8Array;
     readonly logger: EngineLogger;
+    readonly ledgerDescriptors?: LedgerDescriptorSource;
+    readonly fetch?: typeof globalThis.fetch;
 };
 
 // @public (undocumented)

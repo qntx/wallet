@@ -494,22 +494,27 @@ describe("display", () => {
       message: utf8ToBytes("hi"),
     } as ChainSignRequest;
     const stage = evmPlan("evm.personal-message");
-    expect(ONEKEY_DRIVER.display(request, stage, { fingerprint: MFP })).toBe("unsupported");
-    expect(ONEKEY_DRIVER.display(request, stage, identity("ledger", "1.0.0"))).toBe("unsupported");
-    expect(ONEKEY_DRIVER.display(request, stage, identity("pro", "four.twentyone"))).toBe(
+    expect(ONEKEY_DRIVER.display(request, stage, { fingerprint: MFP }, undefined)).toBe(
       "unsupported",
     );
+    expect(ONEKEY_DRIVER.display(request, stage, identity("ledger", "1.0.0"), undefined)).toBe(
+      "unsupported",
+    );
+    expect(
+      ONEKEY_DRIVER.display(request, stage, identity("pro", "four.twentyone"), undefined),
+    ).toBe("unsupported");
   });
 
   it("classifies evm transactions from the claimed identity", () => {
-    expect(ONEKEY_DRIVER.display(evmTxRequest("legacy"), evmPlan("evm.transaction"), PRO_ID)).toBe(
-      "clear",
-    );
+    expect(
+      ONEKEY_DRIVER.display(evmTxRequest("legacy"), evmPlan("evm.transaction"), PRO_ID, undefined),
+    ).toBe("clear");
     expect(
       ONEKEY_DRIVER.display(
         evmTxRequest("eip1559", { maxFeePerGas: "0x1", maxPriorityFeePerGas: "0x1" }),
         evmPlan("evm.transaction"),
         PRO_ID,
+        undefined,
       ),
     ).toBe("clear");
     expect(
@@ -517,6 +522,7 @@ describe("display", () => {
         evmTxRequest("eip2930", { gasPrice: "0x1", accessList: [] }),
         evmPlan("evm.transaction"),
         PRO_ID,
+        undefined,
       ),
     ).toBe("unsupported");
     expect(
@@ -528,6 +534,7 @@ describe("display", () => {
         }),
         evmPlan("evm.transaction"),
         PRO_ID,
+        undefined,
       ),
     ).toBe("clear");
   });
@@ -539,11 +546,13 @@ describe("display", () => {
       authorization: { address: "0x00000000000000000000000000000000deadbeef" },
     });
     const stage = evmPlan("evm.transaction");
-    expect(ONEKEY_DRIVER.display(request, stage, CLASSIC_ID)).toBe("clear");
-    expect(ONEKEY_DRIVER.display(request, stage, identity("classic1s", "3.12.0"))).toBe(
+    expect(ONEKEY_DRIVER.display(request, stage, CLASSIC_ID, undefined)).toBe("clear");
+    expect(ONEKEY_DRIVER.display(request, stage, identity("classic1s", "3.12.0"), undefined)).toBe(
       "unsupported",
     );
-    expect(ONEKEY_DRIVER.display(request, stage, identity("mini", "3.21.0"))).toBe("unsupported");
+    expect(ONEKEY_DRIVER.display(request, stage, identity("mini", "3.21.0"), undefined)).toBe(
+      "unsupported",
+    );
   });
 
   it("synthesizes the typed-data-stream capability from classic1s firmware", () => {
@@ -563,16 +572,20 @@ describe("display", () => {
       typedData,
     } as ChainSignRequest;
     const stage = { kind: "evm.typed-data", tasks: [] } as unknown as ChainPlan;
-    expect(ONEKEY_DRIVER.display(request, stage, PRO_ID)).toBe("clear");
-    expect(ONEKEY_DRIVER.display(request, stage, CLASSIC_ID)).toBe("clear");
-    expect(ONEKEY_DRIVER.display(request, stage, identity("classic1s", "3.13.0"))).toBe("blind");
-    expect(ONEKEY_DRIVER.display(request, stage, identity("classic", "3.21.0"))).toBe("blind");
+    expect(ONEKEY_DRIVER.display(request, stage, PRO_ID, undefined)).toBe("clear");
+    expect(ONEKEY_DRIVER.display(request, stage, CLASSIC_ID, undefined)).toBe("clear");
+    expect(ONEKEY_DRIVER.display(request, stage, identity("classic1s", "3.13.0"), undefined)).toBe(
+      "blind",
+    );
+    expect(ONEKEY_DRIVER.display(request, stage, identity("classic", "3.21.0"), undefined)).toBe(
+      "blind",
+    );
   });
 
   it("refuses a request/stage kind disagreement", () => {
     const request = evmTxRequest("legacy");
     const stage = evmPlan("evm.personal-message");
-    expect(() => ONEKEY_DRIVER.display(request, stage, PRO_ID)).toThrow(KernelError);
+    expect(() => ONEKEY_DRIVER.display(request, stage, PRO_ID, undefined)).toThrow(KernelError);
   });
 });
 

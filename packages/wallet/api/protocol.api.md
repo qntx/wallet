@@ -796,6 +796,7 @@ export type HardwareOperation = {
     readonly kind: "sign";
     readonly request: ChainSignRequest;
     readonly acknowledgeUnconfirmed?: true;
+    readonly descriptors?: LedgerDescriptors;
 } | {
     readonly kind: "verify-address";
     readonly walletId: string;
@@ -966,6 +967,11 @@ type KeyInfo = {
     readonly family: "evm" | "solana" | "bitcoin" | "tron";
     readonly address: string;
     readonly createdAt: number;
+};
+
+// @public
+export type LedgerDescriptors = {
+    readonly tokens?: ReadonlyArray<Uint8Array>;
 };
 
 // @public (undocumented)

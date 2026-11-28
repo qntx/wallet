@@ -91,6 +91,13 @@ optional peer required only by this subpath.
 | Ledger Nano S Plus / Nano X / Stax / Flex        | USB HID, BLE | Speculos Nano S Plus with Bitcoin 2.5.1, Ethereum 1.24.0, Solana 1.16.0, Tron 0.8.2 | Nano X, Stax, Flex; any physical device   |
 | OneKey Classic 1S / Pro / Classic / Mini / Touch | USB HID, BLE | vendor emulators: Classic 1S firmware 3.21.0, Pro firmware 4.21.0                   | Classic, Mini, Touch; any physical device |
 
+A Ledger `sign` operation may carry `descriptors` so the Ethereum app clear-signs an ERC-20
+`transfer`/`approve` with "Blind signing" off — fetch them with
+`calDescriptorSource({ fetch })(request)` or serve an offline bundle with
+`bundleDescriptorSource(bundle)`. The kernel forwards only descriptors that bind exactly to the
+decoded request and the device verifies Ledger's signature; when nothing binds the blind-signing
+rule applies unchanged.
+
 `@qntx/wallet/card` drives qntx card wallets (React Native only; Web and Node answer
 `unsupported`). A card wallet's seed lives only on its one to three cards — `WalletInfo.custody`
 is `"card"` — so `chains(wallet).sign` answers `device-required` and the host runs the request as a

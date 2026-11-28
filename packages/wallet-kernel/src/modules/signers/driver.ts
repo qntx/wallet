@@ -11,6 +11,7 @@ import type {
   DeviceDisplay,
   DeviceRequest,
   DeviceResponse,
+  LedgerDescriptors,
 } from "@qntx/wallet/protocol";
 
 import type { PinnedKeys } from "../../derive/pinned.ts";
@@ -43,6 +44,8 @@ export type SignContext = {
   readonly display: DeviceDisplay;
   /** Fresh platform randomness for request ids and challenges — never a device input. */
   readonly random: (length: number) => Uint8Array;
+  /** Host-fetched clear-signing descriptors offered for this request; hostile until bound. */
+  readonly descriptors?: LedgerDescriptors;
 };
 
 /**
@@ -66,6 +69,7 @@ export type Driver = {
     request: ChainSignRequest,
     plan: ChainPlan,
     identity: DeviceIdentity,
+    descriptors: LedgerDescriptors | undefined,
   ) => DeviceDisplay | "unsupported";
   /** Signs one plan stage: one 64-byte signature per task, in order; assemble verifies. */
   readonly sign: (link: DeviceLink, context: SignContext) => Promise<ReadonlyArray<Uint8Array>>;

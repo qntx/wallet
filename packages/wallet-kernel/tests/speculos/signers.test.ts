@@ -1,3 +1,4 @@
+// oxlint-disable vitest/no-conditional-in-test -- device-setting mutation cases exercise guard branches
 /**
  * The Ledger driver end to end on Speculos through the real kernel flow: `hardware.begin` /
  * `hardware.step` run the driver, and the host loop forwards every `{ kind: "message", data }`
@@ -8,7 +9,7 @@
  * (viem recovery, noble ed25519, btc-signer verify + finalize).
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { ed25519 } from "@noble/curves/ed25519.js";
@@ -69,7 +70,8 @@ const sleep = async (ms: number): Promise<void> =>
 // Screen vocabulary, same words the recorded cases navigate by (tests/speculos/ledger-cases.ts).
 const MENU = /app is ready|app settings|app info|quit app/i;
 const THROUGH = /blind signing ahead|press both buttons|continue anyway/i;
-const APPROVE = /accept|approve|confirm|sign transaction|sign typed message|sign message/i;
+const APPROVE =
+  /accept|approve public key|confirm|sign transaction|sign typed message|sign message/i;
 const REJECT = /^reject|^deny|^cancel/i;
 
 const must = <T>(value: T | null | undefined, what: string): T => {
@@ -134,6 +136,9 @@ const bytesField = (value: ProtocolValue, key: string): Uint8Array => {
 
 type Review = "approve" | "reject" | undefined;
 
+/** Every APDU the signer host loop sends, in order — hostile cases assert what never went out. */
+const apduLog: string[] = [];
+
 /**
  * One `message` exchange over the speculos link. A non-interactive APDU answers in milliseconds;
  * when `review` is set and the device is still silent after the grace period the exchange is held
@@ -145,6 +150,7 @@ const send = async (
   screen: Screen,
   review: Review,
 ): Promise<Uint8Array> => {
+  apduLog.push(hex(apdu));
   const pending = exchange(app, apdu);
   if (review !== undefined) {
     const early = await Promise.race([pending, sleep(500).then((): undefined => undefined)]);
@@ -551,12 +557,20 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
     app: LedgerApp,
     request: unknown,
     review: Review = "approve",
+    descriptors?: unknown,
   ): Promise<KernelResponse> =>
     runOp(
       h,
       session,
       app,
-      { op: { kind: "sign", request }, verify: { kind: "hardware" } },
+      {
+        op: {
+          kind: "sign",
+          request,
+          ...(descriptors === undefined ? {} : { descriptors }),
+        },
+        verify: { kind: "hardware" },
+      },
       screen(app),
       review,
     );
@@ -630,6 +644,146 @@ describe.skipIf(!UP)("ledger signers on speculos", () => {
       promptsSince(before).some((d) => d.includes(devicePromptLine("en", "blind", "ledger"))),
     ).toBe(true);
     console.log("blind calldata screens:", JSON.stringify(ethScreen.texts.slice(-10)));
+  }, 300_000);
+
+  const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+  const TOKEN_WORD = "00000000000000000000000000000000deadbeef".padStart(64, "0");
+  const transferData = `0xa9059cbb${TOKEN_WORD}${(1234567).toString(16).padStart(64, "0")}`;
+  const approveData = `0x095ea7b3${TOKEN_WORD}${"f".repeat(64)}`;
+
+  const calToken = (chainId: number, address: string): Uint8Array => {
+    const parsed: unknown = JSON.parse(
+      readFileSync(
+        fileURLToPath(new URL("../../../../vectors/ledger/cal/tokens.json", import.meta.url)),
+        "utf8",
+      ),
+    );
+    if (typeof parsed !== "object" || parsed === null || !("tokens" in parsed)) {
+      throw new Error("CAL token vector has no tokens");
+    }
+    const rows = parsed.tokens as ReadonlyArray<{
+      chainId: number;
+      address: string;
+      descriptor: string;
+    }>;
+    const row = rows.find((entry) => entry.chainId === chainId && entry.address === address);
+    if (row === undefined) {
+      throw new Error(`missing CAL row ${String(chainId)} ${address}`);
+    }
+    return unhex(row.descriptor);
+  };
+
+  const usdcPayload = (): Uint8Array => calToken(1, "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
+  const usdtPayload = (): Uint8Array => calToken(1, "0xdac17f958d2ee523a2206206994597c13d831ec7");
+
+  const tokenTx = (data: string, nonce: number, to = USDC) =>
+    normalizeEvm({
+      kind: "evm.transaction",
+      network: EVM_NETWORK,
+      account: hd(hwId, "evm.bip44"),
+      tx: {
+        type: "eip1559",
+        chainId: 1,
+        nonce,
+        gas: "0x5208",
+        maxFeePerGas: "0x59682f00",
+        maxPriorityFeePerGas: "0x1",
+        value: "0x0",
+        data,
+        to,
+        accessList: [],
+      },
+    });
+
+  const textSince = (app: LedgerApp, from: number): string =>
+    screen(app).texts.slice(from).join("\n");
+
+  const mutate = (payload: Uint8Array, offset: number, value: number): Uint8Array => {
+    const out = Uint8Array.from(payload);
+    out[offset] = value;
+    return out;
+  };
+
+  it("clear-signs a USDC transfer and unlimited approve with Blind signing off", async () => {
+    const ethScreen = screen("ethereum");
+    await setSetting(ethScreen, "Blind signing", false);
+    const usdc = { tokens: [usdcPayload()] };
+
+    let before = keystore.calls.length;
+    let screensBefore = ethScreen.texts.length;
+    const transferDone = ok(await sign("ethereum", tokenTx(transferData, 10), "approve", usdc));
+    const transferSigned = `0x${hex(bytesField(signResult(transferDone), "signedTransaction"))}`;
+    await expect(
+      recoverTransactionAddress({ serializedTransaction: transferSigned as `0x02${string}` }),
+    ).resolves.toBe(ethAddress0);
+    expect(
+      promptsSince(before).some((d) => d.includes(devicePromptLine("en", "clear", "ledger"))),
+    ).toBe(true);
+    const transferText = textSince("ethereum", screensBefore);
+    expect(transferText).toMatch(/send/i);
+    expect(transferText).toMatch(/1\.234567\s*USDC/);
+    expect(transferText).toMatch(/dea\s*dbeef/i);
+    console.log(
+      "clear USDC transfer screens:",
+      JSON.stringify(ethScreen.texts.slice(screensBefore)),
+    );
+
+    before = keystore.calls.length;
+    screensBefore = ethScreen.texts.length;
+    const approveDone = ok(await sign("ethereum", tokenTx(approveData, 11), "approve", usdc));
+    const approveSigned = `0x${hex(bytesField(signResult(approveDone), "signedTransaction"))}`;
+    await expect(
+      recoverTransactionAddress({ serializedTransaction: approveSigned as `0x02${string}` }),
+    ).resolves.toBe(ethAddress0);
+    expect(
+      promptsSince(before).some((d) => d.includes(devicePromptLine("en", "clear", "ledger"))),
+    ).toBe(true);
+    const approveText = textSince("ethereum", screensBefore);
+    expect(approveText).toMatch(/approve/i);
+    expect(approveText).toMatch(/unlimited\s+USDC/i);
+    expect(approveText).toMatch(/dea\s*dbeef/i);
+    console.log(
+      "clear USDC approve screens:",
+      JSON.stringify(ethScreen.texts.slice(screensBefore)),
+    );
+  }, 300_000);
+
+  it("drops hostile token descriptors before any PROVIDE TOKEN APDU", async () => {
+    const ethScreen = screen("ethereum");
+    await setSetting(ethScreen, "Blind signing", false);
+    const usdc = usdcPayload();
+    const chainAt = 1 + (usdc[0] ?? 0) + 20 + 4;
+    const decimalsLowAt = 1 + (usdc[0] ?? 0) + 20 + 3;
+    const cases: ReadonlyArray<{ readonly name: string; readonly payload: Uint8Array }> = [
+      { name: "usdt-for-usdc", payload: usdtPayload() },
+      { name: "wrong-chain", payload: mutate(usdc, chainAt + 3, 2) },
+      { name: "decimals-tampered", payload: mutate(usdc, decimalsLowAt, 7) },
+    ];
+    for (const [index, hostile] of cases.entries()) {
+      const sentBefore = apduLog.length;
+      // oxlint-disable-next-line eslint/no-await-in-loop -- each case starts from the prior screen state
+      const res = await sign("ethereum", tokenTx(transferData, 20 + index), "approve", {
+        tokens: [hostile.payload],
+      });
+      expect(errCode(res)).toBe("blind-signing-disabled");
+      expect(apduLog.slice(sentBefore).some((apdu) => apdu.startsWith("e00a0000"))).toBe(false);
+    }
+  }, 300_000);
+
+  it("forwards an unlisted forged token payload and the device refuses it without a signature", async () => {
+    const ethScreen = screen("ethereum");
+    await setSetting(ethScreen, "Blind signing", false);
+    const forged = mutate(usdcPayload(), 1 + 4, 0x42);
+    forged.fill(0x42, 1 + 4, 1 + 4 + 20);
+    const target = `0x${"42".repeat(20)}`;
+    const sentBefore = apduLog.length;
+    const res = await sign("ethereum", tokenTx(transferData, 30, target), "approve", {
+      tokens: [forged],
+    });
+    expect(errCode(res)).toBe("unsupported");
+    const sent = apduLog.slice(sentBefore);
+    expect(sent.some((apdu) => apdu.startsWith("e00a0000"))).toBe(true);
+    expect(sent.some((apdu) => apdu.startsWith("e0040000"))).toBe(false);
   }, 300_000);
 
   it("signs a personal message and typed data", async () => {

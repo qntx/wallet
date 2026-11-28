@@ -59,6 +59,18 @@ export type BlePort = {
     read: () => Promise<Uint8Array>;
 };
 
+// @public
+export function bundleDescriptorSource(bundle: LedgerDescriptorBundle): LedgerDescriptorSource;
+
+// @public
+export function calDescriptorSource(options: {
+    readonly fetch: typeof globalThis.fetch;
+    readonly url?: string;
+    readonly originToken?: string;
+    readonly timeoutMs?: number;
+    readonly maxBytes?: number;
+}): LedgerDescriptorSource;
+
 // @public (undocumented)
 type CardInfo = {
     readonly cardId: string;
@@ -351,6 +363,7 @@ export type HardwareOperation = {
     readonly kind: "sign";
     readonly request: ChainSignRequest;
     readonly acknowledgeUnconfirmed?: true;
+    readonly descriptors?: LedgerDescriptors;
 } | {
     readonly kind: "verify-address";
     readonly walletId: string;
@@ -433,8 +446,28 @@ type KeysApi = {
     readonly export: (keyId: string, verify: VerifyFactor) => Promise<Uint8Array>;
 };
 
+// @public (undocumented)
+export const LEDGER_CAL_URL = "https://global.api.prd.ledger.com/cal/v1";
+
 // @public
 export function ledgerBleExchange(port: BlePort): Promise<(apdu: Uint8Array) => Promise<Uint8Array>>;
+
+// @public (undocumented)
+export type LedgerDescriptorBundle = {
+    readonly tokens?: ReadonlyArray<{
+        readonly chainId: number;
+        readonly address: string;
+        readonly descriptor: string;
+    }>;
+};
+
+// @public
+export type LedgerDescriptors = {
+    readonly tokens?: ReadonlyArray<Uint8Array>;
+};
+
+// @public (undocumented)
+export type LedgerDescriptorSource = (request: ChainSignRequest) => Promise<LedgerDescriptors | undefined>;
 
 // @public
 export function ledgerHidExchange(port: HidPort, channel: number): (apdu: Uint8Array) => Promise<Uint8Array>;

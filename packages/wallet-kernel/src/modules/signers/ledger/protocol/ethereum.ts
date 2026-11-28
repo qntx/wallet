@@ -21,6 +21,7 @@ const INS_GET_PUBLIC_KEY = 0x02;
 const INS_SIGN = 0x04;
 const INS_GET_APP_CONFIGURATION = 0x06;
 const INS_SIGN_PERSONAL_MESSAGE = 0x08;
+const INS_PROVIDE_ERC20_TOKEN_INFORMATION = 0x0a;
 const INS_SIGN_EIP_712_MESSAGE = 0x0c;
 const INS_EIP712_STRUCT_DEF = 0x1a;
 const INS_EIP712_STRUCT_IMPL = 0x1c;
@@ -271,6 +272,22 @@ const chunked = (ins: number, payload: Uint8Array): Command[] => {
   }
   return commands;
 };
+
+/** `INS_0A` PROVIDE ERC 20 TOKEN INFORMATION (`E0 0A 00 00`, doc/apdu.md); reply is the token index. */
+export async function ethProvideTokenInformation(
+  exchange: Exchange,
+  payload: Uint8Array,
+): Promise<number> {
+  const data = await transmit(
+    exchange,
+    "ethereum",
+    command(INS_PROVIDE_ERC20_TOKEN_INFORMATION, 0x00, 0x00, payload),
+  );
+  const reader = new Reader(data);
+  const index = reader.u8();
+  reader.end();
+  return index;
+}
 
 /**
  * `INS_04` — `unsigned` is the serialized unsigned transaction (typed: `type ‖ rlp`; legacy: the

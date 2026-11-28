@@ -652,6 +652,32 @@ describe("hardware op and chain account guards", () => {
     expect(fails(params, { op: { ...signOp, acknowledgeUnconfirmed: 1 } })).toBe(true);
   });
 
+  it("Ledger token descriptors are bounded wire bytes and a bounded list", () => {
+    /* 38..151 bytes is exactly the legacy format's span: shortest ticker/signature through the
+       app's 50-byte ticker and longest strict-DER signature. */
+    const { params } = METHODS["hardware.begin"];
+    const token = new Uint8Array(38);
+    expect(fails(params, { op: { ...signOp, descriptors: { tokens: [token] } } })).toBe(false);
+    expect(
+      fails(params, { op: { ...signOp, descriptors: { tokens: [new Uint8Array(151)] } } }),
+    ).toBe(false);
+    expect(
+      fails(params, { op: { ...signOp, descriptors: { tokens: [new Uint8Array(37)] } } }),
+    ).toBe(true);
+    expect(
+      fails(params, { op: { ...signOp, descriptors: { tokens: [new Uint8Array(152)] } } }),
+    ).toBe(true);
+    expect(
+      fails(params, {
+        op: { ...signOp, descriptors: { tokens: Array.from({ length: 17 }, () => token) } },
+      }),
+    ).toBe(true);
+    expect(
+      fails(params, { op: { ...signOp, descriptors: { tokens: [new Uint8Array(38), "00"] } } }),
+    ).toBe(true);
+    expect(fails(params, { op: { ...signOp, descriptors: [] } })).toBe(true);
+  });
+
   it("every chain account shape requires a boolean confirmed", () => {
     /* The kernel seals confirmed only after an on-device verify; a missing or non-boolean flag
        must not decode as an account at all. */

@@ -55,7 +55,7 @@ const context = (
   // The value the prompt stored at confirmation time — what `display` computed for the record.
   // When that is "unsupported" no confirmation could have happened; any stored value makes the
   // live check refuse the same way, so stand it in for the recorded refusal sessions.
-  const shown = ONEKEY_DRIVER.display(request, stage, identity);
+  const shown = ONEKEY_DRIVER.display(request, stage, identity, undefined);
   return {
     request,
     stage,

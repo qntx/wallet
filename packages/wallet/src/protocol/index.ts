@@ -321,6 +321,7 @@ export type {
   HardwareOperation,
   HardwareResult,
   HardwareStep,
+  LedgerDescriptors,
   QrPayload,
 } from "./hardware.ts";
 export type {

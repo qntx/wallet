@@ -1058,6 +1058,23 @@
         "publicKey": "032b0d4af3a89c8d1ba39d1d0ce581f5e2279556af494095eeb501105e4eae7dbb",
         "chainCode": "c72d8fa85d6bee4f6d5b9d6d4cb53545084af4d425a4ad75e7d1d02db90e0cb0"
       }
+    },
+    {
+      "name": "provide-token-usdc",
+      "call": {
+        "fn": "ethProvideTokenInformation",
+        "payload": "0455534443a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000006000000013045022100b2e358726e4e6a6752cf344017c0e9d45b9a904120758d45f61b2804f9ad5299022015161ef28d8c4481bd9432c13562def9cce688bcfec896ef244c9a213f106cdd"
+      },
+      "commands": [
+        {
+          "apdu": "e00a0000680455534443a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000006000000013045022100b2e358726e4e6a6752cf344017c0e9d45b9a904120758d45f61b2804f9ad5299022015161ef28d8c4481bd9432c13562def9cce688bcfec896ef244c9a213f106cdd",
+          "response": "009000"
+        }
+      ],
+      "screens": [],
+      "result": {
+        "index": 0
+      }
     }
   ]
 }

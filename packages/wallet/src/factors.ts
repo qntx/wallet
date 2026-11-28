@@ -376,6 +376,7 @@ export type PublicBytesField =
   | "signatureShare"
   | "sspSignature"
   | "tokenIdentifier"
+  | "tokens"
   | "transaction"
   | "txid"
   | "verifyingKey";
