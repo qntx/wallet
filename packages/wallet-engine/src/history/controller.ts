@@ -613,9 +613,10 @@ export class HistoryController extends Controller<HistoryState> {
       }
       /* Every load resolves `own` into a fresh GroupAddresses — an entry confirmed since the last
          load re-enters the exempt set, and `own.bitcoin` never accumulates duplicate parties across
-         loads. The runtime adopts it once this load's first page settles (success or failure);
-         until then a mid-load recompose keeps computing against the previous own, and a
-         `resolveOwn` failure keeps it entirely. */
+         loads. The runtime adopts it when this load's first page lands; until then a mid-load
+         recompose keeps computing against the previous own, and a `resolveOwn` failure keeps it
+         entirely. The catch below can only run after that adoption — `merge.take` reports stream
+         failures through the errors channel rather than rejecting — so it never re-adopts. */
       const nextOwn: GroupAddresses = { bitcoin: [], unconfirmed: new Set() };
       try {
         await this.resolveOwn(group, nextOwn);
@@ -666,7 +667,6 @@ export class HistoryController extends Controller<HistoryState> {
       } catch (error) {
         this.options.logger.warn(`history load ${key} failed`, error);
         if (alive()) {
-          runtime.own = nextOwn;
           this.writeGroup(key, {
             status: "ready",
             entries: this.entries(runtime, group),
