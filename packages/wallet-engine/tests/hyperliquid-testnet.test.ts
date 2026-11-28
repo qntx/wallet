@@ -328,6 +328,7 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
   type Asset = { readonly coin: string; readonly asset: number; readonly szDecimals: number };
   let btc!: Asset;
   let eth!: Asset;
+  let spot!: Asset;
   let limits!: HyperliquidAgentLimits;
   let mainAgent = "";
   let mainSpent: Spent = { notional: "0", size: [] };
@@ -363,6 +364,21 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
     return { coin, asset: index, szDecimals: entry.szDecimals };
   };
 
+  const spotMarketAsset = async (coin: string): Promise<Asset> => {
+    const [meta] = await hl().markets.spot();
+    const pair = meta.universe.find((entry) => entry.name === coin);
+    const base = pair === undefined ? undefined : meta.tokens[pair.tokens[0] ?? -1];
+    if (pair === undefined || base === undefined) {
+      throw new Error(`${coin} missing from testnet spot meta`);
+    }
+    return { coin, asset: 10_000 + pair.index, szDecimals: base.szDecimals };
+  };
+
+  const spotUsdc = async (): Promise<string> => {
+    const spotState = await hl().account.spot({ user: owner });
+    return spotState.balances.find((entry) => entry.coin === "USDC")?.total ?? "0";
+  };
+
   const mid = async (coin: string): Promise<number> => {
     const value = (await hl().markets.mids())[coin];
     if (value === undefined) {
@@ -395,23 +411,124 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
       (entry) => parseDecimal(entry.position.szi).units !== 0n,
     );
 
+  const spotEmpty = async (): Promise<boolean> =>
+    (await hl().account.spot({ user: owner })).balances.every(
+      (entry) => parseDecimal(entry.total).units === 0n,
+    );
+
+  const returnSpotUsdc = async (): Promise<void> => {
+    const amount = await spotUsdc();
+    if (cmpDecimal(amount, "0") <= 0) {
+      return;
+    }
+    const pending = await hl().transfer.toPerp(group, amount);
+    const outcome = await pending.outcome;
+    if (outcome.kind !== "ok") {
+      throw new Error(`spot cleanup transfer did not commit: ${outcome.kind}`);
+    }
+  };
+
   const cancelAndFlatten = async (): Promise<void> => {
     await hl().trade.cancelAll(group);
     for (;;) {
       const positions = await openPositions();
       const [first] = positions;
       if (first === undefined) {
-        return;
+        break;
       }
       await hl().trade.close(group, { coin: first.position.coin, slippageBps: 100 });
     }
+    await returnSpotUsdc();
   };
 
   const assertFlat = async (): Promise<void> => {
     await waitFor(
-      async () => (await openOrders()).length === 0 && (await openPositions()).length === 0,
+      async () =>
+        (await openOrders()).length === 0 &&
+        (await openPositions()).length === 0 &&
+        (await spotEmpty()),
       "account flat",
     );
+  };
+
+  const expectNumericOpen = async (cloid: string, oid: number): Promise<void> => {
+    let observed:
+      | { readonly oid: number; readonly status: string; readonly cloid?: string }
+      | undefined;
+    await waitFor(async () => {
+      const result = await hl().account.orderStatus({ user: owner, oid });
+      if (
+        result.status === "order" &&
+        result.order.status === "open" &&
+        result.order.order.oid === oid &&
+        result.order.order.cloid?.toLowerCase() === cloid.toLowerCase()
+      ) {
+        observed = {
+          oid: result.order.order.oid,
+          status: result.order.status,
+          cloid: result.order.order.cloid ?? undefined,
+        };
+        return true;
+      }
+      return false;
+    }, `orderStatus(${oid}) open with cloid`);
+    expect(observed).toMatchObject({ oid, status: "open" });
+  };
+
+  const expectOriginalCloidCanceled = async (
+    cloid: string,
+    originalOid: number,
+  ): Promise<{ readonly oid: number; readonly status: string }> => {
+    let observed: { readonly oid: number; readonly status: string } | undefined;
+    await waitFor(async () => {
+      const result = await hl().account.orderStatus({ user: owner, oid: cloid });
+      if (
+        result.status === "order" &&
+        result.order.status === "canceled" &&
+        result.order.order.oid === originalOid
+      ) {
+        observed = { oid: result.order.order.oid, status: result.order.status };
+        return true;
+      }
+      return false;
+    }, `orderStatus(${cloid}) keeps original ${originalOid} canceled`);
+    if (observed === undefined) {
+      throw new Error("original cloid lookup evidence missing");
+    }
+    return observed;
+  };
+
+  const expectOrderCanceled = async (oid: number | string): Promise<void> => {
+    let observed: string | undefined;
+    await waitFor(async () => {
+      const result = await hl().account.orderStatus({ user: owner, oid });
+      if (result.status === "order" && result.order.status === "canceled") {
+        observed = result.order.status;
+        return true;
+      }
+      return false;
+    }, `orderStatus(${oid}) canceled`);
+    expect(observed).toBe("canceled");
+  };
+
+  const waitReplacement = async (
+    cloid: string,
+    previousOid: number,
+    label: string,
+  ): Promise<Awaited<ReturnType<typeof openOrders>>[number]> => {
+    let row: Awaited<ReturnType<typeof openOrders>>[number] | undefined;
+    await waitFor(async () => {
+      row = (await openOrders()).find(
+        (entry) => entry.cloid?.toLowerCase() === cloid.toLowerCase() && entry.oid !== previousOid,
+      );
+      return row !== undefined;
+    }, label);
+    if (row === undefined) {
+      throw new Error(`${label}: replacement row missing`);
+    }
+    expect(row.cloid?.toLowerCase()).toBe(cloid.toLowerCase());
+    await expectNumericOpen(cloid, row.oid);
+    return row;
   };
 
   beforeAll(async () => {
@@ -534,11 +651,13 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
       expect(meta.universe.length).toBeGreaterThan(0);
       btc = await marketAsset("BTC");
       eth = await marketAsset("ETH");
+      spot = await spotMarketAsset("PURR/USDC");
       const offList = meta.universe.find((entry) => entry.name !== "BTC" && entry.name !== "ETH");
       offListCoin = offList?.name ?? "SOL";
       const mids = await hl().markets.mids();
       expect(mids["BTC"]).toBeTypeOf("string");
       expect(mids["ETH"]).toBeTypeOf("string");
+      expect(mids["PURR/USDC"]).toBeTypeOf("string");
       const book = await hl().markets.book({ coin: "BTC" });
       expect(book).not.toBeNull();
       expect(book?.levels[0]?.length).toBeGreaterThan(0);
@@ -554,8 +673,7 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
       await bookView?.close();
       await tradesView?.close();
 
-      const [btcMeta, ethMeta] = [btc, eth];
-      const assets = [btcMeta, ethMeta].toSorted((a, b) => a.asset - b.asset);
+      const assets = [btc, eth, spot].toSorted((a, b) => a.asset - b.asset);
       limits = {
         notional: "400",
         maxLeverage: 5,
@@ -566,7 +684,7 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
           })),
         ),
       };
-      mark("1-reads-live", { btc, eth, offListCoin, limits });
+      mark("1-reads-live", { btc, eth, spot, offListCoin, limits });
     },
     STEP_TIMEOUT,
   );
@@ -702,46 +820,35 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
       if (orderA === undefined) {
         throw new Error("step 5 left no resting order");
       }
-      const firstModifyParams = await orderParams(btc, 0.68, 13);
-      const modified = await hl().trade.modify(group, {
+      const cloidA = orderA.cloid;
+      const originalOidA = orderA.oid;
+
+      const numericModify = await hl().trade.modify(group, {
         oid: orderA.oid,
-        ...firstModifyParams,
+        ...(await orderParams(btc, 0.68, 13)),
       });
-      expect(modified.kind).toBe("ok");
-      const firstWire = guard.exchangePosts.at(-1)?.action as {
-        order?: { p?: string; s?: string };
-      };
-      let open = await openOrders();
-      let rowA = open.find(
-        (entry) =>
-          firstWire.order?.p !== undefined &&
-          firstWire.order.s !== undefined &&
-          cmpDecimal(entry.limitPx, firstWire.order.p) === 0 &&
-          cmpDecimal(entry.sz, firstWire.order.s) === 0,
-      );
-      const originalOid = orderA.oid;
-      await waitFor(async () => {
-        open = await openOrders();
-        rowA = open.find(
-          (entry) =>
-            firstWire.order?.p !== undefined &&
-            firstWire.order.s !== undefined &&
-            cmpDecimal(entry.limitPx, firstWire.order.p) === 0 &&
-            cmpDecimal(entry.sz, firstWire.order.s) === 0,
-        );
-        return rowA !== undefined && !open.some((entry) => entry.oid === originalOid);
-      }, "modified order visible");
-      expect(rowA).toBeDefined();
-      if (rowA === undefined || orderA === undefined) {
-        throw new Error("the modified order is missing");
-      }
-      orderA = { ...orderA, oid: rowA.oid, cloid: rowA.cloid ?? orderA.cloid };
+      expect(numericModify.kind).toBe("ok");
+      let rowA = await waitReplacement(cloidA, orderA.oid, "numeric modify visible");
+      const originalCloidLookup = await expectOriginalCloidCanceled(cloidA, originalOidA);
+      orderA = { ...orderA, oid: rowA.oid };
+
+      const cloidModify = await hl().trade.modify(group, {
+        oid: orderA.cloid,
+        ...(await orderParams(btc, 0.675, 13.5)),
+      });
+      expect(cloidModify.kind).toBe("ok");
+      rowA = await waitReplacement(cloidA, orderA.oid, "cloid modify visible");
+      orderA = { ...orderA, oid: rowA.oid };
 
       const second = await hl().trade.place(group, await orderParams(btc, 0.64, 12.5));
       const [secondPlaced] = second.outcomes;
       expect(secondPlaced?.kind).toBe("resting");
-      if (secondPlaced?.kind !== "resting" || secondPlaced.oid === undefined) {
-        throw new Error("the second resting order has no oid");
+      if (
+        secondPlaced?.kind !== "resting" ||
+        secondPlaced.oid === undefined ||
+        secondPlaced.cloid === undefined
+      ) {
+        throw new Error("the second resting order is missing oid or cloid");
       }
       const batchA = await orderParams(btc, 0.66, 13, "Gtc");
       const batchB = await orderParams(btc, 0.63, 12.5, "Alo");
@@ -751,33 +858,49 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
       ]);
       expect(batch).toHaveLength(2);
       expect(batch.every((entry) => entry.kind === "resting")).toBe(true);
+      expect(batch[0]?.cloid?.toLowerCase()).toBe(cloidA.toLowerCase());
+      expect(batch[1]?.cloid?.toLowerCase()).toBe(secondPlaced.cloid.toLowerCase());
       const batchOidA = batch[0]?.kind === "resting" ? batch[0].oid : undefined;
       const batchOidB = batch[1]?.kind === "resting" ? batch[1].oid : undefined;
       expect(batchOidA).toBeTypeOf("number");
       expect(batchOidB).toBeTypeOf("number");
-      open = await openOrders();
-      rowA = open.find((entry) => entry.oid === batchOidA);
+      if (typeof batchOidA !== "number" || typeof batchOidB !== "number") {
+        throw new TypeError("the batch-modified orders have no replacement oids");
+      }
+      let open = await openOrders();
+      await waitFor(async () => {
+        open = await openOrders();
+        return (
+          open.some((entry) => entry.oid === batchOidA) &&
+          open.some((entry) => entry.oid === batchOidB)
+        );
+      }, "batch-modified orders visible");
+      const batchRowA = open.find((entry) => entry.oid === batchOidA);
       const rowB = open.find((entry) => entry.oid === batchOidB);
+      expect(batchRowA?.cloid?.toLowerCase()).toBe(cloidA.toLowerCase());
+      expect(rowB?.cloid?.toLowerCase()).toBe(secondPlaced.cloid.toLowerCase());
+      await expectNumericOpen(cloidA, batchOidA);
+      await expectNumericOpen(secondPlaced.cloid, batchOidB);
       const batchWire = guard.exchangePosts.at(-1)?.action as {
-        modifies?: Array<{ order?: { p?: string } }>;
+        modifies?: Array<{ order?: { p?: string; c?: string } }>;
       };
       const batchPriceA = batchWire.modifies?.[0]?.order?.p;
       const batchPriceB = batchWire.modifies?.[1]?.order?.p;
+      expect(batchWire.modifies?.[0]?.order?.c).toBe(cloidA);
+      expect(batchWire.modifies?.[1]?.order?.c).toBe(secondPlaced.cloid);
       expect(batchPriceA).toBeTypeOf("string");
       expect(batchPriceB).toBeTypeOf("string");
       if (batchPriceA !== undefined && batchPriceB !== undefined) {
-        expect(cmpDecimal(rowA?.limitPx ?? "0", batchPriceA)).toBe(0);
+        expect(cmpDecimal(batchRowA?.limitPx ?? "0", batchPriceA)).toBe(0);
         expect(cmpDecimal(rowB?.limitPx ?? "0", batchPriceB)).toBe(0);
       }
-      if (typeof batchOidA === "number" && orderA !== undefined) {
-        orderA = { ...orderA, oid: batchOidA };
-      }
+      orderA = { ...orderA, oid: batchOidA };
       gtcModifyEvidence = {
         requestedTif: batchA.order.tif,
-        observedTif: rowA?.tif,
+        observedTif: batchRowA?.tif,
         outcomes: batch,
       };
-      expect(["Alo", "Gtc"]).toContain(rowA?.tif);
+      expect(["Alo", "Gtc"]).toContain(batchRowA?.tif);
 
       const third = await hl().trade.place(group, await orderParams(btc, 0.62, 12.5));
       const [thirdPlaced] = third.outcomes;
@@ -809,84 +932,85 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
       if (triggerPlaced?.kind !== "resting" || triggerPlaced.cloid === undefined) {
         throw new Error("the trigger placement returned no cloid");
       }
+      const triggerCloid = triggerPlaced.cloid;
       await waitFor(async () => {
         const rows = await openOrders();
-        return rows.some(
-          (entry) => entry.cloid?.toLowerCase() === triggerPlaced.cloid?.toLowerCase(),
-        );
+        return rows.some((entry) => entry.cloid?.toLowerCase() === triggerCloid.toLowerCase());
       }, "trigger order visible");
       open = await openOrders();
       const triggerRow = open.find(
-        (entry) => entry.cloid?.toLowerCase() === triggerPlaced.cloid?.toLowerCase(),
+        (entry) => entry.cloid?.toLowerCase() === triggerCloid.toLowerCase(),
       );
       expect(triggerRow?.isTrigger).toBe(true);
       if (triggerRow === undefined) {
         throw new Error("trigger row missing");
       }
-      const newTriggerReference = decimalText(markPrice * 1.61);
-      try {
-        const outcome = await hl().trade.modify(group, {
-          oid: triggerRow.oid,
-          coin: "BTC",
-          side: "buy",
-          size: triggerRow.sz,
-          order: {
-            kind: "trigger",
-            tpsl: "sl",
-            market: false,
-            triggerPx: decimalText(markPrice * 1.6),
-            price: newTriggerReference,
-          },
-        });
-        triggerModifyEvidence = { outcome };
-      } catch (error) {
-        if (!(error instanceof HyperliquidError)) {
-          throw error;
-        }
-        triggerModifyEvidence = { category: error.category, message: error.message };
-      }
-      const triggerOpenAfter = await openOrders();
-      triggerModifyEvidence = {
-        ...(triggerModifyEvidence as Record<string, unknown>),
-        openOrders: triggerOpenAfter,
-      };
-      const triggerCancelOid =
-        triggerOpenAfter.find((entry) => entry.coin === "BTC" && entry.isTrigger)?.oid ??
-        triggerRow.oid;
+      const triggerModify = await hl().trade.modify(group, {
+        oid: triggerRow.oid,
+        coin: "BTC",
+        side: "buy",
+        size: triggerRow.sz,
+        order: {
+          kind: "trigger",
+          tpsl: "sl",
+          market: false,
+          triggerPx: decimalText(markPrice * 1.6),
+          price: decimalText(markPrice * 1.61),
+        },
+      });
+      expect(triggerModify.kind).toBe("ok");
+      const modifiedTriggerRow = await waitReplacement(
+        triggerCloid,
+        triggerRow.oid,
+        "modified trigger visible",
+      );
+      expect(modifiedTriggerRow.isTrigger).toBe(true);
+      triggerModifyEvidence = { outcome: triggerModify, row: modifiedTriggerRow };
 
       const cancelTrigger = await hl().trade.cancel(group, [
-        { coin: "BTC", oid: triggerCancelOid },
+        { coin: "BTC", oid: modifiedTriggerRow.oid },
       ]);
       expect(cancelTrigger[0]?.kind).toBe("cancelled");
-      const cancelA = await hl().trade.cancel(group, [{ coin: "BTC", oid: orderA.oid }]);
+      const cancelA = await hl().trade.cancelByCloid(group, [{ coin: "BTC", cloid: cloidA }]);
       expect(cancelA[0]?.kind).toBe("cancelled");
       const cancelB = await hl().trade.cancelByCloid(group, [
         { coin: "BTC", cloid: thirdPlaced.cloid },
       ]);
       expect(cancelB[0]?.kind).toBe("cancelled");
-      if (typeof batchOidB !== "number") {
-        throw new TypeError("the batch-modified second order has no replacement oid");
-      }
       const cancelSecond = await hl().trade.cancel(group, [{ coin: "BTC", oid: batchOidB }]);
       expect(cancelSecond[0]?.kind).toBe("cancelled");
-      for (const oid of [orderA.oid, thirdPlaced.cloid, batchOidB] as Array<number | string>) {
-        const status = await hl().account.orderStatus({ user: owner, oid });
-        expect(status.status).toBe("order");
-        if (status.status === "order") {
-          expect(status.order.status).toBe("canceled");
-        }
+      for (const oid of [cloidA, thirdPlaced.cloid, batchOidB] as Array<number | string>) {
+        await expectOrderCanceled(oid);
       }
-      open = await openOrders();
-      expect(open.some((entry) => entry.oid === orderA?.oid)).toBe(false);
-      expect(open.some((entry) => entry.oid === batchOidB)).toBe(false);
-      expect(open.some((entry) => entry.oid === thirdPlaced.oid)).toBe(false);
+      await waitFor(async () => {
+        open = await openOrders();
+        return (
+          !open.some((entry) => entry.oid === orderA?.oid) &&
+          !open.some((entry) => entry.oid === batchOidB) &&
+          !open.some((entry) => entry.oid === thirdPlaced.oid)
+        );
+      }, "modified orders canceled");
+
+      const refusedPosts = guard.exchangePosts.length;
+      const canceledModify = await errorFact(
+        hl().trade.modify(group, {
+          oid: originalOidA,
+          ...(await orderParams(btc, 0.61, 12.5)),
+        }),
+      );
+      expect(canceledModify.category).toBe("invalid-input");
+      expect(canceledModify.message).toContain("is not open");
+      expect(guard.exchangePosts).toHaveLength(refusedPosts);
+
       orderA = undefined;
       mark("6-modify-cancel", {
         gtc: gtcModifyEvidence,
         trigger: triggerModifyEvidence,
+        originalCloidLookup,
         cancelA,
         cancelB,
         cancelSecond,
+        canceledModify,
       });
     },
     STEP_TIMEOUT,
@@ -1391,7 +1515,65 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
   );
 
   it(
-    "16 finishes flat, revokes the agent, and disables trading",
+    "16 places and cancels a spot order, then transfers the USDC back",
+    async () => {
+      const amount = "15";
+      const startingSpot = await spotUsdc();
+      expect(cmpDecimal(startingSpot, "0")).toBe(0);
+      const toSpot = await manualPending(async () => hl().transfer.toSpot(group, amount));
+      await approveRequest(toSpot.request);
+      expect((await toSpot.pending.outcome).kind).toBe("ok");
+      await waitFor(async () => cmpDecimal(await spotUsdc(), amount) === 0, "spot USDC credited");
+
+      const params = await orderParams(spot, 0.5, 12.5);
+      const beforeSpent = await refreshMainSpent();
+      const placed = await hl().trade.place(group, params);
+      const [resting] = placed.outcomes;
+      expect(resting?.kind).toBe("resting");
+      if (resting?.kind !== "resting" || resting.oid === undefined || resting.cloid === undefined) {
+        throw new Error("the spot order did not rest with oid and cloid");
+      }
+      let row = (await openOrders()).find((entry) => entry.oid === resting.oid);
+      await waitFor(async () => {
+        row = (await openOrders()).find((entry) => entry.oid === resting.oid);
+        return row !== undefined;
+      }, "spot order visible");
+      expect(row?.coin).toBe(spot.coin);
+      expect(row?.cloid?.toLowerCase()).toBe(resting.cloid.toLowerCase());
+      const charge = mulDecimal(placed.price, params.size);
+      const afterSpent = await refreshMainSpent();
+      expect(afterSpent.notional).toBe(addDecimal(beforeSpent.notional, charge));
+      const spotIndex = limits.assets.findIndex((entry) => entry.asset === spot.asset);
+      expect(afterSpent.size[spotIndex]).toBe(
+        addDecimal(beforeSpent.size[spotIndex] ?? "0", params.size),
+      );
+
+      const canceled = await hl().trade.cancelByCloid(group, [
+        { coin: spot.coin, cloid: resting.cloid },
+      ]);
+      expect(canceled[0]?.kind).toBe("cancelled");
+      await expectOrderCanceled(resting.cloid);
+
+      const toPerp = await manualPending(async () => hl().transfer.toPerp(group, amount));
+      await approveRequest(toPerp.request);
+      expect((await toPerp.pending.outcome).kind).toBe("ok");
+      await waitFor(
+        async () => cmpDecimal(await spotUsdc(), startingSpot) === 0,
+        "spot USDC returned",
+      );
+      expect(cmpDecimal(await spotUsdc(), "0")).toBe(0);
+      mark("16-spot-order", {
+        amount,
+        order: { oid: resting.oid, cloid: resting.cloid, price: placed.price, size: params.size },
+        charge,
+        canceled,
+      });
+    },
+    STEP_TIMEOUT,
+  );
+
+  it(
+    "17 finishes flat, revokes the agent, and disables trading",
     async () => {
       await cancelAndFlatten();
       await assertFlat();
@@ -1410,7 +1592,7 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
       const failure = await errorFact(hl().trade.place(group, await orderParams(btc, 0.7)));
       expect(failure.category).toBe("not-enabled");
       expect(guard.exchangePosts).toHaveLength(posts);
-      mark("16-flat-revoked", { failure, spentBeforeRevoke });
+      mark("17-flat-revoked", { failure, spentBeforeRevoke });
     },
     STEP_TIMEOUT,
   );
@@ -1429,7 +1611,8 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
         ).catch((error: unknown) => cleanupErrors.push(error));
         const dirty =
           (await openOrders().catch(() => [])).length > 0 ||
-          (await openPositions().catch(() => [])).length > 0;
+          (await openPositions().catch(() => [])).length > 0 ||
+          !(await spotEmpty().catch(() => true));
         if (dirty) {
           try {
             await cancelAndFlatten();
