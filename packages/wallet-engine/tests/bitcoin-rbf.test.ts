@@ -187,8 +187,8 @@ const signGroupIndex = (n: number): number | undefined => {
   return req !== undefined && req.account.kind === "hd" ? req.account.groupIndex : undefined;
 };
 
-/** A tracked send whose own output sits at `address` — what `changeTaken` reads for `state`. */
-const ownRow = (id: string, state: TxState, address: string): TrackedTransaction => ({
+/** A tracked send whose output sits at `address` — what `changeTaken` reads for `state`. */
+const ownRow = (id: string, state: TxState, address: string, own = true): TrackedTransaction => ({
   id,
   family: "bitcoin",
   network: "bip122:000000000019d6689c085ae165831e93",
@@ -199,7 +199,7 @@ const ownRow = (id: string, state: TxState, address: string): TrackedTransaction
   nonce: 0,
   btc: {
     inputs: [],
-    outputs: [{ address, value: 1000, own: true }],
+    outputs: [{ address, value: 1000, own }],
     vsize: 1,
     fee: 1,
     feeRate: 1,
@@ -317,6 +317,16 @@ describe("bitcoin rbf", () => {
       );
     },
   );
+
+  it("a confirmed row's payee output is taken too — an address the chain paid is never re-picked", async () => {
+    /* `own: false` marks the payee side, but an outflow that landed on /1/1 paid that address on
+       chain all the same — the next send must not hand it out as fresh change. */
+    const earlier = ownRow("earlier", "confirmed", CHANGE_ADDR, false);
+    const c = { ...ctx(), txs: () => ({ earlier }) };
+    const tx = await send(c);
+    expect(tx.state).not.toBe("failed");
+    expect(btcOf(tx).outputs.find((o) => o.own)?.address).toBe(CHANGE_ADDR_2);
+  });
 
   it("a speed-up and a cancel of a change-paying parent reuse the parent's own output", async () => {
     /* /1/1 is burned by an older confirmed send, so the parent's change sits at /1/2 — and every
