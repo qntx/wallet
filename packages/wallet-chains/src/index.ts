@@ -305,7 +305,7 @@ export type AssetFlow = {
    * display them — `to` is the decoded address and `ownPath` the derivation path text.
    */
   readonly ownPath?: string;
-  /** The ENS name the recipient was resolved from; attached by the engine, never decoded. */
+  /** The ENS or SNS name the recipient was resolved from; attached by the engine, never decoded. */
   readonly name?: string;
 };
 
