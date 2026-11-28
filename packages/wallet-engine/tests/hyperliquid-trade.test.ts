@@ -507,16 +507,17 @@ describe("hyperliquid trade on the node host", () => {
     timers.time = NOW;
   });
 
-  it("latches agent rejections — the next call fails fast without signing", async () => {
+  it("latches a missing-wallet rejection naming the agent itself", async () => {
     const posted: Posted[] = [];
     const timers = manualTimer();
+    let agent = "";
     const { provider, signCalls, wallet, walletId } = await rig(posted, timers, {
       exchange: () => ({
         status: "err",
-        response: "User or API Wallet 0x0000000000000000000000000000000000000000 does not exist",
+        response: `User or API Wallet ${agent} does not exist`,
       }),
     });
-    const agent = await createEnabledAgent(provider, wallet, walletId);
+    agent = await createEnabledAgent(provider, wallet, walletId);
 
     const params = {
       coin: "BTC",
@@ -536,7 +537,65 @@ describe("hyperliquid trade on the node host", () => {
     );
     expect(signCalls()).toBe(1);
     expect(posted.filter((entry) => entry.endpoint === "exchange")).toHaveLength(1);
-    expect(agent).toMatch(/^0x/);
+  });
+
+  it("a missing-wallet rejection naming another address is plain rejected — the agent still signs", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    let calls = 0;
+    const { provider, signCalls, wallet, walletId } = await rig(posted, timers, {
+      exchange: () => {
+        calls += 1;
+        // oxlint-disable-next-line vitest/no-conditional-in-test -- the scripted server rejects only the first signature
+        return calls === 1
+          ? {
+              status: "err",
+              response:
+                "User or API Wallet 0x0000000000000000000000000000000000000000 does not exist",
+            }
+          : {
+              status: "ok",
+              response: { type: "order", data: { statuses: [{ resting: { oid: 42 } }] } },
+            };
+      },
+    });
+    await createEnabledAgent(provider, wallet, walletId);
+
+    const params = {
+      coin: "BTC",
+      side: "buy" as const,
+      size: "1",
+      order: { kind: "limit" as const, price: "58000" },
+    };
+    await expect(category(provider.trade.place(GROUP(walletId), params))).resolves.toBe("rejected");
+    const retry = await provider.trade.place(GROUP(walletId), params);
+    expect(retry.outcomes[0]).toMatchObject({ kind: "resting", oid: 42 });
+    expect(signCalls()).toBe(2);
+    expect(posted.filter((entry) => entry.endpoint === "exchange")).toHaveLength(2);
+  });
+
+  it("latches a missing-deposit rejection", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const { provider, signCalls, wallet, walletId } = await rig(posted, timers, {
+      exchange: () => ({ status: "err", response: "Must deposit before performing actions" }),
+    });
+    await createEnabledAgent(provider, wallet, walletId);
+
+    const params = {
+      coin: "BTC",
+      side: "buy" as const,
+      size: "1",
+      order: { kind: "limit" as const, price: "58000" },
+    };
+    await expect(category(provider.trade.place(GROUP(walletId), params))).resolves.toBe(
+      "reauthorization-required",
+    );
+    await expect(category(provider.trade.place(GROUP(walletId), params))).resolves.toBe(
+      "reauthorization-required",
+    );
+    expect(signCalls()).toBe(1);
+    expect(posted.filter((entry) => entry.endpoint === "exchange")).toHaveLength(1);
   });
 
   it("other err responses map to rejected without latching the agent", async () => {
