@@ -617,7 +617,7 @@ export async function deleteWallet(
   // commit — a partial deletion can never land. Reconciliation forgets the evicted live state.
   // Deleting an externally signed wallet never touches the device or the cards themselves.
   const extras = ctx.modules.flatMap((module) =>
-    module.walletDeleteOps(ctx.image, params.walletId),
+    module.walletDeleteOps(ctx.image, params.walletId, "delete"),
   );
   await ctx.commit([{ op: "delete-record", kind: record.kind, id: params.walletId }, ...extras]);
   return null;

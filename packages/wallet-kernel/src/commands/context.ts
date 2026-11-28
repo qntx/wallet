@@ -27,17 +27,29 @@ export type VaultHooks = {
   /** Lock bookkeeping: dispose every secret the module holds. */
   readonly lock: () => void;
   /**
-   * The extra ops committed atomically when a wallet is deleted — the module's records derived from
-   * that walletId. Live state follows the committed image through reconciliation, so no commit
-   * bookkeeping is needed here.
+   * The extra ops committed atomically when a wallet leaves the vault — the module's records
+   * derived from that walletId. `cause` tells a real deletion from a card import, where the
+   * wallet's software secret leaves for a card under the same walletId. Live state follows the
+   * committed image through reconciliation, so no commit bookkeeping is needed here.
    */
-  readonly walletDeleteOps: (image: VaultImage, walletId: string) => ReadonlyArray<StoreOp>;
+  readonly walletDeleteOps: (
+    image: VaultImage,
+    walletId: string,
+    cause: WalletRemoval,
+  ) => ReadonlyArray<StoreOp>;
   /**
    * Throws when the public header of a record this module owns is malformed — status marks the
    * vault corrupted.
    */
   readonly parseHeader: (record: StoredRecord) => void;
 };
+
+/**
+ * Why a wallet leaves the vault: a real `delete`, or a `card-import` — the wallet's software secret
+ * moves onto a card under the same walletId, so every address and change index of the account is
+ * unchanged.
+ */
+export type WalletRemoval = "delete" | "card-import";
 
 /** Vault health, recomputed on every load; only ok serves the full method set. */
 export type Health = "ok" | "corrupted" | "unsupported" | "unavailable";
