@@ -336,6 +336,13 @@ const cloids = (action: HyperliquidL1Action): ReadonlyArray<string | undefined> 
       : action.modifies.map((item) => item.order.c)
     : [];
 
+/**
+ * Modify outcomes carry their cloid but never reconcile by it: until the modify lands, the original
+ * order rests under the same cloid.
+ */
+const unknownOutcome = (cloid: string | undefined): HyperliquidOrderOutcome =>
+  cloid === undefined ? { kind: "unknown" } : { kind: "unknown", cloid };
+
 /** `data.status` of single-status responses like twapOrder: `{running:{twapId}} | {error}`. */
 const singleStatus = (body: unknown): HyperliquidActionOutcome | undefined => {
   const data =
@@ -676,6 +683,9 @@ export function createHyperliquidExchange(options: {
           /* A malformed/short answered response is as unknown as a lost POST — reconcile the
              cloids it could not account for instead of fabricating rejections. */
           if (entries === undefined || entries.length !== count) {
+            if (action.type === "batchModify") {
+              return known.map(unknownOutcome);
+            }
             return Promise.all(
               known.map(async (cloid) => reconcile(group, master, cloid, expiresAfter, signedIn)),
             );
@@ -683,7 +693,12 @@ export function createHyperliquidExchange(options: {
           return Promise.all(
             entries.map(async (entry, index) => {
               const outcome = orderStatusOutcome(entry, known[index]);
-              return outcome ?? reconcile(group, master, known[index], expiresAfter, signedIn);
+              if (outcome !== undefined) {
+                return outcome;
+              }
+              return action.type === "batchModify"
+                ? unknownOutcome(known[index])
+                : reconcile(group, master, known[index], expiresAfter, signedIn);
             }),
           );
         },
@@ -691,6 +706,9 @@ export function createHyperliquidExchange(options: {
           const known = cloids(action);
           if (known.length === 0) {
             return [{ kind: "unknown" }];
+          }
+          if (action.type === "batchModify") {
+            return known.map(unknownOutcome);
           }
           return Promise.all(
             known.map(async (cloid) => reconcile(group, master, cloid, expiresAfter, signedIn)),

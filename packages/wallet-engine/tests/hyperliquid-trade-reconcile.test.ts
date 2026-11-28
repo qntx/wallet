@@ -296,10 +296,18 @@ const rig = async (
   } = {},
 ): Promise<{
   provider: Omit<HyperliquidProvider, "approveBuilder"> & HyperliquidProviderInternals;
+  signCalls: () => number;
   wallet: Wallet;
   walletId: string;
 }> => {
   const { wallet, walletId } = await nodeWallet();
+  const api = sessions(wallet);
+  let signCalls = 0;
+  const { sign } = api;
+  (api as { sign: typeof sign }).sign = async (params) => {
+    signCalls += 1;
+    return sign(params);
+  };
   const random = extra.random ?? ((length: number) => new Uint8Array(length).fill(7));
   const provider = createHyperliquidProvider({
     network: "Testnet",
@@ -325,7 +333,7 @@ const rig = async (
           }),
         }),
   });
-  return { provider, wallet, walletId };
+  return { provider, signCalls: () => signCalls, wallet, walletId };
 };
 
 /** A macrotask flushes every queued microtask — owner resolution, SDK chains, fetches. */
@@ -375,16 +383,23 @@ const ORDER = {
   order: { kind: "limit" as const, price: "58000" },
 };
 
-const category = async (promise: Promise<unknown>): Promise<string> => {
+const errorFact = async (
+  promise: Promise<unknown>,
+): Promise<{ readonly category: string; readonly message: string }> => {
   try {
     await promise;
   } catch (error) {
     if (error instanceof HyperliquidError) {
-      return error.category;
+      return { category: error.category, message: error.message };
     }
     throw error;
   }
   throw new Error("expected rejection");
+};
+
+const category = async (promise: Promise<unknown>): Promise<string> => {
+  const fact = await errorFact(promise);
+  return fact.category;
 };
 
 const isOrderStatusPost = (entry: Posted): boolean =>
@@ -570,6 +585,92 @@ describe("hyperliquid trade — unknown POST outcomes", () => {
     expect(result.outcomes).toStrictEqual([
       { kind: "filled", oid: 424242, cloid: CLOID, totalSz: "0.01" },
     ]);
+  });
+
+  it("a lost batchModify stays unknown with its cloids and never reconciles", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const first = "0x44444444444444444444444444444444";
+    const second = "0x55555555555555555555555555555555";
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: () => {
+        throw new Error("connection reset");
+      },
+    });
+    const { group } = await enable(provider, wallet, walletId);
+    const corrections: HyperliquidOutcomeCorrection[] = [];
+    provider.trade.corrections.subscribe((correction) => corrections.push(correction));
+
+    const result = await drive(
+      timers,
+      provider.trade.batchModify(group, [
+        { oid: first, ...ORDER },
+        { oid: second, ...ORDER },
+      ]),
+    );
+
+    expect(result).toStrictEqual([
+      { kind: "unknown", cloid: first },
+      { kind: "unknown", cloid: second },
+    ]);
+    expect(posted.filter(isOrderStatusPost)).toHaveLength(0);
+    await pump(timers, 3);
+    expect(corrections).toStrictEqual([]);
+  });
+
+  it("a short batchModify status list is unknown per entry without orderStatus polling", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const first = "0x46464646464646464646464646464646";
+    const second = "0x57575757575757575757575757575757";
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: () => ({
+        status: "ok",
+        response: { type: "order", data: { statuses: [{ resting: { oid: 1 } }] } },
+      }),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+
+    const result = await provider.trade.batchModify(group, [
+      { oid: first, ...ORDER },
+      { oid: second, ...ORDER },
+    ]);
+
+    expect(result).toStrictEqual([
+      { kind: "unknown", cloid: first },
+      { kind: "unknown", cloid: second },
+    ]);
+    expect(posted.filter(isOrderStatusPost)).toHaveLength(0);
+  });
+
+  it("an unparseable batchModify entry is unknown while answered entries carry their cloids", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const first = "0x66666666666666666666666666666666";
+    const second = "0x77777777777777777777777777777777";
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      exchange: () => ({
+        status: "ok",
+        response: {
+          type: "order",
+          data: {
+            statuses: [{ resting: { oid: 1 } }, { filled: { totalSz: "0.05", oid: 2 } }],
+          },
+        },
+      }),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+
+    const result = await provider.trade.batchModify(group, [
+      { oid: first, ...ORDER },
+      { oid: second, ...ORDER },
+    ]);
+
+    expect(result).toStrictEqual([
+      { kind: "resting", oid: 1, cloid: first },
+      { kind: "unknown", cloid: second },
+    ]);
+    expect(posted.filter(isOrderStatusPost)).toHaveLength(0);
   });
 
   it("an answered but malformed status list reconciles by cloid instead of rejecting", async () => {
@@ -1219,43 +1320,210 @@ describe("hyperliquid trade — wire actions", () => {
     return actionOf(posted);
   };
 
-  it("modify replaces by oid and keeps the kernel's key order", async () => {
-    const action = await wire(async (provider, group) =>
-      provider.trade.modify(group, {
-        oid: 5000000003,
-        coin: "ETH",
-        side: "buy",
-        size: "0.25",
-        reduceOnly: true,
-        order: { kind: "limit", price: "1600" },
-      }),
-    );
-    // ETH is index 4 in the recorded testnet meta.
-    expect(action).toStrictEqual({
+  it("modify by a numeric oid reads the open order and carries its cloid lowercase", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const serverCloid = "0xABCDEF0123456789ABCDEF0123456789";
+    const cloid = serverCloid.toLowerCase();
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      info: whenType("orderStatus", orderFound("open", { oid: 5000000003, cloid: serverCloid })),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+
+    await provider.trade.modify(group, {
+      oid: 5000000003,
+      coin: "ETH",
+      side: "buy",
+      size: "0.25",
+      reduceOnly: true,
+      order: { kind: "limit", price: "1600" },
+    });
+
+    const lookups = posted.filter(isOrderStatusPost);
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0]?.body).toMatchObject({
+      user: "0x9858effd232b4033e47d90003d41ec34ecaeda94",
+      oid: 5000000003,
+    });
+    expect(actionOf(posted)).toStrictEqual({
       type: "modify",
       oid: 5000000003,
-      order: { a: 4, b: true, p: "1600", s: "0.25", r: true, t: { limit: { tif: "Gtc" } } },
+      order: {
+        a: 4,
+        b: true,
+        p: "1600",
+        s: "0.25",
+        r: true,
+        t: { limit: { tif: "Gtc" } },
+        c: cloid,
+      },
     });
   });
 
-  it("batchModify wraps several modifies", async () => {
-    const action = await wire(async (provider, group) =>
-      provider.trade.batchModify(group, [
-        {
-          oid: 1,
-          coin: "BTC",
+  it("modify by a cloid oid carries it without an orderStatus read", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const cloid = "0x11111111111111111111111111111111";
+    const { provider, wallet, walletId } = await rig(posted, timers);
+    const { group } = await enable(provider, wallet, walletId);
+
+    await provider.trade.modify(group, {
+      oid: cloid,
+      coin: "ETH",
+      side: "buy",
+      size: "0.25",
+      order: { kind: "limit", price: "1600" },
+    });
+
+    expect(posted.filter(isOrderStatusPost)).toHaveLength(0);
+    expect(actionOf(posted)).toMatchObject({
+      oid: cloid,
+      order: { c: cloid },
+    });
+  });
+
+  it("an open order without a cloid modifies without c", async () => {
+    const action = await wire(
+      async (provider, group) =>
+        provider.trade.modify(group, {
+          oid: 5000000003,
+          coin: "ETH",
           side: "buy",
-          size: "0.1",
-          order: { kind: "limit", price: "30000", tif: "Alo" },
-        },
-      ]),
+          size: "0.25",
+          order: { kind: "limit", price: "1600" },
+        }),
+      { info: whenType("orderStatus", orderFound("open", { oid: 5000000003 })) },
     );
     expect(action).toStrictEqual({
+      type: "modify",
+      oid: 5000000003,
+      order: { a: 4, b: true, p: "1600", s: "0.25", r: false, t: { limit: { tif: "Gtc" } } },
+    });
+  });
+
+  it.each([
+    ["unknownOid", { status: "unknownOid" }, "order 5000000003 is not open"],
+    ["filled", orderFound("filled", { sz: "0" }), "order 5000000003 is not open"],
+    ["canceled", orderFound("canceled"), "order 5000000003 is not open"],
+    ["malformed", {}, "order 5000000003 is not open"],
+    [
+      "a malformed cloid",
+      orderFound("open", { oid: 5000000003, cloid: "not-a-cloid" }),
+      "order 5000000003 has a malformed cloid",
+    ],
+  ] as const)(
+    "refuses a numeric modify whose order is %s before signing",
+    async (_name, answer, message) => {
+      const posted: Posted[] = [];
+      const timers = manualTimer();
+      const { provider, signCalls, wallet, walletId } = await rig(posted, timers, {
+        info: whenType("orderStatus", answer),
+      });
+      const { group } = await enable(provider, wallet, walletId);
+
+      const refused = await errorFact(
+        provider.trade.modify(group, {
+          oid: 5000000003,
+          coin: "ETH",
+          side: "buy",
+          size: "0.25",
+          order: { kind: "limit", price: "1600" },
+        }),
+      );
+      expect(refused).toStrictEqual({ category: "invalid-input", message });
+      expect(signCalls()).toBe(0);
+      expect(exchangeCount(posted)).toBe(0);
+    },
+  );
+
+  it("refuses a malformed string oid before signing", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const { provider, signCalls, wallet, walletId } = await rig(posted, timers);
+    const { group } = await enable(provider, wallet, walletId);
+
+    const refused = await errorFact(
+      provider.trade.modify(group, {
+        oid: "0xABCDEF0123456789ABCDEF0123456789",
+        coin: "ETH",
+        side: "buy",
+        size: "0.25",
+        order: { kind: "limit", price: "1600" },
+      }),
+    );
+    expect(refused).toStrictEqual({ category: "invalid-input", message: "not a cloid" });
+    expect(signCalls()).toBe(0);
+    expect(exchangeCount(posted)).toBe(0);
+    expect(posted.filter(isOrderStatusPost)).toHaveLength(0);
+  });
+
+  it("batchModify wraps mixed numeric and cloid oids with their carried cloids", async () => {
+    const posted: Posted[] = [];
+    const timers = manualTimer();
+    const numericCloid = "0x22222222222222222222222222222222";
+    const directCloid = "0x33333333333333333333333333333333";
+    const { provider, wallet, walletId } = await rig(posted, timers, {
+      info: whenType("orderStatus", orderFound("open", { oid: 1, cloid: numericCloid })),
+      exchange: () => ({
+        status: "ok",
+        response: {
+          type: "order",
+          data: { statuses: [{ resting: { oid: 11 } }, { resting: { oid: 12 } }] },
+        },
+      }),
+    });
+    const { group } = await enable(provider, wallet, walletId);
+
+    const outcomes = await provider.trade.batchModify(group, [
+      {
+        oid: 1,
+        coin: "BTC",
+        side: "buy",
+        size: "0.1",
+        order: { kind: "limit", price: "30000", tif: "Alo" },
+      },
+      {
+        oid: directCloid,
+        coin: "ETH",
+        side: "sell",
+        size: "0.3",
+        order: { kind: "limit", price: "1700", tif: "Gtc" },
+      },
+    ]);
+
+    expect(outcomes).toStrictEqual([
+      { kind: "resting", oid: 11, cloid: numericCloid },
+      { kind: "resting", oid: 12, cloid: directCloid },
+    ]);
+    const lookups = posted.filter(isOrderStatusPost);
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0]?.body["oid"]).toBe(1);
+    expect(actionOf(posted)).toStrictEqual({
       type: "batchModify",
       modifies: [
         {
           oid: 1,
-          order: { a: 3, b: true, p: "30000", s: "0.1", r: false, t: { limit: { tif: "Alo" } } },
+          order: {
+            a: 3,
+            b: true,
+            p: "30000",
+            s: "0.1",
+            r: false,
+            t: { limit: { tif: "Alo" } },
+            c: numericCloid,
+          },
+        },
+        {
+          oid: directCloid,
+          order: {
+            a: 4,
+            b: false,
+            p: "1700",
+            s: "0.3",
+            r: false,
+            t: { limit: { tif: "Gtc" } },
+            c: directCloid,
+          },
         },
       ],
     });

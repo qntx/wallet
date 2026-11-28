@@ -124,6 +124,7 @@ const equivalent = async (action: WireAction, actions: HyperliquidActions): Prom
       return actions.modify({
         oid: action["oid"] as number | string,
         ...orderParams(order),
+        ...(order.c === undefined ? {} : { cloid: order.c }),
       });
     }
     case "batchModify": {
@@ -132,7 +133,11 @@ const equivalent = async (action: WireAction, actions: HyperliquidActions): Prom
         order: WireOrder;
       }>;
       return actions.batchModify(
-        modifies.map((item) => ({ oid: item.oid, ...orderParams(item.order) })),
+        modifies.map((item) => ({
+          oid: item.oid,
+          ...orderParams(item.order),
+          ...(item.order.c === undefined ? {} : { cloid: item.order.c }),
+        })),
       );
     }
     case "updateLeverage":

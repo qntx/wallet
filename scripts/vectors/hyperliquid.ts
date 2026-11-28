@@ -677,6 +677,58 @@ const l1Cases: ReadonlyArray<{
     nonce: 1677777606047,
   },
   {
+    name: "modify with cloid",
+    schema: ModifyRequest.entries.action,
+    action: {
+      type: "modify",
+      oid: 5000000003,
+      order: {
+        a: 1,
+        b: true,
+        p: "1600",
+        s: "0.25",
+        r: true,
+        t: { limit: { tif: "Gtc" } },
+        c: "0x00000000000000000000000000000002",
+      },
+    },
+    nonce: 1677777606048,
+  },
+  {
+    name: "batchModify with cloid",
+    schema: BatchModifyRequest.entries.action,
+    action: {
+      type: "batchModify",
+      modifies: [
+        {
+          oid: 5000000004,
+          order: {
+            a: 0,
+            b: true,
+            p: "30000",
+            s: "0.1",
+            r: false,
+            t: { limit: { tif: "Alo" } },
+            c: "0x00000000000000000000000000000003",
+          },
+        },
+        {
+          oid: "0x00000000000000000000000000000004",
+          order: {
+            a: 1,
+            b: false,
+            p: "1600",
+            s: "0.25",
+            r: false,
+            t: { limit: { tif: "Ioc" } },
+            c: "0x00000000000000000000000000000004",
+          },
+        },
+      ],
+    },
+    nonce: 1677777606049,
+  },
+  {
     name: "updateLeverage",
     schema: UpdateLeverageRequest.entries.action,
     action: { type: "updateLeverage", asset: 5, isCross: true, leverage: 10 },
