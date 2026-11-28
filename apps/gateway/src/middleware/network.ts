@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from "hono";
 
 import { networkById } from "@qntx/wallet-engine/gateway/contract";
 
-import { probeCost, requestCost } from "../budget/costs.ts";
+import { probeCost, requestCost, tronCost } from "../budget/costs.ts";
 import type { Account } from "../config/accounts.ts";
 import type {
   GatewayNetwork,
@@ -64,10 +64,13 @@ export function indexNetworks(
       if (account === undefined) {
         throw new Error(`provider ${provider.id} on ${network.id} has no account "${accountName}"`);
       }
-      if (
-        (info.family === "bitcoin" || info.family === "tron") &&
-        account.costs.kind !== "request"
-      ) {
+      const metered =
+        info.family === "bitcoin"
+          ? account.costs.kind === "request"
+          : info.family === "tron"
+            ? account.costs.kind === "request" || account.costs.kind === "tron"
+            : true;
+      if (!metered) {
         throw new Error(
           `provider ${provider.id} on ${network.id} has a ${account.costs.kind} cost model`,
         );
@@ -109,7 +112,7 @@ const probeOf = (url: string, account: Account, family: Family): UpstreamRequest
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{}",
-      cost: requestCost(account.costs),
+      cost: tronCost(account.costs, "/wallet/getnowblock"),
     };
   }
   const method = family === "solana" ? "getHealth" : "eth_chainId";

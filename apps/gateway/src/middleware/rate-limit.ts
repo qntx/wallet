@@ -20,9 +20,11 @@ export const SHARE_WINDOW_MAX_SECONDS = 60;
 
 /**
  * The per-minute capacity one client prefix may spend of `account`: `clientShare` of its
- * minute-scale budget. Windows longer than a minute stay out — day/month quotas are enforced by the
- * global budget (the provider-budget Durable Object), not per prefix. Throws when the account has
- * no minute-scale window or a `clientShare` outside (0, 1].
+ * minute-scale rate. Day/month quotas live in `cap`, enforced by the global budget (the
+ * provider-budget Durable Object), not per prefix. Validates the row: throws when any rate window
+ * is longer than a minute or non-positive — longer windows are token buckets that cannot hard-cap
+ * anything — when the account has no rate window, when a cap value is not a positive integer, or
+ * when `clientShare` falls outside (0, 1].
  */
 export function sharePerMinute(account: Account): number {
   if (!(account.clientShare > 0) || account.clientShare > 1) {
@@ -30,12 +32,24 @@ export function sharePerMinute(account: Account): number {
       `provider account clientShare must be inside (0, 1], got ${account.clientShare}`,
     );
   }
-  const windows = account.budget.filter((window) => window.seconds <= SHARE_WINDOW_MAX_SECONDS);
-  if (windows.length === 0) {
-    throw new Error("provider account has no minute-scale budget window for the client share");
+  for (const window of account.rate) {
+    if (!(window.seconds > 0) || window.seconds > SHARE_WINDOW_MAX_SECONDS) {
+      throw new Error(
+        `provider account rate window must be inside (0, ${String(SHARE_WINDOW_MAX_SECONDS)}] seconds, got ${String(window.seconds)}`,
+      );
+    }
+  }
+  if (account.rate.length === 0) {
+    throw new Error("provider account has no minute-scale rate window for the client share");
+  }
+  for (const value of [account.cap?.day, account.cap?.month]) {
+    if (value !== undefined && (!Number.isInteger(value) || value <= 0)) {
+      throw new Error(`provider account cap must be a positive integer, got ${String(value)}`);
+    }
   }
   return (
-    account.clientShare * Math.min(...windows.map((window) => (window.units * 60) / window.seconds))
+    account.clientShare *
+    Math.min(...account.rate.map((window) => (window.units * 60) / window.seconds))
   );
 }
 

@@ -49,7 +49,7 @@ const ACCOUNTS: Readonly<Record<string, Account>> = {
   ...TEST_ACCOUNTS,
   alchemy: {
     costs: ALCHEMY_COSTS,
-    budget: [{ units: 40_000, seconds: 5 }],
+    rate: [{ units: 40_000, seconds: 5 }],
     clientShare: 0.05,
     source: "https://test.invalid",
   },
@@ -60,7 +60,7 @@ describe("cost rows", () => {
 
   it("refuses a lookup on a model that does not price it", () => {
     expect(() => requestCost(ALCHEMY_COSTS)).toThrow(
-      "requestCost on an rpc-priced account — the provider is misconfigured",
+      "requestCost on a rpc-priced account — the provider is misconfigured",
     );
     expect(() => transfersCost(requestModel)).toThrow(
       "transfersCost on an account without a transfers row",
@@ -148,7 +148,7 @@ describe("provider-cost metering", () => {
       ...TEST_ACCOUNTS,
       alchemy: {
         costs: ALCHEMY_COSTS,
-        budget: [{ units: 60, seconds: 60 }],
+        rate: [{ units: 60, seconds: 60 }],
         clientShare: 0.05,
         source: "https://test.invalid",
       },
@@ -231,7 +231,7 @@ describe("one billed unit per upstream call", () => {
       ...TEST_ACCOUNTS,
       a: {
         costs,
-        budget: [{ units: 1_000_000, seconds: 60 }],
+        rate: [{ units: 1_000_000, seconds: 60 }],
         clientShare: 0.05,
         source: "https://test.invalid",
       },

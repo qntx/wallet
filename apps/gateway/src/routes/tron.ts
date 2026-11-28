@@ -12,8 +12,9 @@ import {
   tron,
   tronPathEntry,
 } from "@qntx/wallet-engine/gateway/contract";
+import type { TronNodePath } from "@qntx/wallet-engine/gateway/contract";
 
-import { requestCost } from "../budget/costs.ts";
+import { tronCost } from "../budget/costs.ts";
 import { limitBody } from "../middleware/body-limit.ts";
 import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
@@ -88,7 +89,7 @@ export function tronRoutes({
     if (!accepts(entry.request, body)) {
       throw new GatewayHttpError(400, "invalid-request");
     }
-    // Every allow-listed path is one bounded upstream call, billed one request credit.
+    // Every allow-listed path is one bounded upstream call, billed its path's credits.
     const meter = c.get("meter");
 
     const pin = c.req.header(PROVIDER_PIN_HEADER);
@@ -114,7 +115,7 @@ export function tronRoutes({
             await send({
               url: tronIndexerUrl(provider, path, request),
               method: "GET",
-              cost: requestCost(provider.costs),
+              cost: tronCost(provider.costs, path),
             }),
             entry.response,
           ),
@@ -126,6 +127,9 @@ export function tronRoutes({
       });
     }
 
+    // Not an indexer path, and tronPathEntry accepted it — so it is a node path.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- narrowed by tronPathEntry above
+    const nodePath = path as TronNodePath;
     const payload = JSON.stringify(body);
     const providers =
       pin === undefined
@@ -143,7 +147,7 @@ export function tronRoutes({
             method: "POST",
             headers: { "content-type": "application/json" },
             body: payload,
-            cost: requestCost(provider.costs),
+            cost: tronCost(provider.costs, nodePath),
           }),
           entry.response,
         ),

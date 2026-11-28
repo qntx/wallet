@@ -6,7 +6,7 @@ import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
 import type { NetworkVariables, ResolvedNetwork } from "../middleware/network.ts";
 import { UNAVAILABLE_RETRY_AFTER_SECONDS } from "../providers/forward.ts";
-import type { TokenListStore } from "../tokens/build.ts";
+import type { TokenListStore } from "../types.ts";
 
 const encoder = new TextEncoder();
 

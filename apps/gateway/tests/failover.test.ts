@@ -108,7 +108,7 @@ describe("share-limit failover", () => {
     // already exceeds SHARE_LIMIT — a too-costly share refusal on every provider.
     const tiny = (): Account => ({
       costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
-      budget: [{ units: 1, seconds: 60 }],
+      rate: [{ units: 1, seconds: 60 }],
       clientShare: 0.05,
       source: "https://test.invalid",
     });

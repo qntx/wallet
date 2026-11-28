@@ -159,7 +159,7 @@ describe("upstream throttling load", () => {
       ...TEST_ACCOUNTS,
       alchemy: {
         costs: ALCHEMY_COSTS,
-        budget: [GATEWAY_BUDGET],
+        rate: [GATEWAY_BUDGET],
         clientShare: 0.05,
         source: "https://test.invalid",
       },

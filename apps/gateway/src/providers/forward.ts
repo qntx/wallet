@@ -417,8 +417,9 @@ export function createForwarder(
       options: ForwardOptions,
     ): Promise<Forwarded<T>> {
       // The shortest announced wait among budget refusals and cool-downs: when every provider
-      // failed it replaces the fixed 30 s `Retry-After` on the 503.
-      let retryAfter = UNAVAILABLE_RETRY_AFTER_SECONDS;
+      // failed it replaces the fixed 30 s `Retry-After` on the 503. A spent cap announces hours,
+      // so the default only applies when no failure announced a wait at all.
+      let retryAfter: number | undefined;
       // Share refusals are provider-local: the client gets its own refusal back only when every
       // provider failed by one — 429 when any refusal was a spent share, 413 when every one was
       // an oversized charge. Any other failure in the mix keeps the 503.
@@ -441,7 +442,11 @@ export function createForwarder(
             }
             throw new GatewayHttpError(413, "too-costly");
           }
-          throw new GatewayHttpError(503, "unavailable", Math.max(1, retryAfter));
+          throw new GatewayHttpError(
+            503,
+            "unavailable",
+            Math.max(1, retryAfter ?? UNAVAILABLE_RETRY_AFTER_SECONDS),
+          );
         }
         try {
           const value = await policyFor(provider).execute(async ({ signal }) => {
@@ -498,7 +503,10 @@ export function createForwarder(
             throw new GatewayHttpError(502, "outcome-unknown");
           }
           if (failure instanceof ProviderFailure && failure.retryAfterSeconds !== undefined) {
-            retryAfter = Math.min(retryAfter, failure.retryAfterSeconds);
+            retryAfter = Math.min(
+              retryAfter ?? Number.POSITIVE_INFINITY,
+              failure.retryAfterSeconds,
+            );
           }
           if (failure instanceof ProviderFailure && failure.share !== undefined) {
             shareRefusals += 1;

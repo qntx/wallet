@@ -18,8 +18,8 @@ import { PRODUCTION_ACCOUNTS } from "../../../../apps/gateway/src/config/account
 import { PRODUCTION_NETWORKS } from "../../../../apps/gateway/src/config/networks.ts";
 import type { Limiters, RateLimiter } from "../../../../apps/gateway/src/limits.ts";
 import { buildTokenLists } from "../../../../apps/gateway/src/tokens/build.ts";
-import type { TokenListStore } from "../../../../apps/gateway/src/tokens/build.ts";
 import { tokenListSources } from "../../../../apps/gateway/src/tokens/sources.ts";
+import type { TokenListStore } from "../../../../apps/gateway/src/types.ts";
 import { createWalletEngine } from "../../src/engine.ts";
 import type { WalletEngine } from "../../src/engine.ts";
 import { gatewayScope } from "../../src/gateway/client.ts";
@@ -272,8 +272,9 @@ export type World = {
   /** The virtual limiter clock's reading — refusals and `advance` move it. */
   readonly clock: () => number;
   /**
-   * `n` trongrid node-API calls under a foreign client IP: they spend the shared global budget (12
-   * calls / 5 s) without touching this world's client share — other tenants' load.
+   * `n` trongrid node-API calls under a foreign client IP: they spend the shared global budget (250
+   * credits/s, 80 credits a call) without touching this world's client share — other tenants'
+   * load.
    */
   readonly pressureTron: (n: number) => Promise<void>;
   readonly snapshot: () => Readings;
@@ -465,6 +466,7 @@ export const createWorld = async (opts: {
     now,
     log: () => undefined,
     sources: tokenListSources({ coingecko: "k", jupiter: "k" }),
+    budget,
   });
 
   const risk = {
@@ -700,6 +702,9 @@ export const createWorld = async (opts: {
         "content-type": "application/json",
         "cf-connecting-ip": "198.51.100.7",
         [CLIENT_ID_HEADER]: "00000000000000000000000000000001",
+        // Pinned: an unpinned call fails over to tatum when trongrid's budget refuses, which
+        // would hide the drain the pressure means to cause.
+        [PROVIDER_PIN_HEADER]: "trongrid",
       });
       for (let i = 0; i < n; i += 1) {
         // oxlint-disable-next-line no-await-in-loop -- sequential pressure, each take recorded

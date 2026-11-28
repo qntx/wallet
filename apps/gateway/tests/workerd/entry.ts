@@ -7,7 +7,8 @@
  *
  * - `x-test-ip` is copied into `cf-connecting-ip` (local workerd overwrites it); the literal `none`
  *   deletes it, which the required client address rejects.
- * - `SCALE=small` swaps PRODUCTION_ACCOUNTS for tiny buckets so exhaustion is fast.
+ * - `SCALE=small` swaps PRODUCTION_ACCOUNTS for tiny buckets so exhaustion is fast; `SCALE=cap` keeps
+ *   production rates but shrinks every spend cap.
  * - `UPSTREAM_DELAY_MS` adds a fixed delay inside the stub upstream. Driver bypass routes: `GET
  *   /__stats`, `POST /__reset`.
  */
@@ -354,10 +355,35 @@ const scaledAccounts = (): Readonly<Record<string, Account>> =>
       id,
       {
         ...account,
-        budget: [{ units: id === "alchemy" ? 400 : 10, seconds: 5 }],
+        rate: [{ units: id === "alchemy" ? 400 : 10, seconds: 5 }],
       },
     ]),
   );
+
+/**
+ * `SCALE=cap`: production rates and cost models, but every spend cap tiny — alchemy's day cap buys
+ * exactly 100 eth_calls (26 CU each), every other account is spent after a handful.
+ */
+const cappedAccounts = (): Readonly<Record<string, Account>> =>
+  Object.fromEntries(
+    Object.entries(PRODUCTION_ACCOUNTS).map(([id, account]) => [
+      id,
+      {
+        ...account,
+        cap: id === "alchemy" ? { day: 2600, month: 26_000 } : { day: 10, month: 100 },
+      },
+    ]),
+  );
+
+const accountsFor = (scale: string | undefined): Readonly<Record<string, Account>> => {
+  if (scale === "small") {
+    return scaledAccounts();
+  }
+  if (scale === "cap") {
+    return cappedAccounts();
+  }
+  return PRODUCTION_ACCOUNTS;
+};
 
 const AUTH_IDS: ReadonlyArray<UpstreamAuthId> = [
   "alchemy",
@@ -388,7 +414,7 @@ let gateway: Gateway | undefined;
 
 const gatewayFor = async (env: HarnessEnv): Promise<Gateway> => {
   if (gateway === undefined) {
-    const accounts = env.SCALE === "small" ? scaledAccounts() : PRODUCTION_ACCOUNTS;
+    const accounts = accountsFor(env.SCALE);
     const stubFetch = upstream(Number(env.UPSTREAM_DELAY_MS ?? "0"));
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the harness env is WorkerEnv plus test-only vars
     const workerEnv = env as unknown as WorkerEnv;

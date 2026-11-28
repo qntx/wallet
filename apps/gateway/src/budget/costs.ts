@@ -1,4 +1,9 @@
-import type { EvmRpcMethod, SolanaRpcMethod } from "@qntx/wallet-engine/gateway/contract";
+import type {
+  EvmRpcMethod,
+  SolanaRpcMethod,
+  TronIndexerPath,
+  TronNodePath,
+} from "@qntx/wallet-engine/gateway/contract";
 
 /**
  * How a provider account prices its own traffic: `units` in the provider's published metering
@@ -24,7 +29,11 @@ export type CostModel =
       readonly transfers?: CostRow;
       readonly nfts?: Readonly<Record<NftMethod, CostRow>>;
     }
-  | { readonly kind: "request"; readonly request: CostRow };
+  | { readonly kind: "request"; readonly request: CostRow }
+  | {
+      readonly kind: "tron";
+      readonly paths: Readonly<Record<TronNodePath | TronIndexerPath, CostRow>>;
+    };
 
 /** The wire shape of a validated call or batch (params are already schema-checked upstream). */
 export type RpcCall = { readonly method: string; readonly params?: unknown };
@@ -42,6 +51,9 @@ export function rpcCost(model: CostModel, body: RpcCall | ReadonlyArray<RpcCall>
   if (model.kind === "request") {
     return calls.length * model.request.units;
   }
+  if (model.kind === "tron") {
+    throw new Error("rpcCost on a tron-priced account — the provider is misconfigured");
+  }
   // Allow-listed methods are all keys of `methods`; a non-key is a zero-cost gap — the forwarder
   // still floors every upstream call at one billed unit.
   const methods: Readonly<Record<string, CostRow>> = model.methods;
@@ -55,9 +67,22 @@ export function rpcCost(model: CostModel, body: RpcCall | ReadonlyArray<RpcCall>
 /** The account units one non-RPC HTTP call costs. Only request-priced providers support it. */
 export function requestCost(model: CostModel): number {
   if (model.kind !== "request") {
-    throw new Error("requestCost on an rpc-priced account — the provider is misconfigured");
+    throw new Error(
+      `requestCost on a ${model.kind}-priced account — the provider is misconfigured`,
+    );
   }
   return model.request.units;
+}
+
+/** The account units one TRON node API or indexer call costs: its path row in Credits. */
+export function tronCost(model: CostModel, path: TronNodePath | TronIndexerPath): number {
+  if (model.kind === "request") {
+    return model.request.units;
+  }
+  if (model.kind === "rpc") {
+    throw new Error("tronCost on an rpc-priced account — the provider is misconfigured");
+  }
+  return model.paths[path].units;
 }
 
 /**
@@ -68,6 +93,9 @@ export function requestCost(model: CostModel): number {
 export function probeCost(model: CostModel, method: string): number {
   if (model.kind === "request") {
     return model.request.units;
+  }
+  if (model.kind === "tron") {
+    throw new Error("probeCost on a tron-priced account — the provider is misconfigured");
   }
   const methods: Readonly<Record<string, CostRow>> = model.methods;
   return methods[method]?.units ?? 20;
@@ -96,7 +124,8 @@ const alchemy = (units: number): CostRow => ({
 });
 
 /**
- * Alchemy's throughput compute units (= CU where the page lists no throughput column). Covers every
+ * Alchemy's compute units per row: max(billed CU, throughput CU) where the page lists both, so one
+ * meter never under-counts the bill (the caps) nor the throughput (the rate). Covers every
  * allow-listed EVM and Solana method plus `alchemy_getAssetTransfers`.
  */
 export const ALCHEMY_COSTS: CostModel = {
@@ -136,7 +165,7 @@ export const ALCHEMY_COSTS: CostModel = {
     getBlockTime: alchemy(20),
     getEpochInfo: alchemy(20),
     getFeeForMessage: alchemy(20),
-    getFirstAvailableBlock: alchemy(20),
+    getFirstAvailableBlock: alchemy(40),
     getGenesisHash: alchemy(10),
     getLatestBlockhash: alchemy(20),
     getMinimumBalanceForRentExemption: alchemy(10),
@@ -158,11 +187,48 @@ export const ALCHEMY_COSTS: CostModel = {
   },
   transfers: { units: 120, source: "https://www.alchemy.com/docs/reference/compute-unit-costs" },
   nfts: {
-    getNFTsForOwner: alchemy(100),
-    getNFTMetadata: alchemy(10),
-    getContractMetadata: alchemy(10),
-    getFloorPrice: alchemy(10),
-    getAssetsByOwner: alchemy(200),
+    getNFTsForOwner: alchemy(480),
+    getNFTMetadata: alchemy(80),
+    getContractMetadata: alchemy(160),
+    getFloorPrice: alchemy(80),
+    getAssetsByOwner: alchemy(480),
     getAsset: alchemy(200),
+  },
+};
+
+const trongrid = (units: number): CostRow => ({
+  units,
+  source: "https://www.trongrid.io/creditCosts",
+});
+
+/**
+ * TronGrid Credits per allow-listed path: most node API calls 80, the witness list 150, the indexer
+ * transactions pages 160/200. Typed over the contract's path union, so a newly allow-listed path
+ * cannot ship unpriced.
+ */
+export const TRONGRID_COSTS: CostModel = {
+  kind: "tron",
+  paths: {
+    "/wallet/getnowblock": trongrid(80),
+    "/walletsolidity/getnowblock": trongrid(80),
+    "/wallet/getblockbynum": trongrid(80),
+    "/walletsolidity/getblockbynum": trongrid(80),
+    "/wallet/getaccount": trongrid(80),
+    "/wallet/getavailableunfreezecount": trongrid(80),
+    "/wallet/getcandelegatedmaxsize": trongrid(80),
+    "/wallet/getdelegatedresourcev2": trongrid(80),
+    "/wallet/getReward": trongrid(80),
+    "/wallet/getassetissuebyid": trongrid(80),
+    "/wallet/listwitnesses": trongrid(150),
+    "/wallet/getaccountresource": trongrid(80),
+    "/wallet/getchainparameters": trongrid(80),
+    "/wallet/triggerconstantcontract": trongrid(80),
+    "/wallet/broadcasthex": trongrid(80),
+    "/wallet/gettransactionbyid": trongrid(80),
+    "/wallet/gettransactioninfobyid": trongrid(80),
+    "/walletsolidity/gettransactioninfobyid": trongrid(80),
+    "/v1/accounts/transactions": trongrid(160),
+    "/v1/accounts/transactions/trc20": trongrid(200),
+    "/v1/accounts/account": trongrid(80),
   },
 };

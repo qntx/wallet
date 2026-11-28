@@ -12,7 +12,7 @@ import { DEVNET, SIGNET, TEST_ACCOUNTS, fakeFetch, gateway } from "./helpers.ts"
 
 const requestPriced = (): Account => ({
   costs: { kind: "request", request: { units: 1, source: "https://test.invalid" } },
-  budget: [{ units: 1_000_000, seconds: 60 }],
+  rate: [{ units: 1_000_000, seconds: 60 }],
   clientShare: 0.05,
   source: "https://test.invalid",
 });
