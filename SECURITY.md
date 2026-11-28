@@ -222,6 +222,13 @@ Summary, per platform — details in the sections below:
 - **`clear`/`blind` device lines are source-derived claims** about pinned
   app versions — the kernel does not verify what the device will actually
   render.
+- **Ledger clear-signing descriptors are vendor attestations.** The host
+  fetches them (Ledger's CAL by default); the kernel only binds them to the
+  request it decoded and checks their form, and the Ethereum app verifies
+  Ledger's signature. A descriptor never changes the kernel prompt. A
+  compromised Ledger signing key could make the device mislabel a bound
+  token outside the built-in token table (ticker or decimals); listed tokens
+  are pinned by the table (`packages/wallet-kernel/src/modules/signers/ledger/clear.ts`).
 - **Pairing and key-adding fetches are verification-gated** (`pair`
   requires a factor; `accounts` requires one when the pin lacks paths, and
   always consumes one when presented — `hardware.begin` in

@@ -9,6 +9,22 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Added
+
+- Ledger clear signing for ERC-20 `transfer` and `approve`: a `sign` hardware operation may carry
+  `descriptors` (`LedgerDescriptors`), Ledger-signed token descriptors the host fetched. The kernel
+  forwards one only when it binds to the decoded request — same chain, the token contract is
+  `tx.to`, zero value, exact `transfer`/`approve` calldata, and the built-in token table's symbol
+  and decimals when the token is listed — and the Ethereum app verifies its signature and renders
+  the call ("Send 1.234567 USDC", "Approve Unlimited USDC") with "Blind signing" off. A descriptor
+  that does not bind is dropped and the blind-signing rule applies unchanged.
+- `@qntx/wallet/hardware`: `calDescriptorSource` (Ledger's CAL at `LEDGER_CAL_URL`; injected
+  `fetch`, 5 s total timeout, 64 KiB response bound, optional `originToken`) and
+  `bundleDescriptorSource` (offline, host-supplied).
+- `@qntx/wallet-engine`: `EngineOptions.ledgerDescriptors`. The default asks CAL through the
+  engine's `fetch` for a Ledger wallet's ERC-20 transfer/approve — revealing the token contract and
+  chain to Ledger — and signs without descriptors when the source fails.
+
 ## [0.14.1] - 2026-11-28
 
 Bitcoin change follows the kernel-sealed mark alone. An endpoint's "used" answers no longer choose

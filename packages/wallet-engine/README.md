@@ -52,6 +52,12 @@ const engine = createWalletEngine({
 networks it serves, and the only source of prices, swap and bridge quotes and EVM history. The
 engine sends it a fresh `x-client-id` per session and per scope.
 
+`EngineOptions.ledgerDescriptors` is the Ledger clear-signing descriptor source. The default asks
+Ledger's CAL through the engine's `fetch` for a Ledger wallet's ERC-20 transfer/approve — that
+reveals the token contract and chain to Ledger. Pass `bundleDescriptorSource(bundle)` to stay
+offline, or `async () => undefined` to disable descriptors; when the source fails the engine signs
+without them and the blind-signing rule applies unchanged.
+
 The engine follows the wallet's lock state: unlocking opens the encrypted `EngineStore` and starts
 the selected account group; locking flushes pending writes, closes every Spark client, stops
 polling, and ignores late results from the old session. Transaction and request state stays

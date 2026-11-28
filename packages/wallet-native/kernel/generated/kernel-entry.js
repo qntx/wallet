@@ -1048,7 +1048,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-75ns7-7-.mjs
+	// packages/wallet/dist/protocol-CQtA2SQZ.mjs
 	init_objectSpread2();
 	var MAX_FACTOR_CHARS = 512;
 	var MAX_STRING_BYTES = 64e3;
@@ -1480,6 +1480,7 @@
 		matched: bool
 	}));
 	var deviceDisplay = union(literal("clear"), literal("blind"));
+	var ledgerDescriptors = obj({ tokens: opt(arr(bytes(38, 151), 16)) });
 	var hardwareOperation = union(obj({
 		kind: literal("pair"),
 		device: hardwareDevice
@@ -1492,7 +1493,8 @@
 	}), obj({
 		kind: literal("sign"),
 		request: signRequest,
-		acknowledgeUnconfirmed: opt(literal(true))
+		acknowledgeUnconfirmed: opt(literal(true)),
+		descriptors: opt(ledgerDescriptors)
 	}), obj({
 		kind: literal("verify-address"),
 		walletId,
@@ -3928,7 +3930,7 @@
 			toWords
 		};
 	}
-	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64$1, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8$8, hexFallback, hasHexBuiltin, hexBuiltin, hex$3;
+	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64$1, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8$8, hexFallback, hasHexBuiltin, hexBuiltin, hex$4;
 	var init_base = __esmMin((() => {
 		freeze = (fn) => Object.freeze(fn());
 		powers = /* @__PURE__ */ (() => {
@@ -4203,7 +4205,7 @@
 				return Uint8Array.fromHex(s);
 			}
 		};
-		hex$3 = /* @__PURE__ */ freeze(() => hasHexBuiltin ? hexBuiltin : hexFallback);
+		hex$4 = /* @__PURE__ */ freeze(() => hasHexBuiltin ? hexBuiltin : hexFallback);
 	}));
 	// packages/wallet-kernel/src/derive/key-id.ts
 	init_base();
@@ -12262,15 +12264,15 @@
 			}
 			finish() {
 				if (this.opts.allowUnreadBytes) return;
-				if (this.bitPos) throw this.err(`${this.bitPos} bits left after unpack: ${hex$3.encode(this.data.subarray(this.pos))}`);
+				if (this.bitPos) throw this.err(`${this.bitPos} bits left after unpack: ${hex$4.encode(this.data.subarray(this.pos))}`);
 				if (this.bs && !this.parent) {
 					const notRead = Bitset.indices(this.bs, this.data.length, true);
 					if (notRead.length) {
-						const formatted = Bitset.range(notRead).map(({ pos, length }) => `(${pos}/${length})[${hex$3.encode(this.data.subarray(pos, pos + length))}]`).join(", ");
+						const formatted = Bitset.range(notRead).map(({ pos, length }) => `(${pos}/${length})[${hex$4.encode(this.data.subarray(pos, pos + length))}]`).join(", ");
 						throw this.err(`unread byte ranges: ${formatted} (total=${this.data.length})`);
 					} else return;
 				}
-				if (!this.isEnd()) throw this.err(`${this.leftBytes} bytes ${this.bitPos} bits left after unpack: ${hex$3.encode(this.data.subarray(this.pos))}`);
+				if (!this.isEnd()) throw this.err(`${this.leftBytes} bytes ${this.bitPos} bits left after unpack: ${hex$4.encode(this.data.subarray(this.pos))}`);
 			}
 			err(msg) {
 				return Path.err("Reader", this.stack, msg);
@@ -19505,24 +19507,24 @@
 			}
 		]
 	}];
-	var hex$2 = (v) => {
+	var hex$3 = (v) => {
 		assert$8(v);
 		return v;
 	};
 	/** ERC-7821 batch-default self-call payload for `execute` on the delegator. */
 	var encodeBatchExecute = (calls) => encodeData$1(EXECUTE, [EXECUTE_BATCH_MODE, encode$3(EXECUTIONS, [calls.map((c) => ({
-		target: hex$2(checksumEvmAddress(c.to)),
+		target: hex$3(checksumEvmAddress(c.to)),
 		value: c.value,
-		callData: hex$2(c.data)
+		callData: hex$3(c.data)
 	}))])]);
 	var list$1 = (v) => Array.isArray(v) ? v : [];
 	var isExecution = (e) => typeof e === "object" && e !== null && "target" in e && "value" in e && "callData" in e && typeof e.target === "string" && isEvmAddress(e.target) && typeof e.value === "bigint" && typeof e.callData === "string";
 	/** Decodes an `execute` call; undefined unless the encoding is canonical batch-default mode. */
 	var decodeBatchExecute = (data) => {
 		try {
-			const [mode, executionData] = list$1(decodeData(EXECUTE, hex$2(data)));
+			const [mode, executionData] = list$1(decodeData(EXECUTE, hex$3(data)));
 			if (mode !== "0x0100000000000000000000000000000000000000000000000000000000000000" || typeof executionData !== "string") return;
-			const [inner] = list$1(decode$4(EXECUTIONS, hex$2(executionData)));
+			const [inner] = list$1(decode$4(EXECUTIONS, hex$3(executionData)));
 			const executions = [];
 			for (const e of list$1(inner)) {
 				if (!isExecution(e)) return;
@@ -23210,24 +23212,24 @@
 	function assertHex(value, field) {
 		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
 	}
-	var hex$1 = (value, field) => {
+	var hex$2 = (value, field) => {
 		assertHex(value, field);
 		return value;
 	};
 	var accessEntry = (entry) => ({
-		address: hex$1(entry.address, "accessList.address"),
-		storageKeys: entry.storageKeys.map((k) => hex$1(k, "accessList.storageKeys"))
+		address: hex$2(entry.address, "accessList.address"),
+		storageKeys: entry.storageKeys.map((k) => hex$2(k, "accessList.storageKeys"))
 	});
 	/** The EIP-7702 authorization an `eip7702` transaction carries: the account's next-but-one nonce. */
 	var evmAuthorization = (tx) => ({
 		chainId: tx.chainId,
-		address: hex$1(tx.authorization.address, "authorization.address"),
+		address: hex$2(tx.authorization.address, "authorization.address"),
 		nonce: BigInt(tx.nonce + 1)
 	});
 	var baseEnvelope = (tx) => ({
 		chainId: tx.chainId,
-		to: tx.to === void 0 ? void 0 : hex$1(tx.to, "to"),
-		data: hex$1(tx.data, "data"),
+		to: tx.to === void 0 ? void 0 : hex$2(tx.to, "to"),
+		data: hex$2(tx.data, "data"),
 		value: BigInt(tx.value),
 		nonce: BigInt(tx.nonce),
 		gas: BigInt(tx.gas)
@@ -23263,7 +23265,7 @@
 			if (authorization === void 0) throw new ChainError("invalid-request", "an eip7702 envelope needs its signed authorization");
 			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
 				type: "eip7702",
-				to: hex$1(tx.to, "to"),
+				to: hex$2(tx.to, "to"),
 				accessList: tx.accessList.map(accessEntry),
 				maxFeePerGas: BigInt(tx.maxFeePerGas),
 				maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
@@ -37340,7 +37342,7 @@ zoo`.split("\n"));
 				const seen = {};
 				const add = (key, value) => {
 					const _value = value;
-					const kStr = hex$3.encode(PSBTUnknownKey.encode(key));
+					const kStr = hex$4.encode(PSBTUnknownKey.encode(key));
 					if (seen[kStr]) throw new Error(`PSBT: duplicate key=${kStr}`);
 					seen[kStr] = true;
 					out.push({
@@ -37377,7 +37379,7 @@ zoo`.split("\n"));
 				const noKey = {};
 				const seen = {};
 				for (const elm of raw) {
-					const kStr = hex$3.encode(PSBTUnknownKey.encode(elm.key));
+					const kStr = hex$4.encode(PSBTUnknownKey.encode(elm.key));
 					if (seen[kStr]) throw new Error(`PSBT: duplicate key=${kStr}`);
 					seen[kStr] = true;
 					let name = "unknown";
@@ -37386,7 +37388,7 @@ zoo`.split("\n"));
 					if (byType[elm.key.type]) {
 						const [_name, kc, vc] = byType[elm.key.type];
 						name = _name;
-						if (!kc && key.length) throw new Error(`PSBT: Non-empty key for ${name} (key=${hex$3.encode(key)} value=${hex$3.encode(value)}`);
+						if (!kc && key.length) throw new Error(`PSBT: Non-empty key for ${name} (key=${hex$4.encode(key)} value=${hex$4.encode(value)}`);
 						key = kc ? kc.decode(key) : void 0;
 						value = vc.decode(value);
 						if (!kc) {
@@ -37528,7 +37530,7 @@ zoo`.split("\n"));
 					if (!Array.isArray(newKV)) throw new Error(`keyMap(${k}): KV pairs should be [k, v][]`);
 					newKV = newKV.map((val) => {
 						if (val.length !== 2) throw new Error(`keyMap(${k}): KV pairs should be [k, v][]`);
-						return [typeof val[0] === "string" ? kC.decode(hex$3.decode(val[0])) : val[0], typeof val[1] === "string" ? vC.decode(hex$3.decode(val[1])) : val[1]];
+						return [typeof val[0] === "string" ? kC.decode(hex$4.decode(val[0])) : val[0], typeof val[1] === "string" ? vC.decode(hex$4.decode(val[1])) : val[1]];
 					});
 					const map = {};
 					const add = (kStr, k, v) => {
@@ -37536,13 +37538,13 @@ zoo`.split("\n"));
 							map[kStr] = [k, v];
 							return;
 						}
-						const oldVal = hex$3.encode(vC.encode(map[kStr][1]));
-						const newVal = hex$3.encode(vC.encode(v));
+						const oldVal = hex$4.encode(vC.encode(map[kStr][1]));
+						const newVal = hex$4.encode(vC.encode(v));
 						if (oldVal !== newVal) throw new Error(`keyMap(${key}): same key=${kStr} oldVal=${oldVal} newVal=${newVal}`);
 					};
-					for (const [k, v] of oldKV) add(hex$3.encode(kC.encode(k)), k, v);
+					for (const [k, v] of oldKV) add(hex$4.encode(kC.encode(k)), k, v);
 					for (const [k, v] of newKV) {
-						const kStr = hex$3.encode(kC.encode(k));
+						const kStr = hex$4.encode(kC.encode(k));
 						if (v === void 0) {
 							if (cannotChange) throw new Error(`Cannot remove signed field=${key}/${k}`);
 							delete map[kStr];
@@ -37554,26 +37556,26 @@ zoo`.split("\n"));
 					res[key] = Object.values(map);
 				}
 			} else {
-				if (typeof res[k] === "string") res[k] = vC.decode(hex$3.decode(res[k]));
+				if (typeof res[k] === "string") res[k] = vC.decode(hex$4.decode(res[k]));
 				if (cannotChange && k in _val) {
 					if (!_cur || _cur[k] === void 0) throw new Error(`Cannot add signed field=${k}`);
 					let current = _cur[k];
-					if (typeof current === "string") current = vC.decode(hex$3.decode(current));
+					if (typeof current === "string") current = vC.decode(hex$4.decode(current));
 					if (!equalBytes$4(vC.encode(res[k]), vC.encode(current))) throw new Error(`Cannot change signed field=${k}`);
 				}
 			}
 		}
 		if (unknownMode === "ignore" && _val.unknown) {
 			const map = {};
-			for (const [k, v] of (_cur === null || _cur === void 0 ? void 0 : _cur.unknown) || []) map[hex$3.encode(PSBTUnknownKey.encode(k))] = [k, v];
+			for (const [k, v] of (_cur === null || _cur === void 0 ? void 0 : _cur.unknown) || []) map[hex$4.encode(PSBTUnknownKey.encode(k))] = [k, v];
 			for (const [k, v] of _val.unknown) {
-				const kStr = hex$3.encode(PSBTUnknownKey.encode(k));
+				const kStr = hex$4.encode(PSBTUnknownKey.encode(k));
 				if (map[kStr] === void 0) {
 					map[kStr] = [k, v];
 					continue;
 				}
-				const oldVal = hex$3.encode(BytesInf.encode(map[kStr][1]));
-				const newVal = hex$3.encode(BytesInf.encode(v));
+				const oldVal = hex$4.encode(BytesInf.encode(map[kStr][1]));
+				const newVal = hex$4.encode(BytesInf.encode(v));
 				if (oldVal !== newVal) throw new Error(`keyMap(unknown): same key=${kStr} oldVal=${oldVal} newVal=${newVal}`);
 			}
 			res.unknown = Object.values(map);
@@ -37615,8 +37617,8 @@ zoo`.split("\n"));
 			if (keyCoder || _current[key] === void 0 || _other[key] === void 0) continue;
 			let a = _current[key];
 			let b = _other[key];
-			if (typeof a === "string") a = valueCoder.decode(hex$3.decode(a));
-			if (typeof b === "string") b = valueCoder.decode(hex$3.decode(b));
+			if (typeof a === "string") a = valueCoder.decode(hex$4.decode(a));
+			if (typeof b === "string") b = valueCoder.decode(hex$4.decode(b));
 			if (!equalBytes$4(valueCoder.encode(a), valueCoder.encode(b))) throw new Error(`Cannot combine conflicting field=${k}`);
 		}
 		return mergeKeyMap(psbtEnum, _other, _current, void 0, unknown, proprietary);
@@ -38041,7 +38043,7 @@ zoo`.split("\n"));
 			const version = tree.leafVersion;
 			const { script: leafScript } = tree;
 			if (tree.tapLeafScript || tree.tapMerkleRoot && !equalBytes$4(tree.tapMerkleRoot, EMPTY$2)) throw new Error("P2TR: tapRoot leafScript cannot have tree");
-			const script = typeof leafScript === "string" ? hex$3.decode(leafScript) : abytes(leafScript, void 0, "tree.script");
+			const script = typeof leafScript === "string" ? hex$4.decode(leafScript) : abytes(leafScript, void 0, "tree.script");
 			checkTaprootScript(script, internalPubKey, allowUnknownOutputs, customScripts);
 			return {
 				type: "leaf",
@@ -38065,7 +38067,7 @@ zoo`.split("\n"));
 	}
 	function p2tr(internalPubKey, tree, network = NETWORK, allowUnknownOutputs = false, customScripts) {
 		if (!internalPubKey && !tree) throw new Error("p2tr: should have pubKey or scriptTree (or both)");
-		const pubKey = typeof internalPubKey === "string" ? hex$3.decode(internalPubKey) : internalPubKey !== null && internalPubKey !== void 0 ? internalPubKey : taprootNumsKey();
+		const pubKey = typeof internalPubKey === "string" ? hex$4.decode(internalPubKey) : internalPubKey !== null && internalPubKey !== void 0 ? internalPubKey : taprootNumsKey();
 		if (!isValidPubkey(pubKey, PubT.schnorr)) throw new Error("p2tr: non-schnorr pubkey");
 		if (tree) {
 			let hashedTree = taprootAddPath(taprootHashTree(tree, pubKey, allowUnknownOutputs, customScripts));
@@ -38748,7 +38750,7 @@ zoo`.split("\n"));
 					allowUnknownInputs: true,
 					allowUnknownVersion: true
 				});
-				const txid = hex$3.encode(_i.txid);
+				const txid = hex$4.encode(_i.txid);
 				if (tx.id !== txid) throw new Error(`nonWitnessUtxo: wrong txid, exp=${txid} got=${tx.id}`);
 			}
 		} else if (_i.witnessUtxo) prevOut = _i.witnessUtxo;
@@ -38816,10 +38818,10 @@ zoo`.split("\n"));
 		const _cur = cur;
 		const _allowedFields = allowedFields;
 		let { nonWitnessUtxo, txid } = _i;
-		if (typeof nonWitnessUtxo === "string") nonWitnessUtxo = hex$3.decode(nonWitnessUtxo);
+		if (typeof nonWitnessUtxo === "string") nonWitnessUtxo = hex$4.decode(nonWitnessUtxo);
 		if (isBytes$1(nonWitnessUtxo)) nonWitnessUtxo = RawTx.decode(nonWitnessUtxo);
 		if (!("nonWitnessUtxo" in _i) && nonWitnessUtxo === void 0) nonWitnessUtxo = _cur === null || _cur === void 0 ? void 0 : _cur.nonWitnessUtxo;
-		if (typeof txid === "string") txid = hex$3.decode(txid);
+		if (typeof txid === "string") txid = hex$4.decode(txid);
 		if (txid === void 0) txid = _cur === null || _cur === void 0 ? void 0 : _cur.txid;
 		let res = _objectSpread2(_objectSpread2(_objectSpread2({}, _cur), _i), {}, {
 			nonWitnessUtxo,
@@ -39324,13 +39326,13 @@ zoo`.split("\n"));
 				return this.toBytes(false, false);
 			}
 			get hex() {
-				return hex$3.encode(this.toBytes(true, this.hasWitnesses));
+				return hex$4.encode(this.toBytes(true, this.hasWitnesses));
 			}
 			get hash() {
-				return hex$3.encode(sha256x2(this.toBytes(true)));
+				return hex$4.encode(sha256x2(this.toBytes(true)));
 			}
 			get id() {
-				return hex$3.encode(sha256x2(this.toBytes(true)).reverse());
+				return hex$4.encode(sha256x2(this.toBytes(true)).reverse());
 			}
 			checkInputIdx(idx) {
 				anumber$2(idx, "idx");
@@ -39409,7 +39411,7 @@ zoo`.split("\n"));
 				let { amount, script } = o;
 				if (amount === void 0) amount = cur === null || cur === void 0 ? void 0 : cur.amount;
 				amount = abigint(amount, "o.amount");
-				if (typeof script === "string") script = hex$3.decode(script);
+				if (typeof script === "string") script = hex$4.decode(script);
 				if (script === void 0) script = cur === null || cur === void 0 ? void 0 : cur.script;
 				let res = _objectSpread2(_objectSpread2(_objectSpread2({}, cur), o), {}, {
 					amount,
@@ -41905,7 +41907,7 @@ zoo`.split("\n"));
 	init_transaction();
 	init_objectSpread2();
 	var isPath = (path) => Array.isArray(path) && path.every((p) => typeof p === "number");
-	var hex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
+	var hex$1 = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 	/** The BIP-32 master fingerprint as the uint32 PSBT derivation entries carry. */
 	var fingerprintNumber$1 = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
 	var PURPOSES = [
@@ -42025,11 +42027,11 @@ zoo`.split("\n"));
 						reached.set(purpose, Math.max((_reached$get = reached.get(purpose)) !== null && _reached$get !== void 0 ? _reached$get : -1, tail.index));
 					}
 					if (!await b.material.confirmed("secp256k1", entry.path)) {
-						unconfirmed.add(hex(output.script));
+						unconfirmed.add(hex$1(output.script));
 						break;
 					}
-					if (discoverable) change.add(hex(output.script));
-					else unusual.set(hex(output.script), pathString(entry.path));
+					if (discoverable) change.add(hex$1(output.script));
+					else unusual.set(hex$1(output.script), pathString(entry.path));
 					break;
 				} catch (error) {
 					if (error instanceof KernelError && error.code === "device-required") throw error;
@@ -55284,6 +55286,72 @@ zoo`.split("\n"));
 			};
 		}
 	};
+	// packages/wallet-kernel/src/modules/signers/ledger/clear.ts
+	init_secp256k1();
+	var MAX_TICKER_BYTES = 50;
+	var hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+	/** Parses the legacy token payload (`E0 0A` data), strict on layout, ticker, decimals and DER. */
+	var parseTokenDescriptor = (payload) => {
+		const [tickerLength] = payload;
+		if (tickerLength === void 0 || tickerLength < 1 || tickerLength > MAX_TICKER_BYTES) return;
+		const fixed = 1 + tickerLength + 20 + 4 + 4;
+		if (payload.length <= fixed) return;
+		const tickerBytes = payload.subarray(1, 1 + tickerLength);
+		if (!tickerBytes.every((b) => b >= 32 && b <= 126)) return;
+		const ticker = new TextDecoder("ascii", { fatal: true }).decode(tickerBytes);
+		const addressOffset = 1 + tickerLength;
+		const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+		const decimals = view.getUint32(addressOffset + 20);
+		if (decimals > 255) return;
+		const chainId = view.getUint32(addressOffset + 24);
+		const signature = payload.subarray(fixed);
+		try {
+			secp256k1.Signature.fromBytes(signature, "der");
+		} catch (_unused) {
+			return;
+		}
+		return {
+			ticker,
+			address: hex(payload.subarray(addressOffset, addressOffset + 20)),
+			decimals,
+			chainId
+		};
+	};
+	var evmHexBytes = (data) => /^0x(?:[0-9a-fA-F]{2})*$/.test(data) ? (data.length - 2) / 2 : void 0;
+	var zeroQuantity = (value) => {
+		try {
+			return BigInt(value) === 0n;
+		} catch (_unused2) {
+			return false;
+		}
+	};
+	/** Binds exactly one payload to a zero-value ERC-20 transfer/approve; duplicates refuse to bind. */
+	var bindLedger = (request, plan, descriptors, table = evmTokenTable) => {
+		if (request.kind !== "evm.transaction" || plan.kind !== "evm.transaction" || (descriptors === null || descriptors === void 0 ? void 0 : descriptors.tokens) === void 0) return;
+		const { tx } = request;
+		if (tx.type === "eip7702" || tx.to === void 0 || !zeroQuantity(tx.value)) return;
+		if (!/^0x[0-9a-fA-F]{40}$/.test(tx.to)) return;
+		if (evmHexBytes(tx.data) !== 68) return;
+		const selector = tx.data.slice(2, 10).toLowerCase();
+		if (selector !== "a9059cbb" && selector !== "095ea7b3") return;
+		let chainId;
+		try {
+			chainId = networkChainId(request.network);
+		} catch (_unused3) {
+			return;
+		}
+		const target = tx.to.slice(2).toLowerCase();
+		const matches = [];
+		for (const payload of descriptors.tokens) {
+			const parsed = parseTokenDescriptor(payload);
+			if (parsed === void 0 || parsed.chainId !== chainId || parsed.address !== target) continue;
+			const listed = lookupEvmToken(table, chainId, checksumEvmAddress(`0x${target}`));
+			if (listed !== void 0 && (listed.decimals !== parsed.decimals || listed.symbol !== parsed.ticker)) continue;
+			matches.push(payload);
+		}
+		const [match] = matches;
+		return matches.length === 1 && match !== void 0 ? { tokens: [match] } : void 0;
+	};
 	// packages/wallet-kernel/src/modules/signers/ledger/display.ts
 	/**
 	* What the device would show for a request: `clear` only when the pinned app renders the full
@@ -55293,9 +55361,11 @@ zoo`.split("\n"));
 	*
 	* Verified against the pinned app sources:
 	*
-	* - Ethereum 1.24.0: tx without calldata renders the review flow; calldata or creation needs "Blind
-	*   signing"; EIP-712 shows domain fields + message hash only; EIP-7702 is not in the default build
-	*   (EIP7702_SUPPORT ?= 0).
+	* - Ethereum 1.24.0: tx without calldata renders the review flow; ERC-20 transfer/approve calldata
+	*   renders through the internal plugin only when a token descriptor binding exactly to `tx.to` was
+	*   offered (value zero); any other calldata or creation needs "Blind signing"; EIP-712 shows
+	*   domain fields + message hash only; EIP-7702 is not in the default build (EIP7702_SUPPORT ?=
+	*   0).
 	* - Tron 0.8.2 (src/handlers/sign.c): dedicated screens exist for the contract types listed below —
 	*   anything else falls to APPROVAL_SIMPLE_TRANSACTION behind "Sign by hash"; a data memo needs
 	*   "Allow data" (parse.c USTREAM_MISSING_SETTING_DATA_ALLOWED); a TriggerSmartContract that is not
@@ -55409,11 +55479,12 @@ zoo`.split("\n"));
 		return isAscii(body) ? "ascii" : "utf8";
 	};
 	/** The device's display for a request: `clear` what firmware renders, refuse the rest. */
-	var display$1 = (request, plan, _identity) => {
+	var display$1 = (request, plan, _identity, descriptors) => {
 		if (plan.kind === "evm.transaction") {
 			const { tx } = plan;
 			if (tx.type === "eip7702") return "unsupported";
-			return tx.to !== void 0 && (tx.data === "0x" || tx.data === "") ? "clear" : "blind";
+			if (tx.to !== void 0 && (tx.data === "0x" || tx.data === "")) return "clear";
+			return bindLedger(request, plan, descriptors) === void 0 ? "blind" : "clear";
 		}
 		if (plan.kind === "evm.personal-message" || plan.kind === "evm.fiat24-session") return "clear";
 		if (plan.kind === "evm.typed-data") return "blind";
@@ -56553,6 +56624,7 @@ zoo`.split("\n"));
 	var INS_SIGN$1 = 4;
 	var INS_GET_APP_CONFIGURATION$2 = 6;
 	var INS_SIGN_PERSONAL_MESSAGE$1 = 8;
+	var INS_PROVIDE_ERC20_TOKEN_INFORMATION = 10;
 	var INS_SIGN_EIP_712_MESSAGE = 12;
 	var INS_EIP712_STRUCT_DEF = 26;
 	var INS_EIP712_STRUCT_IMPL = 28;
@@ -56728,6 +56800,13 @@ zoo`.split("\n"));
 		for (let offset = 0; offset < payload.length; offset += CHUNK$3) commands.push(command$1(ins, offset === 0 ? P1_FIRST$1 : P1_MORE$1, 0, payload.subarray(offset, offset + CHUNK$3)));
 		return commands;
 	};
+	/** `INS_0A` PROVIDE ERC 20 TOKEN INFORMATION (`E0 0A 00 00`, doc/apdu.md); reply is the token index. */
+	async function ethProvideTokenInformation(exchange, payload) {
+		const reader = new Reader(await transmit(exchange, "ethereum", command$1(INS_PROVIDE_ERC20_TOKEN_INFORMATION, 0, 0, payload)));
+		const index = reader.u8();
+		reader.end();
+		return index;
+	}
 	/**
 	* `INS_04` — `unsigned` is the serialized unsigned transaction (typed: `type ‖ rlp`; legacy: the
 	* RLP list including the EIP-155 `chainId,0,0` tail).
@@ -57397,10 +57476,12 @@ zoo`.split("\n"));
 	* Ledger signing: what the device is sent for one plan stage and the admission checks on what comes
 	* back. The device payload is always recomputed from the request — never trusted from the plan —
 	* and checked against the task digest (`expectDigest`) before any APDU leaves, so a kernel-side
-	* inconsistency fails closed. Requests the device can only blind-sign first read the app's
-	* configuration: the required setting off means `blind-signing-disabled` before the device is even
-	* asked. Bitcoin PSBT yields are released only when they match the plan — the yielded input, the
-	* yielded key and the sighash byte must all agree, and yields outside the plan are ignored.
+	* inconsistency fails closed. ERC-20 transfer/approve calldata with a descriptor binding exactly to
+	* the request sends that token descriptor before SIGN and needs no configuration read; other
+	* requests the device can only blind-sign first read the app's configuration: the required setting
+	* off means `blind-signing-disabled` before the device is even asked. Bitcoin PSBT yields are
+	* released only when they match the plan — the yielded input, the yielded key and the sighash byte
+	* must all agree, and yields outside the plan are ignored.
 	*/
 	init_secp256k1();
 	init_sha2();
@@ -57410,7 +57491,7 @@ zoo`.split("\n"));
 	}
 	var blind = () => new KernelError("blind-signing-disabled", "the device setting required to sign is off");
 	var evmBlind = (tx) => tx.to === void 0 || tx.data !== "0x" && tx.data !== "";
-	var evm = async (exchange, request, stage) => {
+	var evm = async (exchange, request, stage, context) => {
 		await requiredApp(exchange, "ethereum");
 		const [task] = stage.tasks;
 		if (stage.kind === "evm.transaction") {
@@ -57419,6 +57500,12 @@ zoo`.split("\n"));
 			if (tx.type === "eip7702") integrity$2();
 			const preimage = evmSigningPreimage(tx);
 			expectDigest(keccak_256(preimage), task);
+			const bound = bindLedger(request, stage, context.descriptors);
+			if (context.display === "clear" && evmBlind(tx) && bound === void 0) integrity$2();
+			if (bound !== void 0) {
+				for (const payload of bound.tokens) await call$4(async () => ethProvideTokenInformation(exchange, payload));
+				return call$4(async () => ethSignTransaction(exchange, task.path, preimage));
+			}
 			if (evmBlind(tx)) {
 				if (!(await call$4(async () => ethConfiguration(exchange))).blindSigning) throw blind();
 			}
@@ -57529,7 +57616,7 @@ zoo`.split("\n"));
 		const exchange = apduExchange(link);
 		if (stage.kind === "evm.transaction" || stage.kind === "evm.personal-message" || stage.kind === "evm.fiat24-session" || stage.kind === "evm.typed-data") {
 			if (request.kind !== stage.kind) return integrity$2();
-			return [await evm(exchange, request, stage)];
+			return [await evm(exchange, request, stage, context)];
 		}
 		if (stage.kind === "tron.transaction" || stage.kind === "tron.message" || stage.kind === "tron.typed-data") {
 			if (request.kind !== stage.kind) return integrity$2();
@@ -61884,6 +61971,7 @@ zoo`.split("\n"));
 	* records it is claimed only to authenticate, except the pin stays live because accounts and
 	* signing need it per request without re-opening the record.
 	*/
+	init_objectSpread2();
 	var HARDENED = 2147483648;
 	var DEVICE_TEXT = /^[\u0020-\u007E]{1,64}$/;
 	var integrity = (message) => new KernelError("integrity", message);
@@ -62180,7 +62268,8 @@ zoo`.split("\n"));
 			const { driver, device, header } = driverFor(record);
 			const pin = pinAt(pins, record);
 			const prepared = await prepareApproval(ctx, request, materialOf(pin, pinBody(pins, record).confirmed), dek, op.acknowledgeUnconfirmed === true);
-			const display = driver.display(request, prepared.plan, header);
+			if (op.descriptors !== void 0 && device !== "ledger") throw new KernelError("invalid-input", "clear-signing descriptors are Ledger-only");
+			const display = driver.display(request, prepared.plan, header, op.descriptors);
 			if (display === "unsupported") throw new KernelError("unsupported", "the device cannot sign this request");
 			const locale = promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en");
 			const shown = ctx.platform.keystore === void 0 ? void 0 : boundChainPrompt(locale, prepared.prompt, shrinkBound(PROMPT_BOUNDS[ctx.platform.keystore.platform], devicePromptLine(locale, display, device)));
@@ -62194,13 +62283,13 @@ zoo`.split("\n"));
 			if (request.kind === "bitcoin.psbt" && prepared.changeMarks !== void 0) await commitChangeMarks(ctx, dek, request.account.walletId, request.account.groupIndex, request.network, prepared.changeMarks);
 			return executorOf(ctx.platform).begin(device, display, async (link) => ({
 				kind: "sign",
-				result: await signStages(prepared.plan, async (stage) => driver.sign(link, {
+				result: await signStages(prepared.plan, async (stage) => driver.sign(link, _objectSpread2({
 					request,
 					stage,
 					pin,
 					display,
 					random: ctx.platform.random
-				}))
+				}, op.descriptors === void 0 ? {} : { descriptors: op.descriptors })))
 			}));
 		};
 		return {

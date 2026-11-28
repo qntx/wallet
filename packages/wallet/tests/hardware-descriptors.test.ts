@@ -151,7 +151,7 @@ describe("calDescriptorSource", () => {
         },
       },
     ];
-    await expect(calDescriptorSource({ fetch: fetchJson(body) })(request)).resolves.toEqual({
+    await expect(calDescriptorSource({ fetch: fetchJson(body) })(request)).resolves.toStrictEqual({
       tokens: [expect.any(Uint8Array)],
     });
   });
