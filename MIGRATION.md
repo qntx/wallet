@@ -20,26 +20,26 @@ The upgrade is not data-preserving. Plan the release around this table and tell 
 update: a user who cannot produce their mnemonic, their passkey or a post-upgrade backup loses the
 wallet.
 
-| Data                                                                                                                                                  | 0.13.0 location                                                                               | After the upgrade                                                                                                                                                                                       |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mnemonic wallets (and their BIP-39 passphrase)                                                                                                        | vault, format 3                                                                               | The vault is `unsupported` and must be reset. Comes back only through `wallets.importMnemonic` with the phrase (and passphrase).                                                                        |
-| Passkey-derived wallets                                                                                                                               | vault                                                                                         | `wallets.restoreWithPasskey()` derives them again from the same passkey, as long as `rpId` and `walletSalt` are unchanged.                                                                              |
-| Imported private keys                                                                                                                                 | vault                                                                                         | Lost. Only a key the user exported before upgrading can be imported again.                                                                                                                              |
-| Nostr identities                                                                                                                                      | vault (derived per wallet)                                                                    | Derived from the wallet, so they come back with it; `nostr(wallet).discover` lists the public key of each identity index.                                                                               |
-| Vault factors (password, passkey factor, hardware key)                                                                                                | vault                                                                                         | Recreated when the new vault is created or restored.                                                                                                                                                    |
-| Cloud backup                                                                                                                                          | `qntx-wallet-backup-<id>.json`, envelope v1 (PBKDF2)                                          | Unreadable: `engine.backup.list()` skips these files and `restore` refuses them. Backup is off until the user enables it again, which writes a new file.                                                |
-| Engine data: address book, account-group names, custom tokens, custom RPC endpoints, watch accounts, dApp connections, sign log, tracked transactions | engine IndexedDB / engine store, keyed by the vault's data key                                | Rebuilt empty (the format changed and the new vault has a new data key). Address-book entries and wallet/group names come back through `metaSync` when the host configures it; everything else is gone. |
-| Transactions in flight at upgrade time                                                                                                                | tracked transactions                                                                          | They still land on chain and appear in `engine.history`, but they can no longer be sped up, cancelled or bumped with CPFP.                                                                              |
-| Spark                                                                                                                                                 | balance held by the Spark operators; exit-chain records and payment notes in the engine store | The balance comes back with the wallet; the locally stored exit-chain records and payment notes do not.                                                                                                 |
-| Blind-signing permission, app lock                                                                                                                    | engine account groups / —                                                                     | Off on the new vault.                                                                                                                                                                                   |
+| Data                                                                                                                                                  | 0.13.0 location                                                                               | After the upgrade                                                                                                                                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Mnemonic wallets (and their BIP-39 passphrase)                                                                                                        | vault, format 3                                                                               | The vault is `unsupported` and must be reset. Comes back only through `wallets.importMnemonic` with the phrase (and passphrase).                                                                                                                                                                                         |
+| Passkey-derived wallets                                                                                                                               | vault                                                                                         | `wallets.restoreWithPasskey()` derives them again from the same passkey, as long as `rpId` and `walletSalt` are unchanged.                                                                                                                                                                                               |
+| Imported private keys                                                                                                                                 | vault                                                                                         | Lost. Only a key the user exported before upgrading can be imported again.                                                                                                                                                                                                                                               |
+| Nostr identities                                                                                                                                      | vault (derived per wallet)                                                                    | Derived from the wallet, so they come back with it; `nostr(wallet).discover` lists the public key of each identity index.                                                                                                                                                                                                |
+| Vault factors (password, passkey factor, hardware key)                                                                                                | vault                                                                                         | Recreated when the new vault is created or restored.                                                                                                                                                                                                                                                                     |
+| Cloud backup                                                                                                                                          | `qntx-wallet-backup-<id>.json`, envelope v1 (PBKDF2)                                          | Unreadable: `engine.backup.list()` skips these files and `restore` refuses them. Backup is off until the user enables it again, which writes a new file.                                                                                                                                                                 |
+| Engine data: address book, account-group names, custom tokens, custom RPC endpoints, watch accounts, dApp connections, sign log, tracked transactions | engine IndexedDB / engine store, keyed by the vault's data key                                | The old engine database is refused `unsupported`/`older` and left in place until the host discards it after confirmation (§38); the new engine store starts empty under the new data key. Address-book entries and wallet/group names come back through `metaSync` when the host configures it; everything else is gone. |
+| Transactions in flight at upgrade time                                                                                                                | tracked transactions                                                                          | They still land on chain and appear in `engine.history`, but they can no longer be sped up, cancelled or bumped with CPFP.                                                                                                                                                                                               |
+| Spark                                                                                                                                                 | balance held by the Spark operators; exit-chain records and payment notes in the engine store | The balance comes back with the wallet; the locally stored exit-chain records and payment notes do not.                                                                                                                                                                                                                  |
+| Blind-signing permission, app lock                                                                                                                    | engine account groups / —                                                                     | Off on the new vault.                                                                                                                                                                                                                                                                                                    |
 
 ## 1. Vault format and data reset
 
 The vault format is 6 and the host/kernel protocol version 3. Vaults of any other format are
-reported as `vault: "unsupported"` and never opened; there is no migration. On the first launch
-after the upgrade, `unsupported` means the 0.13.0 vault: confirm with the user, reset, then
-restore. (Later, `unsupported` keeps its meaning — a newer build wrote the vault — and must not be
-reset.)
+reported as `vault: { status: "unsupported", reason }` and never opened; there is no migration. On
+the first launch after the upgrade, `reason: "older"` means the 0.13.0 vault: confirm with the
+user, reset, then restore. (`reason: "newer"` means a newer build wrote the vault — update the app,
+never reset. §38 covers the same direction for the backup envelope and the engine store.)
 
 The vault anchor: a 21-byte record (`vectors/vault-anchor.json`) the kernel keeps outside the
 vault store holds the vault's revision floor and the password failure counters that used to live
@@ -64,15 +64,17 @@ owner's verification, and fails `verification-unavailable` without a lock screen
 import type { Wallet } from "@qntx/wallet";
 
 /**
- * A 0.13.0 vault is format 3, which this release reports as `unsupported` and never opens. The only
- * way forward is a reset followed by a restore from the user's mnemonic, passkey or a backup made
- * after the upgrade — confirm with the user first, because the reset erases every wallet and key.
+ * A 0.13.0 vault is format 3, which this release reports as `unsupported` with reason `older` and
+ * never opens. The only way forward is a reset followed by a restore from the user's mnemonic,
+ * passkey or a backup made after the upgrade — confirm with the user first, because the reset
+ * erases every wallet and key. A `newer` vault means "update the app" — never reset it.
  */
 export async function replaceUnsupportedVault(
   wallet: Wallet,
   confirmErase: () => Promise<boolean>,
 ): Promise<"reset" | "kept"> {
-  if (wallet.getSnapshot().vault !== "unsupported" || !(await confirmErase())) {
+  const { vault } = wallet.getSnapshot();
+  if (vault.status !== "unsupported" || vault.reason !== "older" || !(await confirmErase())) {
     return "kept";
   }
   await wallet.vault.reset();
@@ -3161,3 +3163,106 @@ For a host upgrading from 0.14.0:
    mark is kept, so change keeps landing at mark + 1 and beyond — past a seed-only restore's
    gap-limit-20 scan. Such coins stay visible on this device and to a restore that scans with a gap
    of at least mark + 20; a default restore does not show them, and no command lowers a mark.
+
+## 38. Unsupported direction
+
+For a host upgrading from 0.14.0:
+
+1. **Every persisted artefact reports `unsupported` with a direction.** The vault status is now the
+   `VaultState` object — `snapshot.vault.status` and `status` payloads — and `{ status:
+   "unsupported", reason }` says which side wrote a format this build cannot read: `older`, a
+   pre-1.0 build whose format has no reader here, or `newer`, a newer build. The same
+   `{ status: "unsupported", reason }` surfaces on `engine.backup.list()` rows (`header` is a
+   `BackupInspection`, not skipped) and on the `EngineStoreError` (`code: "unsupported"` plus
+   `reason`) an IndexedDB open rejects with. Every `vault === "locked"` comparison becomes
+   `vault.status === "locked"`.
+2. **`older` is recoverable only by starting over — behind a confirmation, never automatically.**
+   For the vault, offer restore (mnemonic, passkey or cloud backup) after an explicit
+   `vault.reset` — what is lost is in "What users lose" above. For a backup file, the message is
+   "this backup was made by an older version and cannot be restored — restore from the mnemonic":
+   a `restore` attempt is refused `unsupported` by the kernel before any key is read.
+3. **`newer` means "update the app" — never offer a reset.** A newer vault, backup envelope or
+   engine database stays exactly where it is; an older app release must not clear it. A vault
+   `newer` refuses every request `unsupported` until the app is updated.
+4. **An `older` engine database is refused, never wiped — the host discards it.** Open rejects
+   `EngineStoreError` `unsupported`/`older` and the database stays intact. On user confirmation —
+   explain that the local engine data (address book, custom tokens and RPCs, watch accounts,
+   connections, sign log, tracked transactions) is discarded — call
+   `indexedDB.deleteDatabase(name)` and reopen; `newer` means "update the app", so rethrow.
+
+[`tests/migration/unsupported-direction.ts`](tests/migration/unsupported-direction.ts):
+
+```ts
+import type { BackupInspection, UnsupportedReason, VaultState } from "@qntx/wallet";
+import { EngineStoreError } from "@qntx/wallet-engine";
+import type { EngineStore } from "@qntx/wallet-engine";
+
+/**
+ * Every persisted artefact reports `unsupported` with a direction: `older` — a pre-1.0 build wrote
+ * it and this build has no reader; `newer` — a newer build wrote it. `older` is recoverable only by
+ * starting over (an explicit reset, then restoring from the mnemonic, passkey or cloud backup —
+ * behind a data-loss confirmation, never automatic); `newer` means "update the app" — never offer a
+ * reset.
+ */
+export function unsupportedVaultAction(
+  vault: VaultState,
+): "restore-flow" | "update-app" | undefined {
+  if (vault.status !== "unsupported") {
+    return undefined;
+  }
+  return vault.reason === "older" ? "restore-flow" : "update-app";
+}
+
+/**
+ * `engine.backup.list()` reports an unreadable file with its direction instead of skipping it:
+ * `older` → "this backup was made by an older version — restore from the mnemonic"; `newer` →
+ * "update the app to restore this backup".
+ */
+export function backupRowMessage(header: BackupInspection): string | undefined {
+  if (header.status === "ok") {
+    return undefined;
+  }
+  return header.reason === "older"
+    ? "This backup was made by an older version and cannot be restored — restore from the mnemonic."
+    : "Update the app to restore this backup.";
+}
+
+/**
+ * The engine store is the one artefact with no reset: an `older` database is refused, never wiped,
+ * until the host discards it. On confirmation (what is lost: address book, custom tokens/RPCs,
+ * watch accounts, connections, sign log, tracked transactions) delete the database and reopen; a
+ * `newer` database means "update the app" — rethrow.
+ */
+export async function openEngineStore(
+  databaseName: string,
+  open: () => Promise<EngineStore>,
+  confirmDiscard: (reason: UnsupportedReason) => Promise<boolean>,
+): Promise<EngineStore> {
+  try {
+    return await open();
+  } catch (error) {
+    if (
+      error instanceof EngineStoreError &&
+      error.code === "unsupported" &&
+      error.reason === "older" &&
+      (await confirmDiscard("older"))
+    ) {
+      // Await the deletion — `blocked` means another connection still holds the database.
+      await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(databaseName);
+        request.addEventListener("success", () => {
+          resolve();
+        });
+        request.addEventListener("blocked", () => {
+          reject(new Error("engine store: deleteDatabase blocked"));
+        });
+        request.addEventListener("error", () => {
+          reject(request.error ?? new Error("engine store: deleteDatabase failed"));
+        });
+      });
+      return open();
+    }
+    throw error;
+  }
+}
+```

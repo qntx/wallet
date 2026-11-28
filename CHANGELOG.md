@@ -17,6 +17,21 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
   `BITCOIN_GAP_LIMIT`. (MIGRATION §36)
 - `@qntx/wallet-engine`: `HistoryControllerOptions` and `NotificationsControllerOptions` require
   `signers: Pick<SignersController, "store">`; `SignersState` gains `confirmations`. (MIGRATION §36)
+- `@qntx/wallet`: the vault status is a `VaultState` object — `snapshot.vault.status` and every
+  status payload — so `unsupported` can carry its direction: `{ status: "unsupported", reason:
+  "older" | "newer" }`, decided from the persisted format alone. `older` means a pre-1.0 build
+  wrote it (reset, then restore); `newer` means a newer build did (update the app, never reset).
+  `BackupHeader` drops `version` for `status: "ok"`, and `parseBackupHeader` returns a
+  `BackupInspection` (`BackupHeader | Unsupported`). (MIGRATION §38)
+- `@qntx/wallet-engine`: `backup.list()` rows report an unreadable envelope with its direction
+  (`header: BackupInspection`) instead of skipping it; `restore` of one is refused `unsupported`
+  by the kernel. `EngineStoreError` gains `reason`, set when `code` is `"unsupported"` — an older
+  IndexedDB engine store is refused `unsupported`/`older` and never wiped (the host deletes it
+  after confirmation); a newer one is `unsupported`/`newer`. (MIGRATION §38)
+- `@qntx/wallet-kernel` and the hosts: the unsupported direction comes from the persisted format
+  alone — an unknown factor or record kind, policy id or KDF parameter inside the current format
+  means `newer`. The Web vault's newer IndexedDB schema surfaces the same
+  `unsupported`/`newer`. (MIGRATION §38)
 
 ### Changed
 
