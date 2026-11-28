@@ -10,6 +10,7 @@ import { decodeTron, normalizeTron } from "@qntx/wallet-chains/tron";
 
 import { BITCOIN_TEMPLATES } from "../chains/bitcoin-scan.ts";
 import { Controller } from "../controller.ts";
+import { withNamedRecipient } from "../names/recipient.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { PreparedBitcoinPsbt } from "../requests/types.ts";
 import { readJson } from "../store/json.ts";
@@ -620,16 +621,19 @@ export class TransactionController extends Controller<TransactionControllerState
     if (params.memo !== undefined && info.family !== "tron") {
       throw new ChainError("invalid-request", "memo is only supported on TRON");
     }
-    if (info.family === "solana") {
-      return prepareSolana(ctx, params);
-    }
-    if (info.family === "tron") {
-      return prepareTron(ctx, params);
-    }
-    if (info.family === "bitcoin") {
-      return this.bitcoinRoute.prepare(ctx, params, requestId, sparkDeposit);
-    }
-    return this.evmRoute.prepare(ctx, params);
+    return withNamedRecipient(this.options.networks, network, params.to, async (address) => {
+      const send = { ...params, to: address };
+      if (info.family === "solana") {
+        return prepareSolana(ctx, send);
+      }
+      if (info.family === "tron") {
+        return prepareTron(ctx, send);
+      }
+      if (info.family === "bitcoin") {
+        return this.bitcoinRoute.prepare(ctx, send, requestId, sparkDeposit);
+      }
+      return this.evmRoute.prepare(ctx, send);
+    });
   }
 
   /** The group's next unused `btc.bip84` receive address on a bitcoin `network`. */
@@ -966,7 +970,13 @@ export class TransactionController extends Controller<TransactionControllerState
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
-    return this.evmRoute.prepareEvmInternal(this.routeCtx(), input);
+    const ctx = this.routeCtx();
+    if (input.method === "evm-nft-send") {
+      return withNamedRecipient(this.options.networks, input.network, input.to, async (address) =>
+        this.evmRoute.prepareEvmInternal(ctx, { ...input, to: address }),
+      );
+    }
+    return this.evmRoute.prepareEvmInternal(ctx, input);
   }
 
   /**
@@ -1039,7 +1049,10 @@ export class TransactionController extends Controller<TransactionControllerState
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
-    return prepareSolanaNftSend(this.routeCtx(), input);
+    const ctx = this.routeCtx();
+    return withNamedRecipient(this.options.networks, input.network, input.to, async (address) =>
+      prepareSolanaNftSend(ctx, { ...input, to: address }),
+    );
   }
 
   /** The account's 7702 delegation state on `network` (primary endpoint only). */

@@ -4,7 +4,6 @@ import {
   RpcRequestError,
   encodeFunctionData,
   getAddress,
-  isAddress,
   isHex,
   keccak256,
   parseTransaction,
@@ -46,7 +45,6 @@ import type { EvmUnsignedTransaction, L1FeeRead } from "../chains/evm.ts";
 import { evmNftBalances, evmNftOwner, evmNftStandard } from "../chains/nfts.ts";
 import { NftTransferError } from "../errors.ts";
 import { LIDO_CHUNK_MAX, LIDO_CHUNK_MIN, LIDO_QUEUE_ABI, LIDO_STETH_ABI } from "../lido/index.ts";
-import { resolveEns } from "../names/ens.ts";
 import {
   collectChecks,
   exceedsNetworkCap,
@@ -1874,17 +1872,9 @@ export const createEvmRoute = (): EvmRoute => {
     flags: Array<RequestCheckCode | undefined>,
   ): Promise<{
     readonly intent: BuildIntent;
-    readonly name?: string;
     readonly risk: ReadonlyArray<RiskFinding>;
   }> => {
-    const { network, contract, items } = input;
-    let { to } = input;
-    let name: string | undefined;
-    if (!isAddress(to) && to.includes(".")) {
-      const resolved = await resolveEns(ctx.options.networks, to, network);
-      ({ address: to, name } = resolved);
-      flags.push(...resolved.checks);
-    }
+    const { network, contract, items, to } = input;
     if (items.length === 0) {
       throw new ChainError("invalid-request", "an NFT send needs at least one item");
     }
@@ -1932,7 +1922,6 @@ export const createEvmRoute = (): EvmRoute => {
             args: [getAddress(from), getAddress(to), item.tokenId],
           }),
         ),
-        ...(name === undefined ? {} : { name }),
         risk:
           to.toLowerCase() === contract.toLowerCase()
             ? [{ code: "token-contract-recipient", level: "danger" }]
@@ -2001,7 +1990,6 @@ export const createEvmRoute = (): EvmRoute => {
               ],
             }),
       ),
-      ...(name === undefined ? {} : { name }),
       risk:
         to.toLowerCase() === contract.toLowerCase()
           ? [{ code: "token-contract-recipient", level: "danger" }]
@@ -2021,7 +2009,6 @@ export const createEvmRoute = (): EvmRoute => {
     const flags: Array<RequestCheckCode | undefined> = [];
     let intent: BuildIntent;
     let warnings: ReadonlyArray<IntentWarning> = [];
-    let nftName: string | undefined;
     let nftRisk: ReadonlyArray<RiskFinding> = [];
     if (input.method === "evm-delegation") {
       const state = await delegationState(ctx, network, from, flags);
@@ -2058,9 +2045,8 @@ export const createEvmRoute = (): EvmRoute => {
     } else if (input.method === "evm-bridge") {
       intent = await prepareBridgeIntent(ctx, input, from, flags);
     } else if (input.method === "evm-nft-send") {
-      const { intent: nftIntent, name, risk } = await prepareNftSend(ctx, input, from, flags);
+      const { intent: nftIntent, risk } = await prepareNftSend(ctx, input, from, flags);
       intent = nftIntent;
-      nftName = name;
       nftRisk = risk;
     } else if (input.method === "evm-lido") {
       intent = await prepareLidoIntent(ctx, input, from, flags, async () =>
@@ -2151,11 +2137,6 @@ export const createEvmRoute = (): EvmRoute => {
       intent: {
         ...prepared.intent,
         warnings: [...prepared.intent.warnings, ...warnings],
-        ...(nftName === undefined
-          ? {}
-          : {
-              outflows: prepared.intent.outflows.map((flow) => ({ ...flow, name: nftName })),
-            }),
       },
       checks: [...new Set([...prepared.checks, ...collectChecks(flags)])],
       ...(nftRisk.length === 0 ? {} : { risk: mergeRisk(prepared.risk ?? [], nftRisk) }),
@@ -2163,14 +2144,8 @@ export const createEvmRoute = (): EvmRoute => {
   };
 
   const prepare = async (ctx: RouteContext, params: PrepareParams): Promise<PreparedRequest> => {
-    let { to } = params;
-    let name: string | undefined;
-    let nameChecks: ReadonlyArray<RequestCheckCode> = [];
-    if (!isAddress(to) && to.includes(".")) {
-      const resolved = await resolveEns(ctx.options.networks, to, params.network);
-      ({ address: to, name, checks: nameChecks } = resolved);
-    }
-    const prepared = await prepareSpec(ctx, {
+    const { to } = params;
+    return prepareSpec(ctx, {
       account: params.account,
       network: params.network,
       from: await resolveFrom(ctx, params.account, params.network),
@@ -2181,19 +2156,6 @@ export const createEvmRoute = (): EvmRoute => {
           : { kind: "erc20", token: params.token, to, value: params.amount },
       nativeValue: params.token === undefined ? params.amount : undefined,
     });
-    if (name === undefined) {
-      return prepared;
-    }
-    return {
-      ...prepared,
-      intent: {
-        ...prepared.intent,
-        outflows: prepared.intent.outflows.map((flow) =>
-          flow.to.toLowerCase() === to.toLowerCase() ? { ...flow, name } : flow,
-        ),
-      },
-      checks: [...new Set([...nameChecks, ...prepared.checks])],
-    };
   };
 
   /**

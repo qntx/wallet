@@ -78,9 +78,9 @@ const ENTRIES: ReadonlyArray<Entry> = [
   {
     name: "index",
     source: "src/index.ts",
-    /* Measured 177 472 B: the merged tree's signers controller, the shared dApp lanes and the
-       QR-signer surface on top of the approvals lane, NFT and notifications controllers, the
-       versioned backup controller and the hardware-wallet custody handling. */
+    /* Measured 182 026 B: the merged tree's signers controller, the shared dApp lanes and the
+       QR-signer surface on top of the approvals lane, NFT, notifications and name-service
+       controllers, the versioned backup controller and the hardware-wallet custody handling. */
     budget: 182 * 1024,
     external: true,
     forbidden: [

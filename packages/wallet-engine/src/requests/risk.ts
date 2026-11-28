@@ -1,3 +1,5 @@
+import { ens_split } from "@adraffy/ens-normalize";
+
 import { SiwxError, checkOrigin, createMessage, parseTimestamp } from "@qntx/siwx";
 import type {
   AssetFlow,
@@ -72,7 +74,9 @@ export type RiskFinding = {
     | "fiat24-payee-offchain"
     | "fiat24-account-move"
     | "fiat24-account-burn"
-    | "qr-sign-in-unverified";
+    | "qr-sign-in-unverified"
+    | "name-unicode"
+    | "name-mixed-script";
   readonly level: "warning" | "danger";
 };
 
@@ -100,6 +104,33 @@ export function verifyRisk(verify: WalletConnectVerify): ReadonlyArray<RiskFindi
     found.push({ code: "verify-mismatch", level: "danger" });
   }
   return found;
+}
+
+/**
+ * Findings for a normalized name: any non-ASCII label is a warning, and labels spanning more than
+ * one non-ASCII, non-Emoji script are a danger. Latin counts as ASCII-compatible because plain
+ * ASCII labels are excluded before the distinct-script count.
+ */
+export function assessName(name: string): ReadonlyArray<RiskFinding> {
+  const scripts = new Set<string>();
+  let unicode = false;
+  for (const label of ens_split(name)) {
+    const type = (label.type ?? "unknown").toLowerCase();
+    if (type !== "ascii") {
+      unicode = true;
+    }
+    if (type !== "ascii" && type !== "emoji") {
+      scripts.add(type);
+    }
+  }
+  const found: RiskFinding[] = [];
+  if (scripts.size > 1) {
+    found.push({ code: "name-mixed-script", level: "danger" });
+  }
+  if (unicode) {
+    found.push({ code: "name-unicode", level: "warning" });
+  }
+  return byDanger(found);
 }
 
 /** `findings` plus `extra`, deduplicated by code, `danger` first. */

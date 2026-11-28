@@ -150,6 +150,7 @@
       "name": "@qntx/wallet-engine",
       "version": "0.14.1",
       "dependencies": {
+        "@adraffy/ens-normalize": "1.11.1",
         "@nktkas/hyperliquid": "0.33.3",
         "@noble/ciphers": "2.4.0",
         "@noble/hashes": "2.4.0",

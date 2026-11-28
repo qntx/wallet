@@ -9,8 +9,36 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+Wallet-owned sends can now be addressed by ENS and SNS names. Resolution is cross-checked against
+independent chain endpoints, primary-name lookups are verified by a fresh forward resolution, and a
+named recipient is resolved again at approval so a changed answer can never be signed. ENS CCIP-Read
+is bounded to HTTPS gateways, eight fetches, ten seconds and 256 KiB per resolution.
+
+### Breaking changes
+
+- `@qntx/wallet-engine`: `EnsResolution` is removed; use `NameResolution`, which carries `risk`.
+  `names.resolve` dispatches by chain family and refuses ENS on non-EVM networks and SNS names away
+  from Solana mainnet. ENS clients are no longer cached and every CCIP-Read resolution is bounded.
+  The EVM route no longer resolves names itself — recipient names belong to the send/NFT request
+  pipeline. (MIGRATION §39)
+
+### Added
+
+- `@qntx/wallet-engine`: `names.lookup` returns verified ENSIP-19 primary names, including L2
+  primary names through the Universal Resolver when the chain's reverse resolver is available.
+- `@qntx/wallet-engine`: SNS `.sns` forward and reverse resolution reads Solana mainnet RPC
+  directly and cross-checks every decisive account byte-for-byte against the independent endpoint.
+- `@qntx/wallet-engine`: Unicode recipient names produce `name-unicode`; mixtures spanning multiple
+  scripts produce the `name-mixed-script` danger finding.
+- `@qntx/wallet-engine`: send, `evm-nft-send` and `solana-nft-send` resolve recipient names at
+  prepare, display the name on the resolved outflow, and re-resolve at approval; a changed or
+  failing answer fails the request before signing.
+
 ### Fixed
 
+- `@qntx/wallet-engine`: Sepolia sends use ENS coin type 60 instead of a chain-specific coin type.
+- `@qntx/wallet-engine`: legacy `.sol` names are refused during SNS's SRS migration; use the
+  corresponding `.sns` name.
 - `@qntx/wallet-engine/apps/hyperliquid`: an `/exchange` rejection "User or API Wallet 0x<X> does
   not exist" latches the agent as rejected only when X is the agent itself; any other X (the
   signature recovered to another address) is a plain `rejected` and the agent keeps trading.

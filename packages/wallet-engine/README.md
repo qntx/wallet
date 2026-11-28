@@ -152,7 +152,13 @@ the package root.
   other restore leaves backup off until it is enabled again.
 - `engine.zaps` — `prepare` only: signs the NIP-57 request with any `NostrSigner` and fetches the
   invoice; the invoice itself is paid through `requests` like any other outflow.
-- `engine.names` — `resolve` forward-resolves an ENS name for a send on a network.
+- `engine.names` — `resolve` forward-resolves a recipient name for a send network and `lookup`
+  returns a verified primary name for display. EVM uses ENS (mainnet or Sepolia resolution, ENSIP-19
+  coin types); Solana mainnet uses SNS `.sns`. Decisive reads are cross-checked against the
+  independent endpoint, disagreements are refused and unavailable corroboration is flagged.
+  ENS CCIP-Read is bounded to HTTPS gateways, eight fetches, ten seconds and 256 KiB. Unicode and
+  mixed-script names add `name-unicode`/`name-mixed-script` findings; named send and NFT recipients
+  are resolved again at approval and a changed answer fails before signing.
 - `engine.delegation` — an account's EIP-7702 delegation state on a network.
 - `engine.bridges` — gateway Across bridge `quote`/`status`, display-only; `quote` requires
   `maxFeeBps`, the relay-fee ceiling in basis points of the input amount.

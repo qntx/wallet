@@ -90,6 +90,7 @@
     "smoke:hermes": "bun scripts/hermes-smoke.ts"
   },
   "dependencies": {
+    "@adraffy/ens-normalize": "1.11.1",
     "@nktkas/hyperliquid": "0.33.3",
     "@noble/ciphers": "2.4.0",
     "@noble/hashes": "2.4.0",

@@ -1271,13 +1271,6 @@ export class EngineStoreError extends Error {
 }
 
 // @public (undocumented)
-export type EnsResolution = {
-    readonly name: string;
-    readonly address: string;
-    readonly checks: ReadonlyArray<RequestCheckCode>;
-};
-
-// @public (undocumented)
 export type Esplora = {
     readonly get: (path: string) => Promise<unknown>;
     readonly post: (path: string, body: string) => Promise<unknown>;
@@ -1671,6 +1664,14 @@ export type MetaSyncState = {
 export type MetaSyncWalletStatus = {
     readonly status: "syncing" | "synced" | "error";
     readonly error?: MetaSyncErrorCategory;
+};
+
+// @public
+export type NameResolution = {
+    readonly name: string;
+    readonly address: string;
+    readonly checks: ReadonlyArray<RequestCheckCode>;
+    readonly risk: ReadonlyArray<RiskFinding>;
 };
 
 // @public (undocumented)
@@ -2660,7 +2661,7 @@ export function resolvePayment(input: string, options: ResolveOptions): Promise<
 
 // @public
 export type RiskFinding = {
-    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "bitcoin-unusual-output" | "bitcoin-unconfirmed-output" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-account-move" | "fiat24-account-burn" | "qr-sign-in-unverified";
+    readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked" | "token-impersonation" | "token-symbol-unicode" | "simulation-reverted" | "simulation-mismatch" | "collection-approval" | "unlimited-approval" | "sign-in-malformed" | "sign-in-domain-mismatch" | "sign-in-port-mismatch" | "sign-in-address-mismatch" | "sign-in-expired" | "sign-in-not-yet-valid" | "permit-approval" | "permit-unlimited" | "permit-long-lived" | "order-receives-nothing" | "order-offerer-mismatch" | "safe-delegatecall" | "safe-gas-refund" | "bitcoin-sighash-single" | "bitcoin-inscription-input" | "bitcoin-frozen-input" | "bitcoin-unusual-output" | "bitcoin-unconfirmed-output" | "stake-authority" | "blind-signing" | "contract-recipient" | "token-contract-recipient" | "token-recipient-empty" | "fee-limit-below-estimate" | "verify-mismatch" | "verify-threat" | "fiat24-internal-account" | "fiat24-card-pull" | "fiat24-unlimited-approval" | "fiat24-exact-out-unbounded" | "fiat24-payee-offchain" | "fiat24-account-move" | "fiat24-account-burn" | "qr-sign-in-unverified" | "name-unicode" | "name-mixed-script";
     readonly level: "warning" | "danger";
 };
 
@@ -4044,7 +4045,8 @@ export type WalletEngine = {
         readonly prepare: (params: PrepareZapParams) => Promise<PreparedZap>;
     };
     readonly names: {
-        readonly resolve: (name: string, network: string) => Promise<EnsResolution>;
+        readonly resolve: (name: string, network: string) => Promise<NameResolution>;
+        readonly lookup: (address: string, network: string) => Promise<NameResolution | undefined>;
     };
     readonly delegation: (account: AccountRef, network: string) => Promise<DelegationStatus>;
     readonly bridges: {

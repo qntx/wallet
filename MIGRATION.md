@@ -3269,3 +3269,61 @@ export async function openEngineStore(
   }
 }
 ```
+
+## 39. Name services
+
+For a host upgrading from 0.14.1:
+
+1. **Replace `EnsResolution` with `NameResolution`.** `engine.names.resolve` now returns
+   `{ name, address, checks, risk }` and dispatches by the send network's family: ENS for EVM,
+   SNS for Solana. ENS resolution itself happens on Ethereum mainnet (Sepolia for testnet sends);
+   the network chooses the ENSIP-19 coin type. Non-EVM ENS input, a non-mainnet SNS network, more
+   than two SNS labels, malformed labels and legacy `.sol` input are refused.
+2. **Surface the name findings in the acknowledgement UI.** `NameResolution.risk` and request risk
+   can contain `name-unicode` (warning: the normalized name contains non-ASCII labels) and
+   `name-mixed-script` (danger: the labels span incompatible scripts). Treat `name-mixed-script`
+   like the existing danger findings — an approval without its acknowledgement throws
+   `AcknowledgementRequiredError`.
+3. **Use `engine.names.lookup(address, network)` for display names.** A result has already passed
+   endpoint agreement, normalization and a fresh forward-resolution check. `undefined` means "do not
+   show a primary name", including a stale SNS primary, a tokenized/PDA-owned SNS name, malformed
+   bytes, or an upstream ENS L2 reverse resolver that is unavailable; it is not a host error.
+4. **Migrate `.sol` recipients to `.sns`.** SNS paused `.sol` resolution during its SRS migration.
+   Do not strip or rewrite the suffix client-side; ask the user for the `.sns` name and let the
+   engine validate it.
+5. **Recipient names are request-pipeline state, not route input.** Sends, `evm-nft-send` and
+   `solana-nft-send` accept the typed name: the engine resolves it before building the transaction,
+   attaches the normalized name to matching outflows, and re-resolves before signing. If resolution
+   fails or the answer changes, approval ends the request `failed` with a stale message such as
+   `"alice.eth now resolves to 0x…, not 0x… — start over"`; the host re-prepares instead of retrying
+   the same approval. A plain address without a dot bypasses resolution exactly as before.
+
+[`tests/migration/name-services.ts`](tests/migration/name-services.ts):
+
+```ts
+import type { NameResolution, RiskFinding } from "@qntx/wallet-engine";
+
+/** Display a verified primary name only; never fall back to an unchecked reverse record. */
+export function primaryNameText(resolution: NameResolution | undefined): string | undefined {
+  return resolution?.name;
+}
+
+/** Dangerous script mixtures need the same explicit acknowledgement path as other danger risk. */
+export function nameAcknowledgementRequired(resolution: NameResolution): boolean {
+  return resolution.risk.some((finding) => finding.code === "name-mixed-script");
+}
+
+/** The risk rows a host renders for a named recipient, danger first as the engine orders them. */
+export function nameRiskRows(
+  resolution: NameResolution,
+): ReadonlyArray<Pick<RiskFinding, "code" | "level">> {
+  return resolution.risk.map(({ code, level }) => ({ code, level }));
+}
+
+/** `.sol` input is a user correction during SNS's SRS migration, not a suffix the host rewrites. */
+export function snsMigrationHint(recipient: string): string | undefined {
+  return recipient.endsWith(".sol")
+    ? "SNS names use .sns during the SRS migration — ask the owner for the .sns name."
+    : undefined;
+}
+```
