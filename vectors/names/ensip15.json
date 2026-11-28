@@ -1,0 +1,688 @@
+{
+  "source": "https://raw.githubusercontent.com/adraffy/ens-normalize.js/main/validate/tests.json",
+  "commit": "27c6c8fb4b8b7d175d28df53672ef84a10ba248f",
+  "selection": "verbatim case objects: the first 50 cases, then the first 25 normalization-changing cases after them, plus the first 25 whole-script-confusable, first 25 illegal-mixture, and first 25 emoji-comment cases, deduplicated and capped at 150",
+  "cases": [
+    {
+      "name": "",
+      "comment": "Empty"
+    },
+    {
+      "name": " ",
+      "error": true,
+      "comment": "Empty: Whitespace"
+    },
+    {
+      "name": "️",
+      "error": true,
+      "comment": "Empty: Ignorable"
+    },
+    {
+      "name": ".",
+      "error": true,
+      "comment": "Null Labels"
+    },
+    {
+      "name": ".eth",
+      "error": true,
+      "comment": "Null 2LD"
+    },
+    {
+      "name": "eth.",
+      "error": true,
+      "comment": "Null TLD"
+    },
+    {
+      "name": "...eth",
+      "error": true,
+      "comment": "Multiple Null Labels"
+    },
+    {
+      "name": "．",
+      "error": true,
+      "comment": "Disallowed Stop: FF0E"
+    },
+    {
+      "name": "。",
+      "error": true,
+      "comment": "Disallowed Stop: 3002"
+    },
+    {
+      "name": "｡",
+      "error": true,
+      "comment": "Disallowed Stop: FF61"
+    },
+    {
+      "name": "vitalik.eth",
+      "comment": "Trivial Name"
+    },
+    {
+      "name": "123.eth",
+      "comment": "Trivial Digit Name"
+    },
+    {
+      "name": "abcdefghijklmnopqrstuvwxyz-0123456789",
+      "comment": "DNS Name"
+    },
+    {
+      "name": "bRAnTlY.eTh",
+      "norm": "brantly.eth",
+      "comment": "Mixed-case"
+    },
+    {
+      "name": "BRANTLYMILLEGAN.COM",
+      "norm": "brantlymillegan.com",
+      "comment": "Uppercase"
+    },
+    {
+      "name": "brantly.cash",
+      "comment": "Custom domain"
+    },
+    {
+      "name": "nowzad.loopring.eth",
+      "comment": "Subdomain"
+    },
+    {
+      "name": "öbb.at",
+      "comment": "IDNATestV2"
+    },
+    {
+      "name": "Öbb.at",
+      "norm": "öbb.at",
+      "comment": "IDNATestV2"
+    },
+    {
+      "name": "◌̈bb.at",
+      "error": true,
+      "comment": "IDNATestV2"
+    },
+    {
+      "name": "ß",
+      "comment": "IDNA deviation"
+    },
+    {
+      "name": "ς",
+      "comment": "IDNA deviation"
+    },
+    {
+      "name": "Ⅷ",
+      "norm": "viii",
+      "comment": "Mapping: roman numeral"
+    },
+    {
+      "name": "Ⓜ",
+      "norm": "m",
+      "comment": "Mapping: circled"
+    },
+    {
+      "name": "Ⓜ️",
+      "norm": "m",
+      "comment": "Mapping: demoji"
+    },
+    {
+      "name": "⓫⓬⓭⓮⓯⓰⓱⓲⓳⓴⓿",
+      "error": true,
+      "comment": "negative circled (11-20,0)"
+    },
+    {
+      "name": "⓵⓶⓷⓸⓹⓺⓻⓼⓽⓾",
+      "error": true,
+      "comment": "double circled (1-10)"
+    },
+    {
+      "name": "➊➋➌➍➎➏➐➑➒➓",
+      "error": true,
+      "comment": "negative circled san-serif (1-10)"
+    },
+    {
+      "name": "❶❷❸❹❺❻❼❽❾❿",
+      "error": true,
+      "comment": "negative circled (1-10)"
+    },
+    {
+      "name": "ⒶⒷⒸⒹⒺⒻⒼⒽⒾⒿⓀⓁⓂⓃⓄⓅⓆⓇⓈⓉⓊⓋⓌⓍⓎⓏ",
+      "norm": "abcdefghijklmnopqrstuvwxyz",
+      "comment": "circled (A-Z)"
+    },
+    {
+      "name": "ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝⓞⓟⓠⓡⓢⓣⓤⓥⓦⓧⓨⓩ",
+      "norm": "abcdefghijklmnopqrstuvwxyz",
+      "comment": "circled (a-z)"
+    },
+    {
+      "name": "🅐🅑🅒🅓🅔🅕🅖🅗🅘🅙🅚🅛🅜🅝🅞🅟🅠🅡🅢🅣🅤🅥🅦🅧🅨🅩",
+      "error": true,
+      "comment": "negative circled san-serif (A-Z)"
+    },
+    {
+      "name": "🅰🅱🅲🅳🅴🅵🅶🅷🅸🅹🅺🅻🅼🅽🅾🅿🆀🆁🆂🆃🆄🆅🆆🆇🆈🆉",
+      "comment": "negative squared (A-Z)"
+    },
+    {
+      "name": " ",
+      "error": true,
+      "comment": "Whitespace"
+    },
+    {
+      "name": "te st",
+      "error": true,
+      "comment": "Whitespace: inner"
+    },
+    {
+      "name": " test",
+      "error": true,
+      "comment": "Whitespace: leading"
+    },
+    {
+      "name": "test ",
+      "error": true,
+      "comment": "Whitespace: trailing"
+    },
+    {
+      "name": "test‍",
+      "error": true,
+      "comment": "ZWJ: trailing"
+    },
+    {
+      "name": "‍test",
+      "error": true,
+      "comment": "ZWJ: leading"
+    },
+    {
+      "name": "'a",
+      "error": true,
+      "comment": "Apostrophe: leading"
+    },
+    {
+      "name": "a’",
+      "error": true,
+      "comment": "Apostrophe: leading"
+    },
+    {
+      "name": "a'’a",
+      "error": true,
+      "comment": "Apostrophe: adjacent"
+    },
+    {
+      "name": "a'a’a",
+      "norm": "a’a’a",
+      "comment": "Apostrophe"
+    },
+    {
+      "name": "l·l",
+      "error": true,
+      "comment": "ContextO: middle dot"
+    },
+    {
+      "name": "a·b",
+      "error": true,
+      "comment": "ContextO: invalid middle dot"
+    },
+    {
+      "name": "︎️a",
+      "norm": "a",
+      "comment": "Ignored: emoji-styling"
+    },
+    {
+      "name": "0️⃣1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣8️⃣9️⃣",
+      "norm": "0⃣1⃣2⃣3⃣4⃣5⃣6⃣7⃣8⃣9⃣",
+      "comment": "Emoji: Keycaps"
+    },
+    {
+      "name": "#️⃣*️⃣",
+      "norm": "#⃣*⃣",
+      "comment": "Emoji: Revived Keycaps"
+    },
+    {
+      "name": "_a",
+      "comment": "Leading Underscore"
+    },
+    {
+      "name": "_____a",
+      "comment": "Leading Underscore"
+    },
+    {
+      "name": "hyphens-‐‑‒–—―⁃−⎯⏤﹘",
+      "norm": "hyphens------------",
+      "comment": "Hyphens"
+    },
+    {
+      "name": "💩️",
+      "norm": "💩",
+      "comment": "Emoji: emoji-styled"
+    },
+    {
+      "name": "💩︎",
+      "norm": "💩",
+      "comment": "Emoji: text-styled"
+    },
+    {
+      "name": "💩💩︎💩️",
+      "norm": "💩💩💩",
+      "comment": "Emoji: All Styles"
+    },
+    {
+      "name": "۰۱۲۳۸۹",
+      "norm": "٠١٢٣٨٩",
+      "comment": "Arabic Mapping"
+    },
+    {
+      "name": "½",
+      "norm": "1⁄2",
+      "comment": "confuse"
+    },
+    {
+      "name": "©️",
+      "norm": "©"
+    },
+    {
+      "name": "®️",
+      "norm": "®"
+    },
+    {
+      "name": "↔️",
+      "norm": "↔"
+    },
+    {
+      "name": "↕️",
+      "norm": "↕"
+    },
+    {
+      "name": "↖️",
+      "norm": "↖"
+    },
+    {
+      "name": "↗️",
+      "norm": "↗"
+    },
+    {
+      "name": "↘️",
+      "norm": "↘"
+    },
+    {
+      "name": "↙️",
+      "norm": "↙"
+    },
+    {
+      "name": "↩️",
+      "norm": "↩"
+    },
+    {
+      "name": "↪️",
+      "norm": "↪"
+    },
+    {
+      "name": "⌚️",
+      "norm": "⌚"
+    },
+    {
+      "name": "⌛️",
+      "norm": "⌛"
+    },
+    {
+      "name": "⌨️",
+      "norm": "⌨"
+    },
+    {
+      "name": "⏏️",
+      "norm": "⏏"
+    },
+    {
+      "name": "⏩️",
+      "norm": "⏩"
+    },
+    {
+      "name": "⏪️",
+      "norm": "⏪"
+    },
+    {
+      "name": "⏫️",
+      "norm": "⏫"
+    },
+    {
+      "name": "⏬️",
+      "norm": "⏬"
+    },
+    {
+      "name": "⏭️",
+      "norm": "⏭"
+    },
+    {
+      "name": "។",
+      "error": true,
+      "comment": "whole-script confusable: Khmer/Thai"
+    },
+    {
+      "name": "៕",
+      "error": true,
+      "comment": "whole-script confusable: Khmer/Thai"
+    },
+    {
+      "name": "৭৭৭৭৭৭",
+      "error": true,
+      "comment": "whole-script confusable: Bengali/Latin"
+    },
+    {
+      "name": "૪૪૪",
+      "error": true,
+      "comment": "whole-script confusable: Gujarati/Devanagari"
+    },
+    {
+      "name": "טסס",
+      "error": true,
+      "comment": "whole-script confusable: Hebrew/Latin"
+    },
+    {
+      "name": "০০০০৪",
+      "error": true,
+      "comment": "whole-script confusable: Bengali/Latin"
+    },
+    {
+      "name": "ฝฝฝฝฝ",
+      "error": true,
+      "comment": "whole-script confusable: Thai/Lao"
+    },
+    {
+      "name": "ᎪᎻᎷᎬᎠ",
+      "error": true,
+      "comment": "whole-script confusable: Restricted[Cher]/Latin"
+    },
+    {
+      "name": "০০৪৪",
+      "error": true,
+      "comment": "whole-script confusable: Bengali/Latin"
+    },
+    {
+      "name": "бббббб",
+      "error": true,
+      "comment": "whole-script confusable: Cyrillic/Restricted[Cher]"
+    },
+    {
+      "name": "бббббббб",
+      "error": true,
+      "comment": "whole-script confusable: Cyrillic/Restricted[Cher]"
+    },
+    {
+      "name": "αβα",
+      "error": true,
+      "comment": "whole-script confusable: Greek/Latin"
+    },
+    {
+      "name": "॰॰॰॰",
+      "error": true,
+      "comment": "whole-script confusable: Devanagari/Gujarati"
+    },
+    {
+      "name": "0х999",
+      "error": true,
+      "comment": "whole-script confusable: Cyrillic/Latin"
+    },
+    {
+      "name": "ббббббб",
+      "error": true,
+      "comment": "whole-script confusable: Cyrillic/Restricted[Cher]"
+    },
+    {
+      "name": "егор",
+      "error": true,
+      "comment": "whole-script confusable: Cyrillic/Latin"
+    },
+    {
+      "name": "ααα",
+      "error": true,
+      "comment": "whole-script confusable: Greek/Latin"
+    },
+    {
+      "name": "וטט",
+      "error": true,
+      "comment": "whole-script confusable: Hebrew/Latin"
+    },
+    {
+      "name": "ᎢᎬᏞᎬᏀᏒᎪᎷ",
+      "error": true,
+      "comment": "whole-script confusable: Restricted[Cher]/Latin"
+    },
+    {
+      "name": "ααααααααα",
+      "error": true,
+      "comment": "whole-script confusable: Greek/Latin"
+    },
+    {
+      "name": "০৭৭৭",
+      "error": true,
+      "comment": "whole-script confusable: Bengali/Latin"
+    },
+    {
+      "name": "ΔΔΔΔΔ",
+      "error": true,
+      "comment": "whole-script confusable: Greek/Armenian"
+    },
+    {
+      "name": "هاهاها",
+      "error": true,
+      "comment": "whole-script confusable: Arabic/Latin"
+    },
+    {
+      "name": "ऽऽऽऽऽ",
+      "error": true,
+      "comment": "whole-script confusable: Devanagari/Gujarati"
+    },
+    {
+      "name": "тор",
+      "error": true,
+      "comment": "whole-script confusable: Cyrillic/Greek"
+    },
+    {
+      "name": "àáâãã̃āäåă",
+      "error": true,
+      "comment": "Whitelisted CM: illegal mixture"
+    },
+    {
+      "name": "$٠٠٩٩",
+      "error": true,
+      "comment": "illegal mixture: Latin + Arabic \"٠\"‎ {660}"
+    },
+    {
+      "name": "adіdas",
+      "error": true,
+      "comment": "illegal mixture: Latin + Cyrillic \"і\"‎ {456}"
+    },
+    {
+      "name": "metа",
+      "error": true,
+      "comment": "illegal mixture: Latin + Cyrillic \"а\"‎ {430}"
+    },
+    {
+      "name": "069٠٦٩",
+      "error": true,
+      "comment": "illegal mixture: Latin + Arabic \"٠\"‎ {660}"
+    },
+    {
+      "name": "сurrency",
+      "error": true,
+      "comment": "illegal mixture: Cyrillic + Latin \"u\"‎ {75}"
+    },
+    {
+      "name": "$$١١١",
+      "error": true,
+      "comment": "illegal mixture: Latin + Arabic \"١\"‎ {661}"
+    },
+    {
+      "name": "080٠٨٠",
+      "error": true,
+      "comment": "illegal mixture: Latin + Arabic \"٠\"‎ {660}"
+    },
+    {
+      "name": "ඞmogus",
+      "error": true,
+      "comment": "illegal mixture: Sinhala + Latin \"m\"‎ {6D}"
+    },
+    {
+      "name": "אviolet",
+      "error": true,
+      "comment": "illegal mixture: Hebrew + Latin \"v\"‎ {76}"
+    },
+    {
+      "name": "αlpha",
+      "error": true,
+      "comment": "illegal mixture: Greek + Latin \"l\"‎ {6C}"
+    },
+    {
+      "name": "mооn",
+      "error": true,
+      "comment": "illegal mixture: Latin + Cyrillic \"о\"‎ {43E}"
+    },
+    {
+      "name": "вітсоіո",
+      "error": true,
+      "comment": "illegal mixture: Cyrillic + Armenian \"ո\"‎ {578}"
+    },
+    {
+      "name": "$۲۰۲۰",
+      "error": true,
+      "comment": "illegal mixture: Latin + Arabic \"٢\"‎ {662}"
+    },
+    {
+      "name": "bitcߋin",
+      "error": true,
+      "comment": "illegal mixture: Latin + Restricted[Nkoo] \"ߋ\"‎ {7CB}"
+    },
+    {
+      "name": "$٧٠٠٠٠",
+      "error": true,
+      "comment": "illegal mixture: Latin + Arabic \"٧\"‎ {667}"
+    },
+    {
+      "name": "011٠١١",
+      "error": true,
+      "comment": "illegal mixture: Latin + Arabic \"٠\"‎ {660}"
+    },
+    {
+      "name": "52᱐",
+      "error": true,
+      "comment": "illegal mixture: Latin + Restricted[Olck] \"᱐\"‎ {1C50}"
+    },
+    {
+      "name": "αdao",
+      "error": true,
+      "comment": "illegal mixture: Greek + Latin \"d\"‎ {64}"
+    },
+    {
+      "name": "οmicron",
+      "error": true,
+      "comment": "illegal mixture: Greek + Latin \"m\"‎ {6D}"
+    },
+    {
+      "name": "_٧٧٧٧",
+      "error": true,
+      "comment": "illegal mixture: Latin + Arabic \"٧\"‎ {667}"
+    },
+    {
+      "name": "000٠٠٠",
+      "error": true,
+      "comment": "illegal mixture: Latin + Arabic \"٠\"‎ {660}"
+    },
+    {
+      "name": "018٠١٨",
+      "error": true,
+      "comment": "illegal mixture: Latin + Arabic \"٠\"‎ {660}"
+    },
+    {
+      "name": "blоck",
+      "error": true,
+      "comment": "illegal mixture: Latin + Cyrillic \"о\"‎ {43E}"
+    },
+    {
+      "name": "匚尺ㄚ卩ㄒㄖ卩ㄩ几ҝ",
+      "error": true,
+      "comment": "illegal mixture: Bopomofo + Cyrillic \"ҝ\"‎ {49D}"
+    },
+    {
+      "name": "💩̃",
+      "error": true,
+      "comment": "Emoji + CM"
+    },
+    {
+      "name": "💩",
+      "comment": "Emoji: unstyled"
+    },
+    {
+      "name": "🏳︎‍🌈",
+      "error": true,
+      "comment": "Text-styled Emoji in ZWJ Sequence"
+    },
+    {
+      "name": "🌈rainbow",
+      "comment": "Emoji + Text"
+    },
+    {
+      "name": "rainbow🌈",
+      "comment": "Text + Emoji"
+    },
+    {
+      "name": "🏴󠁷󠁴󠁦󠁿",
+      "error": true,
+      "comment": "Invalid Emoji Tag Sequence"
+    },
+    {
+      "name": "ᚊ⏪🤯️݄ᚔᚉᚌ᚜ᚌᚏᚙᚎᚑ",
+      "error": true,
+      "comment": "illegal placement: emoji + combining mark: \"🤯 + ◌݄\""
+    },
+    {
+      "name": "󠆤𜽤👩🏾‍🔬🖜🯉𜽴🗢­🗞️𞄱🃤⤵🏋🏿‍♂🆞🟌",
+      "error": true,
+      "comment": "illegal placement: emoji + combining mark: \"🗞 + ◌𞄱\""
+    },
+    {
+      "name": "⛈️ြ󠅲",
+      "error": true,
+      "comment": "illegal placement: emoji + combining mark: \"⛈ + ◌ြ\""
+    },
+    {
+      "name": "🚧️𑨹👩🏼‍⚕",
+      "error": true,
+      "comment": "illegal placement: emoji + combining mark: \"🚧 + ◌𑨹\""
+    },
+    {
+      "name": "꘧ꖹ🪐ޯꕤꘌꖨꕅ︃",
+      "error": true,
+      "comment": "illegal placement: emoji + combining mark: \"🪐 + ◌ޯ\""
+    },
+    {
+      "name": "💌⁤ֻ𒅀︃𒐝",
+      "error": true,
+      "comment": "illegal placement: emoji + combining mark: \"💌 + ◌ֻ\""
+    },
+    {
+      "name": "🧝🏿‍♂𑑅󠅊",
+      "error": true,
+      "comment": "illegal placement: emoji + combining mark: \"🧝🏿‍♂ + ◌𑑅\""
+    },
+    {
+      "name": "👬🏼ᚑᚃᚚᚒ󠅴ᚊᚐ᚛󠄱ᚒᚉᚍᚓᚊᚚᚊ🧑🏽‍🍳𑁀👨🏻‍🦯󠄙᚛🇨🇾ᚊᚆᚐᚙ",
+      "error": true,
+      "comment": "illegal placement: emoji + combining mark: \"🧑🏽‍🍳 + ◌𑁀\""
+    },
+    {
+      "name": "𞓞𞓩𞓤🍈🪈ᤣ️",
+      "error": true,
+      "comment": "illegal placement: emoji + combining mark: \"🪈 + ◌ᤣ\""
+    },
+    {
+      "name": "𒆝︌𒃁𒆝𒅫𒅶𒁡𒄙𒂨✌🏽᜕𒒆󠅕󠆿𒓳𒈒𒐆𒄟𒈆𒔀𒌶󠄾️𒅴𒑢𒍡󠄕󠄐󠅃𒌖𒃈𒓣𒋉𒌟",
+      "error": true,
+      "comment": "illegal placement: emoji + combining mark: \"✌🏽 + ◌᜕\""
+    },
+    {
+      "name": "ᧅ🎤𑵅᧓ᦸ󠄯",
+      "error": true,
+      "comment": "illegal placement: emoji + combining mark: \"🎤 + ◌𑵅\""
+    },
+    {
+      "name": "󠇔᠍𐡦𐡤𐡶𐡼𐡫𐡭𐡱𐡻🐊ᰫ𐡼𐡰𐡼𐡦𐡯𐡺󠆶𐡯𐡱𐡹𐡫𐡰𐡭𐡠𐡨🇮🇶᠋𐡦󠄡𐡣𐡦️",
+      "error": true,
+      "comment": "illegal placement: emoji + combining mark: \"🐊 + ◌ᰫ\""
+    }
+  ]
+}

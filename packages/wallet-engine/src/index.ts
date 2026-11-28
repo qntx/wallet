@@ -191,7 +191,7 @@ export type {
 } from "./networks/controller.ts";
 export type { FeeModel, GasPricing, NetworkInfo } from "./networks/registry.ts";
 export type { Esplora } from "./chains/bitcoin.ts";
-export type { EnsResolution } from "./names/ens.ts";
+export type { NameResolution } from "./names/index.ts";
 export type { LidoPosition, LidoWithdrawalRequest } from "./lido/index.ts";
 export type { StakePosition, StakeValidator } from "./staking/index.ts";
 export type {

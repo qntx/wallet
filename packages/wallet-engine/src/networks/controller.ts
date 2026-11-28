@@ -27,6 +27,7 @@ import {
   servedNetworksResponse,
   tronBasePath,
 } from "../gateway/contract/index.ts";
+import { ccipRequest } from "../names/ccip.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import { timeoutSignal } from "../timer.ts";
@@ -116,61 +117,17 @@ const makeClient = (
     ccipRead,
   });
 
-/**
- * EIP-3668 client lookup over the injected fetch, mirroring viem's `ccipRequest` semantics: a
- * `{data}` template is a GET, anything else a POST of `{ data, sender }`; the JSON `data` field or
- * a plain-text body must be `0x` hex; a non-2xx or malformed body falls to the next URL.
- */
-const isHexResponse = (value: unknown): value is Hex =>
-  typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
-
-export const ccipRequest =
-  (fetchFn: typeof globalThis.fetch) =>
-  async ({ data, sender, urls, requestOptions }: CcipRequestParameters): Promise<Hex> => {
-    const attempt = async (template: string): Promise<Hex> => {
-      const url = template.replace("{sender}", sender.toLowerCase()).replace("{data}", data);
-      const isGet = template.includes("{data}");
-      const res = await fetchFn(url, {
-        method: isGet ? "GET" : "POST",
-        ...(isGet ? {} : { headers: { "content-type": "application/json" } }),
-        ...(isGet ? {} : { body: JSON.stringify({ data, sender }) }),
-        ...(requestOptions?.signal === undefined ? {} : { signal: requestOptions.signal }),
-      });
-      if (!res.ok) {
-        throw new Error(`ccip gateway ${url} answered ${res.status}`);
-      }
-      const body: unknown =
-        res.headers.get("content-type")?.startsWith("application/json") === true
-          ? await res.json()
-          : await res.text();
-      const result = isObject(body) ? body["data"] : body;
-      if (!isHexResponse(result)) {
-        throw new Error(`ccip gateway ${url} answered a malformed response`);
-      }
-      return result;
-    };
-    let error: unknown = new Error("ccip request failed");
-    for (const template of urls) {
-      if (requestOptions?.signal?.aborted === true) {
-        throw error;
-      }
-      try {
-        // oxlint-disable-next-line eslint/no-await-in-loop -- gateways are tried in order
-        return await attempt(template);
-      } catch (error_) {
-        error = error_;
-      }
-    }
-    throw error;
-  };
-
 /** An ENS-resolution client: identical endpoints, but CCIP-Read via the injected plain fetch. */
 const makeEnsClient = (
   info: NetworkInfo,
   urls: ReadonlyArray<string>,
   transportFetch: typeof globalThis.fetch,
   ccipFetch: typeof globalThis.fetch,
-): PublicClient => makeClient(info, urls, transportFetch, { request: ccipRequest(ccipFetch) });
+  setTimer: SetTimer,
+): PublicClient =>
+  makeClient(info, urls, transportFetch, {
+    request: ccipRequest({ fetch: ccipFetch, setTimer }),
+  });
 
 const esploraClient = (
   urls: ReadonlyArray<string>,
@@ -293,7 +250,6 @@ export class NetworkController extends Controller<NetworkControllerState> {
   private readonly options: Options;
   private engineStore?: StoreOrUndefined;
   private readonly clients = new Map<string, PublicClient>();
-  private readonly ensClients = new Map<string, PublicClient>();
   private readonly gatewayBase: string | undefined;
   private readonly gatewayFetch: typeof globalThis.fetch;
   /** The persisted custom endpoints, verified or not — what `addRpc` writes back. */
@@ -391,7 +347,6 @@ export class NetworkController extends Controller<NetworkControllerState> {
     this.update((s) => ({ ...s, customRpc: {} }));
     this.gatewayServed = new Set();
     this.clients.clear();
-    this.ensClients.clear();
     this.engineStore = undefined;
   }
 
@@ -500,23 +455,23 @@ export class NetworkController extends Controller<NetworkControllerState> {
    * install id.
    */
   ensClient(network: string): PublicClient {
-    const cached = this.ensClients.get(network);
-    if (cached !== undefined) {
-      return cached;
-    }
     const urls = this.endpoints(network);
     if (urls.length === 0) {
       throw new Error(`no rpc endpoint for ${network}`);
     }
-    const client = makeEnsClient(this.info(network), urls, this.gatewayFetch, this.options.fetch);
-    this.ensClients.set(network, client);
-    return client;
+    return makeEnsClient(
+      this.info(network),
+      urls,
+      this.gatewayFetch,
+      this.options.fetch,
+      this.options.setTimer,
+    );
   }
 
   /** Second-upstream ENS client for cross-checking resolutions. */
   independentEnsClient(network: string): Independent<PublicClient> {
     return this.independent(network, (urls, fetchFn) =>
-      makeEnsClient(this.info(network), urls, fetchFn, this.options.fetch),
+      makeEnsClient(this.info(network), urls, fetchFn, this.options.fetch, this.options.setTimer),
     );
   }
 
@@ -721,7 +676,6 @@ export class NetworkController extends Controller<NetworkControllerState> {
       customRpc: { ...s.customRpc, [network]: [url, ...(s.customRpc[network] ?? [])] },
     }));
     this.clients.delete(network);
-    this.ensClients.delete(network);
     await this.engineStore
       ?.collection("networks")
       .put("customRpc", new TextEncoder().encode(JSON.stringify(this.storedRpc)));

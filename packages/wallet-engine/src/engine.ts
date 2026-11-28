@@ -46,8 +46,8 @@ import { lidoPosition } from "./lido/index.ts";
 import type { LidoPosition } from "./lido/index.ts";
 import { MetaSyncController } from "./meta/controller.ts";
 import type { MetaSyncConfig } from "./meta/controller.ts";
-import { resolveEns } from "./names/ens.ts";
-import type { EnsResolution } from "./names/ens.ts";
+import { lookupName, resolveName } from "./names/index.ts";
+import type { NameResolution } from "./names/index.ts";
 import { NetworkController } from "./networks/controller.ts";
 import { NftController } from "./nfts/controller.ts";
 import { NotificationsController } from "./notifications/controller.ts";
@@ -372,8 +372,10 @@ export type WalletEngine = {
     readonly prepare: (params: PrepareZapParams) => Promise<PreparedZap>;
   };
   readonly names: {
-    /** Forward-resolves an ENS name for a send on `network`; throws when it cannot resolve. */
-    readonly resolve: (name: string, network: string) => Promise<EnsResolution>;
+    /** Forward-resolves a name for a send on `network`; throws when it cannot resolve safely. */
+    readonly resolve: (name: string, network: string) => Promise<NameResolution>;
+    /** The verified primary name for `address` on `network`, if one exists. */
+    readonly lookup: (address: string, network: string) => Promise<NameResolution | undefined>;
   };
   /** The account's EIP-7702 delegation state on `network`. */
   readonly delegation: (account: AccountRef, network: string) => Promise<DelegationStatus>;
@@ -1332,7 +1334,8 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         withdrawLnurl({ spark: controller, fetch: options.fetch }, params),
     },
     names: {
-      resolve: async (name, network) => resolveEns(networks, name, network),
+      resolve: async (name, network) => resolveName(networks, name, network),
+      lookup: async (address, network) => lookupName(networks, address, network),
     },
     delegation: async (account: AccountRef, network: string) =>
       transactions.delegationState(account, network),
