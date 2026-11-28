@@ -183,6 +183,7 @@ async function rig(options: RigOptions = {}) {
   let nowMs = Date.now();
   const storage = memoryWalletConnectStorage();
   const createWalletConnectClient = await loadClient();
+  const warns: string[] = [];
   const client = await createWalletConnectClient({
     projectId: "test",
     metadata: WALLET_META,
@@ -191,7 +192,11 @@ async function rig(options: RigOptions = {}) {
     wallet,
     engine,
     now: () => nowMs,
-    logger: { warn: () => undefined },
+    logger: {
+      warn: (message: string) => {
+        warns.push(message);
+      },
+    },
   });
   return {
     timers,
@@ -201,6 +206,7 @@ async function rig(options: RigOptions = {}) {
     core: client.core,
     kit: client.kit,
     storage,
+    warns,
     walletId: info.walletId,
     setNow: (ms: number) => {
       nowMs = ms;
@@ -1160,6 +1166,102 @@ describe("walletconnect session expiry, restart and deletion", () => {
   );
 
   it(
+    "never re-prompts an answered request id that resurfaces after a restart",
+    { timeout: 150_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { session, live } = await established(r, client);
+      const from = getAddress(accountOf(session, EVM1));
+      const message = `0x${Buffer.from("answered", "utf8").toString("hex")}`;
+      const id = 424_245;
+      await sendRaw(client, live.topic, id, "personal_sign", [message, from], EVM1);
+      const request = await openRequest(r);
+      await r.engine.requests.approve(request.id, "evm-sign", approval(request, PW));
+      const response = await responseFor(client, live.topic, id);
+      expect(response.result).toBeTypeOf("string");
+      // The SDK drops its pending entry once the answer goes out; the relay's at-least-once
+      // delivery (or a replayed id) re-stores it, exactly like an app exit would find it.
+      await until(() => r.kit.getPendingSessionRequests().length === 0);
+      await sendRaw(client, live.topic, id, "personal_sign", [message, from], EVM1);
+      await until(() => r.kit.getPendingSessionRequests().length === 1);
+      await r.wc.dispose();
+      const restarted = await (
+        await loadClient()
+      )({
+        projectId: "test",
+        metadata: WALLET_META,
+        storage: r.storage,
+        relayUrl: "wss://fake.relay",
+        wallet: r.wallet,
+        engine: r.engine,
+        now: () => Date.now(),
+        logger: { warn: () => undefined },
+      });
+      // The wallet already answered that id — the recovery must drop it: no approval prompt
+      // and no second answer.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(awaiting(r)).toHaveLength(0);
+      await expect(answerCountFor(client, live.topic, id)).resolves.toBe(1);
+      await restarted.walletConnect.dispose();
+    },
+  );
+
+  it(
+    "recovers a request that was in the pipeline when the client restarted",
+    { timeout: 150_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { session, live } = await established(r, client);
+      const from = getAddress(accountOf(session, EVM1));
+      const message = `0x${Buffer.from("in flight", "utf8").toString("hex")}`;
+      const settled = client
+        .request({
+          topic: live.topic,
+          chainId: EVM1,
+          request: { method: "personal_sign", params: [message, from] },
+        })
+        .then((value) => ({ value }))
+        .catch((error: unknown) => ({ error }));
+      const request = await openRequest(r);
+      // dispose() voids the open pipeline request; the SDK's pending store keeps the request
+      // itself for the next instance.
+      await r.wc.dispose();
+      await until(() => r.engine.requests.getState().requests[request.id]?.stage === "invalidated");
+      const restarted = await (
+        await loadClient()
+      )({
+        projectId: "test",
+        metadata: WALLET_META,
+        storage: r.storage,
+        relayUrl: "wss://fake.relay",
+        wallet: r.wallet,
+        engine: r.engine,
+        now: () => Date.now(),
+        logger: { warn: () => undefined },
+      });
+      const recovered = await openRequest(r);
+      expect(recovered.origin).toMatchObject({ kind: "walletconnect", topic: live.topic });
+      await r.engine.requests.approve(recovered.id, "evm-sign", approval(recovered, PW));
+      const result = await settled;
+      if (!("value" in result) || typeof result.value !== "string") {
+        throw new Error(`the in-flight request was answered with ${JSON.stringify(result)}`);
+      }
+      await expect(
+        verifyMessage({
+          address: from,
+          message: "in flight",
+          signature: result.value as `0x${string}`,
+        }),
+      ).resolves.toBe(true);
+      await restarted.walletConnect.dispose();
+    },
+  );
+
+  it(
     "disconnects the session and its pairing when the session's wallet is deleted",
     { timeout: 150_000 },
     async () => {
@@ -1260,6 +1362,27 @@ describe("walletconnect session expiry, restart and deletion", () => {
     },
   );
 });
+
+/** How many decoded JSON-RPC answers for `id` sit in the relay mailbox — redeliveries count. */
+const answerCountFor = async (client: Dapp, topic: string, id: number): Promise<number> => {
+  let count = 0;
+  for (const raw of walletConnectRelay.messagesOn(topic)) {
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- decodes land in order
+      const payload = (await client.core.crypto.decode(topic, raw)) as {
+        id?: number;
+        result?: unknown;
+        error?: unknown;
+      };
+      if (payload.id === id && ("result" in payload || "error" in payload)) {
+        count += 1;
+      }
+    } catch {
+      // Proposal/settlement envelopes decode differently — only JSON-RPC answers count.
+    }
+  }
+  return count;
+};
 
 /** Polls the relay mailbox until the decoded JSON-RPC answer for `id` appears. */
 const responseFor = async (
@@ -1638,6 +1761,72 @@ describe("walletconnect one-click auth", () => {
       await r.engine.requests.approve(request.id, "evm-sign", approval(request, PW));
       const { session } = authValue(await settled);
       expect(session).toBeDefined();
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "leaves a freshly settled auth session alone — no update attempt, no session events",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { uri, settled } = await authed(client, {
+        ...AUTH_PARAMS,
+        methods: ["personal_sign"],
+      });
+      await r.wc.pair(uri);
+      const request = await openRequest(r);
+      await r.engine.requests.approve(request.id, "evm-sign", approval(request, PW));
+      const { session } = authValue(await settled);
+      if (session === undefined) {
+        throw new Error("no session settled");
+      }
+      const events: Array<{ name: string; data: unknown }> = [];
+      client.on("session_event", (event) => {
+        events.push({ name: event.params.event.name, data: event.params.event.data });
+      });
+      // The dApp controls auth sessions, so the reconcile that follows settle must leave
+      // this one alone — an update would only 3003 and the peer is not settled for events.
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      expect(events).toHaveLength(0);
+      expect(r.warns.filter((message) => message.includes("session update failed"))).toHaveLength(
+        0,
+      );
+      await r.wc.dispose();
+    },
+  );
+
+  it(
+    "ends the auth session when a group switch changes the accounts it advertises",
+    { timeout: 120_000 },
+    async () => {
+      walletConnectRelay.reset();
+      const r = await rig();
+      const client = await dapp();
+      const { uri, settled } = await authed(client, {
+        ...AUTH_PARAMS,
+        methods: ["personal_sign"],
+      });
+      await r.wc.pair(uri);
+      const request = await openRequest(r);
+      await r.engine.requests.approve(request.id, "evm-sign", approval(request, PW));
+      const { session } = authValue(await settled);
+      if (session === undefined) {
+        throw new Error("no session settled");
+      }
+      const deleted: string[] = [];
+      client.on("session_delete", (event) => {
+        deleted.push(event.topic);
+      });
+      // The wallet cannot repoint a session it does not control — the switch leaves it
+      // serving accounts the wallet no longer offers, so the session must end instead.
+      const other = await r.wallet.wallets.importMnemonic({ mnemonic: SECOND });
+      r.engine.accounts.select(other.walletId, 0);
+      await until(() => deleted.includes(session.topic));
+      await until(() => sessionOf(r, session.topic) === undefined);
+      expect(deleted).toStrictEqual([session.topic]);
       await r.wc.dispose();
     },
   );

@@ -35,6 +35,14 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Fixed
 
+- `@qntx/wallet-engine`: WalletConnect no longer re-prompts for a session request the wallet
+  already answered when the relay redelivers it or a peer replays its id and the client restarts.
+- `@qntx/wallet-engine`: disposing the WalletConnect client voids its in-flight pipeline requests,
+  so the next instance recovers them instead of answering the dApp with an error.
+- `@qntx/wallet-engine`: a WalletConnect one-click-auth session (controlled by the dApp) is no
+  longer sent an update it must refuse plus a spurious `accountsChanged` right after it settles;
+  EIP-55 casing no longer counts as an account change, and a group switch the session cannot follow
+  disconnects it.
 - `@qntx/wallet-engine`: history flags a counterparty imitating a device-unconfirmed own address
   again — unconfirmed own addresses stay lookalike references while never exempting themselves
   (`assessRecipients` takes an optional reference corpus). Every history load resolves the group's

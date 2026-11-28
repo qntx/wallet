@@ -27,7 +27,7 @@ import { bip122Addresses, bip122Row } from "./bip122.ts";
 import { eip155Row } from "./eip155.ts";
 import { WalletConnectError, requestError } from "./errors.ts";
 import type { NamespaceRow, WalletConnectEngine } from "./namespaces.ts";
-import { sameNamespaces, sessionNamespaces } from "./namespaces.ts";
+import { accountKey, sameNamespaces, sessionNamespaces } from "./namespaces.ts";
 import { judgeProposal, metadataOrigin, verifyOf } from "./proposals.ts";
 import type { SessionRequestItem } from "./queue.ts";
 import { SessionRequestQueue } from "./queue.ts";
@@ -229,6 +229,7 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
       off();
     }
     this.off.length = 0;
+    this.queue.dispose();
     try {
       await this.core.relayer.transportClose();
     } catch (error) {
@@ -522,6 +523,12 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
   private enqueue(
     request: Pick<PendingRequestTypes.Struct, "id" | "topic" | "params" | "verifyContext">,
   ): void {
+    // At-least-once delivery and peer replays resurface ids the wallet already answered; the
+    // resolved history record is the answer marker that survives a restart, where `seen` is empty.
+    const record = this.core.history.records.get(request.id);
+    if (record !== undefined && record.topic === request.topic && record.response !== undefined) {
+      return;
+    }
     this.queue.enqueue({
       id: request.id,
       topic: request.topic,
@@ -536,6 +543,9 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
   /** One queued request: validate, dispatch through the shared handler, answer. */
   private async runRequest(item: SessionRequestItem): Promise<void> {
     const { engine } = this.options;
+    if (this.disposed) {
+      return;
+    }
     if (!this.ready()) {
       this.queue.requeue(item);
       return;
@@ -598,12 +608,16 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
     }
   }
 
-  /** The peer gets its answer unless the request expired while it ran — then none is sent. */
+  /**
+   * The peer gets its answer unless the request expired while it ran — then none is sent. A
+   * disposed client sends nothing either: the SDK keeps the request pending so the next instance
+   * recovers it instead of racing the dead instance's response.
+   */
   private async respond(
     item: SessionRequestItem,
     answer: ResultAnswer | ErrorAnswer,
   ): Promise<void> {
-    if (this.queue.wasExpired(item.id)) {
+    if (this.disposed || this.queue.wasExpired(item.id)) {
       return;
     }
     try {
@@ -798,7 +812,11 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
     session: StoredSession,
   ): Promise<void> {
     const recomputed = sessionNamespaces(session.scopes, live.namespaces, ROWS);
-    if (recomputed === undefined) {
+    // Auth sessions settle with the dApp as controller — the wallet can neither update nor
+    // extend them, so a scope change the session cannot follow means dropping it.
+    const controlled = live.controller === live.self.publicKey;
+    const drifted = recomputed !== undefined && !sameNamespaces(live.namespaces, recomputed);
+    if (recomputed === undefined || (drifted && !controlled)) {
       await this.kit
         .disconnectSession({ topic, reason: getSdkError("USER_DISCONNECTED") })
         .catch((error: unknown) => {
@@ -811,7 +829,7 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
         });
       return;
     }
-    if (!sameNamespaces(live.namespaces, recomputed)) {
+    if (drifted) {
       const changed = changedAccounts(live.namespaces, recomputed);
       try {
         await this.kit.updateSession({ topic, namespaces: recomputed });
@@ -865,7 +883,7 @@ class WalletConnectController extends Controller<WalletConnectState> implements 
           this.options.logger.warn("walletconnect event failed", error);
         });
     }
-    if (live.expiry * 1000 - this.options.now() < EXTEND_WITHIN_MS) {
+    if (controlled && live.expiry * 1000 - this.options.now() < EXTEND_WITHIN_MS) {
       await this.kit.extendSession({ topic }).catch((error: unknown) => {
         this.options.logger.warn("walletconnect extend failed", error);
       });
@@ -936,8 +954,13 @@ const changedAccounts = (
     }
     for (const chain of next.chains ?? []) {
       const now = next.accounts.filter((account) => account.startsWith(`${chain}:`));
-      const then = previous.accounts.filter((account) => account.startsWith(`${chain}:`));
-      if (now.length !== then.length || now.some((account) => !then.includes(account))) {
+      const then = previous.accounts
+        .filter((account) => account.startsWith(`${chain}:`))
+        .map(accountKey);
+      if (
+        now.length !== then.length ||
+        now.some((account) => !then.includes(accountKey(account)))
+      ) {
         changed.push([chain, now]);
       }
     }

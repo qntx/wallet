@@ -27,7 +27,8 @@ const MAX_SEEN = 500;
  * Per-topic FIFO queues: requests of one session serialize (an approval must not race the next
  * call) while different sessions run concurrently. Requests queue while the vault is locked and
  * drain when it unlocks; ids already queued, in flight or recently done are dropped so the relay's
- * at-least-once delivery and a restarted recovery never reach the pipeline twice.
+ * at-least-once delivery never reaches the pipeline twice — and a restarted client refuses ids it
+ * already answered before they ever arrive here.
  */
 export class SessionRequestQueue {
   private readonly pending = new Map<string, SessionRequestItem[]>();
@@ -89,6 +90,15 @@ export class SessionRequestQueue {
   /** The session went away: its queued requests are never answered. */
   drop(topic: string): void {
     this.pending.delete(topic);
+  }
+
+  /** The client is gone: nothing else runs and every in-flight request's pipeline work is voided. */
+  dispose(): void {
+    this.ready = false;
+    this.pending.clear();
+    for (const topic of this.running.keys()) {
+      this.handler.invalidate(topic);
+    }
   }
 
   /**

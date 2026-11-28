@@ -188,6 +188,10 @@ export const sessionNamespaces = (
   return out;
 };
 
+/** EIP-55 casing is presentation only — eip155 CAIP-10 accounts compare on their lowercase form. */
+export const accountKey = (account: string): string =>
+  account.startsWith("eip155:") ? account.toLowerCase() : account;
+
 const sameSet = (a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean =>
   a.length === b.length && a.every((item) => b.includes(item));
 
@@ -202,7 +206,10 @@ export const sameNamespaces = (
     if (x === undefined || y === undefined) {
       return false;
     }
-    if (!sameSet(x.chains ?? [], y.chains ?? []) || !sameSet(x.accounts, y.accounts)) {
+    if (
+      !sameSet(x.chains ?? [], y.chains ?? []) ||
+      !sameSet(x.accounts.map(accountKey), y.accounts.map(accountKey))
+    ) {
       return false;
     }
   }
