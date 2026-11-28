@@ -6,10 +6,12 @@
 #
 #   .github/rulesets/apply.sh <reviewer-login> [<reviewer-login>...]
 #
-# With two or more reviewers the person who starts a production or npm job may not approve it.
-# With one — a single maintainer — that person approves their own job: the approval is a
-# deliberate second step, not a second person (README.md, "Single maintainer"). The Cloudflare API token of each environment is an environment secret only its owner
-# can create, each for its own Cloudflare account (apps/gateway/README.md):
+# With two or more reviewers the person who starts a staging, production or npm job may not
+# approve it. With one — a single maintainer — that person approves their own job: the approval
+# is a deliberate second step, not a second person (README.md, "Single maintainer"). Staging and
+# production share one Cloudflare account and a Workers token is account-wide, so a staging token
+# can replace production — that is why staging carries the same reviewers; each environment's
+# token is an account API token of that account (apps/gateway/README.md):
 #   gh secret set CLOUDFLARE_API_TOKEN --env staging
 #   gh secret set CLOUDFLARE_API_TOKEN --env production
 # and deployments start once `gh variable set GATEWAY_DEPLOY --body true` is set.
@@ -70,7 +72,7 @@ environment() {
     manual+=("Settings → Environments → ${name}: clear \"Allow administrators to bypass configured protection rules\"")
   fi
 }
-environment staging '[]' false branch main
+environment staging "${reviewers}" "${self_review}" branch main
 environment production "${reviewers}" "${self_review}" branch main
 environment npm "${reviewers}" "${self_review}" tag 'v*.*.*'
 
