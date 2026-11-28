@@ -16,9 +16,10 @@
   ],
   "env": {
     "staging": {
-      // Must differ from production's account: Workers Scripts Edit is account-wide, so a staging
-      // token in the production account could replace the production Worker. The deploy workflow
-      // refuses to deploy staging until it has its own account (README "Deployment pipeline").
+      // Production's account: Workers Scripts Edit is account-wide, so the staging token can also
+      // replace the production Worker, and staging deploys behind production's reviewer gate
+      // (README "One Cloudflare account"). Staging shares no state with production — Worker name,
+      // route, KV and rate-limit namespace ids are its own (tests/deploy-check.test.ts).
       "account_id": "9241dfd75bea0009a3870173f7e1acd2",
       "name": "wallet-gateway-staging",
       "workers_dev": false,
