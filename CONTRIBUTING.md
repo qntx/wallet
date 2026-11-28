@@ -48,6 +48,30 @@ Run before opening a pull request:
 bun run lint && bun run typecheck && bun run test
 ```
 
+## Hyperliquid testnet e2e
+
+`packages/wallet-engine/tests/hyperliquid-testnet.test.ts` drives the real Hyperliquid path (vault,
+request pipeline, kernel decode, `hyperliquid-l1-agent` session) against
+`api.hyperliquid-testnet.xyz`. It is skipped unless `HYPERLIQUID_E2E_MNEMONIC_FILE` names a file
+holding the mnemonic of a funded testnet account, and it has no CI workflow (CI holds no funded
+secret). The suite refuses to sign unless the mnemonic derives the expected test address hardcoded
+in the file; edit `OWNER_EXPECTED` for another account. Every request goes through the testnet
+guard (`tests/support/hyperliquid-testnet.ts`), which refuses mainnet and value-out actions. Run it
+locally after building the kernel bundle:
+
+```bash
+bunx vp run @qntx/wallet-worker#build
+cd packages/wallet-engine
+HYPERLIQUID_E2E_MNEMONIC_FILE=~/.qntx-e2e-mnemonic \
+HYPERLIQUID_E2E_LOG=/tmp/hl-e2e.jsonl \
+bunx vp test tests/hyperliquid-testnet.test.ts
+```
+
+`HYPERLIQUID_E2E_LOG` (optional) receives one JSON line per step and per `/exchange` post (action,
+nonce, response; never signatures). The run takes about three minutes, needs a few hundred USDC
+of perp collateral for margin, costs about 1 USDC in fees, and leaves the account flat with the
+agent revoked.
+
 ## Working across repositories
 
 To try an unreleased `qntx/nostr` or `qntx/spark` change, `bun link` it into the
