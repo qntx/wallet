@@ -1,0 +1,43 @@
+name: WalletConnect
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  relay-e2e:
+    # The real Reown relay: the gated suite in tests/walletconnect-e2e.test.ts. Needs the
+    # WALLETCONNECT_PROJECT_ID repository variable; the step fails fast when it is unset.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+        with:
+          version: v1.10.0
+      - run: bun install --frozen-lockfile
+      - run: bunx vp run @qntx/wallet-engine#build
+      - env:
+          WALLETCONNECT_PROJECT_ID: ${{ vars.WALLETCONNECT_PROJECT_ID }}
+          ENGINE_E2E_WALLETCONNECT: "1"
+        run: |
+          set -euo pipefail
+          if [ -z "${WALLETCONNECT_PROJECT_ID:-}" ]; then
+            echo "::error::WALLETCONNECT_PROJECT_ID repository variable is not set"
+            exit 1
+          fi
+          bunx vp test --project unit tests/walletconnect-e2e.test.ts --reporter=default --reporter=json --outputFile.json=/tmp/e2e.json
+          jq -e '.numTotalTests > 0 and .numPendingTests == 0 and .numTodoTests == 0' /tmp/e2e.json
+        working-directory: packages/wallet-engine
