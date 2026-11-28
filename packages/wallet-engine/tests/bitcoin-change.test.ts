@@ -146,6 +146,14 @@ describe("changeAddressOf", () => {
     const takenDeep = new Set(deep.slice(1981).map((a) => a.address));
     expect(changeAddressOf(deep, 1980, takenDeep).index).toBe(BITCOIN_SCAN_LIMIT - 1);
   });
+
+  it("a full window caps the pick at the reach — the index past it stays out", () => {
+    // Indexes 1..changeScanReach(0) all taken on a 60-entry scan: index 21 is free, yet the pick
+    // may never leave the window — it reuses the entry at the reach, never steps one past it.
+    const chain = chainOf(Array.from({ length: 60 }, () => false));
+    const taken = new Set(chain.slice(1, changeScanReach(0) + 1).map((a) => a.address));
+    expect(changeAddressOf(chain, 0, taken).index).toBe(changeScanReach(0));
+  });
 });
 
 describe("a send against a primary that claims the whole change chain used", () => {

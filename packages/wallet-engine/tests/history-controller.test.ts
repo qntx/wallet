@@ -1251,6 +1251,53 @@ describe("device-unconfirmed own addresses — the known set's two roles", () =>
     controller.lock();
   });
 
+  it("bitcoin: an unconfirmed-signer outflow outside the group's own set still anchors references", async () => {
+    /* The `to` a device-unconfirmed entry serves is not always one of THIS group's own
+       addresses — a tracked send may pay an address another group owns. `references` gets every
+       outflow's `to` regardless, so a counterparty imitating that recipient keeps the flag even
+       though nothing else puts the address in the corpus. */
+    const foreign = p2wpkh(
+      HDKey.fromMasterSeed(new Uint8Array(64).fill(7))
+        .derive("m/84'/0'/0'")
+        .deriveChild(1)
+        .deriveChild(5).publicKey!,
+      NETWORK,
+    ).address;
+    const imitator = `${foreign.slice(0, 4)}${"1".repeat(foreign.length - 8)}${foreign.slice(-4)}`;
+    const C = btcAddress("btc.bip84", 0, 0);
+    const copycat = btcTx("ef".repeat(32), imitator, C);
+    const { controller } = make({
+      bitcoin: {
+        account: btcAccountFor(new Map()),
+        esplora: esploraOf(new Map([[scripthash(C, NETWORK), [copycat]]])),
+      },
+      txs: {
+        sent: {
+          id: "sent",
+          family: "bitcoin",
+          network: BTC_NET,
+          account: GROUP.walletId,
+          hash: "aa".repeat(32),
+          state: "submitted",
+          intent: {
+            outflows: [{ to: foreign, amount: { asset: "native", amount: "5" }, verified: true }],
+            warnings: [{ kind: "unconfirmed-signer-output", message: foreign, level: "danger" }],
+          },
+          nonce: 0,
+          submittedAt: 0,
+          error: undefined,
+        },
+      },
+    });
+    await controller.init();
+    await controller.load(GROUP);
+    const entries = entriesOf(controller).filter((e) => e.family === "bitcoin");
+    expect(entries.find((e) => e.counterparties[0] === imitator)?.flags).toContain(
+      "lookalike-counterparty",
+    );
+    controller.lock();
+  });
+
   it("a confirmed tracked send's recipient vouches for itself — an equal counterparty flags nothing", async () => {
     /* The tracked send paid OTHER, so OTHER sits in the exempt set: as a counterparty it is
        skipped before the lookalike check — even wearing a book contact's first and last four,

@@ -330,11 +330,15 @@ describe("bitcoin rbf", () => {
 
   it("a speed-up and a cancel of a change-paying parent reuse the parent's own output", async () => {
     /* /1/1 is burned by an older confirmed send, so the parent's change sits at /1/2 — and every
-       replacement pays /1/2 back, never the free /1/1 a fresh pick would hand out. The PSBT
-       binds the parent's own path, so the kernel classifies the output as change. */
+       replacement pays /1/2 back, never a fresh pick. The store the replacement reads holds the
+       parent's row too, so a fresh pick would skip both taken addresses and hand out /1/3 —
+       the reuse of /1/2 is the point, not an accident of an empty store. The PSBT binds the
+       parent's own path, so the kernel classifies the output as change. */
     const earlier = ownRow("earlier", "confirmed", CHANGE_ADDR);
-    const c = { ...ctx(), txs: () => ({ earlier }) };
+    const rows: Record<string, TrackedTransaction> = { earlier };
+    const c = { ...ctx(), txs: () => rows };
     const parent = await send(c);
+    rows[parent.id] = parent;
     expect(btcOf(parent).outputs.find((o) => o.own)?.address).toBe(CHANGE_ADDR_2);
 
     const verify = { kind: "password" as const, password: "pw" };
