@@ -39,6 +39,11 @@ is bounded to HTTPS gateways, eight fetches, ten seconds and 256 KiB per resolut
 - `@qntx/wallet-engine`: Sepolia sends use ENS coin type 60 instead of a chain-specific coin type.
 - `@qntx/wallet-engine`: legacy `.sol` names are refused during SNS's SRS migration; use the
   corresponding `.sns` name.
+- `@qntx/wallet-engine/apps/hyperliquid`: an `/exchange` rejection "User or API Wallet 0x<X> does
+  not exist" latches the agent as rejected only when X is the agent itself; any other X (the
+  signature recovered to another address) is a plain `rejected` and the agent keeps trading.
+- `@qntx/wallet-engine/apps/hyperliquid`: `disable` refreshes the agent registry after deleting the
+  kernel agents, so trading afterwards answers `not-enabled` instead of trying a deleted agent.
 
 ## [0.14.1] - 2026-11-28
 
