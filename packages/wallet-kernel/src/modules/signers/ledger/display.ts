@@ -6,9 +6,11 @@
  *
  * Verified against the pinned app sources:
  *
- * - Ethereum 1.24.0: tx without calldata renders the review flow; calldata or creation needs "Blind
- *   signing"; EIP-712 shows domain fields + message hash only; EIP-7702 is not in the default build
- *   (EIP7702_SUPPORT ?= 0).
+ * - Ethereum 1.24.0: tx without calldata renders the review flow; ERC-20 transfer/approve calldata
+ *   renders through the internal plugin only when a token descriptor binding exactly to `tx.to` was
+ *   offered (value zero); any other calldata or creation needs "Blind signing"; EIP-712 shows
+ *   domain fields + message hash only; EIP-7702 is not in the default build (EIP7702_SUPPORT ?=
+ *   0).
  * - Tron 0.8.2 (src/handlers/sign.c): dedicated screens exist for the contract types listed below —
  *   anything else falls to APPROVAL_SIMPLE_TRANSACTION behind "Sign by hash"; a data memo needs
  *   "Allow data" (parse.c USTREAM_MISSING_SETTING_DATA_ALLOWED); a TriggerSmartContract that is not
@@ -26,10 +28,11 @@
 import { parseCompiledMessage, PROGRAM_IDS } from "@qntx/wallet-chains/solana";
 import { decodeTronContract, decodeTronRawData } from "@qntx/wallet-chains/tron";
 import type { TronContract, TronContractSlot } from "@qntx/wallet-chains/tron";
-import type { ChainSignRequest, DeviceDisplay } from "@qntx/wallet/protocol";
+import type { ChainSignRequest, DeviceDisplay, LedgerDescriptors } from "@qntx/wallet/protocol";
 
 import type { ChainPlan } from "../../chains/run.ts";
 import type { DeviceIdentity } from "../driver.ts";
+import { bindLedger } from "./clear.ts";
 
 /** TRC20 selectors the device ABI-decodes to a token screen (parse.c SELECTOR). */
 const TRC20_SELECTORS = [
@@ -180,13 +183,17 @@ export const display = (
   request: ChainSignRequest,
   plan: ChainPlan,
   _identity: DeviceIdentity,
+  descriptors: LedgerDescriptors | undefined,
 ): DeviceDisplay | "unsupported" => {
   if (plan.kind === "evm.transaction") {
     const { tx } = plan;
     if (tx.type === "eip7702") {
       return "unsupported"; // not in the pinned 1.24.0 default build
     }
-    return tx.to !== undefined && (tx.data === "0x" || tx.data === "") ? "clear" : "blind";
+    if (tx.to !== undefined && (tx.data === "0x" || tx.data === "")) {
+      return "clear";
+    }
+    return bindLedger(request, plan, descriptors) === undefined ? "blind" : "clear";
   }
   if (plan.kind === "evm.personal-message" || plan.kind === "evm.fiat24-session") {
     return "clear";

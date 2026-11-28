@@ -34,6 +34,7 @@ import { appAndVersion, requireApp } from "../../src/modules/signers/ledger/prot
 import {
   ethAddress,
   ethConfiguration,
+  ethProvideTokenInformation,
   ethPublicNode,
   ethSignPersonalMessage,
   ethSignTransaction,
@@ -397,6 +398,31 @@ const nodeResult = (r: { publicKey: Uint8Array; chainCode: Uint8Array }): unknow
   chainCode: hex(r.chainCode),
 });
 
+const calTokenPayload = (chainId: number, address: string): string => {
+  const parsed: unknown = JSON.parse(
+    readFileSync(
+      fileURLToPath(new URL("../../../../vectors/ledger/cal/tokens.json", import.meta.url)),
+      "utf8",
+    ),
+  );
+  if (typeof parsed !== "object" || parsed === null || !("tokens" in parsed)) {
+    throw new Error("CAL token vector has no tokens");
+  }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the vector is a checked-in bundle; the row lookup validates use
+  const rows = parsed.tokens as ReadonlyArray<{
+    chainId: number;
+    address: string;
+    descriptor: string;
+  }>;
+  const row = rows.find((entry) => entry.chainId === chainId && entry.address === address);
+  if (row === undefined) {
+    throw new Error(`missing CAL row ${String(chainId)} ${address}`);
+  }
+  return row.descriptor;
+};
+
+const USDC_PAYLOAD = calTokenPayload(1, "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
+
 export const ETHEREUM_CASES: CaseDef[] = [
   {
     name: "app-and-version",
@@ -427,6 +453,11 @@ export const ETHEREUM_CASES: CaseDef[] = [
     name: "public-node",
     call: { fn: "ethPublicNode", path: ETH_ACCOUNT_PATH },
     run: async (ex) => nodeResult(await ethPublicNode(ex, ETH_ACCOUNT_PATH)),
+  },
+  {
+    name: "provide-token-usdc",
+    call: { fn: "ethProvideTokenInformation", payload: USDC_PAYLOAD },
+    run: async (ex) => ({ index: await ethProvideTokenInformation(ex, unhex(USDC_PAYLOAD)) }),
   },
   {
     name: "tx-legacy",

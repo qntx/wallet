@@ -13,7 +13,7 @@ import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
 import { WalletError } from "@qntx/wallet";
 import type { KeysApi, Wallet, HardwareDevice } from "@qntx/wallet";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
-import type { DeviceIo } from "@qntx/wallet/hardware";
+import type { DeviceIo, LedgerDescriptorSource } from "@qntx/wallet/hardware";
 import { nostr } from "@qntx/wallet/nostr";
 import { sessions } from "@qntx/wallet/sessions";
 import { spark } from "@qntx/wallet/spark";
@@ -151,6 +151,12 @@ export type EngineOptions = {
    * → hardware wallets cannot sign, verify addresses or fetch accounts here.
    */
   readonly deviceIo?: (device: HardwareDevice) => DeviceIo;
+  /**
+   * Ledger clear-signing descriptor source. The default queries Ledger's public CAL for the token
+   * contract of an ERC-20 transfer/approve — that reveals the contract address and chain to Ledger.
+   * Pass a bundle source to stay offline, or `async () => undefined` to disable descriptor use.
+   */
+  readonly ledgerDescriptors?: LedgerDescriptorSource;
 };
 
 /** A controller's store without `setState`: hosts read and subscribe, only the engine writes. */
@@ -614,6 +620,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     networks: { enabled: (family) => networks.enabled(family) },
     random: options.random,
     logger: options.logger,
+    fetch: options.fetch,
+    ...(options.ledgerDescriptors === undefined
+      ? {}
+      : { ledgerDescriptors: options.ledgerDescriptors }),
   });
 
   const transactions = new TransactionController({

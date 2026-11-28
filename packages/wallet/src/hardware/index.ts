@@ -36,12 +36,15 @@ export type {
   HardwareOperation,
   HardwareResult,
   HardwareStep,
+  LedgerDescriptors,
   QrPayload,
 } from "../protocol/hardware.ts";
 
 export { ledgerBleExchange, ledgerHidExchange, ledgerIo } from "./ledger.ts";
 export { oneKeyBleExchange, oneKeyHidExchange, oneKeyIo } from "./onekey.ts";
 export type { BlePort, HidPort } from "./ports.ts";
+export { bundleDescriptorSource, calDescriptorSource, LEDGER_CAL_URL } from "./descriptors.ts";
+export type { LedgerDescriptorBundle, LedgerDescriptorSource } from "./descriptors.ts";
 
 /** One running device operation: observe every exchange (and the verified `done`), cancel ends it. */
 export type HardwareTask = SignerTask<HardwareStep, HardwareResult>;

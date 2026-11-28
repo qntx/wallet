@@ -331,6 +331,31 @@ describe("hardware sign byte-identical to local signing", () => {
     },
   });
 
+  it("refuses Ledger descriptors on a non-Ledger device before signing", async () => {
+    const { h, session, hwId } = await boot();
+    const request = normalizeEvm({
+      ...evmTx("eip1559", {
+        maxFeePerGas: "0x59682f00",
+        maxPriorityFeePerGas: "0x1",
+        accessList: [],
+      }),
+      account: hd(hwId, "evm.bip44"),
+    });
+    const begin = await h.call(
+      "hardware.begin",
+      {
+        op: {
+          kind: "sign",
+          request,
+          descriptors: { tokens: [new Uint8Array(38)] },
+        },
+        verify: PASSKEY(),
+      },
+      session,
+    );
+    expect(errCode(begin)).toBe("invalid-input");
+  });
+
   it("evm legacy, eip1559 and eip7702 transactions", async () => {
     const { h, session, walletId, hwId } = await boot();
     const requests = [

@@ -33,6 +33,16 @@ export type DeviceResponse =
 
 export type DeviceDisplay = "clear" | "blind";
 
+/**
+ * Vendor-signed Ledger clear-signing descriptors the host fetched (Ledger's CAL or a bundle).
+ * Public and hostile: the kernel forwards only what binds to the request it decoded, and the device
+ * verifies every signature.
+ */
+export type LedgerDescriptors = {
+  /** PROVIDE ERC 20 TOKEN INFORMATION legacy payloads (`E0 0A 00 00` data). */
+  readonly tokens?: ReadonlyArray<Uint8Array>;
+};
+
 /** The host transport for one device operation. */
 export type DeviceIo = {
   /**
@@ -62,6 +72,7 @@ export type HardwareOperation =
        * danger row for the output. Absent, such a send refuses with `approval-required`.
        */
       readonly acknowledgeUnconfirmed?: true;
+      readonly descriptors?: LedgerDescriptors;
     }
   | {
       readonly kind: "verify-address";
@@ -118,6 +129,13 @@ const deviceResponse: Validator<DeviceResponse> = union(
 
 const deviceDisplay: Validator<DeviceDisplay> = union(literal("clear"), literal("blind"));
 
+/* Legacy token descriptor: u8 ticker length ‖ ticker ‖ address[20] ‖ decimals u32be ‖ chainId
+   u32be ‖ strict DER secp256k1 signature. The app's ticker buffer is MAX_TICKER_LEN 51 including
+   its NUL, so a payload is 38..151 bytes. */
+const ledgerDescriptors: Validator<LedgerDescriptors> = obj({
+  tokens: opt(arr(bytes(38, 151), 16)),
+});
+
 const hardwareOperation: Validator<HardwareOperation> = union(
   obj({ kind: literal("pair"), device: hardwareDevice }),
   obj({
@@ -131,6 +149,7 @@ const hardwareOperation: Validator<HardwareOperation> = union(
     kind: literal("sign"),
     request: signRequest,
     acknowledgeUnconfirmed: opt(literal(true)),
+    descriptors: opt(ledgerDescriptors),
   }),
   obj({
     kind: literal("verify-address"),

@@ -845,6 +845,7 @@ describe("method classification", () => {
       | "signatureShare"
       | "sspSignature"
       | "tokenIdentifier"
+      | "tokens"
       | "transaction"
       | "txid"
       | "verifyingKey"

@@ -2,10 +2,12 @@
  * Ledger signing: what the device is sent for one plan stage and the admission checks on what comes
  * back. The device payload is always recomputed from the request — never trusted from the plan —
  * and checked against the task digest (`expectDigest`) before any APDU leaves, so a kernel-side
- * inconsistency fails closed. Requests the device can only blind-sign first read the app's
- * configuration: the required setting off means `blind-signing-disabled` before the device is even
- * asked. Bitcoin PSBT yields are released only when they match the plan — the yielded input, the
- * yielded key and the sighash byte must all agree, and yields outside the plan are ignored.
+ * inconsistency fails closed. ERC-20 transfer/approve calldata with a descriptor binding exactly to
+ * the request sends that token descriptor before SIGN and needs no configuration read; other
+ * requests the device can only blind-sign first read the app's configuration: the required setting
+ * off means `blind-signing-disabled` before the device is even asked. Bitcoin PSBT yields are
+ * released only when they match the plan — the yielded input, the yielded key and the sighash byte
+ * must all agree, and yields outside the plan are ignored.
  */
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
@@ -33,6 +35,7 @@ import { KernelError } from "../../../errors.ts";
 import type { ChainPlan } from "../../chains/run.ts";
 import { expectDigest, personalDigest } from "../digest.ts";
 import type { DeviceLink, SignContext } from "../driver.ts";
+import { bindLedger } from "./clear.ts";
 import { solanaClears, solanaOffchain, tronSettings } from "./display.ts";
 import { call } from "./errors.ts";
 import { apduExchange, requiredApp } from "./link.ts";
@@ -42,6 +45,7 @@ import { defaultPolicy } from "./protocol/bitcoin/policy.ts";
 import { stripUnhiddenDerivations } from "./protocol/bitcoin/psbt.ts";
 import {
   ethConfiguration,
+  ethProvideTokenInformation,
   ethSignPersonalMessage,
   ethSignTransaction,
   ethSignTypedData,
@@ -72,6 +76,7 @@ const evm = async (
   exchange: Exchange,
   request: Extract<ChainSignRequest, { kind: `evm.${string}` }>,
   stage: Extract<ChainPlan, { kind: `evm.${string}` }>,
+  context: SignContext,
 ): Promise<Uint8Array> => {
   await requiredApp(exchange, "ethereum");
   const [task] = stage.tasks;
@@ -85,6 +90,17 @@ const evm = async (
     }
     const preimage = evmSigningPreimage(tx);
     expectDigest(keccak_256(preimage), task);
+    const bound = bindLedger(request, stage, context.descriptors);
+    if (context.display === "clear" && evmBlind(tx) && bound === undefined) {
+      integrity();
+    }
+    if (bound !== undefined) {
+      for (const payload of bound.tokens) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- token slots are provisioned in order
+        await call(async () => ethProvideTokenInformation(exchange, payload));
+      }
+      return call(async () => ethSignTransaction(exchange, task.path, preimage));
+    }
     if (evmBlind(tx)) {
       const config = await call(async () => ethConfiguration(exchange));
       if (!config.blindSigning) {
@@ -302,7 +318,7 @@ export const sign = async (
     if (request.kind !== stage.kind) {
       return integrity();
     }
-    return [await evm(exchange, request, stage)];
+    return [await evm(exchange, request, stage, context)];
   }
   if (
     stage.kind === "tron.transaction" ||

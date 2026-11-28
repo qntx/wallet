@@ -5,8 +5,13 @@ import type { HardwareDevice, SignerTask, VerifyFactor, Wallet, WalletInfo } fro
 import { card } from "@qntx/wallet/card";
 import type { CardStep } from "@qntx/wallet/card";
 import { chains } from "@qntx/wallet/chains";
-import { hardware } from "@qntx/wallet/hardware";
-import type { DeviceIo, HardwareStep } from "@qntx/wallet/hardware";
+import { calDescriptorSource, hardware } from "@qntx/wallet/hardware";
+import type {
+  DeviceIo,
+  HardwareStep,
+  LedgerDescriptorSource,
+  LedgerDescriptors,
+} from "@qntx/wallet/hardware";
 import type { ChainAccount, ChainSignResult, ChainTemplate } from "@qntx/wallet/protocol";
 
 import { Controller } from "../controller.ts";
@@ -63,6 +68,12 @@ export type SignersControllerOptions = {
   };
   readonly random: (length: number) => Uint8Array;
   readonly logger: EngineLogger;
+  /**
+   * Ledger clear-signing descriptor source; failures degrade to today's blind-signing path. Absent
+   * with `fetch` → Ledger's public CAL through it; absent with neither → no descriptors.
+   */
+  readonly ledgerDescriptors?: LedgerDescriptorSource;
+  readonly fetch?: typeof globalThis.fetch;
 };
 
 /**
@@ -73,11 +84,15 @@ export type SignersControllerOptions = {
  */
 export class SignersController extends Controller<SignersState> {
   private readonly options: SignersControllerOptions;
+  private readonly ledgerDescriptors: LedgerDescriptorSource | undefined;
   private activeTask: { readonly cancel: () => Promise<void> } | undefined;
 
   constructor(options: SignersControllerOptions) {
     super({ name: "signers", defaultState: () => ({ active: null, confirmations: 0 }) });
     this.options = options;
+    this.ledgerDescriptors =
+      options.ledgerDescriptors ??
+      (options.fetch === undefined ? undefined : calDescriptorSource({ fetch: options.fetch }));
   }
 
   /** The one signing path: vault material signs directly; card and hardware wallets run an op. */
@@ -249,6 +264,19 @@ export class SignersController extends Controller<SignersState> {
   ): Promise<ChainSignResult> {
     // Resolved before begin: an unsupported device refuses without publishing an activity.
     const io = this.deviceIo(info);
+    let descriptors: LedgerDescriptors | undefined;
+    if (
+      info.custody === "hardware" &&
+      info.device === "ledger" &&
+      this.ledgerDescriptors !== undefined
+    ) {
+      try {
+        descriptors = await this.ledgerDescriptors(request);
+      } catch (error) {
+        this.options.logger.warn("ledger descriptor fetch failed", error);
+        descriptors = undefined;
+      }
+    }
     const result = await this.trackDevice(info, "sign", () =>
       hardware(this.options.wallet).start(
         {
@@ -256,6 +284,7 @@ export class SignersController extends Controller<SignersState> {
           request,
           // Only hardware material can be unconfirmed — the kernel gate needs the flag forwarded.
           ...(acknowledgeUnconfirmed === true ? { acknowledgeUnconfirmed: true } : {}),
+          ...(descriptors === undefined ? {} : { descriptors }),
         },
         { io, verify },
       ),

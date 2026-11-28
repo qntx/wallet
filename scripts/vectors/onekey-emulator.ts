@@ -202,7 +202,7 @@ const recordDriverSessions = async (): Promise<void> => {
     pin: SignContext["pin"],
     identity: DeviceIdentity,
   ): { link: DeviceLink; context: SignContext } => {
-    const shown = ONEKEY_DRIVER.display(request, stage, identity);
+    const shown = ONEKEY_DRIVER.display(request, stage, identity, undefined);
     return {
       link: linkOf(session),
       context: {

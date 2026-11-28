@@ -489,7 +489,10 @@ export function createSignersModule(
       dek,
       op.acknowledgeUnconfirmed === true,
     );
-    const display = driver.display(request, prepared.plan, header);
+    if (op.descriptors !== undefined && device !== "ledger") {
+      throw new KernelError("invalid-input", "clear-signing descriptors are Ledger-only");
+    }
+    const display = driver.display(request, prepared.plan, header, op.descriptors);
     if (display === "unsupported") {
       throw new KernelError("unsupported", "the device cannot sign this request");
     }
@@ -529,7 +532,14 @@ export function createSignersModule(
     return executorOf(ctx.platform).begin(device, display, async (link) => ({
       kind: "sign",
       result: await signStages(prepared.plan, async (stage) =>
-        driver.sign(link, { request, stage, pin, display, random: ctx.platform.random }),
+        driver.sign(link, {
+          request,
+          stage,
+          pin,
+          display,
+          random: ctx.platform.random,
+          ...(op.descriptors === undefined ? {} : { descriptors: op.descriptors }),
+        }),
       ),
     }));
   };
