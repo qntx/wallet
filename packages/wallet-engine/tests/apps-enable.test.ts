@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { HyperliquidError } from "../src/apps/hyperliquid/errors.ts";
+import type { HyperliquidProviderInternals } from "../src/apps/hyperliquid/provider.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import {
   agentAddress,
@@ -169,6 +170,9 @@ describe("apps hyperliquid enablement on the node host", () => {
     await until(() => w.state()?.status === "disabled");
     await done;
     await expect(kernelAgents(w)).resolves.toHaveLength(0);
+    expect(() =>
+      (w.provider as unknown as HyperliquidProviderInternals).agents.require(w.group),
+    ).toThrow("the account has no Hyperliquid agent");
     expect(w.posted.filter(isApprovePost)).toHaveLength(2); // enable + revoke
     await w.destroy();
   });
