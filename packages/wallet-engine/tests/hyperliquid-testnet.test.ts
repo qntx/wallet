@@ -1419,7 +1419,7 @@ describe.runIf(RUN)("hyperliquid testnet e2e", () => {
     const cleanupErrors: unknown[] = [];
     try {
       if (apps !== undefined && wallet !== undefined && owner !== "") {
-        if (wallet.getSnapshot().vault !== "unlocked") {
+        if (wallet.getSnapshot().vault.status !== "unlocked") {
           await wallet.vault.unlock(VERIFY);
         }
         await waitFor(
