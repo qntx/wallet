@@ -495,6 +495,7 @@ export function createHyperliquidEnable(options: HyperliquidEnableOptions): {
           // oxlint-disable-next-line eslint/no-await-in-loop -- deletes are sequential cleanup.
           await deleteAgent(agent.address);
         }
+        await provider.agents.refresh();
         flow.write({ status: "disabled", agent: undefined, builder: undefined, error: undefined });
         if (revoke) {
           flow.write({ step: "revoke" });

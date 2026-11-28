@@ -185,9 +185,22 @@ const messageReason = (message: string): HyperliquidRejectReason => {
   return "other";
 };
 
-/** `status: "err"` strings that mean the agent is unusable — never retried with another key. */
-const AGENT_REJECTION =
-  /User or API Wallet 0x[0-9a-fA-F]+ does not exist|Must deposit before performing actions/;
+/**
+ * `status: "err"` strings that mean the agent is unusable — never retried with another key. "User
+ * or API Wallet 0x<X> does not exist" only condemns the agent when X is its own address: a
+ * different X means the signature recovered to someone else — an encoding/signing mismatch, not a
+ * revoked agent.
+ */
+const MISSING_DEPOSIT = "Must deposit before performing actions";
+const WALLET_MISSING = /User or API Wallet (0x[0-9a-fA-F]{40}) does not exist/;
+
+const agentRejection = (message: string, agent: string): boolean => {
+  if (message.includes(MISSING_DEPOSIT)) {
+    return true;
+  }
+  const match = WALLET_MISSING.exec(message);
+  return match?.[1]?.toLowerCase() === agent.toLowerCase();
+};
 
 const cloidOf = (entry: Record<string, unknown>): string | undefined => stringOf(entry["cloid"]);
 
@@ -636,7 +649,7 @@ export function createHyperliquidExchange(options: {
     }
     if (isRecord(response) && response["status"] === "err") {
       const message = stringOf(response["response"]) ?? "rejected";
-      if (AGENT_REJECTION.test(message)) {
+      if (agentRejection(message, agent.address)) {
         options.registry.markRejected(agent.address);
         throw new HyperliquidError("reauthorization-required", message);
       }

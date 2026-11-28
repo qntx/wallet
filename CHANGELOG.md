@@ -25,6 +25,14 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
   engine's `fetch` for a Ledger wallet's ERC-20 transfer/approve — revealing the token contract and
   chain to Ledger — and signs without descriptors when the source fails.
 
+### Fixed
+
+- `@qntx/wallet-engine/apps/hyperliquid`: an `/exchange` rejection "User or API Wallet 0x<X> does
+  not exist" latches the agent as rejected only when X is the agent itself; any other X (the
+  signature recovered to another address) is a plain `rejected` and the agent keeps trading.
+- `@qntx/wallet-engine/apps/hyperliquid`: `disable` refreshes the agent registry after deleting the
+  kernel agents, so trading afterwards answers `not-enabled` instead of trying a deleted agent.
+
 ## [0.14.1] - 2026-11-28
 
 Bitcoin change follows the kernel-sealed mark alone. An endpoint's "used" answers no longer choose
