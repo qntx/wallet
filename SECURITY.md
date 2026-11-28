@@ -299,7 +299,7 @@ Summary, per platform — details in the sections below:
   re-discoverable. `changeAddressOf`
   (`packages/wallet-engine/src/transactions/bitcoin.ts`) places the change
   of the engine's own sends at the lowest index above the sealed mark that
-  the in-flight picks and the own outputs of tracked rows that reached
+  the in-flight picks and the output addresses of tracked rows that reached
   `signed` leave free (a `draft` or `rejected` row never produced bytes,
   or its sign call failed after the marks commit — which had already
   moved the mark past that index); when the window to
