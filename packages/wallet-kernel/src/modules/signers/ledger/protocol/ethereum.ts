@@ -11,6 +11,7 @@ import type { KeyPath } from "@qntx/wallet-chains";
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import type { TypedDataInput } from "@qntx/wallet-chains/evm";
 
+import type { LedgerBinding } from "../clear.ts";
 import type { Command, Exchange } from "./apdu.ts";
 import { transmit, transmitChunks } from "./apdu.ts";
 import { encodePath, input, Reader, u32 } from "./bytes.ts";
@@ -25,6 +26,7 @@ const INS_PROVIDE_ERC20_TOKEN_INFORMATION = 0x0a;
 const INS_SIGN_EIP_712_MESSAGE = 0x0c;
 const INS_EIP712_STRUCT_DEF = 0x1a;
 const INS_EIP712_STRUCT_IMPL = 0x1c;
+const INS_EIP712_FILTERING = 0x1e;
 
 const P1_CONFIRM = 0x01;
 const P1_NON_CONFIRM = 0x00;
@@ -37,6 +39,7 @@ const P2_DEF_FIELD = 0xff;
 const P2_IMPL_NAME = 0x00;
 const P2_IMPL_ARRAY = 0x0f;
 const P2_IMPL_FIELD = 0xff;
+const P2_FILTER_MESSAGE_INFO = 0x0f;
 const P1_DEF_COMPLETE = 0x00;
 const P1_IMPL_PARTIAL = 0x01;
 const P1_IMPL_COMPLETE = 0x00;
@@ -595,6 +598,7 @@ export async function ethSignTypedData(
   exchange: Exchange,
   keyPath: KeyPath,
   typedData: TypedDataInput,
+  binding?: LedgerBinding,
 ): Promise<Uint8Array> {
   const { types, primaryType, domain, message } = typedData;
   if (types[primaryType] === undefined) {
@@ -602,7 +606,8 @@ export async function ethSignTypedData(
   }
   const path = encodePath(keyPath, MAX_PATH_DEPTH);
   const commands: Command[] = [];
-
+  /* Token infos reply one byte, so they cannot ride transmitChunks' empty-reply rule; the
+     transmit loop knows them by their INS. */
   for (const [typeName, fields] of Object.entries(types).sort(byTypeName)) {
     commands.push(command(INS_EIP712_STRUCT_DEF, P1_DEF_COMPLETE, P2_DEF_NAME, utf8(typeName)));
     for (const field of fields) {
@@ -617,7 +622,51 @@ export async function ethSignTypedData(
     }
   }
 
-  const implFields = (structName: string, value: Record<string, unknown>, depth: number): void => {
+  /* Filtering (doc/apdu.md "EIP712 FILTERING"): activation after the struct defs, message info
+     before the message impl, each filter immediately before its field's first impl APDU —
+     the device hashes the path of the field it is about to receive (eip712_v1_filtering.c). */
+  const filtering = binding?.typedData;
+  if (filtering !== undefined) {
+    commands.push(command(INS_EIP712_FILTERING, 0x00, 0x00, new Uint8Array(0)));
+  }
+
+  const filterState =
+    filtering === undefined
+      ? undefined
+      : {
+          joinTokens: new Map((binding?.joinTokens ?? []).map((j) => [j.join, j.payload])),
+          sent: new Set<Uint8Array>(),
+          placed: 0,
+        };
+
+  const emitAtomic = (t: DestructedType, value: unknown, fieldPath: string | undefined): void => {
+    if (filterState !== undefined && filtering !== undefined && fieldPath !== undefined) {
+      const filter = filtering.filters.find((f) => f.path === fieldPath);
+      if (filter !== undefined) {
+        const join =
+          filter.kind === 0xfd
+            ? filter.data[0]
+            : filter.kind === 0xfe
+              ? filter.data[1 + (filter.data[0] ?? 0)]
+              : undefined;
+        const payload = join === undefined ? undefined : filterState.joinTokens.get(join);
+        if (payload !== undefined && !filterState.sent.has(payload)) {
+          filterState.sent.add(payload);
+          commands.push(command(INS_PROVIDE_ERC20_TOKEN_INFORMATION, 0x00, 0x00, payload));
+        }
+        commands.push(command(INS_EIP712_FILTERING, 0x00, filter.kind, filter.data));
+        filterState.placed += 1;
+      }
+    }
+    commands.push(...implFieldCommands(encodeFieldValue(t, value)));
+  };
+
+  const implFields = (
+    structName: string,
+    value: Record<string, unknown>,
+    depth: number,
+    prefix: string | undefined,
+  ): void => {
     if (depth > 32) {
       throw input("EIP-712 nesting exceeds the depth bound");
     }
@@ -626,11 +675,21 @@ export async function ethSignTypedData(
       throw input(`undeclared EIP-712 struct ${JSON.stringify(structName)}`);
     }
     for (const field of fields) {
-      implValue(destructType(field.type), value[field.name], depth);
+      implValue(
+        destructType(field.type),
+        value[field.name],
+        depth,
+        prefix === undefined ? undefined : `${prefix}${field.name}`,
+      );
     }
   };
 
-  const implValue = (t: DestructedType, value: unknown, depth: number): void => {
+  const implValue = (
+    t: DestructedType,
+    value: unknown,
+    depth: number,
+    fieldPath: string | undefined,
+  ): void => {
     if (t.arrays.length > 0) {
       const [level, ...rest] = t.arrays;
       if (!Array.isArray(value)) {
@@ -651,7 +710,7 @@ export async function ethSignTypedData(
         ),
       );
       for (const entry of value) {
-        implValue({ name: t.name, size: t.size, arrays: rest }, entry, depth + 1);
+        implValue({ name: t.name, size: t.size, arrays: rest }, entry, depth + 1, undefined);
       }
       return;
     }
@@ -660,10 +719,10 @@ export async function ethSignTypedData(
         throw input("EIP-712 struct field is not an object");
       }
       // Nested structs auto-descend on the device — no extra APDU (eip712_v1_parse.c).
-      implFields(t.name, value, depth + 1);
+      implFields(t.name, value, depth + 1, fieldPath === undefined ? undefined : `${fieldPath}.`);
       return;
     }
-    commands.push(...implFieldCommands(encodeFieldValue(t, value)));
+    emitAtomic(t, value, fieldPath);
   };
 
   commands.push(
@@ -674,15 +733,33 @@ export async function ethSignTypedData(
     throw input("types has no EIP712Domain");
   }
   for (const field of domainFields) {
-    implValue(destructType(field.type), domain[field.name], 0);
+    implValue(destructType(field.type), domain[field.name], 0, undefined);
   }
 
+  if (filtering !== undefined) {
+    commands.push(command(INS_EIP712_FILTERING, 0x00, P2_FILTER_MESSAGE_INFO, filtering.info));
+  }
   commands.push(command(INS_EIP712_STRUCT_IMPL, P1_IMPL_COMPLETE, P2_IMPL_NAME, utf8(primaryType)));
-  implFields(primaryType, message, 0);
+  implFields(primaryType, message, 0, filterState === undefined ? undefined : "");
+
+  if (filterState !== undefined && filterState.placed !== filtering?.filters.length) {
+    throw input("a typed-data filter path is never impl'd");
+  }
 
   commands.push(command(INS_SIGN_EIP_712_MESSAGE, P1_NON_CONFIRM, P2_EIP712_V1_IMPLEM, path));
 
-  return rsSignature(await transmitChunks(exchange, "ethereum", commands));
+  const last = commands.at(-1);
+  if (last === undefined) {
+    throw input("empty command sequence");
+  }
+  for (const cmd of commands.slice(0, -1)) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- chunks are ordered on one link
+    const data = await transmit(exchange, "ethereum", cmd);
+    if (data.length !== (cmd.ins === INS_PROVIDE_ERC20_TOKEN_INFORMATION ? 1 : 0)) {
+      throw new LedgerError("invalid-response", "an intermediate chunk returned unexpected data");
+    }
+  }
+  return rsSignature(await transmit(exchange, "ethereum", last));
 }
 
 /**

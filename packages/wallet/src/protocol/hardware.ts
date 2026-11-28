@@ -38,9 +38,25 @@ export type DeviceDisplay = "clear" | "blind";
  * Public and hostile: the kernel forwards only what binds to the request it decoded, and the device
  * verifies every signature.
  */
+export type LedgerTypedDataFilters = {
+  /** Binding claims the kernel checks; the device re-derives them inside every signature. */
+  readonly chainId: number;
+  readonly verifyingContract: string;
+  readonly schemaHash: string;
+  /** `E0 1E 00 0F` data. */
+  readonly info: Uint8Array;
+  readonly filters: ReadonlyArray<{
+    readonly path: string;
+    readonly kind: 0xfc | 0xfd | 0xfe | 0xff;
+    readonly data: Uint8Array;
+  }>;
+};
+
 export type LedgerDescriptors = {
   /** PROVIDE ERC 20 TOKEN INFORMATION legacy payloads (`E0 0A 00 00` data). */
   readonly tokens?: ReadonlyArray<Uint8Array>;
+  /** EIP-712 V1 filtering payloads (`E0 1E`) for one typed-data document. */
+  readonly typedData?: LedgerTypedDataFilters;
 };
 
 /** The host transport for one device operation. */
@@ -132,8 +148,29 @@ const deviceDisplay: Validator<DeviceDisplay> = union(literal("clear"), literal(
 /* Legacy token descriptor: u8 ticker length ‖ ticker ‖ address[20] ‖ decimals u32be ‖ chainId
    u32be ‖ strict DER secp256k1 signature. The app's ticker buffer is MAX_TICKER_LEN 51 including
    its NUL, so a payload is 38..151 bytes. */
+/* Filtering payloads per doc/apdu.md "EIP712 FILTERING": info = u8 n ‖ name[n] ‖ u8 filtersCount
+   ‖ u8 sigLen ‖ sig; raw/datetime = u8 n ‖ name ‖ u8 sigLen ‖ sig; join-token = u8 join ‖ u8
+   sigLen ‖ sig; join-value = u8 n ‖ name ‖ u8 join ‖ u8 sigLen ‖ sig. Names ≤ 255, DER sig ≤ 72. */
+const FILTER_PATH = /^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)*$/;
+const ledgerTypedDataFilters: Validator<LedgerTypedDataFilters> = obj({
+  chainId: int(0, 0xffffffff),
+  verifyingContract: str(42, /^0x[0-9a-fA-F]{40}$/),
+  schemaHash: str(56, /^[0-9a-f]{56}$/),
+  info: bytes(5, 330),
+  filters: arr(
+    obj({
+      path: str(255, FILTER_PATH),
+      kind: union(literal(0xfc), literal(0xfd), literal(0xfe), literal(0xff)),
+      data: bytes(3, 330),
+    }),
+    32,
+    1,
+  ),
+});
+
 const ledgerDescriptors: Validator<LedgerDescriptors> = obj({
   tokens: opt(arr(bytes(38, 151), 16)),
+  typedData: opt(ledgerTypedDataFilters),
 });
 
 const hardwareOperation: Validator<HardwareOperation> = union(

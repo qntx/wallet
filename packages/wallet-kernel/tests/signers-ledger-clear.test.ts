@@ -13,14 +13,22 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { KeyPath, TaskKey } from "@qntx/wallet-chains";
-import { planEvm } from "@qntx/wallet-chains/evm";
-import type { ChainSignRequest, ChainTemplate, LedgerDescriptors } from "@qntx/wallet/protocol";
+import { parseTypedData, planEvm, typedDataSchemaHash } from "@qntx/wallet-chains/evm";
+import type {
+  ChainSignRequest,
+  ChainTemplate,
+  LedgerDescriptors,
+  LedgerTypedDataFilters,
+} from "@qntx/wallet/protocol";
 
 import type { HardwarePin, SignContext } from "../src/modules/signers/driver.ts";
 import { bindLedger, parseTokenDescriptor } from "../src/modules/signers/ledger/clear.ts";
 import { LEDGER_DRIVER } from "../src/modules/signers/ledger/driver.ts";
 import { LedgerError } from "../src/modules/signers/ledger/protocol/errors.ts";
-import { ethProvideTokenInformation } from "../src/modules/signers/ledger/protocol/ethereum.ts";
+import {
+  ethProvideTokenInformation,
+  ethSignTypedData,
+} from "../src/modules/signers/ledger/protocol/ethereum.ts";
 import { nodeAt } from "./signers-fake.ts";
 import {
   hex,
@@ -336,5 +344,418 @@ describe("ledger clear-signing driver path", () => {
     await expect(
       code(async () => ethProvideTokenInformation(async () => unhex(ok("0000")), usdc)),
     ).resolves.toBe("invalid-response");
+  });
+});
+
+/* EIP-712 V1 filtering binding. Payload bytes are dummy forms — the kernel checks binding only;
+   the device verifies the signatures. */
+const OWNER = "0x1111111111111111111111111111111111111111";
+const SPENDER = "0x2222222222222222222222222222222222222222";
+const PERMIT2 = "0x000000000022d473030f116ddee9f6b43ac78ba3";
+
+const permitDoc = (contract = USDC, chainId = 1): string =>
+  JSON.stringify({
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      Permit: [
+        { name: "owner", type: "address" },
+        { name: "spender", type: "address" },
+        { name: "value", type: "uint256" },
+        { name: "nonce", type: "uint256" },
+        { name: "deadline", type: "uint256" },
+      ],
+    },
+    primaryType: "Permit",
+    domain: { name: "USD Coin", version: "2", chainId, verifyingContract: contract },
+    message: {
+      owner: OWNER,
+      spender: SPENDER,
+      value: "1000000",
+      nonce: "0",
+      deadline: "1700000000",
+    },
+  });
+
+const permit2Doc = (): string =>
+  JSON.stringify({
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      PermitDetails: [
+        { name: "token", type: "address" },
+        { name: "amount", type: "uint160" },
+        { name: "expiration", type: "uint48" },
+        { name: "nonce", type: "uint48" },
+      ],
+      PermitSingle: [
+        { name: "details", type: "PermitDetails" },
+        { name: "spender", type: "address" },
+        { name: "sigDeadline", type: "uint256" },
+      ],
+    },
+    primaryType: "PermitSingle",
+    domain: { name: "Permit2", chainId: 1, verifyingContract: PERMIT2 },
+    message: {
+      details: { token: USDC, amount: "1000000", expiration: "1700000000", nonce: "0" },
+      spender: SPENDER,
+      sigDeadline: "1700000000",
+    },
+  });
+
+const permitBatchDoc = (): string =>
+  JSON.stringify({
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      PermitDetails: [
+        { name: "token", type: "address" },
+        { name: "amount", type: "uint160" },
+        { name: "expiration", type: "uint48" },
+        { name: "nonce", type: "uint48" },
+      ],
+      PermitBatch: [
+        { name: "details", type: "PermitDetails[]" },
+        { name: "spender", type: "address" },
+        { name: "sigDeadline", type: "uint256" },
+      ],
+    },
+    primaryType: "PermitBatch",
+    domain: { name: "Permit2", chainId: 1, verifyingContract: PERMIT2 },
+    message: {
+      details: [{ token: USDC, amount: "1000000", expiration: "1700000000", nonce: "0" }],
+      spender: SPENDER,
+      sigDeadline: "1700000000",
+    },
+  });
+
+const filt = {
+  raw: (name: string): Uint8Array =>
+    Uint8Array.from([name.length, ...Array.from(name, (c) => c.codePointAt(0) ?? 0), 1, 0x30]),
+  joinToken: (join: number): Uint8Array => Uint8Array.from([join, 1, 0x30]),
+  joinValue: (join: number): Uint8Array => Uint8Array.from([1, 0x41, join, 1, 0x30]),
+};
+
+const info = (count: number): Uint8Array =>
+  Uint8Array.from([4, 0x55, 0x53, 0x44, 0x43, count, 1, 0x30]);
+
+type FilterSpec = {
+  readonly path: string;
+  readonly kind: 0xfc | 0xfd | 0xfe | 0xff;
+  readonly data: Uint8Array;
+};
+
+const typedFilters = (
+  doc: string,
+  filters: ReadonlyArray<FilterSpec>,
+  overrides: Record<string, unknown> = {},
+): LedgerTypedDataFilters => {
+  const parsed = JSON.parse(doc) as {
+    types: Record<string, ReadonlyArray<{ name: string; type: string }>>;
+  };
+  return {
+    chainId: 1,
+    verifyingContract: USDC,
+    schemaHash: typedDataSchemaHash(parsed.types),
+    info: info(filters.length),
+    filters,
+    ...overrides,
+  };
+};
+
+const PERMIT_RAW_FILTER: FilterSpec = { path: "spender", kind: 0xff, data: filt.raw("Spender") };
+const PERMIT2_RAW_FILTER: FilterSpec = { path: "spender", kind: 0xff, data: filt.raw("Spender") };
+
+const PERMIT_FILTERS: ReadonlyArray<FilterSpec> = [
+  PERMIT_RAW_FILTER,
+  { path: "value", kind: 0xfe, data: filt.joinValue(0xff) },
+  { path: "deadline", kind: 0xfc, data: filt.raw("Deadline") },
+];
+
+const PERMIT2_FILTERS: ReadonlyArray<FilterSpec> = [
+  PERMIT2_RAW_FILTER,
+  { path: "details.token", kind: 0xfd, data: filt.joinToken(0) },
+  { path: "details.amount", kind: 0xfe, data: filt.joinValue(0) },
+  { path: "details.expiration", kind: 0xfc, data: filt.raw("Expiry") },
+];
+
+const typedRequest = (doc: string): Extract<ChainSignRequest, { kind: "evm.typed-data" }> => ({
+  kind: "evm.typed-data",
+  network: "eip155:1",
+  account: hd("evm.bip44"),
+  typedData: doc,
+});
+
+const boundTyped = (
+  doc: string,
+  filters: ReadonlyArray<FilterSpec>,
+  overrides: Record<string, unknown> = {},
+  tokens: ReadonlyArray<Uint8Array> = [usdc],
+) => {
+  const request = typedRequest(doc);
+  const typedData = typedFilters(doc, filters, {
+    verifyingContract: (JSON.parse(doc) as { domain: { verifyingContract: string } }).domain
+      .verifyingContract,
+    ...overrides,
+  });
+  return bindLedger(request, planEvm(request, EVM_KEY), { tokens, typedData });
+};
+
+describe("bindLedger typed-data filtering", () => {
+  it("binds a Permit with join-value 0xff to the verifying contract token", () => {
+    const bound = boundTyped(permitDoc(), PERMIT_FILTERS);
+    expect(bound?.typedData).toBeDefined();
+    expect(bound?.tokens).toHaveLength(1);
+    expect(bound?.tokens.at(0)).toBe(usdc);
+    const request = typedRequest(permitDoc());
+    expect(
+      LEDGER_DRIVER.display(request, planEvm(request, EVM_KEY), pin, {
+        tokens: [usdc],
+        typedData: typedFilters(permitDoc(), PERMIT_FILTERS),
+      }),
+    ).toBe("clear");
+  });
+
+  it("binds Permit2 join-token 0 through the message value at details.token", () => {
+    const bound = boundTyped(permit2Doc(), PERMIT2_FILTERS);
+    expect(bound?.typedData).toBeDefined();
+    expect(bound?.tokens.at(0)).toBe(usdc);
+  });
+
+  it("binds a raw-only filter set with no token requirement", () => {
+    const bound = boundTyped(permitDoc(), [PERMIT_RAW_FILTER], {}, []);
+    expect(bound?.typedData).toBeDefined();
+    expect(bound?.tokens).toHaveLength(0);
+  });
+
+  it("drops every claim mutation", () => {
+    expect(boundTyped(permitDoc(), PERMIT_FILTERS, { chainId: 2 })).toBeUndefined();
+    expect(boundTyped(permitDoc(), PERMIT_FILTERS, { verifyingContract: USDT })).toBeUndefined();
+    expect(boundTyped(permitDoc(), PERMIT_FILTERS, { schemaHash: "0".repeat(56) })).toBeUndefined();
+    expect(boundTyped(permitDoc(USDC, 2), PERMIT_FILTERS)).toBeUndefined();
+  });
+
+  it("drops an info count mismatch and an out-of-bounds count byte", () => {
+    expect(boundTyped(permitDoc(), PERMIT_FILTERS, { info: info(4) })).toBeUndefined();
+    expect(boundTyped(permitDoc(), PERMIT_FILTERS, { info: new Uint8Array(0) })).toBeUndefined();
+    expect(
+      boundTyped(permitDoc(), PERMIT_FILTERS, { info: Uint8Array.from([4, 1, 2, 3]) }),
+    ).toBeUndefined();
+  });
+
+  it("drops duplicate paths, unknown paths, struct leaves and array paths", () => {
+    const dupe = [...PERMIT_FILTERS, PERMIT_RAW_FILTER];
+    expect(boundTyped(permitDoc(), dupe, { info: info(4) })).toBeUndefined();
+    expect(
+      boundTyped(permitDoc(), [{ path: "missing", kind: 0xff, data: filt.raw("x") }]),
+    ).toBeUndefined();
+    expect(
+      boundTyped(permit2Doc(), [{ path: "details", kind: 0xff, data: filt.raw("x") }]),
+    ).toBeUndefined();
+    expect(
+      boundTyped(permitBatchDoc(), [
+        { path: "details.token", kind: 0xfd, data: filt.joinToken(0) },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("drops malformed joins and missing join targets", () => {
+    const emptyJoinToken: FilterSpec = {
+      path: "details.token",
+      kind: 0xfd,
+      data: new Uint8Array(0),
+    };
+    expect(boundTyped(permit2Doc(), [PERMIT2_RAW_FILTER, emptyJoinToken])).toBeUndefined();
+    const truncatedValue: FilterSpec = { path: "value", kind: 0xfe, data: Uint8Array.from([1]) };
+    expect(boundTyped(permitDoc(), [truncatedValue])).toBeUndefined();
+    const dangling: FilterSpec = { path: "value", kind: 0xfe, data: filt.joinValue(7) };
+    expect(boundTyped(permitDoc(), [dangling])).toBeUndefined();
+    const batchAmount: FilterSpec = { path: "details.amount", kind: 0xfe, data: filt.joinValue(0) };
+    expect(boundTyped(permit2Doc(), [batchAmount], {}, [])).toBeUndefined();
+  });
+
+  it("drops a join-token filter on a non-address leaf", () => {
+    const bad: FilterSpec = { path: "details.amount", kind: 0xfd, data: filt.joinToken(0) };
+    const amount: FilterSpec = { path: "details.amount", kind: 0xfe, data: filt.joinValue(0) };
+    expect(boundTyped(permit2Doc(), [bad, amount])).toBeUndefined();
+  });
+
+  it("drops wrong-token and table-mismatched join token descriptors", () => {
+    expect(boundTyped(permitDoc(), PERMIT_FILTERS, {}, [usdt])).toBeUndefined();
+    const badDecimals = mutated(usdc, 1 + 4 + 20 + 3, 7);
+    expect(boundTyped(permitDoc(), PERMIT_FILTERS, {}, [badDecimals])).toBeUndefined();
+    expect(boundTyped(permitDoc(), PERMIT_FILTERS, {}, [])).toBeUndefined();
+    expect(boundTyped(permitDoc(), PERMIT_FILTERS, {}, [usdc, usdc])).toBeUndefined();
+  });
+
+  it("does not bind without typedData descriptors and stays blind", () => {
+    const request = typedRequest(permitDoc());
+    expect(bindLedger(request, planEvm(request, EVM_KEY), { tokens: [usdc] })).toBeUndefined();
+    expect(LEDGER_DRIVER.display(request, planEvm(request, EVM_KEY), pin, undefined)).toBe("blind");
+  });
+});
+
+/* A reactive fake for typed-data filtering: token info answers one byte, SIGN answers the
+   signature, everything else an empty 9000 — the scripted fake cannot know which step index a
+   token lands on. */
+const filteringFake = () => {
+  const sent: string[] = [];
+  const link = {
+    exchange: async (request: {
+      readonly kind: string;
+      readonly data?: Uint8Array;
+    }): Promise<{ readonly kind: "message"; readonly data: Uint8Array }> => {
+      const apdu = hex(request.data ?? new Uint8Array(0));
+      sent.push(apdu);
+      if (apdu === "b001000000") {
+        return { kind: "message", data: unhex(ok("0108457468657265756d06312e32342e3000")) };
+      }
+      if (apdu.startsWith("e006")) {
+        return { kind: "message", data: unhex(ok("01011800")) };
+      }
+      if (apdu.startsWith("e00a")) {
+        return { kind: "message", data: unhex(ok("00")) };
+      }
+      if (apdu.startsWith("e00c")) {
+        return { kind: "message", data: unhex(ok(`00${"11".repeat(64)}`)) };
+      }
+      return { kind: "message", data: unhex(ok("")) };
+    },
+  };
+  return { link: link as never, sent };
+};
+
+const typedContext = (
+  doc: string,
+  descriptors: LedgerDescriptors | undefined,
+  displayOverride?: "clear" | "blind",
+): SignContext => {
+  const request = typedRequest(doc);
+  const stage = planEvm(request, EVM_KEY);
+  const shown = LEDGER_DRIVER.display(request, stage, pin, descriptors);
+  return {
+    request,
+    stage,
+    pin,
+    display: displayOverride ?? (shown === "unsupported" ? "blind" : shown),
+    random: (length) => new Uint8Array(length).fill(0x42),
+    ...(descriptors === undefined ? {} : { descriptors }),
+  };
+};
+
+const permitDescriptors = (
+  doc = permitDoc(),
+  filters: ReadonlyArray<FilterSpec> = PERMIT_FILTERS,
+): LedgerDescriptors => {
+  const parsed = JSON.parse(doc) as {
+    types: Record<string, ReadonlyArray<{ name: string; type: string }>>;
+    domain: { verifyingContract: string };
+  };
+  return {
+    tokens: [usdc],
+    typedData: {
+      chainId: 1,
+      verifyingContract: parsed.domain.verifyingContract,
+      schemaHash: typedDataSchemaHash(parsed.types),
+      info: info(filters.length),
+      filters,
+    },
+  };
+};
+
+describe("ledger typed-data filtering driver path", () => {
+  it("Permit: activation, info, token before the value filter, no configuration read", async () => {
+    const context = typedContext(permitDoc(), permitDescriptors());
+    expect(context.display).toBe("clear");
+    const fake = filteringFake();
+    const [signature] = await LEDGER_DRIVER.sign(fake.link, context);
+    expect(signature).toStrictEqual(unhex("11".repeat(64)));
+    const at = (prefix: string): number => fake.sent.findIndex((apdu) => apdu.startsWith(prefix));
+    expect(at("e01e0000")).toBeGreaterThan(-1);
+    expect(at("e01e000f")).toBeGreaterThan(at("e01e0000"));
+    const tokenAt = at("e00a0000");
+    const valueFilterAt = at("e01e00fe");
+    expect(tokenAt).toBeGreaterThan(at("e01e000f"));
+    expect(valueFilterAt).toBe(tokenAt + 1);
+    expect(fake.sent.some((apdu) => apdu.startsWith("e0060000"))).toBe(false);
+    expect(at("e00c0001")).toBe(fake.sent.length - 1);
+  });
+
+  it("Permit2: token info immediately before details.token's join-token filter", async () => {
+    const context = typedContext(permit2Doc(), permitDescriptors(permit2Doc(), PERMIT2_FILTERS));
+    expect(context.display).toBe("clear");
+    const fake = filteringFake();
+    await LEDGER_DRIVER.sign(fake.link, context);
+    const tokenAt = fake.sent.findIndex((apdu) => apdu.startsWith("e00a0000"));
+    const joinTokenAt = fake.sent.findIndex((apdu) => apdu.startsWith("e01e00fd"));
+    expect(joinTokenAt).toBe(tokenAt + 1);
+    expect(fake.sent.filter((apdu) => apdu.startsWith("e00a0000"))).toHaveLength(1);
+  });
+
+  it("the stream carries no filtering APDU without descriptors", async () => {
+    const context = typedContext(permitDoc(), undefined);
+    expect(context.display).toBe("blind");
+    const fake = filteringFake();
+    await LEDGER_DRIVER.sign(fake.link, context);
+    expect(fake.sent.some((apdu) => apdu.startsWith("e01e"))).toBe(false);
+    expect(fake.sent.some((apdu) => apdu.startsWith("e00a"))).toBe(false);
+    expect(fake.sent[1]?.startsWith("e0060000")).toBe(true);
+  });
+
+  it("fails integrity when the prompt was clear but the typed-data binding vanished", async () => {
+    const context = typedContext(permitDoc(), undefined, "clear");
+    const fake = filteringFake();
+    await expect(code(async () => LEDGER_DRIVER.sign(fake.link, context))).resolves.toBe(
+      "integrity",
+    );
+    expect(fake.sent.some((apdu) => apdu.startsWith("e01e"))).toBe(false);
+  });
+
+  it("a filter path the walk never reaches refuses before any app APDU", async () => {
+    const request = typedRequest(permitDoc());
+    const stage = planEvm(request, EVM_KEY);
+    const descriptors = permitDescriptors();
+    const { typedData } = descriptors;
+    if (typedData === undefined) {
+      throw new Error("missing typedData");
+    }
+    const broken: LedgerDescriptors = {
+      tokens: [usdc],
+      typedData: { ...typedData, filters: [{ path: "never", kind: 0xff, data: filt.raw("x") }] },
+    };
+    expect(bindLedger(request, stage, broken)).toBeUndefined();
+  });
+
+  it("ethSignTypedData refuses a binding whose filter the walk never places, before any APDU", async () => {
+    const request = typedRequest(permitDoc());
+    const { json } = parseTypedData(request.typedData);
+    const descriptors = permitDescriptors();
+    const { typedData } = descriptors;
+    if (typedData === undefined) {
+      throw new Error("missing typedData");
+    }
+    let apdus = 0;
+    const counting = async (): Promise<Uint8Array> => {
+      apdus += 1;
+      return unhex(ok(""));
+    };
+    await expect(
+      ethSignTypedData(counting, ETH_PATH, json, {
+        tokens: [usdc],
+        typedData: { ...typedData, filters: [{ path: "never", kind: 0xff, data: filt.raw("x") }] },
+        joinTokens: [],
+      }),
+    ).rejects.toThrow("never impl'd");
+    expect(apdus).toBe(0);
   });
 });

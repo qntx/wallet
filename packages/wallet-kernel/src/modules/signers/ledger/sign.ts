@@ -2,12 +2,12 @@
  * Ledger signing: what the device is sent for one plan stage and the admission checks on what comes
  * back. The device payload is always recomputed from the request — never trusted from the plan —
  * and checked against the task digest (`expectDigest`) before any APDU leaves, so a kernel-side
- * inconsistency fails closed. ERC-20 transfer/approve calldata with a descriptor binding exactly to
- * the request sends that token descriptor before SIGN and needs no configuration read; other
- * requests the device can only blind-sign first read the app's configuration: the required setting
- * off means `blind-signing-disabled` before the device is even asked. Bitcoin PSBT yields are
- * released only when they match the plan — the yielded input, the yielded key and the sighash byte
- * must all agree, and yields outside the plan are ignored.
+ * inconsistency fails closed. A bound descriptor (ERC-20 token info, EIP-712 filters) is
+ * provisioned before SIGN and skips the configuration read; a request the device can only
+ * blind-sign first reads the app's configuration: the required setting off means
+ * `blind-signing-disabled` before the device is even asked. Bitcoin PSBT yields are released only
+ * when they match the plan — the yielded input, the yielded key and the sighash byte must all
+ * agree, and yields outside the plan are ignored.
  */
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
@@ -117,12 +117,18 @@ const evm = async (
     // require the same task so the JSON the device signs is provably the one that was planned.
     const replanned = planEvm(request, { path: task.path, publicKey: task.publicKey });
     expectDigest(replanned.tasks[0].digest, task);
-    const config = await call(async () => ethConfiguration(exchange));
-    if (!config.blindSigning) {
-      throw blind();
+    const bound = bindLedger(request, stage, context.descriptors);
+    if (context.display === "clear" && bound?.typedData === undefined) {
+      integrity();
+    }
+    if (bound?.typedData === undefined) {
+      const config = await call(async () => ethConfiguration(exchange));
+      if (!config.blindSigning) {
+        throw blind();
+      }
     }
     return call(async () =>
-      ethSignTypedData(exchange, task.path, parseTypedData(request.typedData).json),
+      ethSignTypedData(exchange, task.path, parseTypedData(request.typedData).json, bound),
     );
   }
   if (request.kind !== stage.kind) {

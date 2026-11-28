@@ -6,7 +6,13 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseTypedData, planEvm, typedDataHashes } from "../src/evm/index.ts";
+import {
+  parseTypedData,
+  planEvm,
+  typedDataHashes,
+  typedDataSchemaHash,
+  typedDataLeaf,
+} from "../src/evm/index.ts";
 import type { AccountRef } from "../src/index.ts";
 
 /**
@@ -112,5 +118,109 @@ describe("typedDataHashes", () => {
     const { domain, message } = typedDataHashes(parseTypedData(doc).json);
     expect(domain).toHaveLength(32);
     expect(message).toBeUndefined();
+  });
+});
+
+describe("typedDataSchemaHash", () => {
+  it.each<[string, Record<string, ReadonlyArray<{ name: string; type: string }>>, string]>([
+    ["an empty schema", {}, "5cdd15a873608087be07a41b7f1a04e96d3a66fe7a9b0faac71f8d05"],
+    [
+      "the EIP-712 Mail example",
+      {
+        Person: [
+          { name: "name", type: "string" },
+          { name: "wallet", type: "address" },
+        ],
+        Mail: [
+          { name: "from", type: "Person" },
+          { name: "to", type: "Person" },
+          { name: "contents", type: "string" },
+        ],
+      },
+      "7e4e49a17c15e38c6e3c8c4ffcaf7e018065ab3ede693abc32e8a11a",
+    ],
+    [
+      "non-ASCII type and field names, hashed as UTF-8",
+      {
+        "Zeta é": [{ name: "a b", type: "string" }],
+        "Alpha 😀": [{ name: "x", type: "uint256" }],
+      },
+      "9f5293184d8ae84120a496d192a69ef36848fe63fec3eb1a781e3ef5",
+    ],
+  ])("returns the known SHA-224 digest for %s", (_name, schema, expected) => {
+    expect(typedDataSchemaHash(schema)).toBe(expected);
+  });
+
+  it("is order-independent over type names", () => {
+    const a = {
+      Mail: [{ name: "x", type: "string" }],
+      EIP712Domain: [{ name: "y", type: "uint256" }],
+    };
+    const b = {
+      EIP712Domain: [{ name: "y", type: "uint256" }],
+      Mail: [{ name: "x", type: "string" }],
+    };
+    expect(typedDataSchemaHash(a)).toBe(typedDataSchemaHash(b));
+  });
+});
+
+describe("typedDataLeaf", () => {
+  const { json } = parseTypedData(
+    JSON.stringify({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Details: [
+          { name: "token", type: "address" },
+          { name: "amount", type: "uint160" },
+        ],
+        PermitSingle: [
+          { name: "details", type: "Details" },
+          { name: "spender", type: "address" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "PermitSingle",
+      domain: {
+        name: "x",
+        chainId: 1,
+        verifyingContract: "0x000000000022d473030f116ddee9f6b43ac78ba3",
+      },
+      message: {
+        details: { token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", amount: "7" },
+        spender: "0x2222222222222222222222222222222222222222",
+        deadline: "1",
+      },
+    }),
+  );
+
+  it("resolves nested and root leaves to type and message value", () => {
+    expect(typedDataLeaf(json, "details.token")).toStrictEqual({
+      type: "address",
+      value: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    });
+    expect(typedDataLeaf(json, "deadline")).toStrictEqual({ type: "uint256", value: "1" });
+  });
+
+  it("refuses unknown fields, struct leaves and array dimensions", () => {
+    expect(typedDataLeaf(json, "missing")).toBeUndefined();
+    expect(typedDataLeaf(json, "details.missing")).toBeUndefined();
+    expect(typedDataLeaf(json, "details")).toBeUndefined();
+    expect(typedDataLeaf(json, "spender.extra")).toBeUndefined();
+    const arrayDoc = parseTypedData(
+      JSON.stringify({
+        types: {
+          EIP712Domain: [{ name: "chainId", type: "uint256" }],
+          Batch: [{ name: "values", type: "uint256[]" }],
+        },
+        primaryType: "Batch",
+        domain: { chainId: 1 },
+        message: { values: ["1"] },
+      }),
+    ).json;
+    expect(typedDataLeaf(arrayDoc, "values")).toBeUndefined();
   });
 });

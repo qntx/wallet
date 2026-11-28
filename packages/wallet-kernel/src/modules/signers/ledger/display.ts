@@ -8,9 +8,9 @@
  *
  * - Ethereum 1.24.0: tx without calldata renders the review flow; ERC-20 transfer/approve calldata
  *   renders through the internal plugin only when a token descriptor binding exactly to `tx.to` was
- *   offered (value zero); any other calldata or creation needs "Blind signing"; EIP-712 shows
- *   domain fields + message hash only; EIP-7702 is not in the default build (EIP7702_SUPPORT ?=
- *   0).
+ *   offered (value zero); EIP-712 renders fully when filter descriptors bind exactly, else it shows
+ *   domain fields + message hash behind "Blind signing" like any other calldata; EIP-7702 is not in
+ *   the default build (EIP7702_SUPPORT ?= 0).
  * - Tron 0.8.2 (src/handlers/sign.c): dedicated screens exist for the contract types listed below —
  *   anything else falls to APPROVAL_SIMPLE_TRANSACTION behind "Sign by hash"; a data memo needs
  *   "Allow data" (parse.c USTREAM_MISSING_SETTING_DATA_ALLOWED); a TriggerSmartContract that is not
@@ -199,7 +199,7 @@ export const display = (
     return "clear";
   }
   if (plan.kind === "evm.typed-data") {
-    return "blind";
+    return bindLedger(request, plan, descriptors)?.typedData === undefined ? "blind" : "clear";
   }
   if (plan.kind === "tron.transaction") {
     if (request.kind !== "tron.transaction") {

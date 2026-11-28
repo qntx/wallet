@@ -322,6 +322,7 @@ export type {
   HardwareResult,
   HardwareStep,
   LedgerDescriptors,
+  LedgerTypedDataFilters,
   QrPayload,
 } from "./hardware.ts";
 export type {

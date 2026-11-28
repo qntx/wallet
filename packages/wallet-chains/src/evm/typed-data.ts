@@ -1,3 +1,5 @@
+import { sha224 } from "@noble/hashes/sha2.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import * as Hex from "ox/Hex";
 import * as TypedData from "ox/TypedData";
 
@@ -365,6 +367,48 @@ export const typedDataHasHiddenText = (json: TypedDataInput): boolean => {
     domainFields.some((field) => hidden(field.type, json.domain[field.name], 0)) ||
     hidden(json.primaryType, json.message, 0)
   );
+};
+
+/**
+ * Resolves a dotted field path from the primary type to an atomic leaf, walking the message in
+ * parallel: every step must be a declared struct field, structs only mid-path, no array dimension
+ * anywhere. Returns the leaf's EIP-712 type and the message value at the path.
+ */
+export const typedDataLeaf = (
+  json: TypedDataInput,
+  path: string,
+): { readonly type: string; readonly value: unknown } | undefined => {
+  let struct = json.primaryType;
+  let value: unknown = json.message;
+  const segments = path.split(".");
+  for (const [index, segment] of segments.entries()) {
+    const field = json.types[struct]?.find((f) => f.name === segment);
+    if (field === undefined || field.type.includes("[")) {
+      return undefined;
+    }
+    if (!isRecord(value)) {
+      return undefined;
+    }
+    value = value[segment];
+    if (index === segments.length - 1) {
+      return json.types[field.type] === undefined ? { type: field.type, value } : undefined;
+    }
+    if (json.types[field.type] === undefined) {
+      return undefined;
+    }
+    struct = field.type;
+  }
+  return undefined;
+};
+
+/** SHA-224 of the compact JSON of the schema with type names sorted — DMK `getSchemaHash`. */
+export const typedDataSchemaHash = (types: TypedDataInput["types"]): string => {
+  const sorted = Object.fromEntries(
+    Object.entries(types)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, fields]) => [key, fields.map((f) => ({ name: f.name, type: f.type }))]),
+  );
+  return bytesToHex(sha224(utf8ToBytes(JSON.stringify(sorted))));
 };
 
 /**

@@ -34,6 +34,9 @@ export {
   TYPED_FIELD_BUDGET,
   TYPED_FIELD_CODE_POINTS,
   parseTypedData,
+  domainChainId,
+  typedDataSchemaHash,
+  typedDataLeaf,
   typedDataFields,
   typedDataHashes,
 } from "./typed-data.ts";

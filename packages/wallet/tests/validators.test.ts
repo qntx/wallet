@@ -678,6 +678,68 @@ describe("hardware op and chain account guards", () => {
     expect(fails(params, { op: { ...signOp, descriptors: [] } })).toBe(true);
   });
 
+  it("Ledger typed-data filters are bounded and strictly shaped", () => {
+    const { params } = METHODS["hardware.begin"];
+    const td = {
+      chainId: 1,
+      verifyingContract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      schemaHash: "a".repeat(56),
+      info: new Uint8Array(5),
+      filters: [{ path: "spender", kind: 0xff, data: new Uint8Array(3) }],
+    };
+    const op = (typedData: unknown) => ({ op: { ...signOp, descriptors: { typedData } } });
+    expect(fails(params, op(td))).toBe(false);
+    for (const kind of [0xfc, 0xfd, 0xfe]) {
+      expect(
+        fails(params, op({ ...td, filters: [{ path: "a.b", kind, data: new Uint8Array(3) }] })),
+      ).toBe(false);
+    }
+    expect(fails(params, op({ ...td, chainId: -1 }))).toBe(true);
+    expect(fails(params, op({ ...td, chainId: 0x100000000 }))).toBe(true);
+    expect(fails(params, op({ ...td, verifyingContract: "0xabc" }))).toBe(true);
+    expect(
+      fails(params, op({ ...td, verifyingContract: "A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" })),
+    ).toBe(true);
+    expect(fails(params, op({ ...td, schemaHash: "A".repeat(56) }))).toBe(true);
+    expect(fails(params, op({ ...td, schemaHash: "a".repeat(55) }))).toBe(true);
+    expect(fails(params, op({ ...td, info: new Uint8Array(4) }))).toBe(true);
+    expect(fails(params, op({ ...td, info: new Uint8Array(332) }))).toBe(true);
+    expect(fails(params, op({ ...td, filters: [] }))).toBe(true);
+    expect(
+      fails(params, op({ ...td, filters: Array.from({ length: 33 }, () => td.filters[0]) })),
+    ).toBe(true);
+    expect(
+      fails(
+        params,
+        op({ ...td, filters: [{ path: "1bad", kind: 0xff, data: new Uint8Array(3) }] }),
+      ),
+    ).toBe(true);
+    expect(
+      fails(
+        params,
+        op({ ...td, filters: [{ path: "a..b", kind: 0xff, data: new Uint8Array(3) }] }),
+      ),
+    ).toBe(true);
+    expect(
+      fails(
+        params,
+        op({ ...td, filters: [{ path: "a".repeat(256), kind: 0xff, data: new Uint8Array(3) }] }),
+      ),
+    ).toBe(true);
+    expect(
+      fails(params, op({ ...td, filters: [{ path: "ok", kind: 0xfb, data: new Uint8Array(3) }] })),
+    ).toBe(true);
+    expect(
+      fails(params, op({ ...td, filters: [{ path: "ok", kind: 0xff, data: new Uint8Array(2) }] })),
+    ).toBe(true);
+    expect(
+      fails(
+        params,
+        op({ ...td, filters: [{ path: "ok", kind: 0xff, data: new Uint8Array(332) }] }),
+      ),
+    ).toBe(true);
+  });
+
   it("every chain account shape requires a boolean confirmed", () => {
     /* The kernel seals confirmed only after an on-device verify; a missing or non-boolean flag
        must not decode as an account at all. */

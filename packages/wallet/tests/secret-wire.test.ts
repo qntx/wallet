@@ -828,6 +828,7 @@ describe("method classification", () => {
       | "hashLockPublicKey"
       | "hiding"
       | "identityPublicKey"
+      | "info"
       | "invoice"
       | "limits"
       | "message"

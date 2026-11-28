@@ -359,6 +359,7 @@ export type PublicBytesField =
   | "hashLockPublicKey"
   | "hiding"
   | "identityPublicKey"
+  | "info"
   | "invoice"
   | "limits"
   | "message"
