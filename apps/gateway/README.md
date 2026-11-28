@@ -309,11 +309,12 @@ Staging serves testnets only (every built-in EVM testnet, Solana devnet, Bitcoin
 testnet4, and TRON Nile through TronGrid Nile and NileEx) through keyless public endpoints — two per network, listed in `src/config/networks.ts`, at `https://wallet-gateway-staging.qntx.org`.
 
 ```bash
-bunx wrangler login                     # once; the staging account (env.staging.account_id)
+bunx wrangler login                     # once; the one account (env.staging.account_id)
 bun run --cwd apps/gateway deploy:staging
 ```
 
-Roll back with `bunx wrangler rollback --env staging`.
+A deploy from a laptop skips the pipeline's gate ("Deployment pipeline"); keep it for the first
+deploy and for a pipeline outage. Roll back with `bunx wrangler rollback --env staging`.
 
 ## Production
 
@@ -341,13 +342,29 @@ done
 `.github/workflows/gateway.yml` deploys only commits whose CI run passed:
 
 - **staging** follows `main`: each time the CI workflow succeeds on a push to `main`, that commit
-  is deployed and `scripts/smoke.ts` runs against it.
+  waits for a `staging` reviewer, is deployed, and `scripts/smoke.ts` runs against it.
 - **production** is **Gateway → Run workflow** on `main`. It deploys the dispatched commit after
-  checking it has a passed CI run, and waits for a `production` reviewer other than the person who
-  dispatched it.
+  checking it has a passed CI run, and waits for a `production` reviewer.
 
-Each job runs two checks before deploying (`scripts/deploy-check.ts`):
+With one reviewer the approver is the person who merged or dispatched: the approval is a deliberate
+second step, not a second person (`.github/rulesets/README.md` "Single maintainer").
 
+The `gate` job runs first, outside any environment, and stops both deploy jobs when either check
+fails:
+
+- **Refuse a shared token** — a job outside an environment sees only repository and organization
+  secrets, so any `CLOUDFLARE_API_TOKEN` it can read is one every job can read.
+- **Same reviewer gate, no shared state** — `scripts/deploy-check.ts environments` reads both
+  GitHub environments and fails unless each exists, has a required reviewer, refuses administrator
+  bypass and deploys from branch `main` only, and both name the same reviewers with the same
+  self-review rule; it also fails when the deploying commit's `wrangler.jsonc` lets staging share
+  state with production (`sharedState`, below).
+
+Each deploy job then runs three checks before deploying (`scripts/deploy-check.ts`):
+
+- **Token** — `token <env>`: the environment's `CLOUDFLARE_API_TOKEN` must be an active account API
+  token of `env.<env>.account_id`; Cloudflare's `GET /accounts/{account_id}/tokens/verify` accepts
+  only that account's own tokens, so the token cannot reach another account.
 - **Check required secrets** — `wrangler secret list` against the env's `secrets.required` rows in
   `wrangler.jsonc`; a missing name fails the job with the exact `wrangler secret put` command, and
   an absent Worker means the first deploy is the manual operator step below.
@@ -359,40 +376,86 @@ Each job runs two checks before deploying (`scripts/deploy-check.ts`):
   a rollback across a DO class lifecycle change
   (<https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/>).
 
-**Staging and production live in different Cloudflare accounts.** Workers Scripts Edit is
-account-wide, so a staging token in the production account could replace the production Worker,
-read its secrets and write its KV. Each environment pins its `account_id` in `wrangler.jsonc`, and
-the staging job refuses to deploy while staging's account equals production's or while the staging
-token is not refused by the production account. **Staging still shares production's account today
-and stays blocked by design until it has its own account**: create a separate account holding the
-staging zone, create its RISK KV namespace, and update `env.staging.account_id` and the KV ids in
-`wrangler.jsonc`.
+The workflow stays off until the repository variable `GATEWAY_DEPLOY` is `true`. Roll back by hand
+with `bunx wrangler rollback --env production`.
 
-Both environments accept deployments from `main` only.
-`.github/rulesets/apply.sh <reviewer> [<reviewer>...]` creates them with those rules (self-review
-prevented when there are two or more reviewers) and fails while a repository or organization secret named
-`CLOUDFLARE_API_TOKEN` exists. Each environment's `CLOUDFLARE_API_TOKEN` is an **environment**
-secret — an account token with **Account › Workers Scripts › Edit** on that environment's account
-and **Zone › Workers Routes › Edit** on its zone (custom domains are created through the zone's
-Workers Routes permission). The workflow stays off until the repository variable `GATEWAY_DEPLOY`
-is `true`.
+### One Cloudflare account
 
-Roll back by hand with `bunx wrangler rollback --env production`.
+Staging and production run in one Cloudflare account (`env.staging.account_id` equals
+`env.production.account_id`). **Account › Workers Scripts › Edit** is account-wide and Cloudflare
+cannot narrow it to one Worker, so the token that deploys staging can also replace the production
+Worker — and through the code it deploys, read every production secret and write the production
+`RISK` list. The scheme protects production by treating a staging deploy as a production deploy:
 
-## Operator runbook — first production deploy
+- **Same gate.** Both GitHub environments require the same reviewer, deploy from `main` only and
+  refuse administrator bypass. `.github/rulesets/apply.sh <reviewer>` configures them; the `gate`
+  job refuses to deploy otherwise.
+- **Environment secret only.** Each environment's `CLOUDFLARE_API_TOKEN` is an environment secret;
+  `apply.sh` and the `gate` job both fail while a repository or organization secret of that name
+  exists. Create one account API token per environment with **Account › Workers Scripts › Edit**
+  and **Zone › Workers Routes › Edit** on that environment's zone only (custom domains are created
+  through the zone's Workers Routes permission). Two tokens give separate revocation and audit
+  trails, not separate power.
+- **No shared state.** Staging has its own Worker name — and with it its own secrets, Durable
+  Object storage and deployment history — hostname, `RISK` KV namespace and rate-limit namespace
+  ids, and its own provider keys (a separate 0x key). `sharedState` in `scripts/deploy-check.ts`
+  lists anything the two envs share; `tests/deploy-check.test.ts` and the `gate` job fail when
+  `wrangler.jsonc` shares anything.
 
-1. Prerequisites: the production Cloudflare account (`env.production.account_id`) holds the
-   `gateway.meowl.xyz` zone; a GitHub `production` environment with required reviewers and secret
-   `CLOUDFLARE_API_TOKEN` scoped to that account only, with the permissions `wrangler deploy`
-   needs for Workers scripts, KV, Durable Objects and custom domains.
-2. The production `RISK` KV namespace exists and its id matches `wrangler.jsonc` (else
-   `bunx wrangler kv namespace create RISK --env production` and update the id in a PR).
+What the workflow cannot verify:
+
+- the token's permissions and expiry, and that the two environments hold different tokens —
+  reading a token's policies needs a token-read permission a deploy token must not carry;
+- that an administrator leaves the environments as the `gate` job read them, or does not approve
+  their own deployment — with one maintainer that approval is the whole gate;
+- that staging's provider keys differ from production's — Cloudflare never returns secret values;
+- deploys outside the workflow — any other token with Workers access, the Global API Key, or a
+  dashboard login of an account member can replace either Worker.
+
+**Residual: one account is one blast radius.** Whoever holds either deploy token, approves either
+deployment or has Workers access in the account controls the production gateway. That is the
+compromised-gateway position of `SECURITY.md` — wrong display data and withheld broadcasts, no
+signing power — reached through staging as easily as through production.
+
+### Splitting staging into its own account
+
+1. Create the staging Cloudflare account. In the current account, delete the staging Worker
+   (`bunx wrangler delete --env staging`), its `RISK` namespace and preview namespace
+   (`bunx wrangler kv namespace delete --namespace-id <id>`), and revoke the staging token.
+2. Give the new account a zone for the staging hostname. A zone belongs to one account: move
+   `qntx.org` there, or pick a hostname on a zone the new account holds and update
+   `env.staging.routes` and the staging smoke URL in `.github/workflows/gateway.yml`.
+3. Set `env.staging.account_id` to the new account, then (logged in to it)
+   `bunx wrangler kv namespace create RISK --env staging` and the same with `--preview`; put the new
+   `id`/`preview_id` in `wrangler.jsonc`, run `bun run --cwd apps/gateway types`, and land it in a
+   PR.
+4. Create an account API token in the new account (**Workers Scripts › Edit**, **Workers Routes ›
+   Edit** on the staging zone) and store it with `gh secret set CLOUDFLARE_API_TOKEN --env staging`.
+5. Deploy the new staging Worker once by hand with its secrets (runbook step 8). From then on the
+   `token staging` check proves the staging token belongs to the new account, which no longer holds
+   production.
+6. Update "One Cloudflare account" above and the gateway residual in `SECURITY.md`. Whether staging
+   keeps the production reviewer is then a separate choice in `.github/rulesets/apply.sh`.
+
+## Operator runbook — first deploy
+
+1. Prerequisites: the one Cloudflare account (`env.production.account_id`, equal to
+   `env.staging.account_id`) holds the `meowl.xyz` zone (production, `gateway.meowl.xyz`) and the
+   `qntx.org` zone (staging, `wallet-gateway-staging.qntx.org`); `.github/rulesets/apply.sh
+   <reviewer>` has configured the GitHub `staging` and `production` environments with the same
+   required reviewer; each environment holds its own `CLOUDFLARE_API_TOKEN` environment secret — an
+   account API token of that account with the permissions in "One Cloudflare account".
+2. The `RISK` KV namespaces exist and their ids match `wrangler.jsonc` — production's `id`,
+   staging's `id` and `preview_id`, all distinct (else
+   `bunx wrangler kv namespace create RISK --env <env>`, plus `--preview` for staging, and update
+   the ids in a PR).
 3. Confirm every operator assumption in `src/config/accounts.ts` against the provider consoles
    and adjust rows in a PR if they differ: Alchemy PAYG (10,000 CUPS); dRPC PAYG created after
-   2026-10-19 (100 RPS); Ankr plan and rate; TronGrid key's QPS and daily quota (console); Tatum
-   plan ≥ Starter with auto-upgrade turned off; CoinGecko Analyst (500/min, 500k/month); Jupiter
-   keyed plan; 0x plan; Blockstream Enterprise credentials, credit balance, the per-call credit
-   cost of plain Esplora calls and an acceptable rate/day cap; DefiLlama and Across keyless use.
+   2026-10-19 (100 RPS); Ankr plan and rate; TronGrid key's quota (since TronGrid v1.12.0,
+   2026-11-23, metered in Credits per day and per second — console); Tatum plan ≥ Starter with
+   auto-upgrade turned off; CoinGecko Analyst (500/min, 500k/month); Jupiter keyed plan; 0x plan;
+   Blockstream Explorer API credentials, credit balance, the per-call credit cost of plain Esplora
+   calls and an acceptable rate/day cap; DefiLlama and Across keyless use.
 4. Verify Ankr header auth with the real key:
 
    ```bash
@@ -401,7 +464,8 @@ Roll back by hand with `bunx wrangler rollback --env production`.
      https://rpc.ankr.com/arbitrumnova   # must return 0xa4ba
    ```
 
-5. Write the ten `secrets.required` values to a file outside the repository (mode 600).
+5. Write the ten production `secrets.required` values to a file outside the repository (mode 600),
+   and staging's (`ZEROX_API_KEY` — its own 0x key, never production's) to a second one.
 6. From a clean checkout of a `main` commit whose CI passed:
    `bun install --frozen-lockfile && bunx vp run @qntx/wallet-engine#build`, then in
    `apps/gateway`
@@ -410,12 +474,10 @@ Roll back by hand with `bunx wrangler rollback --env production`.
 7. `bun scripts/smoke.ts https://gateway.meowl.xyz production`. This first deploy has no
    automatic rollback: there is no earlier version, and Cloudflare refuses a rollback across
    migration v1 — fix forward, or detach the custom domain to withdraw the gateway.
-8. Set the repository variable `GATEWAY_DEPLOY=true`; later production deploys are the workflow's
-   manual dispatch on `main`.
-9. Watch `bunx wrangler tail --env production` for `budget-error`, `upstream-throttled` and
-   `all-providers-failed` during the first hours.
-10. Staging stays blocked until: a separate Cloudflare account holds the
-    `wallet-gateway-staging.qntx.org` zone and a `RISK` KV namespace; `env.staging.account_id`
-    and the KV ids are updated in `wrangler.jsonc`; the GitHub `staging` environment's
-    `CLOUDFLARE_API_TOKEN` is scoped to that account only; its first deploy is the same manual
-    `--secrets-file` step (with `ZEROX_API_KEY`).
+8. The same for staging from the same checkout:
+   `bunx wrangler deploy --env staging --secrets-file <staging file> --message "deploy <sha>"`,
+   delete the file, then `bun scripts/smoke.ts https://wallet-gateway-staging.qntx.org staging`.
+9. Set the repository variable `GATEWAY_DEPLOY=true`; staging then follows `main` behind its
+   reviewer, and production deploys are the workflow's manual dispatch on `main`.
+10. Watch `bunx wrangler tail --env production` for `budget-error`, `upstream-throttled` and
+    `all-providers-failed` during the first hours.
