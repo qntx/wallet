@@ -1048,16 +1048,16 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-Bs44sGJy.mjs
+	// packages/wallet/dist/protocol-75ns7-7-.mjs
 	init_objectSpread2();
 	var MAX_FACTOR_CHARS = 512;
 	var MAX_STRING_BYTES = 64e3;
 	var MAX_PAYLOAD_CHARS = 14e5;
 	/**
 	* The unsupported direction of a parsed envelope: `version` is a safe integer other than
-	* BACKUP_ENVELOPE_VERSION — `older` (a pre-1.0 format this build has no reader for) or `newer`
-	* (a newer build wrote it). `undefined` means the version alone does not decide — strict
-	* validation does (a missing or non-integer version stays an integrity failure).
+	* BACKUP_ENVELOPE_VERSION — `older` (a pre-1.0 format this build has no reader for) or `newer` (a
+	* newer build wrote it). `undefined` means the version alone does not decide — strict validation
+	* does (a missing or non-integer version stays an integrity failure).
 	*/
 	function backupEnvelopeReason(value) {
 		if (typeof value !== "object" || value === null || Array.isArray(value) || !("version" in value)) return;
@@ -4262,9 +4262,9 @@
 		}
 	};
 	/**
-	* A persisted artefact written by a build this one cannot read — the wire code stays
-	* `unsupported`; `reason` carries which side of this build wrote it (`older`: a pre-1.0 format
-	* this build has no reader for; `newer`: a newer build's format).
+	* A persisted artefact written by a build this one cannot read — the wire code stays `unsupported`;
+	* `reason` carries which side of this build wrote it (`older`: a pre-1.0 format this build has no
+	* reader for; `newer`: a newer build's format).
 	*/
 	var UnsupportedFormatError = class extends KernelError {
 		constructor(reason, message) {
@@ -72163,7 +72163,8 @@ zoo`.split("\n"));
 	* is called explicitly. An unclaimed kind or a foreign format marks the vault unsupported — the
 	* direction comes from `meta.format` alone (content this format does not know can only be a newer
 	* build's), the data stays untouched and unsupported wins over corrupted; a malformed known header
-	* marks it `corrupted`. Locked snapshots are display-only data from unauthenticated public headers.
+	* marks it `corrupted`. Locked snapshots are display-only data from unauthenticated public
+	* headers.
 	*/
 	function statusContents(image, modules, nostr) {
 		const factors = [];
@@ -75690,7 +75691,14 @@ zoo`.split("\n"));
 			async commit(ops) {
 				var _next$meta;
 				const bytes = file.read();
-				const next = applyStoreOps(bytes === void 0 ? EMPTY : decodeImage(bytes), ops);
+				let image;
+				try {
+					image = bytes === void 0 ? EMPTY : decodeImage(bytes);
+				} catch (error) {
+					if (!ops.every((op) => op.op === "clear")) throw error;
+					image = EMPTY;
+				}
+				const next = applyStoreOps(image, ops);
 				const encoded = new Uint8Array(encodeFrame({
 					meta: (_next$meta = next.meta) !== null && _next$meta !== void 0 ? _next$meta : null,
 					records: next.records,
