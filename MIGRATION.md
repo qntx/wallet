@@ -3140,7 +3140,8 @@ export function wiredSigners(
 For a host upgrading from 0.14.0:
 
 1. **No Bitcoin send, sweep, speed-up, cancel or CPFP is refused for want of a change address.** The
-   exhausted-window `invalid-request` §36 described never ships, so there is no new error to handle:
+   exhausted-window `invalid-request` refusal of an earlier draft of §36 never ships, so there is no
+   new error to handle:
    0.14.0 reused an address, and this release reuses the address at the window's end when the window
    is full.
 2. **A sign attempt that fails before the factor verifies consumes no change index.** A cancelled
